@@ -1032,8 +1032,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
                   )}
                 </PrefRow>
-                <PrefRow label="Thumbnail threads" summary="Thumbnails built at once. 2 by default."
-                         hint="how many library thumbnails are built at the same time. more fill a folder sooner on a fast disk, at the cost of cores an edit could use; fewer can be quicker from a network drive, which slows when asked for several files at once. takes effect at once">
+                <PrefRow label="Library workers" summary="Thumbnail and ORF metadata workers. 2 by default."
+                         hint="how many workers prepare library thumbnails and ORF metadata at the same time. Thumbnail generation and ORF metadata preparation use separate pools, so this is not a shared total. More can fill a folder sooner on a fast disk; fewer can be quicker from a network drive, which slows when asked for several files at once. Changes apply to subsequent import batches">
                   <div className="segmented small">
                     {THUMB_THREADS.map((n) => (
                       <button key={n} className={thumbThreads === n ? "active" : ""}

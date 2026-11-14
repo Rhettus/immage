@@ -60,27 +60,31 @@ folder and the last photo are remembered when you quit.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
-### Experimental ORF metadata reads
+### ORF metadata reads and library workers
 
-On the `experiment/orf-partial-reads-0.46.0` branch, Olympus and OM System ORF
-photos join the existing partial metadata reader. While **Reading photos**
-runs, the reader tries the first 64 KB, then larger prefixes up to 16 MB if
-needed. If it cannot establish complete metadata, it falls back to the whole
-file. Embedded previews can be read separately from their original locations.
-Opening a photo for editing still needs its image data.
+Olympus and OM System ORF photos use partial metadata reads while **Reading
+photos** runs. Immage tries the first 64 KB, then larger prefixes up to 16 MB
+if needed. If it cannot establish complete metadata, it reads the whole file.
+Embedded previews can be read separately from their original locations.
+Opening a photo for editing still needs its image data. Panasonic RW2 is not
+included.
 
-This experiment reduces metadata read volume; it does not make imports run
-concurrently. The `experiment/orf-prefix-concurrency-0.46.0` branch also includes
-the NAS probe read-ahead experiment described below.
-Panasonic RW2 is not included in this change.
+**Preferences > Performance > Memory > Library workers** controls how many
+library thumbnails are built at once and how many ORF metadata tasks are
+prepared at once. The thumbnail and metadata workers use separate pools, so
+the setting is not a shared total. It defaults to 2. A change applies to
+subsequent import batches. Metadata results are applied in file order, with
+metadata, sidecars and database updates kept serial. The metadata task queue
+is bounded by this setting; the Exiv2 parser lock remains in place. Other
+formats continue through the existing serial import path.
 
-For a headless comparison, launch the experimental engine with
-`IMMAGE_METADATA_PREFIX=0` to disable prefix reads (baseline A), or leave that
-variable unset for partial reads (B). Set `IMMAGE_METADATA_IO_DIAGNOSTICS=1`
-to record per-file read counts and bytes in `engine.log`. These count bytes
-returned by the metadata reader's source reads, including repeated reads;
-they are not measurements of network traffic or storage cache misses. The
-switches do not change Preferences or write to the original photo.
+For headless comparisons, `IMMAGE_METADATA_PREFIX=0` disables prefix reads;
+otherwise they are enabled. `IMMAGE_METADATA_IO_DIAGNOSTICS=1` records
+per-file read counts and bytes in `engine.log`. These count bytes returned by
+the metadata reader's source reads, including repeated reads; they are not
+measurements of network traffic or storage cache misses. These environment
+variables are diagnostic/benchmark overrides and do not change Preferences or
+write to the original photo.
 
 The headless [ORF comparison runner](../../benchmarking/README.md#orf-partial-metadata-reads)
 uses those settings automatically, checks that imported photo entries match,
@@ -110,29 +114,23 @@ month for each limit, warm it first, then measure four rounds to balance order.
 `IMMAGE_IMPORT_DIAGNOSTICS=1` records the cap, observed active probes, timeouts,
 probe waiting and serialized import time in the engine log.
 
-### Experimental metadata preparation pipeline
+### Headless worker benchmark controls
 
-The `experiment/orf-metadata-pipeline-0.46.0` branch adds a separate headless
-test of `IMMAGE_IMPORT_METADATA_WORKERS=1` through `8`. Workers read ORF
-prefixes and prepare owned metadata results. The importer consumes results in
-the original file order and applies metadata, sidecars, tags and database
-updates serially. The existing Exiv2 parser lock remains: prefix reads can
-overlap, but parsing and some full-file fallback reads remain serialized.
-Other formats continue through the serial import path.
-
-The experiment is off by default (`0` or unset). The outstanding task/result
-count is bounded by the worker setting, including abandoned reads after a
-timeout or cancellation. A prepared result can retain a full file when prefix
-fallback is needed, so memory use depends on the source files. Cancellation
+`IMMAGE_IMPORT_METADATA_WORKERS` overrides **Library workers** for headless
+benchmarks and diagnostics when set to 1–8. Set it to `0` to disable the
+metadata preparation pipeline; an unset or invalid value uses the Preferences
+setting. The outstanding task/result count is bounded by the worker setting,
+including abandoned reads after a timeout or cancellation. A prepared result
+can retain a full file when prefix fallback is needed, so memory use depends
+on the source files. Cancellation
 stops scheduling work; blocked filesystem reads are not forcibly interrupted.
 Tasks have a 30-second deadline, including their photo and XMP access probes;
-timed-out files are reported unanswered. For headless diagnostics,
-`IMMAGE_IMPORT_METADATA_TIMEOUT_MS` accepts 10–300000 milliseconds.
-This is an experimental engine option,
-not a Preferences setting or a change to thumbnail worker counts.
+timed-out files are reported unanswered. `IMMAGE_IMPORT_METADATA_TIMEOUT_MS`
+accepts 10–300000 milliseconds for headless diagnostics.
 
 The [metadata pipeline benchmark](../../benchmarking/README.md) enables prefix
-reads, fixes small-probe concurrency at 1, and defaults to 1–4 metadata workers.
+reads, fixes small-probe concurrency at 1, and defaults to testing 1–4
+metadata workers.
 Use `--workers 4 6 8 --runs 6` to compare higher counts in balanced order.
 It checks that prepared results were used and that imported entries match.
 Run it after the probe-only comparison to measure these two approaches

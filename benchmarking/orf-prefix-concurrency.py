@@ -35,6 +35,7 @@ def measure(binary, photos, limit, round_no):
     with tempfile.TemporaryDirectory(prefix=f'immage-orf-ra{limit}-') as temp:
         work = Path(temp)
         old_env = os.environ.copy()
+        os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = '0'
         os.environ['IMMAGE_METADATA_PREFIX'] = '1'
         os.environ['IMMAGE_METADATA_IO_DIAGNOSTICS'] = '1'
         os.environ['IMMAGE_IMPORT_READ_AHEAD'] = str(limit)

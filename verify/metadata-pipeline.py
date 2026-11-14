@@ -16,10 +16,12 @@ background = __import__('background-priority')
 probe_checks = __import__('import-read-ahead')
 
 
-def launch(binary, work, workers):
+def launch(binary, work, workers=2):
     previous = os.environ.copy()
-    os.environ.update(IMMAGE_IMPORT_METADATA_WORKERS=str(workers),
-                      IMMAGE_IMPORT_METADATA_TIMEOUT_MS='400',
+    os.environ.pop('IMMAGE_IMPORT_METADATA_WORKERS', None)
+    if workers is not None:
+        os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = str(workers)
+    os.environ.update(IMMAGE_IMPORT_METADATA_TIMEOUT_MS='400',
                       IMMAGE_IMPORT_READ_AHEAD='1', IMMAGE_METADATA_PREFIX='1',
                       IMMAGE_IMPORT_DIAGNOSTICS='1', IMMAGE_METADATA_IO_DIAGNOSTICS='1')
     try:
@@ -76,6 +78,32 @@ def parity(binary, root):
             logs = engine.log_path.read_text(errors='replace')
             assert logs.count('IMMAGE_METADATA_PREFETCH') == 4, logs[-4000:]
     assert sidecar.read_bytes() == sidecar_bytes
+
+
+def preference_and_live_change(binary, root):
+    folder = root / 'preference'
+    folder.mkdir()
+    tiff = background.tiff(64, 48)
+    files = []
+    for name in ('a.orf', 'b.orf', 'c.orf'):
+        path = folder / name
+        path.write_bytes(b'IIRO' + tiff[4:])
+        files.append(path)
+    work = root / 'preference-engine'
+    work.mkdir()
+    engine = launch(binary, work, None)
+    try:
+        # No metadata override: startup uses the existing default preference 2.
+        first = batch(engine, files, 1)
+        assert first.get('done') == len(files) and not first.get('unanswered'), first
+        engine.call({'cmd': 'thumb_threads', 'threads': 1}, 10)
+        second = batch(engine, files, 2)
+        assert second.get('done') == len(files) and not second.get('unanswered'), second
+    finally:
+        engine.close()
+    logs = engine.log_path.read_text(errors='replace')
+    assert 'metadata pipeline: workers=2 ' in logs, logs[-4000:]
+    assert 'metadata pipeline: workers=1 ' in logs, logs[-4000:]
 
 
 def abandoned_workers(binary, root):
@@ -159,9 +187,10 @@ def main():
     with tempfile.TemporaryDirectory(prefix='immage-metadata-pipeline-') as temp:
         root = Path(temp)
         parity(args.engine, root)
+        preference_and_live_change(args.engine, root)
         abandoned_workers(args.engine, root)
         blocked_shutdown(args.engine, root)
-    print('passed; parity 0,1,2,3,4,6,8 workers, cancellation/timeout/cap/recovery/shutdown; no GUI launched')
+    print('passed; parity 0,1,2,3,4,6,8 override, default/live preference, cancellation/timeout/cap/recovery/shutdown; no GUI launched')
 
 
 if __name__ == '__main__':

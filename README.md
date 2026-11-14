@@ -14,10 +14,11 @@ and Linux. **All builds are alpha; bugs are expected.**
 [User guide](app/docs/README.md) ·
 [Release notes](RELEASE_NOTES.md)
 
-The `experiment/orf-metadata-pipeline-0.46.0` branch combines
-[partial ORF metadata reads](app/docs/library.md#experimental-orf-metadata-reads)
-with a bounded metadata preparation queue for headless NAS comparisons at
-1–8 workers, including a 4, 6, and 8 worker comparison. Applying metadata and database updates stay serialized.
+ORF metadata reads try a small prefix before reading the whole photo when
+possible. **Preferences > Performance > Memory > Library workers** controls
+thumbnail generation and ORF metadata preparation in separate bounded worker
+pools; metadata and database updates remain ordered and serial. See the
+[library guide](app/docs/library.md#orf-metadata-reads-and-library-workers).
 
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
 

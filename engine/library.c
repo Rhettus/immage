@@ -1194,10 +1194,13 @@ static GMutex _metadata_lock;
 static guint _metadata_live = 0;
 static guint _metadata_max_live = 0;
 static guint _metadata_limit = 0;
+static guint _metadata_preference = _THUMB_THREADS;
+static guint _metadata_override = 0;
+static gboolean _metadata_has_override = FALSE;
 static gint64 _metadata_timeout_us = _METADATA_TIMEOUT_US;
 static gsize _metadata_once = 0;
 
-static guint _metadata_workers(void)
+static void _metadata_initialize(void)
 {
   if(g_once_init_enter(&_metadata_once))
   {
@@ -1207,7 +1210,11 @@ static guint _metadata_workers(void)
     {
       char *end = NULL;
       const guint64 parsed = g_ascii_strtoull(value, &end, 10);
-      if(end && !*end && parsed >= 1 && parsed <= 8) workers = (guint)parsed;
+      if(end && end != value && !*end && parsed <= _THUMB_THREADS_MAX)
+      {
+        workers = (guint)parsed;
+        _metadata_has_override = TRUE;
+      }
     }
     const char *timeout = g_getenv("IMMAGE_IMPORT_METADATA_TIMEOUT_MS");
     if(timeout && *timeout)
@@ -1217,10 +1224,28 @@ static guint _metadata_workers(void)
       if(end && !*end && parsed >= 10 && parsed <= 300000)
         _metadata_timeout_us = parsed * 1000;
     }
-    _metadata_limit = workers;
+    _metadata_override = workers;
+    _metadata_limit = _metadata_has_override ? workers : _metadata_preference;
     g_once_init_leave(&_metadata_once, 1);
   }
-  return _metadata_limit;
+}
+
+static guint _metadata_workers(void)
+{
+  _metadata_initialize();
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const guint workers = _metadata_limit;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  return workers;
+}
+
+void library_metadata_threads(gint n)
+{
+  _metadata_initialize();
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_preference = (guint)CLAMP(n, 1, _THUMB_THREADS_MAX);
+  if(!_metadata_has_override) _metadata_limit = _metadata_preference;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
 }
 
 static void _metadata_unref(_metadata_task_t *task)
@@ -1254,10 +1279,13 @@ static gpointer _metadata_run(gpointer data)
 }
 
 // NULL means the strict process-wide bound is already occupied.
-static _metadata_task_t *_metadata_start(const char *path)
+static _metadata_task_t *_metadata_start(const char *path, const guint batch_workers)
 {
   eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
-  if(_metadata_live >= _metadata_workers())
+  _metadata_initialize();
+  // A preference change applies to the next batch. In-flight batches retain
+  // their snapshot, while this hard process cap includes abandoned workers.
+  if(_metadata_live >= _THUMB_THREADS_MAX || _metadata_live >= batch_workers)
   {
     eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
     return NULL;
@@ -1355,7 +1383,7 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
         const char *next = json_array_get_string_element(files, j);
         if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
            || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
-        tasks[j] = _metadata_start(next);
+        tasks[j] = _metadata_start(next, workers);
         if(!tasks[j]) saturated++;
       }
     }
@@ -1371,7 +1399,7 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
       if(!task && !stop_metadata && !_folder_quarantined(path))
       {
         // A global slot may have opened after this file was staged.
-        task = _metadata_start(path);
+        task = _metadata_start(path, workers);
         tasks[k] = task;
         if(task && saturated) saturated--;
         else if(!task) saturated++;

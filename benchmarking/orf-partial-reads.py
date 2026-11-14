@@ -64,11 +64,13 @@ def run(engine_path, photos, mode):
         work = Path(temp)
         previous = os.environ.get('IMMAGE_METADATA_PREFIX')
         previous_diagnostics = os.environ.get('IMMAGE_METADATA_IO_DIAGNOSTICS')
+        previous_workers = os.environ.get('IMMAGE_IMPORT_METADATA_WORKERS')
         if mode == 'baseline':
             os.environ['IMMAGE_METADATA_PREFIX'] = '0'
         else:
             os.environ.pop('IMMAGE_METADATA_PREFIX', None)
         os.environ['IMMAGE_METADATA_IO_DIAGNOSTICS'] = '1'
+        os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = '0'
         engine = None
         try:
             engine = Engine(engine_path, work)
@@ -93,6 +95,10 @@ def run(engine_path, photos, mode):
                 os.environ.pop('IMMAGE_METADATA_IO_DIAGNOSTICS', None)
             else:
                 os.environ['IMMAGE_METADATA_IO_DIAGNOSTICS'] = previous_diagnostics
+            if previous_workers is None:
+                os.environ.pop('IMMAGE_IMPORT_METADATA_WORKERS', None)
+            else:
+                os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = previous_workers
         if reply.get('unanswered'):
             raise RuntimeError(f'{mode} import left files unanswered: {reply["unanswered"]}')
         if reply.get('done') != len(photos):

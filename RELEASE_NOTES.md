@@ -33,9 +33,10 @@ Improvements
 - Clarity's and Texture's detail sliders, globally and on masks, sit in a
   shaded box headed by the name, without the repeated prefix on each
   slider, so each set stands apart from the sliders around it.
-- Preferences > Performance > Memory has a Thumbnail threads setting: how
-  many library thumbnails are built at once, from 1 to 8 (2 by default).
-  Fewer can be quicker from a network drive.
+- Preferences > Performance > Memory has a Library workers setting: how many
+  library thumbnails are built at once and how many ORF metadata tasks are
+  prepared at once (2 by default). The separate worker pools are each bounded
+  by this setting; changes apply to subsequent import batches.
 - Advanced mode offers a module-based editing panel, more like darktable,
   with its available modules except deprecated ones. Each module has its own
   card with settings, presets, on/off and reset, plus controls to add,
@@ -71,15 +72,11 @@ Improvements
 
 Performance
 
-- Experimental ORF import pipeline prepares metadata with 1–8 workers and
-  queues results for ordered, serialized database updates. It retains Exiv2's
-  parser lock and is disabled by default.
-- Experimental NAS comparison combines ORF prefix reads with bounded
-  file-access probes at limits 1, 2, 3 and 4. Metadata imports and database
-  updates remain serialized; the default probe limit stays 1.
-- Experimental ORF metadata reads try a small file prefix before reading the
-  whole photo, reducing transfers when its metadata is near the beginning.
-  Embedded previews remain available, with full-file fallback when needed.
+- ORF metadata reads try a small file prefix before reading the whole photo,
+  reducing metadata read volume when metadata is near the beginning; embedded
+  previews remain available, with full-file fallback when needed. ORF metadata
+  preparation is bounded by Library workers, with results applied in file
+  order and metadata/database updates kept serial.
 
 Bug fixes
 

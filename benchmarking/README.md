@@ -479,10 +479,10 @@ git switch experiment/orf-prefix-concurrency-0.46.0
 cmake --build build --target darktable-engine -j2
 ```
 
-### Experimental ORF metadata pipeline
+### ORF metadata pipeline
 
-`orf-metadata-pipeline.py` measures the experimental bounded metadata worker
-pipeline on Olympus `.ORF` photos. It starts a fresh headless engine for each
+`orf-metadata-pipeline.py` measures bounded metadata preparation on Olympus
+`.ORF` photos. It starts a fresh headless engine for each
 sample and checks that normalized imported metadata matches across worker
 counts. It imports originals read-only and does not start the GUI.
 
@@ -502,29 +502,28 @@ python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive \
 ```
 
 The engine accepts 1–8 workers; the default benchmark selection stays 1–4.
-Every sample enables
-metadata prefix reads, fixes import read-ahead at 1, and applies a 30 second
+`IMMAGE_IMPORT_METADATA_WORKERS` overrides the Library workers preference for
+the benchmark; `0` disables the pipeline, while unset or invalid values use
+the preference value (2 by default).
+Every sample enables metadata prefix reads, fixes import read-ahead at 1, and
+applies a 30 second
 metadata task timeout. The benchmark requires per-photo metadata IO and
 consumed-prefetch diagnostics plus engine pipeline counts. It stops if any
 photo's prepared result was not consumed, a task timed out or saturated, or
 normalized import metadata changed. Results include source bytes, throughput
 and elapsed time.
 
-This measures overlapping metadata preparation and physical prefix reads.
+This measures overlapping metadata preparation and metadata source reads.
 Exiv2 parsing remains protected by its global lock, and catalog imports remain
 serialized. ORFs that need a full-read fallback can spend more time under that
 lock, so the worker count may not improve those cases. Instrumentation and
 operating-system or storage caches affect timings; keep the machine idle and
 compare runs made under similar conditions.
 
-On the Mac, switch from the combined pipeline branch to this benchmark branch
-by first removing the current engine patch, then applying the target branch's
-patch and rebuilding:
+On the Mac, build the release branch's engine with:
 
 ```bash
 git fetch origin
-git -C darktable apply --reverse ../patches/darktable-engine.patch
-git switch experiment/orf-metadata-pipeline-0.46.0
-sh scripts/patch_darktable.sh
+git switch release-0.46.0
 cmake --build build --target darktable-engine -j2
 ```

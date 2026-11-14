@@ -24,6 +24,7 @@ PROBE_MS = 250
 def launch(binary, work, read_ahead):
     # Engine reads these at process startup. Keep the environment per-child.
     old = os.environ.copy()
+    os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = '0'
     os.environ['IMMAGE_IMPORT_READ_AHEAD'] = str(read_ahead)
     os.environ['IMMAGE_IMPORT_DIAGNOSTICS'] = '1'
     try:

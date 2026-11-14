@@ -502,6 +502,7 @@ void library_thumb_run(gpointer data, gpointer user_data);
 gboolean library_thumb_queue(JsonParser *parser);
 void library_thumb_wait(void);
 void library_thumb_threads(gint n);
+void library_metadata_threads(gint n);
 gboolean library_meta_set(const dt_imgid_t imgid, JsonObject *req, char **err);
 gboolean library_capture_times(JsonObject *req, JsonBuilder *b, char **err);
 

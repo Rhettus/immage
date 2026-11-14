@@ -743,6 +743,7 @@ static gboolean _cmd_thumb_threads(JsonObject *req, JsonBuilder *b, char **err)
     return FALSE;
   }
   library_thumb_threads((gint)n);
+  library_metadata_threads((gint)n);
   return TRUE;
 }
 
@@ -1659,6 +1660,10 @@ int main(int argc, char **argv)
     i++;
   }
   for(i++; i < argc; i++) g_ptr_array_add(m, argv[i]);
+
+  // Keep ORF metadata preparation in step with the user's thumbnail worker
+  // preference. An explicit IMMAGE_IMPORT_METADATA_WORKERS value still wins.
+  library_metadata_threads(thumb_threads);
 
 #ifdef HAVE_AI
   // The registry checks installed model versions during dt_init. It must
