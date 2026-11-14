@@ -660,6 +660,7 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .tool .icon { width: 17px; height: 17px; }
 .tool:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .tool.on { color: var(--text); }
+.panel-head .tool.edit-mode.on { color: var(--accent); }
 .tool.reject.on { color: #ff6b6b; }
 .tool:disabled { color: var(--text-3); cursor: default; }
 /* Keep a stable native arrow across the button and its SVG on Windows. */

@@ -1,9 +1,11 @@
 # Advanced mode
 
-Advanced mode is for working with darktable's own modules. Turn it on in
-[Preferences](preferences.md#general) > General > **Editing mode**, and
-back to **Simple** the same way. Switching does not change the photo or its
-edits.
+Advanced mode is for working with darktable's own modules. Turn it on with
+the **Advanced mode** button (stacked cards) at the top of Adjustments, left of
+expand/collapse all; it is highlighted while Advanced is on, and clicking it
+again goes back to **Simple**. [Preferences](preferences.md#general) > General
+> **Editing mode** sets the same choice. Switching does not change the photo or
+its edits.
 
 Edits made in Advanced that Simple's sliders cannot show, such as a second
 instance of a module or a module Simple has no sliders for, keep rendering in

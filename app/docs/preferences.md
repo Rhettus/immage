@@ -47,7 +47,8 @@ starts with default settings. To start with defaults on purpose, see
 - **Editing mode**: **Simple** (the default) shows Immage's sliders.
   **Advanced** keeps Adjustments' groups and adds a Technical group and a
   module search, for darktable's own modules. Changing it does not change the
-  photo or its edits. See [Advanced mode](advanced-mode.md).
+  photo or its edits. The Advanced mode button at the top of Adjustments
+  switches the same setting. See [Advanced mode](advanced-mode.md).
 
 **Workspace**
 

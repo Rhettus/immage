@@ -7,7 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Preferences > General has an Editing mode. Advanced shows Adjustments' groups
+- Preferences > General has an Editing mode, also switched by the Advanced
+  mode button at the top of Adjustments. Advanced shows Adjustments' groups
   (HSL / Color and B&W both, for color and black and white photos alike) with
   a Technical group and a module search that finds modules and settings and
   adds or opens their card, and darktable's modules as cards with their own

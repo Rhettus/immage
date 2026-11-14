@@ -64,6 +64,9 @@ export const BeforeAfterIcon = () => icon(<><rect x="3.5" y="4.5" width="17" hei
                                       <path d="M12 4.5h6a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-6z" fill="currentColor" /></>);
 export const CompareIcon = () => icon(<><rect x="2.5" y="6" width="8.5" height="12" rx="1.5" />
                                   <rect x="13" y="6" width="8.5" height="12" rx="1.5" /></>);
+// darktable's module cards, stacked, for the Advanced editing mode
+export const ModulesIcon = () => icon(<><rect x="4" y="4" width="16" height="5" rx="1.5" /><rect x="4" y="11" width="16" height="4" rx="1.5" />
+  <rect x="4" y="17" width="16" height="3" rx="1.5" /><circle cx="7" cy="6.5" r="0.6" fill="currentColor" /></>);
 // two chevrons pointing in to collapse, out to expand
 export const FoldIcon = ({ open }: { open: boolean }) => icon(open
   ? <><path d="m7 4 5 5 5-5" /><path d="m7 20 5-5 5 5" /></>
