@@ -110,6 +110,33 @@ month for each limit, warm it first, then measure four rounds to balance order.
 `IMMAGE_IMPORT_DIAGNOSTICS=1` records the cap, observed active probes, timeouts,
 probe waiting and serialized import time in the engine log.
 
+### Experimental metadata preparation pipeline
+
+The `experiment/orf-metadata-pipeline-0.46.0` branch adds a separate headless
+test of `IMMAGE_IMPORT_METADATA_WORKERS=1`, `2`, `3`, and `4`. Workers read ORF
+prefixes and prepare owned metadata results. The importer consumes results in
+the original file order and applies metadata, sidecars, tags and database
+updates serially. The existing Exiv2 parser lock remains: prefix reads can
+overlap, but parsing and some full-file fallback reads remain serialized.
+Other formats continue through the serial import path.
+
+The experiment is off by default (`0` or unset). The outstanding task/result
+count is bounded by the worker setting, including abandoned reads after a
+timeout or cancellation. A prepared result can retain a full file when prefix
+fallback is needed, so memory use depends on the source files. Cancellation
+stops scheduling work; blocked filesystem reads are not forcibly interrupted.
+Tasks have a 30-second deadline, including their photo and XMP access probes;
+timed-out files are reported unanswered. For headless diagnostics,
+`IMMAGE_IMPORT_METADATA_TIMEOUT_MS` accepts 10–300000 milliseconds.
+This is an experimental engine option,
+not a Preferences setting or a change to thumbnail worker counts.
+
+The [metadata pipeline benchmark](../../benchmarking/README.md) enables prefix
+reads, fixes small-probe concurrency at 1, and compares 1–4 metadata workers.
+It checks that prepared results were used and that imported entries match.
+Run it after the probe-only comparison to measure these two approaches
+separately. It reads original photos and sidecars without modifying them.
+
 ## Moving and copying photos
 
 Drag a thumbnail from the grid or the filmstrip onto a folder in the

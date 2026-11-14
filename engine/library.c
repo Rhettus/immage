@@ -20,6 +20,7 @@
 // the library: folders, import, thumbnails, prefetch, metadata, keywords, capture times, copies and sidecars
 
 #include "engine.h"
+#include "common/exif.h"
 
 // photos likely opened next, their raws decoded ahead on threads of their
 // own, a few at once: a raw's decode mostly keeps to one core. darktable's
@@ -1173,6 +1174,307 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   return answered;
 }
 
+// ORF metadata can be parsed before the serialized catalog import. A task's
+// process-wide slot lasts until both the worker and the importing batch have
+// released it, so completed results and abandoned reads remain bounded too.
+#define _METADATA_TIMEOUT_US (30 * G_USEC_PER_SEC)
+typedef struct _metadata_task_t
+{
+  GMutex lock;
+  GCond done;
+  gboolean finished;
+  gint refs;
+  gint64 launched;
+  gint64 finished_at;
+  dt_exif_prefetch_t *prefetch;
+  char *path;
+} _metadata_task_t;
+
+static GMutex _metadata_lock;
+static guint _metadata_live = 0;
+static guint _metadata_max_live = 0;
+static guint _metadata_limit = 0;
+static gint64 _metadata_timeout_us = _METADATA_TIMEOUT_US;
+static gsize _metadata_once = 0;
+
+static guint _metadata_workers(void)
+{
+  if(g_once_init_enter(&_metadata_once))
+  {
+    const char *value = g_getenv("IMMAGE_IMPORT_METADATA_WORKERS");
+    guint workers = 0;
+    if(value && *value)
+    {
+      char *end = NULL;
+      const guint64 parsed = g_ascii_strtoull(value, &end, 10);
+      if(end && !*end && parsed >= 1 && parsed <= 4) workers = (guint)parsed;
+    }
+    const char *timeout = g_getenv("IMMAGE_IMPORT_METADATA_TIMEOUT_MS");
+    if(timeout && *timeout)
+    {
+      char *end = NULL;
+      const guint64 parsed = g_ascii_strtoull(timeout, &end, 10);
+      if(end && !*end && parsed >= 10 && parsed <= 300000)
+        _metadata_timeout_us = parsed * 1000;
+    }
+    _metadata_limit = workers;
+    g_once_init_leave(&_metadata_once, 1);
+  }
+  return _metadata_limit;
+}
+
+static void _metadata_unref(_metadata_task_t *task)
+{
+  if(!g_atomic_int_dec_and_test(&task->refs)) return;
+  dt_exif_prefetch_free(task->prefetch);
+  g_free(task->path);
+  g_cond_clear(&task->done);
+  g_mutex_clear(&task->lock);
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_live--;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  g_free(task);
+}
+
+static gpointer _metadata_run(gpointer data)
+{
+  _metadata_task_t *task = data;
+  _probe_read(task->path);
+  gchar *xmp = g_strconcat(task->path, ".xmp", NULL);
+  _probe_read(xmp);
+  g_free(xmp);
+  task->prefetch = dt_exif_prefetch_prepare(task->path);
+  eng_lock(&task->lock, ENG_LOCK_PROBE);
+  task->finished_at = g_get_monotonic_time();
+  task->finished = TRUE;
+  g_cond_broadcast(&task->done);
+  eng_unlock(&task->lock, ENG_LOCK_PROBE);
+  _metadata_unref(task);
+  return NULL;
+}
+
+// NULL means the strict process-wide bound is already occupied.
+static _metadata_task_t *_metadata_start(const char *path)
+{
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  if(_metadata_live >= _metadata_workers())
+  {
+    eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+    return NULL;
+  }
+  _metadata_live++;
+  _metadata_max_live = MAX(_metadata_max_live, _metadata_live);
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_task_t *task = g_new0(_metadata_task_t, 1);
+  g_mutex_init(&task->lock);
+  g_cond_init(&task->done);
+  task->refs = 2; // importing batch and worker
+  task->launched = g_get_monotonic_time();
+  task->path = g_strdup(path);
+  GThread *thread = g_thread_new("import-metadata", _metadata_run, task);
+  g_thread_unref(thread);
+  return task;
+}
+
+typedef enum _metadata_wait_result_t
+{
+  METADATA_READY,
+  METADATA_TIMEOUT,
+  METADATA_CANCELLED
+} _metadata_wait_result_t;
+
+static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint64 job)
+{
+  const gint64 deadline = task->launched + _metadata_timeout_us;
+  for(;;)
+  {
+    eng_lock(&task->lock, ENG_LOCK_PROBE);
+    if(task->finished)
+    {
+      const gboolean ready = task->finished_at <= deadline;
+      eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      return ready ? METADATA_READY : METADATA_TIMEOUT;
+    }
+    const gint64 now = g_get_monotonic_time();
+    if(now >= deadline)
+    {
+      eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      return METADATA_TIMEOUT;
+    }
+    g_cond_wait_until(&task->done, &task->lock, MIN(deadline, now + 50 * 1000));
+    eng_unlock(&task->lock, ENG_LOCK_PROBE);
+    if(job)
+    {
+      eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      const gboolean cancelled = library_import_latest != job;
+      eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      if(cancelled) return METADATA_CANCELLED;
+    }
+  }
+}
+
+static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, const gboolean background,
+                                           const guint workers)
+{
+  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
+  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
+  const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
+  const gint64 probe = json_object_get_int_member_with_default(req, "probe_ms", _PROBE_TIMEOUT_US / 1000) * 1000;
+  const gint64 start = g_get_monotonic_time();
+  const guint n = files ? json_array_get_length(files) : 0;
+  guint k = 0;
+  GPtrArray *silent = g_ptr_array_new();
+  _metadata_task_t **tasks = g_new0(_metadata_task_t *, n);
+  gboolean *staged = g_new0(gboolean, n);
+  guint prepared = 0, consumed = 0, timeouts = 0, saturated = 0;
+  gint64 wait_us = 0, import_us = 0;
+  gboolean stop_metadata = FALSE;
+  json_builder_set_member_name(b, "images");
+  json_builder_begin_array(b);
+  for(; k < n; k++)
+  {
+    if(job)
+    {
+      eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      const gboolean superseded = library_import_latest != job;
+      eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      if(superseded) break;
+    }
+    if(budget && k && g_get_monotonic_time() - start >= budget) break;
+    if(background) engine_background_yield();
+
+    // Keep a fixed horizon of prepared ORFs. The task cap includes completed
+    // results until their serial import consumes and releases them.
+    if(!stop_metadata)
+    {
+      const guint end = MIN(n, k + workers);
+      for(guint j = k; j < end; j++)
+      {
+        if(staged[j]) continue;
+        staged[j] = TRUE;
+        const char *next = json_array_get_string_element(files, j);
+        if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
+           || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
+        tasks[j] = _metadata_start(next);
+        if(!tasks[j]) saturated++;
+      }
+    }
+
+    const char *path = json_array_get_string_element(files, k);
+    if(!path || _is_sidecar(path)) continue;
+    if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
+    gint64 import_start = 0;
+    dt_imgid_t imgid = NO_IMGID;
+    if(dt_exif_prefetch_supported(path))
+    {
+      _metadata_task_t *task = tasks[k];
+      if(!task && !stop_metadata && !_folder_quarantined(path))
+      {
+        // A global slot may have opened after this file was staged.
+        task = _metadata_start(path);
+        tasks[k] = task;
+        if(task && saturated) saturated--;
+        else if(!task) saturated++;
+      }
+      if(!task)
+      {
+        // If the global cap is busy with a still-running abandoned task, do
+        // not turn the bounded pipeline into a synchronous metadata read.
+        g_ptr_array_add(silent, (gpointer)path);
+      }
+      else
+      {
+        const gint64 wait_start = g_get_monotonic_time();
+        const _metadata_wait_result_t wait_result = _metadata_wait(task, job);
+        wait_us += g_get_monotonic_time() - wait_start;
+        if(wait_result == METADATA_CANCELLED)
+        {
+          g_ptr_array_add(silent, (gpointer)path);
+          _metadata_unref(task);
+          tasks[k] = NULL;
+          break;
+        }
+        if(wait_result == METADATA_TIMEOUT)
+        {
+          timeouts++;
+          stop_metadata = TRUE;
+          _quarantine_folder(path, g_get_monotonic_time());
+          fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
+                  path, _metadata_timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+          g_ptr_array_add(silent, (gpointer)path);
+          for(guint j = k + 1; j < n; j++)
+          {
+            if(tasks[j]) _metadata_unref(tasks[j]);
+            tasks[j] = NULL;
+          }
+        }
+        else
+        {
+          if(job)
+          {
+            eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+            const gboolean cancelled = library_import_latest != job;
+            eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+            if(cancelled)
+            {
+              g_ptr_array_add(silent, (gpointer)path);
+              _metadata_unref(task);
+              tasks[k] = NULL;
+              break;
+            }
+          }
+          prepared++;
+          if(!task->prefetch || _folder_quarantined(path))
+            g_ptr_array_add(silent, (gpointer)path);
+          else
+          {
+            dt_exif_prefetch_set(task->prefetch);
+            import_start = g_get_monotonic_time();
+            imgid = library_import(path);
+            import_us += g_get_monotonic_time() - import_start;
+            dt_exif_prefetch_set(NULL);
+            consumed++;
+          }
+        }
+        _metadata_unref(task); // the importing batch; a timed-out worker still owns its reference
+        tasks[k] = NULL;
+      }
+    }
+    else
+    {
+      const gint64 wait_start = g_get_monotonic_time();
+      const gboolean answered = _file_answers(path, probe);
+      wait_us += g_get_monotonic_time() - wait_start;
+      if(!answered) g_ptr_array_add(silent, (gpointer)path);
+      else
+      {
+        import_start = g_get_monotonic_time();
+        imgid = library_import(path);
+        import_us += g_get_monotonic_time() - import_start;
+      }
+    }
+    if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
+  }
+  for(guint j = 0; j < n; j++) if(tasks[j]) _metadata_unref(tasks[j]);
+  g_free(tasks);
+  g_free(staged);
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "unanswered");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < silent->len; i++) json_builder_add_string_value(b, g_ptr_array_index(silent, i));
+  json_builder_end_array(b);
+  g_ptr_array_free(silent, TRUE);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, k);
+  fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
+          (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const guint max_active = _metadata_max_live;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  fprintf(stderr, "[engine] metadata pipeline: workers=%u max_active=%u prepared=%u consumed=%u timeouts=%u saturated=%u wait_ms=%.1f import_ms=%.1f\n",
+          workers, max_active, prepared, consumed, timeouts, saturated, wait_us / 1000.0, import_us / 1000.0);
+}
+
 // import these files, as library_folder() does a folder's: the client lists the
 // folder itself and sends it in batches, so it can show its progress. with
 // a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
@@ -1180,6 +1482,12 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
 // files it went through, so the client sends the rest again
 void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
 {
+  const guint metadata_workers = _metadata_workers();
+  if(metadata_workers)
+  {
+    _library_import_files_metadata(req, b, background, metadata_workers);
+    return;
+  }
   JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
   const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
@@ -1337,6 +1645,14 @@ gboolean library_import_queue(JsonParser *parser)
   if(queued) g_thread_pool_push(library_import_pool, parser, NULL);
   eng_unlock(&_import_pool_lock, ENG_LOCK_POOL);
   return queued;
+}
+
+gboolean library_import_metadata_pending(void)
+{
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const gboolean pending = _metadata_live > 0;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  return pending;
 }
 
 // before darktable's caches go: the batch under way finishes, those

@@ -71,6 +71,9 @@ Improvements
 
 Performance
 
+- Experimental ORF import pipeline prepares metadata with 1–4 workers and
+  queues results for ordered, serialized database updates. It retains Exiv2's
+  parser lock and is disabled by default.
 - Experimental NAS comparison combines ORF prefix reads with bounded
   file-access probes at limits 1, 2, 3 and 4. Metadata imports and database
   updates remain serialized; the default probe limit stays 1.

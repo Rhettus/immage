@@ -24,6 +24,7 @@
 // persistent store
 
 #include "engine.h"
+#include <stdlib.h>
 
 #ifdef _WIN32
 // darktable links its programs with -municode: this supplies the wmain()
@@ -1798,6 +1799,15 @@ int main(int argc, char **argv)
   session_close_session();
   library_prefetch_wait();
   if(session_paste_batches) g_hash_table_destroy(session_paste_batches);
+  // Detached metadata workers are opt-in and may still be inside Exiv2 or a
+  // filesystem read. Avoid tearing down darktable globals they could touch;
+  // the default serial import path has no pending metadata workers.
+  if(library_import_metadata_pending())
+  {
+    fprintf(stderr, "[engine] metadata workers still active; exiting without global teardown\n");
+    fflush(NULL);
+    _Exit(EXIT_SUCCESS);
+  }
   dt_cleanup();
   g_ptr_array_free(m, TRUE);
   return 0;

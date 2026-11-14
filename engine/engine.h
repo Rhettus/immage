@@ -494,6 +494,7 @@ extern GThreadPool *library_import_pool;
 void library_import_run(gpointer data, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
 void library_import_wait(void);
+gboolean library_import_metadata_pending(void);
 gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err);
 extern GThreadPool *library_thumb_pool;

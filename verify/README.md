@@ -1,5 +1,12 @@
 # Release checks
 
+`python3 -I verify/metadata-pipeline.py` checks the experimental ORF metadata
+pipeline headlessly: import/XMP parity with the pipeline off and with 1–4
+workers, mixed-format serial fallback, cancellation, abandoned-worker caps and
+recovery. It uses temporary photos and FIFO sidecars. The separate
+`benchmarking/orf-metadata-pipeline.py` compares real ORFs on the original
+storage paths without writing photos or sidecars.
+
 For the opt-in NAS probe experiment, run
 `python3 -I verify/import-read-ahead.py`. It checks import/XMP parity at limits
 1 and 4, cancellation, blocked-read caps, saturation and recovery using isolated

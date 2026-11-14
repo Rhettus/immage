@@ -14,10 +14,10 @@ and Linux. **All builds are alpha; bugs are expected.**
 [User guide](app/docs/README.md) ·
 [Release notes](RELEASE_NOTES.md)
 
-The `experiment/orf-prefix-concurrency-0.46.0` branch combines
+The `experiment/orf-metadata-pipeline-0.46.0` branch combines
 [partial ORF metadata reads](app/docs/library.md#experimental-orf-metadata-reads)
-with bounded file-access probe concurrency for headless NAS comparisons at
-limits 1, 2, 3, and 4. Metadata imports and database updates stay serialized.
+with a bounded metadata preparation queue for headless NAS comparisons at
+1, 2, 3, and 4 workers. Applying metadata and database updates stay serialized.
 
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
