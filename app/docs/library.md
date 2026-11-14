@@ -179,6 +179,10 @@ on the whole selection.
 You can also click the stars and the **✕** on a thumbnail, or use the
 **Metadata** card. Rating a photo un-rejects it.
 
+You can rate, reject and label photos as soon as their controls appear, while
+the folder and thumbnails continue loading. Your changes stay in place as
+more photos arrive and loading finishes.
+
 ## Filtering
 
 The toolbar under the filmstrip filters the folder:

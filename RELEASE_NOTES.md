@@ -71,6 +71,8 @@ Improvements
 
 Bug fixes
 
+- Rejecting, rating and labeling photos while a folder loads now keeps those
+  changes visible as more photos arrive and loading finishes.
 - Basic's Auto works on a photo with Film Simulation or a converted
   negative, which turn the AgX tone mapper off; it no longer stops with
   "auto tune needs the AgX tone mapper".

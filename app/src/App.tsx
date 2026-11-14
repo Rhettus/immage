@@ -1,6 +1,7 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
+import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
 import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 
@@ -2902,6 +2903,7 @@ export default function App() {
 
   // Refreshes must not restore thumbnails while their Trash job runs.
   const pendingDeletes = useRef(new Set<(image: ImageEntry) => boolean>());
+  const folderEdits = useRef(new Set<FolderEdits<ImageEntry>>());
   const updateImages = (next: ImageEntry[]) => {
     next = next.filter((image) => ![...pendingDeletes.current].some((gone) => gone(image)));
     imagesRef.current = next;
@@ -2911,6 +2913,7 @@ export default function App() {
   };
   // one photo's fields, in the filmstrip and in the open photo's kept cell
   const patchImage = (imgid: number, fields: Partial<ImageEntry>) => {
+    for (const edits of folderEdits.current) edits.patch(imgid, fields);
     updateImages(imagesRef.current.map((i) => (i.imgid === imgid ? { ...i, ...fields } : i)));
     setOpenCell((c) => (c?.imgid === imgid ? { ...c, ...fields } : c));
   };
@@ -2962,6 +2965,8 @@ export default function App() {
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
+    const edits = new FolderEdits<ImageEntry>();
+    folderEdits.current.add(edits);
     try {
       setReading({ done: 0, total: 0, files, listed, known });
       const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all, last) => {
@@ -2976,14 +2981,14 @@ export default function App() {
           files = all;
           listed = true;
         }
-        got = byCaptureTime([...got, ...batch]);
+        got = byCaptureTime(edits.apply([...got, ...batch]));
         if (!again && batch.length) { updateImages(got); seen?.(got); }
         loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
       });
       if (immichRef.current) return list;
       setReading(null);
-      const sorted = byCaptureTime(list);
+      const sorted = byCaptureTime(edits.apply(list));
       updateImages(sorted);
       setStatus(`${list.length} images`);
       if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
@@ -3000,6 +3005,8 @@ export default function App() {
         setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);
       } else setStatus(`error: ${e}`);
       return null;
+    } finally {
+      folderEdits.current.delete(edits);
     }
   };
 
