@@ -299,13 +299,15 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
             {!bandSrc ? "…" : weights ? BANDS[weights.indexOf(Math.max(...weights))][1] : "neutral"}
           </span>
         )}
-        {onPeek && (
-          <PeekButton ids={peekIds(p)} onPeek={onPeek}
-                      disabled={disabled || !advancedEdited(peekIds(p), values, session?.neutral ?? {})} />
-        )}
+        {/* the More controls switch, where a panel has one, then the eye that
+            every panel has, so the eyes line up beside the chevrons */}
         {advancedIds.length > 0 && (
           <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
                           edited={advancedEdited(advancedIds, values, session?.neutral ?? {})} />
+        )}
+        {onPeek && (
+          <PeekButton ids={peekIds(p)} onPeek={onPeek}
+                      disabled={disabled || !advancedEdited(peekIds(p), values, session?.neutral ?? {})} />
         )}
         <Chevron open={open} />
       </div>

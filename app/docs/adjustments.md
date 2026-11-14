@@ -143,7 +143,9 @@ panel's extra settings inline, and click again to hide them. Each panel
 remembers its setting. A dot on the icon means a hidden setting has been
 changed. The icon is only in Simple [editing mode](advanced-mode.md).
 
-To see what one panel does, press and hold the eye icon in its title row:
+To see what one panel does, press and hold the eye icon in its title row,
+beside the arrow that folds the panel (and right of More controls, where the
+panel has it):
 the photo shows that panel's controls at their defaults, and letting go
 brings your adjustments back. The sliders stay where they are, and nothing
 changes in the photo's edit. Other panels, masks, healing and the look stay
