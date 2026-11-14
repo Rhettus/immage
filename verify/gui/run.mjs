@@ -193,6 +193,13 @@ try {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('shift-range requires a JPEG fixture');
     for (let i = 1; i <= 8; i++) await copyFile(copiedFixture, join(fixtures, `shift-${i}.jpg`));
   }
+  // grid zoom needs enough photos for the grid to scroll: copies of the fixture
+  if (selectedCases.includes('grid-zoom')) {
+    const { gridZoomFixtures } = await import('./specs/grid-zoom.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
+    report.gridZoomFixtures = gridZoomFixtures.length;
+  }
   // moving photos by drag: copies beside the fixture, and folders to drop on
   if (selectedCases.includes('move-photos') || selectedCases.includes('move-copy')) {
     const { moveFixtures } = await import('./specs/move-photos.mjs');

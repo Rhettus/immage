@@ -205,5 +205,22 @@ export class AppDriver {
       ] }] });
     } finally { await this.command('DELETE', '/actions'); }
   }
+  // a wheel turned with a modifier held (Ctrl: a pinch reaches the page as a
+  // ctrl wheel), the key down across the whole scroll
+  async modifiedWheel(modifier, x, y, deltaY) {
+    if (!['\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported wheel modifier');
+    await this.guard();
+    this.log({ action: 'modified-wheel', modifier, x, y, deltaY });
+    const id = `wheel-${this.wheels = (this.wheels ?? 0) + 1}`;
+    try {
+      await this.command('POST', '/actions', { actions: [
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: modifier },
+          { type: 'pause', duration: 0 }, { type: 'keyUp', value: modifier }] },
+        { type: 'wheel', id, actions: [{ type: 'pause', duration: 0 },
+          { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX: 0, deltaY, duration: 180 },
+          { type: 'pause', duration: 0 }] },
+      ] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async close() { if (this.session) await this.command('DELETE', ''); }
 }
