@@ -62,6 +62,15 @@ unblocked:
 python3 -I verify/import-stall.py
 ```
 
+The 0.46.0 engine check (headless, no GUI) starts the engine with the app's
+`--thumb-threads` and `--configdir` arguments and checks the config folder is
+the one asked for, checks the `thumb_threads` range, and runs History's start
+over (`history_discard`) on a closed photo, with its undo and redo:
+
+```bash
+python3 -I verify/engine-0460.py
+```
+
 The export metadata check (headless, no GUI, needs the `exiv2` command) gives a
 TIFF every field the export dialog's Metadata section decides (GPS, serial
 numbers and owner, camera and exposure, title, description, creator, rights,

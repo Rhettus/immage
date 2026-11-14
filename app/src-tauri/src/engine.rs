@@ -1005,7 +1005,7 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
+    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
     use crate::settings::Settings;
     use std::time::{Duration, Instant};
 
@@ -1408,6 +1408,59 @@ mod tests {
         // anything but on and off is the default
         settings.set(crate::settings::GPU_EDITS, "bogus").unwrap();
         assert!(gpu_edits(&root));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn thumb_threads_default_and_range() {
+        let root = std::env::temp_dir().join(format!("immage-thumb-threads-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let settings = Settings::load(&root);
+        assert_eq!(thumb_threads(&root), 2);
+        for n in ["1", "4", "8", " 6 "] {
+            settings.set(crate::settings::THUMB_THREADS, n).unwrap();
+            assert_eq!(thumb_threads(&root), n.trim().parse::<u32>().unwrap(), "{n:?}");
+        }
+        // out of range or not a number: the default, never a count the engine would clamp
+        for bad in ["0", "9", "-1", "many", ""] {
+            settings.set(crate::settings::THUMB_THREADS, bad).unwrap();
+            assert_eq!(thumb_threads(&root), 2, "{bad:?}");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    // main.c reads everything before --core as its own options and passes the
+    // rest to darktable: the count must come before --core and --configdir
+    // after it (bdff11e: the count's value once swallowed --configdir)
+    #[cfg(unix)]
+    #[test]
+    fn engine_starts_with_thumb_threads_before_core_and_configdir_after() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("immage-engine-args-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let settings = Settings::load(&root);
+        settings.set(crate::settings::THUMB_THREADS, "5").unwrap();
+        let bin = root.join("engine");
+        let seen = root.join("args");
+        std::fs::write(&bin, format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nexec sleep 60\n", seen.display())).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut engine = super::Engine::spawn_once(&bin, &root, &root.join("models"), 1, None).unwrap();
+        let mut args = String::new();
+        for _ in 0..100 {
+            args = std::fs::read_to_string(&seen).unwrap_or_default();
+            if args.contains("--cachedir") { break; }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        engine.quit();
+        let list: Vec<&str> = args.lines().collect();
+        let at = |a: &str| list.iter().position(|x| *x == a).unwrap_or_else(|| panic!("{a} missing in {list:?}"));
+        assert_eq!(list[at("--thumb-threads") + 1], "5");
+        assert!(at("--thumb-threads") < at("--core"));
+        assert!(at("--models") < at("--core"));
+        assert!(at("--core") < at("--configdir"));
+        assert_eq!(list[at("--configdir") + 1], root.join("config").to_string_lossy());
         std::fs::remove_dir_all(&root).unwrap();
     }
 

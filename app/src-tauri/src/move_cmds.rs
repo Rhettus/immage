@@ -995,4 +995,47 @@ mod tests {
         assert_eq!(relative(Path::new("/photos/2026/.dt/x.dtdata"), dir), PathBuf::from(".dt/x.dtdata"));
         assert_eq!(relative(Path::new("/elsewhere/x.xmp"), dir), PathBuf::from("x.xmp"));
     }
+
+    #[test]
+    fn a_photo_already_in_the_folder_is_marked_here() {
+        let d = test_dir("here");
+        let u = photo(&d.join("src"), "H.CR3");
+        let raw = d.join("src/H.CR3");
+        let sidecars: Vec<PathBuf> = u.files[1..].iter().map(|f| d.join("src").join(&f.rel)).collect();
+        // dropped on its own folder: nothing to move, however the folder is spelled
+        assert!(local_unit(&raw, vec![1], sidecars.clone(), &d.join("src"), false).here);
+        assert!(local_unit(&raw, vec![1], sidecars.clone(), &d.join("src/../src"), false).here);
+        assert!(local_unit(&raw, vec![1], sidecars.clone(), &d.join("src/"), false).here);
+        assert!(!local_unit(&raw, vec![1], sidecars, &d.join("dest"), false).here);
+    }
+
+    #[test]
+    fn a_unit_takes_its_existing_sidecars_once_and_counts_versions() {
+        let d = test_dir("unit");
+        let u = photo(&d.join("src"), "V.DNG");
+        let raw = d.join("src/V.DNG");
+        let mut sidecars: Vec<PathBuf> = u.files[1..].iter().map(|f| d.join("src").join(&f.rel)).collect();
+        // listed twice and one that is not on disk: each file once, the missing one left out
+        sidecars.push(sidecars[0].clone());
+        sidecars.push(d.join("src/V_02.DNG.xmp"));
+        let unit = local_unit(&raw, vec![1, 2], sidecars, &d.join("dest"), true);
+        assert_eq!(names(&unit), vec![PathBuf::from("V.DNG"), "V.DNG.xmp".into(), "V_01.DNG.xmp".into(), "V.DNG.dtdata".into()]);
+        assert_eq!(unit.versions, 2, "two .xmp files are two versions");
+        assert!(unit.keep_source && unit.download.is_none());
+        // a photo with no sidecar is one version
+        let lone = d.join("src/L.JPG");
+        std::fs::write(&lone, b"x").unwrap();
+        let unit = local_unit(&lone, vec![], vec![], &d.join("dest"), false);
+        assert_eq!((unit.versions, unit.files.len()), (1, 1));
+    }
+
+    #[test]
+    fn a_destination_must_be_a_folder() {
+        let d = test_dir("dest");
+        assert!(check_dest(&d.join("dest")).is_ok());
+        let file = d.join("src/f.txt");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(check_dest(&file).unwrap_err().contains("not a folder") || check_dest(&file).unwrap_err().contains("not answering"));
+        assert!(check_dest(&d.join("nowhere")).is_err());
+    }
 }

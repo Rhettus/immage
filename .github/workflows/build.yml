@@ -102,6 +102,7 @@ jobs:
             verify/contrast-equalizer.test.mjs \
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
+            verify/demosaic-options.test.mjs \
             verify/curves.test.mjs \
             verify/detail-preview.test.mjs \
             verify/engine-commands.test.mjs \
@@ -110,6 +111,7 @@ jobs:
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
             verify/gpu-check.test.mjs \
+            verify/grid-size.test.mjs \
             verify/menus.test.mjs \
             verify/module-others.test.mjs \
             verify/perf-diagnostics.test.mjs \

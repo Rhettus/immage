@@ -691,6 +691,30 @@ mod tests {
     }
 
     #[test]
+    fn folder_names_are_one_visible_folder() {
+        for bad in ["", ".", "..", "a/b", "a\\b", "a\0b", ".git", ".hidden"] {
+            assert!(folder_name_problem(bad).is_some(), "{bad:?}");
+        }
+        for good in ["Picks", "2026 trip", "Été", "a.b", "-x", "x."] {
+            assert_eq!(folder_name_problem(good), None, "{good:?}");
+        }
+        // only spaces trim to nothing
+        let base = std::env::temp_dir().join(format!("immage-newfolder-names-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let parent = base.to_string_lossy().into_owned();
+        assert!(tauri::async_runtime::block_on(create_folder(parent.clone(), "   ".into())).is_err());
+        // a parent that is not there is an error, not a created tree
+        let gone = base.join("not").join("here").to_string_lossy().into_owned();
+        assert!(tauri::async_runtime::block_on(create_folder(gone, "x".into())).is_err());
+        assert!(!base.join("not").exists());
+        // a file in the way reads as already there
+        std::fs::write(base.join("file"), b"").unwrap();
+        let e = tauri::async_runtime::block_on(create_folder(parent, "file".into())).unwrap_err();
+        assert!(e.contains("already exists"), "{e}");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
     fn folder_progress_once_a_second() {
         let mut p = Progress::default();
         let t = Instant::now();
