@@ -552,3 +552,24 @@ these measurements exclude tokenizer/model loading, inference, semantic quality,
 thumbnail rendering and physical disk-cold I/O. Keep compiler mode, library size,
 filters and machine conditions identical when comparing changes. A missing-cache
 lookup is not a cold photo import and must not be reported as one.
+
+### Optional real CLIP CPU check
+
+The Linux-only ignored test below downloads or verifies the pinned model package
+(about 608 MB) and runs the real tokenizer and both CPU inference towers. Run it
+only after explicitly choosing the optional download. The selected model directory
+is retained for reuse; the engine profile and photo tensors are disposable.
+It reports first/warm tower timings with package verification and tokenizer loading
+completed beforehand. Normalized projections establish execution, not search quality.
+
+```sh
+IMMAGE_CLIP_MODEL_OPT_IN=1 \
+IMMAGE_CLIP_MODEL_DIR=/tmp/immage-clip-validation-models \
+IMMAGE_TEST_ENGINE="$PWD/build/bin/darktable-engine" \
+IMMAGE_TEST_ORT="$PWD/build/_deps/onnxruntime/lib/libonnxruntime.so" \
+cargo test --manifest-path app/src-tauri/Cargo.toml --offline --locked --bin immage clip_models::tests::opt_in_real_cpu_text_and_vision_inference -- --ignored --exact --nocapture
+```
+
+The explicit opt-in and an absolute model directory are checked before model I/O.
+Omit `IMMAGE_TEST_ORT` if the engine already locates its CPU ONNX Runtime library.
+This runs headlessly; it does not launch the app's GUI.

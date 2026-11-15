@@ -483,4 +483,128 @@ mod tests {
         std::fs::write(dir.path().join("model"), "abd").unwrap();
         assert!(verify_package(dir.path(), &assets).is_err());
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "downloads pinned CLIP assets; requires explicit opt-in, engine, and CPU ONNX Runtime"]
+    fn opt_in_real_cpu_text_and_vision_inference() {
+        // Check both independent consent controls before inspecting model files,
+        // creating the install directory, or allowing Models::install to fetch.
+        let opt_in = std::env::var("IMMAGE_CLIP_MODEL_OPT_IN").unwrap_or_default();
+        assert_eq!(opt_in, "1", "set IMMAGE_CLIP_MODEL_OPT_IN=1 to authorize the pinned model install/check");
+        let model_dir = std::env::var_os("IMMAGE_CLIP_MODEL_DIR")
+            .map(PathBuf::from)
+            .expect("set IMMAGE_CLIP_MODEL_DIR to an absolute persistent model directory");
+        assert!(model_dir.is_absolute(), "IMMAGE_CLIP_MODEL_DIR must be absolute");
+
+        let engine_path = std::env::var_os("IMMAGE_TEST_ENGINE")
+            .map(PathBuf::from)
+            .expect("set IMMAGE_TEST_ENGINE to the absolute built darktable-engine executable");
+        assert!(engine_path.is_absolute(), "IMMAGE_TEST_ENGINE must be absolute");
+        assert!(engine_path.is_file(), "IMMAGE_TEST_ENGINE does not exist: {}", engine_path.display());
+        let ort_path = std::env::var_os("IMMAGE_TEST_ORT").map(PathBuf::from);
+        if let Some(path) = &ort_path {
+            assert!(path.is_absolute(), "IMMAGE_TEST_ORT must be absolute when set");
+            assert!(path.is_file(), "IMMAGE_TEST_ORT does not exist: {}", path.display());
+        }
+
+        let models = Models::new(model_dir);
+        models.install(true).expect("verify or install pinned CLIP package");
+        let known = models.prepare_text("a photo of a cat").unwrap().1;
+        assert_eq!(known.ids[..7], [49406, 320, 1125, 539, 320, 2368, 49407]);
+        assert_eq!(known.attention.iter().sum::<i64>(), 7);
+
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        // The test-only wrapper passes ORT's documented darktable preference
+        // on the command line; Engine writes it only into this temporary configdir.
+        let bin = if let Some(ort) = ort_path.as_ref() {
+            use std::os::unix::fs::PermissionsExt;
+            fn quote(path: &Path) -> String {
+                format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+            }
+            let wrapper = runtime.join("engine-with-test-ort");
+            let script = format!(
+                "#!/bin/sh\nexec {} \"$@\" --conf {}\n",
+                quote(&engine_path),
+                quote(Path::new(&format!("plugins/ai/ort_library_path={}", ort.display())))
+            );
+            std::fs::write(&wrapper, script).unwrap();
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+            wrapper
+        } else {
+            engine_path
+        };
+
+        let mut engine = crate::engine::Engine::spawn(&bin, &runtime, &runtime)
+            .expect("start isolated built engine");
+        let tagged = engine.tagged();
+        let timed = |run: &mut dyn FnMut() -> Vec<f32>| {
+            let started = std::time::Instant::now();
+            let values = run();
+            (values, started.elapsed().as_secs_f64() * 1000.0)
+        };
+        let query = "a photo of a cat";
+        let (text_first, text_cold_ms) = timed(&mut || {
+            crate::clip_infer::text(&models, &tagged, &runtime, query).unwrap()
+        });
+        let (text_warm, text_warm_ms) = timed(&mut || {
+            crate::clip_infer::text(&models, &tagged, &runtime, query).unwrap()
+        });
+        let photo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../app/sample/stairs-to-mountain.jpg");
+        let rgb = image::ImageReader::open(photo)
+            .unwrap()
+            .decode()
+            .unwrap()
+            .to_rgb8();
+        let (image_first, image_cold_ms) = timed(&mut || {
+            crate::clip_infer::image(
+                &models,
+                &tagged,
+                &runtime,
+                rgb.as_raw(),
+                rgb.width() as usize,
+                rgb.height() as usize,
+            )
+            .unwrap()
+        });
+        let (image_warm, image_warm_ms) = timed(&mut || {
+            crate::clip_infer::image(
+                &models,
+                &tagged,
+                &runtime,
+                rgb.as_raw(),
+                rgb.width() as usize,
+                rgb.height() as usize,
+            )
+            .unwrap()
+        });
+        engine.quit();
+
+        for embedding in [&text_first, &text_warm, &image_first, &image_warm] {
+            assert_eq!(embedding.len(), 512);
+            assert!(embedding.iter().all(|v| v.is_finite()));
+            let norm = embedding.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>();
+            assert!((norm - 1.0).abs() <= 1e-4, "projection is not normalized: {norm}");
+        }
+        println!(
+            "REAL_CLIP_CPU_SMOKE {}",
+            serde_json::json!({
+                "text": "a photo of a cat",
+                "textDimensions": text_first.len(),
+                "imageDimensions": image_first.len(),
+                "textColdMs": text_cold_ms,
+                "textWarmMs": text_warm_ms,
+                "imageColdMs": image_cold_ms,
+                "imageWarmMs": image_warm_ms,
+                "provider": "CPU",
+                "semanticQualityValidated": false,
+                "osCachesCleared": false,
+                "modelDirectory": models.root,
+                "onnxRuntimeOverride": ort_path.as_ref().map(|p| p.display().to_string()),
+            })
+        );
+    }
 }

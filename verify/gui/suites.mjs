@@ -61,6 +61,8 @@ export const cases = {
   'library-workers': { scope: 'Preferences > Performance > Library workers lists 1, 2, 3, 4, 6 and 8; default 2 persists, 6 and 2 can be selected, and 6 persists for the following move-copy job', fixture: 'any photo', liveValidated: true,
     verification: 'Visible Linux system WebKitGTK; default 2, changed 6→2→6, persisted 6, then the move-copy job passed. Run 2026-11-15T05-02-52.136Z_f7ac19f_e358ebb9.',
     limitation: 'Proves a subsequent transfer runs after the worker preference changes, but does not measure simultaneous copies or exercise Stop/stall recovery.' },
+  'local-search': { scope: 'without Immich configured, search the indexed local fixture by filename, confirm its cached thumbnail, rate it, retain the rating filter with the result, and return to the fixture folder', fixture: 'app/sample/stairs-to-mountain.jpg copied by the runner', liveValidated: false,
+    limitation: 'Requires the copied fixture to finish local indexing; no semantic model or Immich service is used. The test rates only the disposable fixture copy.' },
   'move-photos': { scope: 'a thumbnail dragged onto a Folders row: a rest on a shut folder opens it, Esc ends the drag, the photo\'s own folder refuses the drop, Cancel moves nothing; then a move into a subfolder opened under the drag: the photo leaves the filmstrip, its bytes match the original by SHA-256, its sidecar arrives with the rating set before, no part files remain, and it opens there with its stars', fixture: 'any (run.mjs moveFixtures copies and folders)', liveValidated: true,
     limitation: 'Same drive, so the move is a rename and the checksummed copy path is exercised only by move-copy; no network share, no stall or Stop, no virtual copies or RAW+JPEG pairs, no Immich results (needs a service).' },
   'move-copy': { scope: 'two Ctrl-selected photos dropped with Alt held: the confirmation is a copy with Keep the originals ticked, one already there identical and one clashing with other content; Keep both for all, then Copy: move-b_1 has the original bytes, the clashing and identical files and the sources are untouched, no part files remain', fixture: 'any (run.mjs moveFixtures)', liveValidated: true,
@@ -212,6 +214,7 @@ export const cases = {
 };
 export const suites = {
   smoke: ['startup', 'exposure'],
+  search: ['startup', 'local-search'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
   workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards'],
   inventory: ['startup',...generatedNames],
