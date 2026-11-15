@@ -72,6 +72,15 @@ Failed assertions also exit 1. Signals clean up only the run's own process group
 reports and copied fixtures remain available. No automatic retries or reference
 acceptance are provided.
 
+## Local search case
+
+`--case local-search` (or `--suite search`) checks filename search without an
+Immich server or CLIP model. Use the bundled sample JPEG as the configured
+fixture; the runner copies it into isolated app state. The case waits for a
+cached local result and thumbnail, rates only that disposable copy, retains a
+rating filter, and returns to its folder. This case passed live Linux
+system-WebKitGTK validation; see `suites.mjs` for the retained run identity. Local per-run GUI approval rules still apply.
+
 ## Positive hot-pixel fixture
 
 Ordinary RAW photos may have no visible hot pixels. Generate an isolated,

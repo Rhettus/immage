@@ -12,14 +12,28 @@ Improvements
   menu and Preferences translations. Changes apply at the next launch or with
   Relaunch, which saves the current photo first. Additional languages use one
   JSON file each, including regional variants and language-specific plurals.
+- Preferences > Performance adds Local photo cache status, pause/resume, clear
+  and rebuild, plus explicit optional CLIP model download and CPU checks.
+- Search photos adds local folder/library scopes and optional combined Immich
+  queries, with independent results, errors and pagination. Combined results
+  merge verified local paths and weight each source equally. Filename searches
+  use cached metadata; optional CPU analysis enables local similarity search.
+  Saved edits and metadata changes stay searchable without reopening folders.
+- Cached capture metadata preserves fractional seconds and recorded UTC offsets;
+  dates adjusted in Immage take precedence over the source capture date.
+- The grid adds Show more like this for indexed local photos, searching all
+  library folders with retained filters and a visible image-query indicator.
+  Local similarity can use the original photo or its saved edited appearance.
 - Advanced mode adds searchable editing modules, presets and groups, with
   controls to customize their order and instances. Module edits support masks,
-  undo and Copy Settings. Switch back to Simple mode at any time.
+  undo and Copy Settings. The Simple/Advanced switch stays available across
+  tools; Masks supports expand/collapse all settings and adjustments.
 - Drag photos onto folders to move them, or hold ⌥ (Alt) to copy; Immich photos
   are always copied. A confirmation resolves name conflicts. Sidecars travel
   with each photo, and copies are verified before originals are removed.
 - In the grid, F opens a culling preview with navigation, ratings, labels and
-  rejection. Click for Fit/100%, Space-drag to pan, and double-click to edit.
+  rejection. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
+  Fit/100%, Space-drag to pan, and double-click to edit.
   K keywords the selected photos, or the hovered photo when none are selected.
 - Grid thumbnails resize with the slider, trackpad pinch, ⌘-scroll, or ⌘= / ⌘-;
   the photo under the pointer stays in place and the chosen size is remembered.
@@ -44,13 +58,8 @@ Improvements
 
 Bug fixes
 
-- All rail panels keep the same header icons, including the Simple/Advanced
-  switch. Masks now supports expand/collapse all for its settings and adjustments.
-- Grid context-menu keywording now keeps a selected group together, targets only
-  the clicked photo when it is outside that group, and preserves the selection.
-- The culling preview keeps a fixed 80% window frame and a bottom bar for
-  ratings and color labels. Fit thumbnails stay at the displayed preview size
-  as sharper pixels arrive, avoiding the small-to-large navigation jump.
+- Immich path mappings reject traversal and symlinks that lead outside the
+  configured local folder.
 - Startup shows the grid until the last photo's first preview is ready. If
   the photo is missing or cannot load, the grid stays available instead of
   leaving a grey viewer.
@@ -71,6 +80,15 @@ Bug fixes
 
 Performance
 
+- Metadata-only local search pages stop after enough filtered matches are found,
+  avoiding a full-library scan for each page.
+- Reopening unchanged folders reuses local metadata and imports photos into
+  the editing library only when an action needs them. Cached thumbnails can
+  appear without importing the photo; changed files and sidecars are reread.
+  Verified moves retain reusable analysis, and copies get separate identities.
+  Background checks retain records for offline drives and incomplete scans.
+  Metadata caching does not download search models or upload photos; optional
+  local analysis uses verified packages and runs on the CPU.
 - Lightbox navigation reuses nearby previews in memory and waits briefly before
   starting speculative previews, reducing repeated loading and read-ahead work
   during rapid navigation.

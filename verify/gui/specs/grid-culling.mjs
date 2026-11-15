@@ -22,6 +22,7 @@ const inspect = () => {
     dpr: window.devicePixelRatio,
     loading: box?.textContent.includes('Loading preview…') ?? false,
     scroll: viewport && { left: viewport.scrollLeft, top: viewport.scrollTop,
+      x: viewport.getBoundingClientRect().x, y: viewport.getBoundingClientRect().y,
       width: viewport.clientWidth, height: viewport.clientHeight },
     active: active?.title ?? null };
 };
@@ -80,6 +81,38 @@ export async function gridCulling(t) {
   state = afterButton;
   const frameAfterNavigation = await t.driver.observe(inspect);
   assert.deepEqual(frameAfterNavigation.bounds, fixedFrame, 'preview frame stays the same when the photo changes');
+  const zoomState = (x, y) => {
+    const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+    const canvas = root?.querySelector('canvas'); const viewport = root?.querySelector('.culling-lightbox > div[style*="overflow"]');
+    const button = [...(root?.querySelectorAll('button') ?? [])].find(e => ['Fit', '100%'].includes(e.textContent.trim()));
+    if (!canvas?.width || !viewport || !button) return null;
+    const image = canvas.getBoundingClientRect(), box = viewport.getBoundingClientRect(), dpr = window.devicePixelRatio;
+    return { button: button.textContent.trim(), scale: image.width / (canvas.width / dpr), pixels: [canvas.width, canvas.height],
+      image: { x: image.x, y: image.y, width: image.width, height: image.height },
+      viewport: { x: box.x, y: box.y, width: viewport.clientWidth, height: viewport.clientHeight,
+        scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop },
+      loading: root.querySelector('.culling-status')?.textContent.trim() === 'Loading preview…',
+      under: { x: (x - image.x) / image.width, y: (y - image.y) / image.height } };
+  };
+  // Z is the direct Fit/100% toggle. A grid shortcut remains suppressed by
+  // the modal key handler while the photo is displayed.
+  await t.driver.keys('g');
+  assert(await t.driver.observe(hasPreview), 'G does not close the culling preview');
+  assert(await t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'G does not leave grid mode through the modal');
+  await t.driver.keys('z');
+  const z100 = await until(async () => {
+    const s = await t.driver.observe(zoomState, 0, 0);
+    return s?.button === 'Fit' && Math.abs(s.scale - 1) < .02 ? s : null;
+  }, 'Z selects and renders 100%');
+  assert.equal(z100.button, 'Fit', 'button offers Fit at 100%');
+  assert(Math.abs(z100.scale - 1) < .02, `Z renders at 100% (${z100.scale})`);
+  await t.driver.keys('z');
+  const zFit = await until(async () => {
+    const s = await t.driver.observe(zoomState, 0, 0);
+    return s?.button === '100%' && s.image.width <= s.viewport.width + 2 && s.image.height <= s.viewport.height + 2 ? s : null;
+  }, 'Z returns to the fitted preview');
+  assert.equal(zFit.button, '100%', 'button offers 100% in Fit');
+
   const zoomButton = await t.driver.observe(() => {
     const b = [...document.querySelectorAll('.modal-backdrop[aria-label="Culling preview"] button')].find(e => e.textContent.trim() === '100%');
     const r = b?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
@@ -117,6 +150,95 @@ export async function gridCulling(t) {
   await textButton(t, preview, 'Fit');
   await until(() => t.driver.observe(() => [...document.querySelectorAll('.modal-backdrop[aria-label="Culling preview"] button')]
     .some(e => e.textContent.trim() === '100%')), 'Fit returns to the fitted preview');
+
+  // Wheel input changes zoom around the pointer. After reaching an overflowing
+  // scale, a down-wheel gesture must keep its image point pinned; this also
+  // catches the viewport's native default scroll leaking through.
+  const fitBeforeWheel = await t.driver.observe(inspect);
+  const wheelPoint = { x: fitBeforeWheel.scroll.x + fitBeforeWheel.scroll.width * .5,
+    y: fitBeforeWheel.scroll.y + fitBeforeWheel.scroll.height * .5 };
+  const wheelStart = await until(() => t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y),
+    'settled Fit before wheel zoom');
+  assert.equal(wheelStart.button, '100%', 'wheel starts in Fit');
+  assert(wheelStart.scale > 0 && wheelStart.scale < 4, `Fit scale allows wheel zoom (${wheelStart.scale})`);
+  // The first zoom requests full detail. Wait for that replacement bitmap
+  // before reading a scale or sending more wheel input.
+  await t.driver.wheel(wheelPoint.x, wheelPoint.y, -50);
+  const wheelDetail = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return !s?.loading && s?.pixels[0] > 300 ? s : null;
+  }, 'first wheel loads the detailed preview', 60000);
+  const maxWheelSteps = Math.min(180, Math.ceil(Math.log(4 / wheelDetail.scale) / .04) + 4);
+  for (let i = 0; i < maxWheelSteps; i++) {
+    await t.driver.wheel(wheelPoint.x, wheelPoint.y, -50);
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    if (s?.scale >= 3.95 && !s.loading) break;
+  }
+  let previousWheelSample = null, stableWheelSamples = 0;
+  const wheelAtMax = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    if (s?.loading || s?.scale <= 3.9) return null;
+    const stable = previousWheelSample && s.pixels[0] === previousWheelSample.pixels[0]
+      && s.pixels[1] === previousWheelSample.pixels[1]
+      && Math.abs(s.scale - previousWheelSample.scale) < .01
+      && Math.abs(s.image.width - previousWheelSample.image.width) < 1;
+    previousWheelSample = s;
+    stableWheelSamples = stable ? stableWheelSamples + 1 : 0;
+    return stableWheelSamples >= 2 ? s : null;
+  }, 'wheel reaches the 4:1 cap', 15000);
+  assert(wheelAtMax.scale <= 4.02, `wheel zoom stays at or below 4:1 (${wheelAtMax.scale})`);
+  assert(wheelAtMax.image.width > wheelAtMax.viewport.width + 2 || wheelAtMax.image.height > wheelAtMax.viewport.height + 2,
+    '4:1 wheel zoom overflows the lightbox viewport');
+  const visibleLeft = Math.max(wheelAtMax.image.x, wheelAtMax.viewport.x);
+  const visibleTop = Math.max(wheelAtMax.image.y, wheelAtMax.viewport.y);
+  const visibleWidth = Math.min(wheelAtMax.image.x + wheelAtMax.image.width,
+    wheelAtMax.viewport.x + wheelAtMax.viewport.width) - visibleLeft;
+  const visibleHeight = Math.min(wheelAtMax.image.y + wheelAtMax.image.height,
+    wheelAtMax.viewport.y + wheelAtMax.viewport.height) - visibleTop;
+  const anchorPoint = { x: visibleLeft + visibleWidth * .68, y: visibleTop + visibleHeight * .52 };
+  const anchorBefore = await t.driver.observe(zoomState, anchorPoint.x, anchorPoint.y);
+  await t.driver.wheel(anchorPoint.x, anchorPoint.y, 50);
+  const wheelAfter = await until(async () => {
+    const s = await t.driver.observe(zoomState, anchorPoint.x, anchorPoint.y);
+    return s?.scale < wheelAtMax.scale - .01 && s?.scale > 3.7 ? s : null;
+  }, 'down-wheel steps out while retaining image overflow');
+  assert(Math.abs(wheelAfter.under.x - anchorBefore.under.x) < .03
+    && Math.abs(wheelAfter.under.y - anchorBefore.under.y) < .03,
+  `wheel keeps the image point under the pointer (${anchorBefore.under.x},${anchorBefore.under.y} → ${wheelAfter.under.x},${wheelAfter.under.y})`);
+  const expectedScroll = { left: wheelAfter.image.width * anchorBefore.under.x
+      - (anchorPoint.x - wheelAfter.viewport.x),
+    top: wheelAfter.image.height * anchorBefore.under.y
+      - (anchorPoint.y - wheelAfter.viewport.y) };
+  assert(Math.abs(wheelAfter.viewport.scrollLeft - expectedScroll.left) < 3
+    && Math.abs(wheelAfter.viewport.scrollTop - expectedScroll.top) < 3,
+  `viewport scroll preserves the pointer anchor without native wheel scrolling (${JSON.stringify(expectedScroll)} vs ${wheelAfter.viewport.scrollLeft},${wheelAfter.viewport.scrollTop})`);
+  const returnSteps = Math.min(180, Math.ceil(Math.log(wheelAfter.scale / wheelStart.scale) / .04) + 5);
+  let wheelFit = null;
+  for (let i = 0; i < returnSteps; i++) {
+    await t.driver.wheel(wheelPoint.x, wheelPoint.y, 50);
+    wheelFit = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    if (wheelFit?.button === '100%' && Math.abs(wheelFit.scale - wheelStart.scale) < .03) break;
+  }
+  wheelFit = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return s?.button === '100%' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
+  }, 'wheel down returns to Fit', 15000);
+  t.measure({ name: 'culling-wheel-zoom', start: wheelStart, detail: wheelDetail, max: wheelAtMax,
+    anchor: { point: anchorPoint, before: anchorBefore, after: wheelAfter }, fit: wheelFit,
+    wheelSteps: { in: maxWheelSteps, out: returnSteps } });
+  await t.evidence('culling-wheel-zoom');
+  await t.driver.keys('z');
+  const finalZ100 = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return s?.button === 'Fit' && Math.abs(s.scale - 1) < .02 ? s : null;
+  }, 'Z toggles Fit back to 100% after wheel zoom');
+  assert(Math.abs(finalZ100.scale - 1) < .02, `Z returns to 100% (${finalZ100.scale})`);
+  await t.driver.keys('z');
+  await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return s?.button === '100%' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
+  }, 'Z returns to Fit after wheel zoom');
+
   await t.driver.keys('3');
   await until(() => t.driver.observe(() => document.querySelector('.modal-backdrop[aria-label="Culling preview"] [aria-label="3 stars"]')?.getAttribute('aria-pressed') === 'true'),
     '3 rates the displayed photo');

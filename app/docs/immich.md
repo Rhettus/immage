@@ -5,7 +5,7 @@ in three ways:
 
 - **Importing** checks new photos against your Immich library and marks
   the ones it already has.
-- **Searching**, from the **Immich** card in the Library panel, finds
+- **Searching**, from the **Search photos** card in the Library panel, finds
   photos by what is in them, by people, places, tags or albums. You then
   edit them as if they were local.
 - **Exporting** can upload straight into an Immich album.
@@ -95,11 +95,12 @@ Photos outside that folder are downloaded before they open.
 
 ## Searching
 
-Once a server and key are set, the **Immich** card appears in the Library
-panel, under **Folders**.
+The **Search photos** card sits below **Folders**. After configuring an Immich
+server and key, choose **Immich** or **Local + Immich** as the source. Local
+search remains available without a server; see [Library](library.md).
 
-![The Immich card with a search, and the Filters popup open](images/immich-search.png)
-<!-- screenshot: Library panel, Immich card, Smart search "beach at sunset", the toolbar's Filters popup open with People's panel beside it, one person ticked -->
+![Immich search with the Filters popup open](images/immich-search.png)
+<!-- screenshot: Library panel, Search photos card, Smart search "sunset on a beach", the toolbar's Filters popup open with People's panel beside it, one person ticked -->
 
 - The library menu chooses what to search: **External libraries** (the
   default), **All photos**, or one library.
@@ -113,8 +114,11 @@ panel, under **Folders**.
   filter's options in the panel beside the list, then click **Search** to
   search again and show the results in the grid.
 
-Results fill the grid with Immich's thumbnails, 250 at a time, with more
-as you scroll.
+Results fill the grid, up to 250 per source page, with more as you scroll.
+Combined queries display successful sources independently and retain the other
+source’s results if one fails. The status line reports each source’s error.
+Unknown local-only filter fields exclude remote results. Exact verified mapped
+local paths merge with primary local results; virtual copies remain separate.
 
 ## Opening a result
 
@@ -175,3 +179,6 @@ the album without a second copy. See [Export](export.md).
 | **the API key lacks …: thumbnails need asset.view, downloading originals needs asset.download** | Add those permissions to the key. |
 | **the API key lacks …: give it those in Immich, or exporting may fail** | Add the export permissions (`asset.upload`, `album.read`, `album.create`, `albumAsset.create`). |
 | **no photos in Immich match the search** | Loosen the search, or set the library menu to **All photos**. |
+
+Mapped local files must stay inside the configured local folder after resolving
+symlinks. Paths that escape that folder are treated as unavailable locally.

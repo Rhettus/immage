@@ -11,6 +11,7 @@ import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
+import { SearchPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -1067,6 +1068,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
               </PrefCard>
               <CachePrefs />
+              <SearchPrefs />
               <PrefCard title={t("prefs.card.measuring")}>
                 <PrefRow id="Performance overlay" label={t("prefs.row.perfhud")} summary={t("prefs.row.perfhud.summary")}
                          hint={t("prefs.row.perfhud.hint")}>

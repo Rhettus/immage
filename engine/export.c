@@ -1337,7 +1337,8 @@ static gboolean _export_write(const dt_imgid_t imgid, JsonObject *req, const cha
       transient /*ignore_exif*/, FALSE /*display_byteorder*/, high_quality,
       FALSE /*upscale*/, FALSE /*is_scaling*/, 1.0, FALSE /*thumbnail*/, NULL /*filter*/,
       !transient /*copy_metadata*/, FALSE /*export_masks*/,
-      render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata, -1);
+      render_icc, NULL, DT_INTENT_PERCEPTUAL, NULL, NULL, 1, 1, &metadata,
+      transient && json_object_get_boolean_member_with_default(req, "analysis_original", FALSE) ? 0 : -1);
   for(GList *t = added; t; t = g_list_next(t))
     dt_tag_detach(GPOINTER_TO_UINT(t->data), imgid, FALSE, FALSE);
   g_list_free(added);

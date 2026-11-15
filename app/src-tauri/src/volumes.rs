@@ -43,6 +43,9 @@ pub fn volume(path: &str) -> Volume {
     v
 }
 
+// Mount-table-only identity for background scans: never asks a server.
+pub fn mount_identity(path: &Path) -> Option<String> { drive_of(path).map(|v|v.mount) }
+
 // how long a drive has to answer, and how long an answer is trusted for
 const DRIVE_WAIT: Duration = Duration::from_secs(3);
 const DRIVE_FRESH: Duration = Duration::from_secs(2);

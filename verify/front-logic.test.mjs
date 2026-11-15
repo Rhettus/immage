@@ -276,6 +276,22 @@ test('passes: dates and exposure', () => {
   assert.ok(!F.passes(i, f({ iso: ['800'] })));
   assert.ok(!F.passes(img({ exif: { iso: 0 } }), f({ iso: ['0'] })));
 });
+test('passesSearch reacts to current rating, label and reject metadata', () => {
+  const i = img({ rating: 4, labels: 1, rejected: false });
+  const threeStars = f({ minRating: 3 });
+  assert.ok(F.passesSearch(i, threeStars), 'a four-star result meets the selected threshold');
+  assert.ok(!F.passesSearch({ ...i, rating: 2 }, threeStars), 'a re-rated result below the threshold disappears');
+  assert.ok(!F.passesSearch({ ...i, labels: 0 }, f({ labels: 1 })), 'removing the selected label hides the result');
+  assert.ok(!F.passesSearch({ ...i, rejected: true }, f({ rejected: 'hide' })), 'rejecting the result hides it when rejects are hidden');
+  assert.ok(F.passesSearch({ ...i, rejected: true }, f({ rejected: 'only' })), 'a rejected result appears when only rejects are shown');
+});
+test('passesSearch uses capture time only, never the file modification fallback', () => {
+  const modifiedOnly = img({ exif: { datetime: '', file_datetime: '2024:03:05 01:00:00' } });
+  assert.ok(!F.passesSearch(modifiedOnly, f({ takenFrom: '2024-03-05' })));
+  const precise = img({ exif: { datetime: '2024:03:05 14:07:09', capture_time_raw: '2024:03:05 14:07:09.123456789', file_datetime: '2030:01:01 00:00:00' } });
+  assert.ok(F.passesSearch(precise, f({ takenFrom: '2024-03-05', takenTo: '2024-03-05' })));
+  assert.ok(!F.passesSearch(precise, f({ takenFrom: '2030-01-01' })));
+});
 test('exposureLabel, popupCount, needsRead, bodyLabel', () => {
   assert.equal(F.exposureLabel('iso', 0), ''); assert.equal(F.exposureLabel('aperture', 2.79), 'f/2.8');
   assert.equal(F.exposureLabel('aperture', 4), 'f/4'); assert.equal(F.exposureLabel('focal', 24.4), '24 mm');

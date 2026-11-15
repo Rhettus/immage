@@ -11,6 +11,9 @@ import type { Exif, ImageEntry } from "./library";
 import { settings } from "./settings";
 
 export type ImmichSearch = {
+  source: "local" | "immich" | "both";
+  scope: "folder" | "library";
+  subject: "original" | "edited";
   mode: "smart" | "filename";
   text: string;
   library: string;            // "external", "all" or a library id
@@ -25,6 +28,7 @@ export type ImmichSearch = {
 };
 
 export const NO_SEARCH: ImmichSearch = {
+  source: "local", scope: "library", subject: "original",
   mode: "smart", text: "", library: "external", takenFrom: "", takenTo: "", minRating: 0, favorites: false,
   rawOnly: false, make: "", model: "", lens: "", country: "", city: "", personIds: [], tagIds: [], albumIds: [],
 };
@@ -37,7 +41,10 @@ export const immichFilterCount = (s: ImmichSearch) =>
 
 const SEARCH_KEY = "immage.immichSearch";
 export function loadSearch(): ImmichSearch {
-  try { return { ...NO_SEARCH, ...JSON.parse(settings.get(SEARCH_KEY) ?? "{}") }; } catch { return NO_SEARCH; }
+  try {
+    const saved = JSON.parse(settings.get(SEARCH_KEY) ?? "null");
+    return saved ? { ...NO_SEARCH, source: "immich", ...saved } : { ...NO_SEARCH };
+  } catch { return { ...NO_SEARCH }; }
 }
 export function storeSearch(s: ImmichSearch) {
   try { settings.set(SEARCH_KEY, JSON.stringify(s)); } catch { /* not kept */ }
@@ -101,13 +108,17 @@ function entry(a: Asset): ImageEntry {
   };
 }
 
-export async function search(s: ImmichSearch, next: string | null): Promise<Page> {
-  const args = {
-    ...s, takenFrom: s.takenFrom || null, takenTo: s.takenTo || null, minRating: s.minRating || null,
+export function nativeSearchArgs(s: ImmichSearch, next: string | null) {
+  return {
+    mode: s.mode, text: s.text, library: s.library, favorites: s.favorites, rawOnly: s.rawOnly,
+    personIds: s.personIds, tagIds: s.tagIds, albumIds: s.albumIds,
+    takenFrom: s.takenFrom || null, takenTo: s.takenTo || null, minRating: s.minRating || null,
     make: s.make || null, model: s.model || null, lens: s.lens || null, country: s.country || null,
     city: s.city || null, next, size: 250,
   };
-  const r = await commands.immichSearch(args, await pathMap());
+}
+export async function search(s: ImmichSearch, next: string | null): Promise<Page> {
+  const r = await commands.immichSearch(nativeSearchArgs(s, next), await pathMap());
   return { entries: r.items.map(entry), next: r.next };
 }
 

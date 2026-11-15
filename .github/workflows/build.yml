@@ -130,6 +130,11 @@ jobs:
             verify/settings-store.test.mjs \
             verify/startup-restore.test.mjs \
             verify/theme.test.mjs \
+            verify/search-identity.test.mjs \
+            verify/search-query-lifecycle.test.mjs \
+            verify/combined-search.test.mjs \
+            verify/local-search-ui.test.mjs \
+            verify/search-prefs.test.mjs \
             verify/typed-commands.test.mjs \
             verify/ui-updates.test.mjs \
             verify/upgrade-paths.test.mjs

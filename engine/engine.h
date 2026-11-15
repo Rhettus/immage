@@ -317,6 +317,9 @@ void engine_background_yield(void);
 void engine_background_priority(void);
 double engine_ms_since(const gint64 t0);
 void engine_reply(FILE *out, JsonBuilder *b);
+void clip_start(FILE *out);
+void clip_queue(JsonParser *parser);
+void clip_wait(void);
 void engine_add_string(JsonBuilder *b, const char *name, const char *value);
 void engine_add_double(JsonBuilder *b, const char *name, const double value);
 void engine_add_int(JsonBuilder *b, const char *name, const gint64 value);
@@ -495,6 +498,7 @@ void library_import_run(gpointer data, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
 void library_import_wait(void);
 gboolean library_import_metadata_pending(void);
+gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err);
 gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err);
 extern GThreadPool *library_thumb_pool;

@@ -60,6 +60,7 @@ import { photoFilter } from './specs/photo-filter.mjs';
 import { startupRestore } from './specs/startup-restore.mjs';
 import { dngThumbnail } from './specs/dng-thumbnail.mjs';
 import { libraryWorkers } from './specs/library-workers.mjs';
+import { localSearch } from './specs/local-search.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -71,6 +72,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'startup-restore': startupRestore,
   'dng-thumbnail': dngThumbnail,
   'library-workers': libraryWorkers,
+  'local-search': localSearch,
   'move-photos': movePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,

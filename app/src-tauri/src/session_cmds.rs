@@ -15,7 +15,13 @@ use crate::frame_output;
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
+    // Engine::Link invalidates the previous active photo as part of open.
+    // Keep its identity now and refresh it asynchronously after that succeeds.
+    let previous = state.tagged.active_photo();
     let reply = state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
+    if let Some(photo) = previous {
+        crate::library_cmds::queue_search_metadata_refresh(&state, photo);
+    }
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 
@@ -412,7 +418,11 @@ pub(crate) async fn cancel_base(state: State<'_, AppState>) -> Result<(), String
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn save(state: State<'_, AppState>) -> Result<SaveReply, String> {
+    let active = state.tagged.active_photo();
     let reply = state.engine("save").request(json!({ "cmd": "save" }))?;
+    if let Some(photo) = active {
+        crate::library_cmds::queue_search_metadata_refresh(&state, photo);
+    }
     serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))
 }
 
