@@ -359,7 +359,7 @@ pub(crate) fn queue_search_metadata_refresh(state: &AppState, photo: crate::libr
     let tagged = state.tagged.clone();
     let path = photo.path.clone();
     let version = photo.version;
-    if !state.analysis_queue.submit_foreground(key, move |job| {
+    if !state.analysis_queue.submit(key, move |job| {
         if job.cancelled() { return }
         let handle = tagged.cached_photo(&path, version);
         let reply = match tagged.request(tagged.tag(), json!({ "cmd": "meta", "imgid": handle })) {

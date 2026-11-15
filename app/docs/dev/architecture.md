@@ -1360,8 +1360,9 @@ they do not measure model inference, cold filesystem I/O or full folder loading.
 Schema 6 invalidates old metadata JSON once to acquire richer capture fields,
 while retaining cache IDs and reusable visual embeddings.
 
-Saved-edit and previous-photo metadata refreshes use the same bounded scheduler
-independently of optional models. Queue keys include each invalidation fingerprint,
+Saved-edit and previous-photo metadata refreshes use background scheduler slots
+independently of optional models, preserving the reserved foreground query slot
+and respecting Pause. Queue keys include each invalidation fingerprint,
 so a post-open refresh is not suppressed by an older save job. Snapshot validation,
 filesystem stamps and JSON preparation happen outside `Job::commit`; only the
 SQLite compare-and-swap runs inside its publication guard. Tagged `meta` uses the

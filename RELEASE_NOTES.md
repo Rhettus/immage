@@ -55,6 +55,7 @@ Bug fixes
 - Saved edits, ratings, labels, keywords and capture-time changes refresh local
   search without reopening folders or installing a model. Switching photos queues
   metadata refresh without delaying the new photo; active filters update with edits.
+  Queued refreshes respect Pause and preserve the foreground search worker.
 - Loading more search results preserves opened photo handles and metadata edits
   already displayed in the grid.
 - Background analysis skips removed and excluded library folders, including

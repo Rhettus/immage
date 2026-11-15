@@ -134,7 +134,8 @@ refresh cached search metadata without a folder reload or optional model.
 Local queries wait for pending rating saves, while Immich queries can start
 independently. Saved editing changes and switching photos queue bounded metadata
 refreshes even without an optional model; opening the next photo does not wait
-for the previous photo’s metadata read. Active grid filters update immediately
+for the previous photo’s metadata read. These queued refreshes wait while
+background work is paused. Active grid filters update immediately
 when metadata changes. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
