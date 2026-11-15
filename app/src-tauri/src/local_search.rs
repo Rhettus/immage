@@ -255,7 +255,7 @@ pub fn retrieve(
                 continue;
             };
             if image.path != row.path
-                || row.copy_key.parse::<u32>().ok() != Some(image.version)
+                || (if row.copy_key.is_empty() { Some(0) } else { row.copy_key.strip_prefix("version:").and_then(|s|s.parse::<u32>().ok()) }) != Some(image.version)
                 || Path::new(&image.path).file_name().and_then(|p| p.to_str())
                     != Some(image.filename.as_str())
                 || !search_filters::passes(
@@ -359,7 +359,7 @@ mod tests {
         let variant = cache
             .upsert_variant(
                 &path.to_string_lossy(),
-                &version.to_string(),
+                &(if version==0 { String::new() } else { format!("version:{version}") }),
                 "source",
                 &edit,
                 None,
@@ -516,7 +516,7 @@ mod tests {
             .iter()
             .all(|i| i.asset_id != f.a.asset_id.to_string()));
         f.cache
-            .invalidate_edited(&f.roots[0].join("a.jpg").to_string_lossy(), "0")
+            .invalidate_edited(&f.roots[0].join("a.jpg").to_string_lossy(), "")
             .unwrap();
         assert!(run(&f, &args).err().unwrap().contains("no current"));
     }
@@ -537,7 +537,7 @@ mod tests {
         assert!(run(&f, &args).is_err());
         args.text = "cat".into();
         f.cache
-            .invalidate_edited(&f.roots[0].join("b.jpg").to_string_lossy(), "0")
+            .invalidate_edited(&f.roots[0].join("b.jpg").to_string_lossy(), "")
             .unwrap();
         assert!(run(&f, &args).is_err());
     }
@@ -619,7 +619,7 @@ mod tests {
             calls.set(calls.get() + 1);
             if calls.get() == 2 {
                 f.cache
-                    .invalidate_edited(&f.roots[0].join("b.jpg").to_string_lossy(), "0")
+                    .invalidate_edited(&f.roots[0].join("b.jpg").to_string_lossy(), "")
                     .unwrap();
             }
             false
@@ -710,7 +710,7 @@ mod tests {
         f.cache
             .upsert_variant(
                 &path.to_string_lossy(),
-                "0",
+                "",
                 "source",
                 "edit-0",
                 None,

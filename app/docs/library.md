@@ -129,7 +129,8 @@ local file contents. Unmapped or differently spelled paths stay separate.
 Search retains active filters. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
-Local search uses only cached metadata and current model-versioned analysis.
+Local search includes cached originals and virtual copies, using only current
+metadata and model-versioned analysis.
 Selected filters exclude unknown values; capture-date filters do not substitute
 file modification dates. Capture metadata retains the source’s fractional digits
 and UTC offset when recorded. Dates adjusted in Immage take precedence; an
