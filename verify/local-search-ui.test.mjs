@@ -9,6 +9,8 @@ const {transformSync}=await import(require.resolve('rolldown/experimental'));
 const root=new URL('../app/src/',import.meta.url);
 const files=['immich.ts','localSearch.ts','ImmichPanel.tsx'].map(f=>new URL(f,root).href);
 const data=s=>'data:text/javascript,'+encodeURIComponent(s);
+const en=JSON.parse(readFileSync(new URL('../app/src/locales/en.json',import.meta.url),'utf8'));
+const i18nMock=`const d=${JSON.stringify(en)};export const t=(k,v)=>Object.entries(v||{}).reduce((s,[n,x])=>s.replaceAll('{'+n+'}',String(x)),d[k]??k);`;
 const mocks={
  './commands':'export const commands=new Proxy({}, {get:(_,k)=>(...a)=>globalThis.__searchUI.commands[k](...a)});',
  './settings':'export const settings={get:()=>null,set:()=>{}};',
@@ -16,6 +18,7 @@ const mocks={
  '@immporter/api':'export const api={};',
  react:'export const useState=v=>[v,()=>{}];export const useEffect=f=>globalThis.__searchUI.effects.push(f);',
  './Collapse':'export const Chevron="chevron",Collapse="collapse";',
+ './i18n':i18nMock,
 };
 registerHooks({resolve(s,c,next){if(files.includes(c.parentURL)){if(mocks[s])return{url:data(mocks[s]),shortCircuit:true};if(s==='./immich')return{url:files[0],shortCircuit:true};}return next(s,c);},load(u,c,next){if(!files.includes(u))return next(u,c);return{format:'module',source:transformSync(fileURLToPath(u),readFileSync(fileURLToPath(u),'utf8'),{jsx:{runtime:'automatic'}}).code,shortCircuit:true};}});
 const {NO_SEARCH,nativeSearchArgs}=await import(files[0]);

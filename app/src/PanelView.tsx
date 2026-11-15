@@ -48,7 +48,7 @@ export function WBTools({ values, asShot, picking, disabled, onPick, onAuto, onP
     <div className="wb-tools">
       <button className={`tool${picking ? " on" : ""}`} disabled={disabled} onClick={onPick}
               title={t("fields.wb.pickHint")}><PipetteIcon /></button>
-      <span className="wb-label">WB</span>
+      <span className="wb-label">{t("fields.wb.short")}</span>
       <select value={current} disabled={disabled}
               onChange={(e) => {
                 const name = e.target.value;
@@ -353,7 +353,7 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
           )}
           {p.presets && (
             <PresetRow presets={p.presets} disabled={disabled} onApply={onChangeMany} onPreview={onPreview}
-                       before={onAuto && <button className="btn small" disabled={disabled} onClick={onAuto}>Auto</button>} />
+                       before={onAuto && <button className="btn small" disabled={disabled} onClick={onAuto}>{fieldText("Auto")}</button>} />
           )}
           {!showWheels && !pointMode && sectionRuns(sections).map((run) => {
             const content = (s: Section) => (

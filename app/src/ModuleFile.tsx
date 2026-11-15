@@ -59,7 +59,7 @@ export function ModuleFile({ kind, label, priority, value, disabled, photo, onCh
                 onChange={(e) => onChange(Number(e.target.value))}>
           {!chosen && <option value={0} />}
           {files.map((f) => <option key={f.hash ?? f.path} value={f.hash ?? 0}>{f.path}</option>)}
-          {gone && <option value={lut?.current_hash ?? 0}>{`INVALID >> ${lut?.current}`}</option>}
+          {gone && <option value={lut?.current_hash ?? 0}>{`${t("fields.moduleFile.invalid")} >> ${lut?.current}`}</option>}
         </select>
         {problem && <div className="note module-file-note">{problem}</div>}
       </div>

@@ -220,10 +220,10 @@ const monthSpan = (ym: string): Span => {
 // counted back from today, which they include; open at the end, so a
 // photo taken since still shows
 function recent(): Span[] {
-  const t = new Date(), y = t.getFullYear(), m = t.getMonth();
-  const ago = (days: number) => ymd(new Date(y, m, t.getDate() - days));
+  const today = new Date(), y = today.getFullYear(), m = today.getMonth();
+  const ago = (days: number) => ymd(new Date(y, m, today.getDate() - days));
   return [
-    { label: t("library.filters.today"), from: ymd(t), to: "" },
+    { label: t("library.filters.today"), from: ymd(today), to: "" },
     { label: t("library.filters.lastDays", { count: 7 }), from: ago(6), to: "" },
     { label: t("library.filters.lastDays", { count: 30 }), from: ago(29), to: "" },
     { label: t("library.filters.lastDays", { count: 90 }), from: ago(89), to: "" },
@@ -257,7 +257,7 @@ function Captured({ from, to, months, onChange }: {
   const year = from && from.slice(0, 4) === to.slice(0, 4) ? from.slice(0, 4) : null;
   const inYear: [string, number | null][] = !year ? []
     : months ? months.filter(([ym]) => ym.startsWith(year))
-    : MONTHS.map((_, k) => [`${year}-${pad(k + 1)}`, null]);
+    : Array.from({ length: 12 }, (_, k) => [`${year}-${pad(k + 1)}`, null]);
   const row = (s: Span, n: number | null, indent = false) => (
     <button key={s.label} className={`${same(s, from, to) ? "on" : ""}${indent ? " indent" : ""}`}
             onClick={() => (same(s, from, to) ? onChange("", "") : onChange(s.from, s.to))}>

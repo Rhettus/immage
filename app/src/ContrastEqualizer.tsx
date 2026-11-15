@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { EQ_CHANNELS, EQ_IDS, type Values } from "./manifest";
 import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 // the graph's 260×140 plot, with room round it for a point's handle: a
 // point at either end, or at the top or bottom, was drawn half outside the
 // box, cut in half, and the last one hard to hit
@@ -57,7 +58,7 @@ export function ContrastEqualizer({ values, disabled, onChange, module, heading 
       <line x1="0" x2="260" y1={(1 - neutral) * 140} y2={(1 - neutral) * 140} className="eq-neutral" />
       <path d={curve} />
       {bands.map((y, k) => <circle key={k} cx={k * 52} cy={(1 - y) * 140} r="4" role="slider"
-        tabIndex={disabled ? -1 : 0} aria-label={`${EQ_CHANNELS[channel]} band ${k + 1}`}
+        tabIndex={disabled ? -1 : 0} aria-label={t("fields.equalizer.band", { channel: fieldText(EQ_CHANNELS[channel]), band: k + 1 })}
         aria-valuemin={0} aria-valuemax={1} aria-valuenow={y} aria-disabled={disabled}
         onKeyDown={(e) => {
           if (disabled || !["ArrowUp", "ArrowDown", "Home"].includes(e.key)) return;

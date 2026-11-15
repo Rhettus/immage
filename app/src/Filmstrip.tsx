@@ -251,7 +251,7 @@ export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open,
          onDoubleClick={() => { if (doubleOpens) open.current!(i, true); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
-        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>

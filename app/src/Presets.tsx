@@ -12,6 +12,7 @@ import { blacksFromLinear, controlById, panels, type Values } from "./manifest";
 import { commands, type Value } from "./commands";
 import type { Frame } from "./session";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 // rawOnly: applied to raw files only, as Lightroom's import defaults are
 export type Preset = { id: string; name: string; group: string; values: Values; builtin?: boolean;
@@ -320,7 +321,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
       {amount && (
         <div className="preset-amount">
           <div className="row">
-            <span className="label">Amount <b>{amount.name}</b></span>
+          <span className="label">{t("dialogs.presets.amount")} <b>{amount.name}</b></span>
             <span className="value">{Math.round(amount.value)}%</span>
           </div>
           <input type="range" min={0} max={200} step={1} value={amount.value}
@@ -329,21 +330,21 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
         </div>
       )}
       <div className="preset-tools" onMouseLeave={() => setArming(false)}>
-        <button className="tool" disabled={disabled} title="new preset from the settings as they are now"
+        <button className="tool" disabled={disabled} title={t("dialogs.presets.newFromCurrent")}
                 onClick={onCreate}><Plus className="icon" strokeWidth={1.8} /></button>
         <button className="tool" disabled={disabled || pick?.kind !== "preset" || pick.p.builtin}
-                title={pick?.kind === "preset" && !pick.p.builtin ? `update “${pickName}” with the current settings`
-                                                                  : "update the chosen preset with the current settings"}
+                title={pick?.kind === "preset" && !pick.p.builtin ? t("dialogs.presets.updateNamed", { name: pickName })
+                                                                  : t("dialogs.presets.updateChosen")}
                 onClick={() => pick?.kind === "preset" && onUpdate(pick.p)}><Save className="icon" strokeWidth={1.8} /></button>
-        <button className="tool" title="import presets (.json) or darktable styles as looks (.dtstyle) from files"
+        <button className="tool" title={t("dialogs.presets.importHint")}
                 onClick={onImport}><FileDown className="icon" strokeWidth={1.8} /></button>
         <button className="tool" disabled={!pick}
-                title={pick ? `save “${pickName}” as a file to share` : "export the chosen preset or look to a file"}
+                title={pick ? t("dialogs.presets.shareNamed", { name: pickName }) : t("dialogs.presets.exportChosen")}
                 onClick={() => pick && (pick.kind === "preset" ? onExportPreset(pick.p) : onExportLook(pick.l))}>
           <Share className="icon" strokeWidth={1.8} /></button>
         <button className={`tool delete${arming ? " armed" : ""}`} disabled={!pickMine}
-                title={!pickMine ? "delete the chosen preset or look" : arming ? `click again to delete “${pickName}”`
-                                                                                : `delete “${pickName}”`}
+                title={!pickMine ? t("dialogs.presets.deleteChosen") : arming ? t("dialogs.presets.confirmDeleteNamed", { name: pickName })
+                                                                                : t("dialogs.presets.deleteNamed", { name: pickName })}
                 onClick={() => {
                   if (!pick || !pickMine) return;
                   if (!arming) { setArming(true); return; }
@@ -354,15 +355,15 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
       </div>
       <div className="presets-head">
         <span className="look-chip">
-          Look: <b>{look ?? "none"}</b>
-          {look && <button title="take the look off" disabled={disabled} onClick={() => onLook(null)}>×</button>}
+          {t("dialogs.presets.look")}: <b>{look ?? t("dialogs.presets.none")}</b>
+          {look && <button title={t("dialogs.presets.removeLook")} disabled={disabled} onClick={() => onLook(null)}>×</button>}
         </span>
       </div>
 
       {look && (
         <div className="preset-amount">
           <div className="row">
-            <span className="label">Look amount</span>
+            <span className="label">{t("dialogs.presets.lookAmount")}</span>
             <span className="value">{Math.round(lookAmount)}%</span>
           </div>
           <input type="range" min={0} max={100} step={1} value={lookAmount} disabled={disabled}
@@ -417,40 +418,40 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
                                }} />
                       ) : <span className="tile-name">{name}</span>}
                       {it.kind === "preset" && newPhotos === it.p.id && (
-                        <span className="tile-badge" title="applied to new photos">new photos</span>
+                        <span className="tile-badge" title={t("dialogs.presets.appliedToNewPhotos")}>{t("dialogs.presets.newPhotos")}</span>
                       )}
                       {(it.kind === "look" || !it.p.builtin) && renaming !== key && (
-                        <button className="more" title={it.kind === "look" ? (it.l.user ? "export or delete" : "export")
-                                                                             : "rename, update, export or delete"}
+                        <button className="more" title={it.kind === "look" ? (it.l.user ? t("dialogs.presets.exportOrDelete") : t("dialogs.presets.export"))
+                                                                             : t("dialogs.presets.renameUpdateExportDelete")}
                                 onClick={(e) => { e.stopPropagation(); setMenu(menu === key ? null : key); setConfirming(null); }}>⋯</button>
                       )}
                       {menu === key && it.kind === "preset" && (
                         <div className="tile-menu" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => { setMenu(null); setRenaming(key); }}>Rename</button>
-                          <button title="apply it the first time a photo with no edit is opened"
+                          <button onClick={() => { setMenu(null); setRenaming(key); }}>{t("dialogs.presets.rename")}</button>
+                          <button title={t("dialogs.presets.applyNewPhotoHint")}
                                   onClick={() => { setMenu(null); onNewPhotos(newPhotos === it.p.id ? null : it.p.id); }}>
-                            {newPhotos === it.p.id ? "Stop applying to new photos" : "Apply to new photos"}</button>
-                          <button title="replace its settings with the photo's current ones"
-                                  onClick={() => { setMenu(null); onUpdate(it.p); }}>Update with current settings</button>
-                          <button title="save it as a file to share"
-                                  onClick={() => { setMenu(null); onExportPreset(it.p); }}>Export…</button>
+                            {newPhotos === it.p.id ? t("dialogs.presets.stopApplyingNewPhotos") : t("dialogs.presets.applyNewPhotos")}</button>
+                          <button title={t("dialogs.presets.replaceWithCurrentHint")}
+                                  onClick={() => { setMenu(null); onUpdate(it.p); }}>{t("dialogs.presets.updateCurrent")}</button>
+                          <button title={t("dialogs.presets.saveToShareHint")}
+                                  onClick={() => { setMenu(null); onExportPreset(it.p); }}>{t("dialogs.presets.export")}</button>
                           <button className={confirming === key ? "danger" : ""}
                                   onClick={() => {
                                     if (confirming === key) { setMenu(null); setConfirming(null); onDelete(it.p); }
                                     else setConfirming(key);
-                                  }}>{confirming === key ? "Delete: are you sure?" : "Delete"}</button>
+                                  }}>{confirming === key ? t("dialogs.presets.deleteConfirm") : t("dialogs.presets.delete")}</button>
                         </div>
                       )}
                       {menu === key && it.kind === "look" && (
                         <div className="tile-menu" onClick={(e) => e.stopPropagation()}>
-                          <button title="save its darktable style as a file to share"
-                                  onClick={() => { setMenu(null); onExportLook(it.l); }}>Export…</button>
+                          <button title={t("dialogs.presets.exportLookHint")}
+                                  onClick={() => { setMenu(null); onExportLook(it.l); }}>{t("dialogs.presets.export")}</button>
                           {it.l.user && (
                             <button className={confirming === key ? "danger" : ""}
                                     onClick={() => {
                                       if (confirming === key) { setMenu(null); setConfirming(null); onDeleteLook(it.l); }
                                       else setConfirming(key);
-                                    }}>{confirming === key ? "Delete: are you sure?" : "Delete"}</button>
+                                    }}>{confirming === key ? t("dialogs.presets.deleteConfirm") : t("dialogs.presets.delete")}</button>
                           )}
                         </div>
                       )}
@@ -496,18 +497,18 @@ export function NewPresetDialog({ values, groups, forNewPhotos = false, onSave, 
         if (e.key === "Escape") onClose();
         if (e.key === "Enter" && ok) save();
       }}>
-        <div className="modal-head"><h2>New Preset</h2></div>
+        <div className="modal-head"><h2>{t("dialogs.presets.newTitle")}</h2></div>
         <div className="modal-body">
           <div className="row">
-            <span className="k">Name</span>
+            <span className="k">{t("dialogs.presets.name")}</span>
             <input ref={nameRef} className="field" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="row">
-            <span className="k">Group</span>
+            <span className="k">{t("dialogs.presets.group")}</span>
             <input className="field" list="preset-groups" value={group} onChange={(e) => setGroup(e.target.value)} />
             <datalist id="preset-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
           </div>
-          <h3>Settings</h3>
+          <h3>{t("dialogs.presets.settings")}</h3>
           <div className="preset-parts">
             {PARTS.map((p) => (
               <label key={p.id} className="row check">
@@ -521,17 +522,17 @@ export function NewPresetDialog({ values, groups, forNewPhotos = false, onSave, 
             ))}
           </div>
           <div className="row">
-            <button className="btn small" onClick={() => setOn(new Set(PARTS.map((p) => p.id)))}>Check All</button>
-            <button className="btn small" onClick={() => setOn(new Set())}>Check None</button>
+            <button className="btn small" onClick={() => setOn(new Set(PARTS.map((p) => p.id)))}>{t("dialogs.presets.checkAll")}</button>
+            <button className="btn small" onClick={() => setOn(new Set())}>{t("dialogs.presets.checkNone")}</button>
           </div>
-          <label className="row check" title="apply it the first time a photo with no edit is opened (Preferences)">
+          <label className="row check" title={t("dialogs.presets.applyNewPhotoHint")}>
             <input type="checkbox" checked={forNew} onChange={(e) => setForNew(e.target.checked)} />
-            Use for new photos
+            {t("dialogs.presets.useForNewPhotos")}
           </label>
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!ok} onClick={save}>Create</button>
+          <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
+          <button className="btn primary" disabled={!ok} onClick={save}>{t("dialogs.presets.create")}</button>
         </div>
       </div>
     </div>

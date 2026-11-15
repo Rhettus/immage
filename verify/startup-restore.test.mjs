@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
+const en = JSON.parse(readFileSync(new URL('../app/src/locales/en.json', import.meta.url), 'utf8'));
+const t = (key, vars) => (en[key] ?? key).replace(/\{(\w+)\}/g, (match, name) =>
+  Object.hasOwn(vars ?? {}, name) ? String(vars[name]) : match);
 const source = readFileSync(new URL('../app/src/App.tsx', import.meta.url), 'utf8');
 const start = source.indexOf('  const restoreLast = async');
 const end = source.indexOf('  // the grid or the editor', start);
@@ -12,11 +15,11 @@ const { code } = transformSync('restore.ts', source.slice(start, end));
 const create = new Function('env', `with (env) { ${code}; return restoreLast; }`);
 const photo = { path: '/photos/a.raw', imgid: 7, version: 0 };
 function fixture({ entries = [photo], fails = false, missingFolder = false } = {}) {
-  const views = [], opened = [], folders = [];
+  const views = [], opened = [], folders = [], statuses = [];
   let ready;
   const env = {
     autoGrid: { current: false }, currentRef: { current: null }, shownGen: { current: 0 },
-    setGrid: value => views.push(value), setStatus() {},
+    setGrid: value => views.push(value), setStatus: value => statuses.push(value), t,
     isOpen: (entry, current) => entry.imgid === current?.imgid,
     async showFolder(dir, _again, seen) {
       folders.push(dir);
@@ -33,7 +36,7 @@ function fixture({ entries = [photo], fails = false, missingFolder = false } = {
     },
   };
   const lib = { current: '/photos', folders: ['/photos'], image: photo.path, grid: false };
-  return { env, views, opened, folders, lib, run: create(env), frame: () => ready?.() };
+  return { env, views, opened, folders, statuses, lib, run: create(env), frame: () => ready?.() };
 }
 test('startup keeps browsing until the restored photo has a frame', async () => {
   const f = fixture();
@@ -76,4 +79,5 @@ test('an unavailable folder falls back to a recent folder in grid mode', async (
   assert.deepEqual(f.folders, ['/photos', '/recent']);
   assert.deepEqual(f.views, [true]);
   assert.deepEqual(f.opened, []);
+  assert.deepEqual(f.statuses, ['could not read /photos; showing /recent']);
 });

@@ -152,7 +152,7 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
                onPointerLeave={() => setHolding(false)}>
             <canvas ref={view} />
             {(busy || error) && (
-              <div className={`denoise-state${error ? " error" : ""}`}>{error ?? "previewing…"}</div>
+              <div className={`denoise-state${error ? " error" : ""}`}>{error ?? t("dialogs.denoise.previewing")}</div>
             )}
             {holding && piece && <div className="denoise-tag">{t("dialogs.common.before")}</div>}
           </div>
@@ -188,10 +188,7 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
                      onChange={(e) => setAmount(Number(e.target.value))} />
               <span className="num">{amount}</span>
             </div>
-            <p className="note-plain">
-              darktable's raw denoise writes a new DNG beside the raw, with this photo's edit and noise
-              reduction off, and opens it. it takes up to a minute
-            </p>
+            <p className="note-plain">{t("dialogs.denoise.rawExplanation")}</p>
           </div>
         </div>
         <div className="modal-foot">

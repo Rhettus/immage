@@ -183,7 +183,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
         const host = v?.host ? hostNames[v.host] || v.host : null;
         return (
           <li key={`drive:${mount}`}>
-            <div className="folder-volume" title={v?.host ? `${mount}\non ${host}${host !== v.host ? ` (${v.host})` : ""}` : mount}
+            <div className="folder-volume" title={v?.host ? `${mount}\n${t("fields.drive.onHost", { host })}${host !== v.host ? ` (${v.host})` : ""}` : mount}
                  onClick={() => onFold(mount)}>
               <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
               {v?.network ? networkIcon : driveIcon}

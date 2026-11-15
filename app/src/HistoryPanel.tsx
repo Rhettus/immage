@@ -152,7 +152,7 @@ export function HistoryPanel({ base, steps, at, onGo, onCompress, onTruncate, on
                       disabled={disabled || n === null} onClick={() => n !== null && onGo(n)}
                       title={off ? t("fields.history.off") : undefined}>
                 <span className="num">{num}</span>
-                <span className="name">{fieldText(name)}{note && <span className="note"> • {fieldText(note)}</span>}</span>
+                <span className="name">{fieldText(name)}{note && <span className="note"> • {note}</span>}</span>
                 {off && <span className="off">{t("fields.history.off")}</span>}
               </button>
               {action && (

@@ -8,10 +8,13 @@ const require=createRequire(new URL('../app/package.json',import.meta.url));
 const {transformSync}=await import(require.resolve('rolldown/experimental'));
 const source=new URL('../app/src/SearchPrefs.tsx',import.meta.url).href;
 const data=s=>'data:text/javascript,'+encodeURIComponent(s);
+const en=JSON.parse(readFileSync(new URL('../app/src/locales/en.json',import.meta.url),'utf8'));
+const i18nMock=data(`const d=${JSON.stringify(en)};export const t=(k,v)=>Object.entries(v||{}).reduce((s,[n,x])=>s.replaceAll('{'+n+'}',String(x)),d[k]??k);`);
 registerHooks({
  resolve(spec,ctx,next){
   if(ctx.parentURL===source){
    if(spec==='react')return {url:data('export const useState=(v)=>globalThis.__searchPrefs.state(v);export const useEffect=(f)=>globalThis.__searchPrefs.effect(f);'),shortCircuit:true};
+   if(spec==='./i18n')return {url:i18nMock,shortCircuit:true};
    if(spec==='./commands')return {url:data('export const commands=new Proxy({}, {get:(_,key)=>(...args)=>globalThis.__searchPrefs.commands[key](...args)});'),shortCircuit:true};
    if(spec==='./PrefsUI')return {url:data('export const PrefCard="card",PrefRow="row";'),shortCircuit:true};
   }

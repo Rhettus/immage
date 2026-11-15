@@ -53,8 +53,8 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
       <section>
         <h3>{t("dialogs.print.softProofing")}</h3>
         <label className={`toggle${disabled || !managed ? " disabled" : ""}`}
-               title={managed ? "show the photo as the printer profile can print it (S)"
-                              : "choose a printer profile under Color Management to proof against"}>
+               title={managed ? t("dialogs.print.softProofHint")
+                              : t("dialogs.print.chooseProofProfileHint")}>
           <span>{t("dialogs.print.softProof")}</span>
           <input type="checkbox" className="switch" data-action="print-softproof" checked={proof.mode !== "off"}
                  disabled={disabled || !managed} onChange={(e) => onProof(e.target.checked ? "proof" : "off")} />
@@ -67,8 +67,9 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
                  onChange={(e) => onProof(e.target.checked ? "gamut" : "proof")} />
         </label>
         {proof.mode !== "off" && profileName && (
-          <p className="note-plain">Proofing for {profileName}, {s.intent ? "relative colorimetric" : "perceptual"}.
-            The proof stays on in the other panels until you turn it off.</p>
+          <p className="note-plain">{t("dialogs.print.proofingFor", {
+            profile: profileName, intent: s.intent ? t("dialogs.print.relativeColorimetric") : t("dialogs.print.perceptual"),
+          })} {t("dialogs.print.proofingPersists")}</p>
         )}
       </section>
 
@@ -118,7 +119,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
           <div className="segmented small">
             {(["auto", "portrait", "landscape"] as const).map((o) => (
               <button key={o} className={s.orientation === o ? "active" : ""} disabled={busy}
-                      onClick={() => set({ orientation: o })}>{o[0].toUpperCase() + o.slice(1)}</button>
+                      onClick={() => set({ orientation: o })}>{t(`dialogs.print.orientation.${o}`)}</button>
             ))}
           </div>
         </div>
@@ -127,28 +128,26 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
       <section>
         <h3>{t("dialogs.print.layout")}</h3>
         <div className="segmented print-layout">
-          {([["single", "Single Photo"], ["cells", "Cells"]] as [PrintLayout, string][]).map(([k, label]) => (
+          {([["single", t("dialogs.print.singlePhoto")], ["cells", t("dialogs.print.cells")]] as [PrintLayout, string][]).map(([k, label]) => (
             <button key={k} className={s.layout === k ? "active" : ""} data-action={`print-layout-${k}`} disabled={busy}
                     onClick={() => set({ layout: k })}>{label}</button>
           ))}
         </div>
         {l && (
           <p className="note-plain print-size">
-            {l.fits ? <>Prints {shown(l.image.width, s.unit)} × {shown(l.image.height, s.unit)} at {dpi} dpi
-              {ppi > 0 && <>, {Math.round(ppi)} pixels per inch from the photo</>}.</>
-              : "The margins leave no room for the photo."}
-            {l.fits && ppi > 0 && ppi < 180 && " The photo is enlarged to fill it; it may print soft."}
-            {l.borderless && " A margin is inside what the printer can reach: it prints borderless if it can."}
-            {l.fits && " Point at the page to place the photo."}
+            {l.fits ? <>{t("dialogs.print.printsAt", { width: shown(l.image.width, s.unit), height: shown(l.image.height, s.unit), dpi })}{ppi > 0 && " " + t("dialogs.print.pixelsPerInchFromPhoto", { ppi: Math.round(ppi) })}.</>
+              : t("dialogs.print.noPhotoRoom")}
+            {l.fits && ppi > 0 && ppi < 180 && " " + t("dialogs.print.enlargedSoft")}
+            {l.borderless && " " + t("dialogs.print.borderlessHint")}
+            {l.fits && " " + t("dialogs.print.placePhotoHint")}
           </p>
         )}
         {cells && (
           <p className="note-plain print-size" data-print-cells>
-            {!cl?.fits ? "The margins leave no room for the photos."
-              : photos === 0 ? "Select the photos to print."
-              : <>{photos} {photos === 1 ? "photo" : "photos"} on {cl.pages} {cl.pages === 1 ? "page" : "pages"}:
-                {" "}{cl.columns} × {cl.rows} cells, each {shown(cl.cell.width, s.unit)} × {shown(cl.cell.height, s.unit)}.</>}
-            {cl?.fits && cl.borderless && " A margin is inside what the printer can reach: it prints borderless if it can."}
+            {!cl?.fits ? t("dialogs.print.noPhotosRoom")
+              : photos === 0 ? t("dialogs.print.selectPhotos")
+              : <>{t(photos === 1 ? "dialogs.print.cellsSummary.onePhoto" : "dialogs.print.cellsSummary.manyPhotos", { photos })} {t(cl.pages === 1 ? "dialogs.print.cellsSummary.onePage" : "dialogs.print.cellsSummary.manyPages", { pages: cl.pages })}: {t("dialogs.print.cellsGrid", { columns: cl.columns, rows: cl.rows, width: shown(cl.cell.width, s.unit), height: shown(cl.cell.height, s.unit) })}.</>}
+            {cl?.fits && cl.borderless && " " + t("dialogs.print.borderlessHint")}
           </p>
         )}
         <div className="choice-row">
@@ -162,7 +161,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
         <div className="print-margins">
           {(["top", "bottom", "left", "right"] as (keyof Margins)[]).map((side) => (
             <label key={side}>
-              <span>{side[0].toUpperCase() + side.slice(1)}</span>
+              <span>{t(`dialogs.print.margin.${side}`)}</span>
               <Length mm={s.margins[side]} unit={s.unit} disabled={busy} data-margin={side}
                       onChange={(mm) => set({ margins: { ...s.margins, [side]: mm } })} />
             </label>
@@ -286,17 +285,16 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
               <input type="checkbox" className="switch" checked={s.bpc} disabled={busy}
                      onChange={(e) => set({ bpc: e.target.checked })} />
             </label>
-            {!pdf && <p className="note-plain">Immage converts the colors for this profile. Turn color management off
-              in the printer's own settings, and choose the paper the profile was made for.</p>}
+            {!pdf && <p className="note-plain">{t("dialogs.print.immageConvertsColors")}</p>}
           </>
         ) : (
-          <p className="note-plain">The printer's driver converts the colors, from sRGB.</p>
+          <p className="note-plain">{t("dialogs.print.driverConvertsColors")}</p>
         )}
       </section>
 
       <section>
         <button className="btn primary print-go" data-action="print-go" disabled={!ready} onClick={onPrint}>
-          {busy ? (pdf ? "Saving…" : "Printing…") : pdf ? "Save PDF…" : "Print"}
+          {busy ? (pdf ? t("dialogs.common.saving") : t("dialogs.print.printing")) : pdf ? t("dialogs.print.savePdf") : t("dialogs.print.print")}
         </button>
         {note && <p className={`note-plain${note.error ? " warn" : ""}`} data-print-note>{note.text}</p>}
       </section>

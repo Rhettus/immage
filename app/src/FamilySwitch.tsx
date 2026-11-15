@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { menuKeys, useCardMenu } from "./cardMenu";
 import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 export type FamilyOption = { op: string; title: string; applicable: boolean };
 
@@ -19,7 +20,7 @@ export function FamilySwitch({ label, current, options, onPick }: {
   return (
     <span className="module-switch" ref={box}>
       <button type="button" className={`module-switch-btn${at ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!at}
-              aria-label={`Switch ${label}`} title={`Switch ${label}`} onClick={(e) => { toggle(e); }}>
+              aria-label={t("fields.family.switch", { label: fieldText(label) })} title={t("fields.family.switch", { label: fieldText(label) })} onClick={(e) => { toggle(e); }}>
         <ArrowLeftRight size={13} strokeWidth={1.8} />
       </button>
       {at && createPortal(
@@ -31,7 +32,7 @@ export function FamilySwitch({ label, current, options, onPick }: {
                     className={o.op === current ? "on" : ""} disabled={!o.applicable}
                     title={o.applicable ? undefined : t("fields.advanced.notApplicable")}
                     onClick={(e) => { e.stopPropagation(); close(); if (o.op !== current) onPick(o.op); }}>
-              <span className="check">{o.op === current ? "✓" : ""}</span><span className="name">{o.title}</span>
+              <span className="check">{o.op === current ? "✓" : ""}</span><span className="name">{fieldText(o.title)}</span>
             </button>
           ))}
         </div>, document.body)}

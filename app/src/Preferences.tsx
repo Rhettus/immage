@@ -676,7 +676,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           {about && (
             <div className="prefs-about" title={`darktable ${about.darktable}`}>
               <span>Immage {about.app}</span>
-              {about.commit && <span>commit {about.commit}</span>}
+              {about.commit && <span>{t("prefs.about.commit", { commit: about.commit })}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
               <div className="prefs-links">
                 {ABOUT_LINKS.map(([label, url, icon]) => (
@@ -1097,7 +1097,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <>
                 <PrefCard title="Immage">
                   <div className="prefs-legal">
-                    <p>Immage {about?.app ?? ""}{about?.commit ? ` (commit ${about.commit})` : ""}, Copyright © 2026 the Immage authors</p>
+                    <p>Immage {about?.app ?? ""}{about?.commit ? ` ${t("prefs.about.commitInParens", { commit: about.commit })}` : ""}, Copyright © 2026 the Immage authors</p>
                     <p>
                       Its raw processing engine is darktable{about ? ` ${about.darktable.split("~")[0]}` : ""},
                       Copyright © 2009–2026 darktable developers.

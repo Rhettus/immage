@@ -220,7 +220,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
   const chevron = (x: Mask) => {
     const open = x.name === selected && !folded.has(x.name);
     return (
-      <button className="mask-fold" title={open ? "hide this mask's shapes" : "show this mask's shapes"}
+      <button className="mask-fold" title={t(open ? "fields.masks.hideShapes" : "fields.masks.showShapes")}
               onClick={(e) => {
                 e.stopPropagation();
                 if (x.name !== selected) { onSelect(x.name); unfold(x.name, true); }
@@ -350,7 +350,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
       return <>
         <div className="segmented tabs">
           {HSL_TABS.map((label, i) => (
-            <button key={label} className={i === hslTab ? "active" : ""} onClick={() => setHslTab(i)}>{label}</button>
+            <button key={label} className={i === hslTab ? "active" : ""} onClick={() => setHslTab(i)}>{fieldText(label)}</button>
           ))}
         </div>
         {ids.filter((id) => id.startsWith(`l_hsl_${key}_`)).map(slider)}
@@ -381,8 +381,8 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
     <div className="masks-panel">
       <div className="panel adjust">
         <div className="panel-title">
-          <span>Masks</span>
-          <button className={`eye${overlay ? " on" : ""}`} title={`show overlay (O)`}
+          <span>{t("fields.masks.title")}</span>
+          <button className={`eye${overlay ? " on" : ""}`} title={t("fields.masks.showOverlay")}
                   onClick={(e) => { e.stopPropagation(); onOverlay(!overlay); }}>{eyeIcon(overlay)}</button>
         </div>
         <section>
@@ -544,7 +544,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                  if (next.has("brush")) next.delete("brush"); else next.add("brush");
                  return next;
                })}>
-            <span>Brush</span><Chevron open={open.has("brush")} />
+            <span>{fieldText("Brush")}</span><Chevron open={open.has("brush")} />
           </div>
           <Collapse open={open.has("brush")}>
             <section>
@@ -558,7 +558,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                               format: (v) => `${Math.round(v)}` },
                             brush.density * 100, (v) => onBrush({ ...brush, density: v / 100 }))}
               <label className="toggle">
-                <span>{keys("Erase (hold ⌥)")}</span>
+                <span>{keys(t("fields.masks.eraseHoldAlt"))}</span>
                 <input type="checkbox" className="switch" checked={brush.erase}
                        onChange={(e) => onBrush({ ...brush, erase: e.target.checked })} />
               </label>
@@ -700,39 +700,39 @@ function ShapeMenu({ target, tool, disabled, aiBusy, onTool, onAi }: {
     <button key={id} className={`${list === AI_TOOLS || list === DEPTH_TOOLS ? "ai" : ""}${tool === id ? " on" : ""}`}
             disabled={list === DEPTH_TOOLS && aiBusy}
             onClick={() => { close(); onTool(tool === id ? null : id); }}>
-      {TOOL_ICONS[id]}<span>{label}</span>
+      {TOOL_ICONS[id]}<span>{fieldText(label)}</span>
       {(list === TOOLS || list === RANGE_TOOLS) && <span className="key">{keys(key)}</span>}</button>
   ));
   const button = target === "new"
     ? <button className={`create-mask${open || tool ? " on" : ""}`} disabled={disabled}
               onClick={() => (open ? close() : setOpen(true))}>
-        <span className="plus">{svg(<path d="M12 6v12M6 12h12" />)}</span>Create New Mask</button>
+        <span className="plus">{svg(<path d="M12 6v12M6 12h12" />)}</span>{t("fields.masks.create")}</button>
     : <button className={`mask-op${open || tool ? " on" : ""}${target === "subtract" ? " sub" : ""}`}
-              disabled={disabled} title={`${target === "add" ? "add to" : "subtract from"} this mask`}
+              disabled={disabled} title={target === "add" ? t("fields.masks.addHint") : t("fields.masks.subtractHint")}
               onClick={() => (open ? close() : setOpen(true))}>
-        {target === "add" ? ADD_ICON : SUBTRACT_ICON}<span>{target === "add" ? "Add" : "Subtract"}</span></button>;
+        {target === "add" ? ADD_ICON : SUBTRACT_ICON}<span>{target === "add" ? t("fields.masks.add") : t("fields.masks.subtract")}</span></button>;
   return (
     <span className={`shape-menu ${target}`} ref={box}>
       {button}
       {open && (
         <div className="tile-menu shape-menu-list">
-          <span className="tool-kind">AI</span>
+          <span className="tool-kind">{t("fields.masks.ai")}</span>
           {ai("subject", "Subject", AI_ICONS.subject)}
           {ai("sky", "Sky", AI_ICONS.sky)}
           {ai("background", "Background", AI_ICONS.background)}
           {ai("people", "People", AI_ICONS.people)}
           <button className={`ai${landscape ? " on" : ""}`} disabled={aiBusy} onClick={() => setLandscape(!landscape)}>
-            {AI_ICONS.landscape}<span>Landscape</span><span className="more">{landscape ? "▾" : "▸"}</span></button>
+            {AI_ICONS.landscape}<span>{fieldText("Landscape")}</span><span className="more">{landscape ? "▾" : "▸"}</span></button>
           {landscape && LANDSCAPE.map(([k, label]) => (
-            <button key={k} className="ai sub-item" disabled={aiBusy} onClick={() => { close(); onAi(k); }}>{label}</button>
+            <button key={k} className="ai sub-item" disabled={aiBusy} onClick={() => { close(); onAi(k); }}>{fieldText(label)}</button>
           ))}
           {tools(AI_TOOLS)}
-          <span className="tool-kind">Shapes</span>
+          <span className="tool-kind">{t("fields.masks.shapes")}</span>
           {tools(TOOLS)}
-          <span className="tool-kind">Ranges</span>
+          <span className="tool-kind">{t("fields.masks.ranges")}</span>
           {target === "new" && tools(RANGE_TOOLS)}
           {tools(DEPTH_TOOLS)}
-          {target === "add" && <><span className="tool-kind">Intersect</span>{tools(RANGE_TOOLS)}</>}
+          {target === "add" && <><span className="tool-kind">{t("fields.masks.intersect")}</span>{tools(RANGE_TOOLS)}</>}
         </div>
       )}
     </span>
@@ -746,7 +746,7 @@ function MaskName({ name, editing, onEditing, onRename }: {
 }) {
   const shown = name.replace(/^mask/, "Mask");
   if (!editing) {
-    return <span className="name" title="double-click to rename"
+    return <span className="name" title={t("fields.masks.renameHint")}
                  onDoubleClick={(e) => { e.stopPropagation(); onEditing(true); }}>{shown}</span>;
   }
   return <NameEdit shown={shown} onDone={(to) => { onEditing(false); if (to && to !== shown) onRename(to); }} />;

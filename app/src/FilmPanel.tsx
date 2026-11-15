@@ -125,7 +125,7 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
         {["Film", "Look", ""].map((group) => {
           const list = SF_PRESETS.filter((p) => presetLabel(p.name).group === group);
           const opts = list.map((p) => <option key={p.name} value={p.name}>
-            {group ? presetLabel(p.name).label : "Default"}</option>);
+            {group ? fieldText(presetLabel(p.name).label) : fieldText("Default")}</option>);
           return group ? <optgroup key={group} label={t(`fields.film.group.${group.toLowerCase()}`)}>{opts}</optgroup> : opts;
         })}
       </select>

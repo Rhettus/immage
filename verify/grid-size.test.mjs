@@ -49,6 +49,7 @@ const prefs = cut('Preferences.tsx', 'const GRID_SIZE_KEY', '// Lightroom');
 const bar_ = cut('Toolbar.tsx', 'export function GridZoomBar', '// the bar under the filmstrip');
 // elements as plain {type, props} objects, so no React is needed
 const head = `import { settings } from "${new URL('settings.ts', src).href}";\n` +
+  'const t = key => key;\n' +
   'const React = { createElement: (type, props, ...c) => ({ type, props: { ...props, children: c.length < 2 ? c[0] : c } }) };\n';
 const build = (name, code) => {
   const file = fileURLToPath(new URL(`${name}.tsx`, src));
