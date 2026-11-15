@@ -13,7 +13,7 @@ struct Pending {
 #[derive(Default)]
 struct State {
     queue: VecDeque<Pending>,
-    keys: HashSet<String>,
+    keys: HashSet<(u64, String)>,
     active: usize,
     epoch: u64,
     paused: bool,
@@ -92,7 +92,7 @@ impl AnalysisQueue {
                 }));
                 let mut state = inner.state.lock().unwrap();
                 state.active -= 1;
-                state.keys.remove(&key);
+                state.keys.remove(&(epoch, key));
                 state.finished += 1;
                 if result.is_err() {
                     state.failed += 1;
@@ -106,9 +106,10 @@ impl AnalysisQueue {
     /// source (the cache). Capacity includes queued and running jobs.
     pub fn submit(&self, key: String, work: impl FnOnce(Job) + Send + 'static) -> bool {
         let mut state = self.inner.state.lock().unwrap();
+        let epoch = state.epoch;
         if state.stopped
             || state.keys.len() >= self.inner.capacity
-            || !state.keys.insert(key.clone())
+            || !state.keys.insert((epoch, key.clone()))
         {
             return false;
         }
@@ -125,10 +126,11 @@ impl AnalysisQueue {
     }
     pub fn cancel(&self) {
         let mut state = self.inner.state.lock().unwrap();
+        let epoch = state.epoch;
         state.epoch += 1;
         let queued: Vec<_> = state.queue.drain(..).map(|task| task.key).collect();
         for key in queued {
-            state.keys.remove(&key);
+            state.keys.remove(&(epoch, key));
         }
         self.inner.changed.notify_all();
     }
@@ -186,6 +188,28 @@ mod tests {
         }));
         queue.pause(false);
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), Some(7));
+    }
+    #[test]
+    fn rebuild_requeues_same_key_without_releasing_cancelled_active_slot() {
+        let queue = AnalysisQueue::new(1, 2);
+        let (started_tx, started) = mpsc::channel();
+        let (release_tx, release) = mpsc::channel();
+        assert!(queue.submit("root".into(), move |job| {
+            started_tx.send(()).unwrap();
+            release.recv().unwrap();
+            assert!(job.cancelled());
+        }));
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        queue.pause(true);
+        queue.cancel();
+        let (tx, rx) = mpsc::channel();
+        assert!(queue.submit("root".into(), move |job| {
+            tx.send(job.commit(|| 42)).unwrap();
+        }));
+        assert!(!queue.submit("other".into(), |_| panic!("old active slot must count")));
+        release_tx.send(()).unwrap();
+        queue.pause(false);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), Some(42));
     }
     #[test]
     fn panicked_jobs_release_the_worker_and_capacity() {

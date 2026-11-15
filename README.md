@@ -25,7 +25,8 @@ Unchanged folders reuse a disposable [local metadata cache](app/docs/library.md#
 Photos enter the in-memory editing library when an action needs them; cached
 thumbnails can appear without importing the photo. Metadata caching does not
 download search models or upload your photos. Optional local analysis uses
-verified model packages and runs on the CPU.
+verified model packages and runs on the CPU. Preferences > Performance > Local
+photo cache provides status, pause, clear/rebuild and optional model controls.
 
 Library thumbnails support embedded TIFF previews in DNG photos and can use
 a smaller preview when an unedited photo's RAW data cannot be decoded.

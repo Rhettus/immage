@@ -95,6 +95,10 @@ no originals or authoritative edits and can be rebuilt from your photos.
 Metadata caching does not download search models or upload photos; any optional
 local analysis model requires an explicit download choice. Downloaded analysis
 packages are checked before use, and local analysis runs on the CPU.
+**Preferences > Performance > Local photo cache** shows cache and drive status,
+pauses background checks, clears or rebuilds cached records, and offers the
+optional model download and CPU model check. Clearing preserves model files;
+rebuilds wait while background work is paused.
 
 ### Thumbnail previews
 

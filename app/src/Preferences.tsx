@@ -11,6 +11,7 @@ import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
+import { SearchPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -1043,6 +1044,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
               </PrefCard>
               <CachePrefs />
+              <SearchPrefs />
               <PrefCard title="Measuring">
                 <PrefRow label="Performance overlay" summary="Show frame rate and rendering times."
                          hint="over the photo: frame rate, the time from a slider moving to the photo changing, where that time went, and darktable's slowest modules">

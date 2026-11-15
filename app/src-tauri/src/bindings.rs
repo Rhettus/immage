@@ -19,6 +19,9 @@ use tauri_specta::{collect_commands, Commands};
 pub fn commands() -> Commands<tauri::Wry> {
     collect_commands![
         crate::settings::settings_all,
+        crate::search_cmds::search_status,
+        crate::search_cmds::search_pause,
+        crate::search_cmds::search_cache_clear,
         crate::clip_models::search_model_status,
         crate::clip_infer::search_model_probe,
         crate::clip_models::search_model_download,

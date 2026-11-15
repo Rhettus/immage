@@ -14,6 +14,7 @@ mod clip_models;
 mod clip_text;
 mod clip_image;
 mod clip_infer;
+mod search_cmds;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -69,6 +70,7 @@ struct AppState {
     // disposable local search metadata; darktable's catalog remains in-memory
     search_cache: Option<Arc<search_cache::SearchCache>>,
     analysis_queue: analysis_queue::AnalysisQueue,
+    search_clear_lock: Mutex<()>,
     clip_models: Arc<clip_models::Models>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
@@ -264,6 +266,7 @@ fn main() {
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             engine.set_search_cache(search_cache.clone());
             let analysis_queue = analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256);
+            analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));
             search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue);
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             let engine_link = engine.link();
@@ -272,6 +275,7 @@ fn main() {
             app.manage(AppState {
                 search_cache,
                 analysis_queue,
+                search_clear_lock: Mutex::new(()),
                 clip_models: Arc::new(clip_models::Models::new(runtime.join("clip-models"))),
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),

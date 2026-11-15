@@ -5,6 +5,9 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
+	searchStatus: () => __TAURI_INVOKE<SearchStatus>("search_status"),
+	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
+	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
 	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
 	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
@@ -344,6 +347,13 @@ export type CombineMember = {
 	mask: string,
 	opacity: number,
 	invert: boolean,
+};
+
+export type Counts = {
+	assets: number,
+	variants: number,
+	metadata: number,
+	analyses: number,
 };
 
 export type DepthMap = {
@@ -1027,6 +1037,13 @@ export type ResourceLevels = {
 
 export type Restore = string | ModuleState;
 
+export type RootStatus = {
+	path: string,
+	mount: string | null,
+	state: string,
+	error: string | null,
+};
+
 export type SampleReply = {
 	luminance: number,
 	ev: number,
@@ -1099,6 +1116,13 @@ export type SearchPage = {
 	next: string | null,
 };
 
+export type SearchStatus = {
+	counts: Counts | null,
+	roots: RootStatus[],
+	queue: Status,
+	model: ModelStatus,
+};
+
 export type SharedImport = {
 	presets: Value[],
 	looks: number,
@@ -1112,6 +1136,14 @@ export type SpotMode = "heal" | "clone";
 export type SpotSource = {
 	sx: number,
 	sy: number,
+};
+
+export type Status = {
+	queued: number,
+	active: number,
+	paused: boolean,
+	finished: number,
+	failed: number,
 };
 
 export type SubFolder = {

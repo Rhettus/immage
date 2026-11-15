@@ -38,6 +38,13 @@ pub struct RootStatus {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct Counts {
+    pub assets: i64,
+    pub variants: i64,
+    pub metadata: i64,
+    pub analyses: i64,
+}
 /// SQLite metadata/index store. The connection is serialized because rusqlite
 /// connections are not Sync; callers should keep expensive file work outside.
 pub struct SearchCache {
@@ -498,6 +505,20 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
+    pub fn counts(&self) -> Result<Counts, String> {
+        self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row(
+            "SELECT (SELECT count(*) FROM assets),(SELECT count(*) FROM variants),(SELECT count(*) FROM variants WHERE metadata_json IS NOT NULL),(SELECT count(*) FROM analyses)",[],|row| Ok(Counts{assets:row.get(0)?,variants:row.get(1)?,metadata:row.get(2)?,analyses:row.get(3)?})).map_err(|e|e.to_string())
+    }
+    /// Clear disposable rows while retaining root identity and AUTOINCREMENT
+    /// sequences. Late work cannot accidentally target a newly reused ID.
+    pub fn clear(&self) -> Result<(), String> {
+        self.db
+            .lock()
+            .map_err(|_| "search cache lock poisoned")?
+            .execute("DELETE FROM assets", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
     pub fn assets(&self) -> Result<Vec<Asset>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         let mut q = db
@@ -743,6 +764,48 @@ mod tests {
         SearchCache::from_connection(Connection::open_in_memory().unwrap()).unwrap()
     }
 
+    #[test]
+    fn clear_cascades_preserves_root_identity_and_never_reuses_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let v = cache
+            .upsert_variant("/photos/a.jpg", "0", "original", "edited", None, None, None)
+            .unwrap();
+        cache.store_metadata(v.id, "{}").unwrap();
+        cache
+            .put_analysis(v.id, "edited", "edited", 1, "model", b"vector")
+            .unwrap();
+        cache
+            .root_state("/photos", Some("drive"), "online", None)
+            .unwrap();
+        let before = cache.counts().unwrap();
+        assert_eq!(
+            (
+                before.assets,
+                before.variants,
+                before.metadata,
+                before.analyses
+            ),
+            (1, 1, 1, 1)
+        );
+        cache.clear().unwrap();
+        let after = cache.counts().unwrap();
+        assert_eq!(
+            (after.assets, after.variants, after.metadata, after.analyses),
+            (0, 0, 0, 0)
+        );
+        assert_eq!(
+            cache.root_mount("/photos").unwrap().as_deref(),
+            Some("drive")
+        );
+        let new = cache
+            .upsert_variant("/photos/a.jpg", "0", "original", "edited", None, None, None)
+            .unwrap();
+        assert!(new.id > v.id);
+        assert!(cache
+            .put_analysis(v.id, "edited", "edited", 1, "model", b"late")
+            .is_err());
+    }
     #[test]
     fn source_and_metadata_changes_reject_late_jobs_for_all_versions() {
         let cache = cache();

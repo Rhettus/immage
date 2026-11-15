@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences > Performance adds Local photo cache status, pause/resume, clear
+  and rebuild, plus explicit optional CLIP model download and CPU checks.
 - Advanced mode adds searchable editing modules, presets and groups, with
   controls to customize their order and instances. Module edits support masks,
   undo and Copy Settings. Switch back to Simple mode at any time.
