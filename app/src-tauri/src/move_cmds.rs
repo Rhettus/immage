@@ -11,28 +11,130 @@
 // this computer has it (Immich still owns it), else the original downloaded
 // and checked against the server's SHA-1
 
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use sha2::{Digest, Sha256};
-use specta::Type;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, State};
 use crate::immich_search::{self, PathMap};
 use crate::immich_upload;
 use crate::volumes;
 use crate::AppState;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use sha2::{Digest, Sha256};
+use specta::Type;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // a destination that takes nothing for this long is given up on, as one
 // that is not answering; the write that hangs is left to its thread
 const STALL: Duration = Duration::from_secs(30);
 const CHUNK: usize = 1 << 20;
 const CANCELLED: &str = "cancelled";
+const WORKER_LIMIT: usize = 8;
+
+// A blocked filesystem call can outlive the job that gave up waiting for it.
+// Keep its admission slot and names reserved until that actual thread exits.
+static WORKERS: OnceLock<Mutex<usize>> = OnceLock::new();
+static DESTINATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+struct WorkerPermit;
+
+impl WorkerPermit {
+    fn try_acquire() -> Option<Self> {
+        let mut n = WORKERS
+            .get_or_init(|| Mutex::new(0))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if *n >= WORKER_LIMIT {
+            return None;
+        }
+        *n += 1;
+        Some(Self)
+    }
+}
+
+impl Drop for WorkerPermit {
+    fn drop(&mut self) {
+        let mut n = WORKERS
+            .get_or_init(|| Mutex::new(0))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *n = n.saturating_sub(1);
+    }
+}
+
+struct DestinationReservation(Vec<String>);
+
+fn reservation_key(path: &Path) -> String {
+    // A NAS mounted on Linux can still be case-insensitive. Conservatively
+    // serialize case variants even on case-sensitive disks; both names can
+    // still be transferred there, in input order.
+    text(path).to_lowercase()
+}
+
+fn reservation_path(path: &Path) -> PathBuf {
+    // Resolve existing parent components even when a sidecar's subdirectory
+    // has not been created yet. Different symlink spellings must share a lock.
+    let mut ancestor = path;
+    let mut tail = Vec::new();
+    loop {
+        if let Ok(mut resolved) = std::fs::canonicalize(ancestor) {
+            for component in tail.iter().rev() { resolved.push(component); }
+            return resolved;
+        }
+        let Some(name) = ancestor.file_name() else { return path.to_path_buf() };
+        tail.push(name.to_os_string());
+        let Some(parent) = ancestor.parent() else { return path.to_path_buf() };
+        ancestor = parent;
+    }
+}
+
+impl DestinationReservation {
+    // Atomically reserve all names. A conflict with a live transfer is treated
+    // like a destination clash and can be resolved by Keep Both.
+    fn try_new(dest: &Path, names: &[PathBuf], unit: &Unit) -> Option<Self> {
+        let root = canonical(dest);
+        let keys: Vec<PathBuf> = names
+            .iter()
+            .flat_map(|p| {
+                let target = root.join(p);
+                vec![target.clone(), part_of(&target)]
+            })
+            .collect();
+        let mut keys: Vec<String> = keys.into_iter().map(|p| reservation_key(&reservation_path(&p))).collect();
+        // Prevent concurrent move jobs from acting on one source unit.
+        keys.extend(
+            unit.files
+                .iter()
+                .filter_map(|f| f.from.as_ref())
+                .map(|p| reservation_key(&reservation_path(p))),
+        );
+        let mut reserved = DESTINATIONS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if keys.iter().any(|p| reserved.contains(p)) {
+            return None;
+        }
+        reserved.extend(keys.iter().cloned());
+        Some(Self(keys))
+    }
+}
+
+impl Drop for DestinationReservation {
+    fn drop(&mut self) {
+        let mut reserved = DESTINATIONS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for p in &self.0 {
+            reserved.remove(p);
+        }
+    }
+}
 
 // a dropped thumbnail: a library photo by its id, or an Immich asset by its
 // id and server path
@@ -148,6 +250,7 @@ impl Clash {
 // what a copy reports to, and is stopped by
 struct Ctx {
     cancel: Arc<AtomicBool>,
+    job_cancel: Option<Arc<AtomicBool>>,
     bytes: AtomicU64,
     // every chunk read or written, checksums included: what the stall guard watches
     activity: AtomicU64,
@@ -156,13 +259,28 @@ struct Ctx {
 }
 
 impl Ctx {
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+            || self.job_cancel.as_ref().is_some_and(|c| c.load(Ordering::SeqCst))
+    }
+
     fn new(cancel: Arc<AtomicBool>) -> Ctx {
-        Ctx { cancel, bytes: AtomicU64::new(0), activity: AtomicU64::new(0), before_verify: None }
+        Ctx {
+            cancel,
+            job_cancel: None,
+            bytes: AtomicU64::new(0),
+            activity: AtomicU64::new(0),
+            before_verify: None,
+        }
     }
 }
 
 fn text(p: &Path) -> String {
     p.to_string_lossy().into_owned()
+}
+
+fn file_names(u: &Unit) -> Vec<PathBuf> {
+    u.files.iter().map(|f| f.rel.clone()).collect()
 }
 
 fn hex(d: &[u8]) -> String {
@@ -198,7 +316,7 @@ fn sums(path: &Path, ctx: Option<&Ctx>) -> Result<Sums, String> {
     let mut buf = vec![0u8; CHUNK];
     loop {
         if let Some(c) = ctx {
-            if c.cancel.load(Ordering::SeqCst) {
+            if c.cancelled() {
                 return Err(CANCELLED.into());
             }
             c.activity.fetch_add(1, Ordering::SeqCst);
@@ -272,6 +390,7 @@ fn renamed(u: &Unit, n: u32) -> Vec<PathBuf> {
 }
 
 // the first numbering whose names are all free
+#[cfg(test)]
 fn numbered(u: &Unit, dest: &Path) -> Vec<PathBuf> {
     (1..10_000).map(|n| renamed(u, n))
         .find(|names| names.iter().all(|r| dest.join(r).symlink_metadata().is_err()))
@@ -407,12 +526,14 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
                 client = Some(immich_client(&app)?);
             }
             let info = client.as_ref().unwrap().original_info(&id)?;
+            let name = Path::new(&info.name).file_name().and_then(|n| n.to_str())
+                .filter(|n| !n.is_empty()).ok_or("Immich original has no file name")?.to_string();
             v.push(Unit {
                 key: format!("immich:{id}"),
-                name: info.name.clone(),
+                name: name.clone(),
                 imgids: Vec::new(),
                 versions: 1,
-                files: vec![UnitFile { from: None, rel: PathBuf::from(&info.name), size: info.size.unwrap_or(0) }],
+                files: vec![UnitFile { from: None, rel: PathBuf::from(&name), size: info.size.unwrap_or(0) }],
                 download: Some((id, info.checksum)),
                 keep_source: true,
                 here: false,
@@ -518,18 +639,22 @@ fn copy_verified(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime
         let _ = std::fs::remove_file(&part);
         e
     };
-    let mut out = File::create(&part).map_err(|e| format!("{}: {e}", target.display()))?;
+    let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(&part)
+        .map_err(|e| format!("{}: {e}", part.display()))?;
     let (mut a, mut b) = (Sha256::new(), <sha1::Sha1 as sha1::Digest>::new());
     let mut buf = vec![0u8; CHUNK];
     loop {
-        if ctx.cancel.load(Ordering::SeqCst) {
+        if ctx.cancelled() {
             drop(out);
             return Err(fail(CANCELLED.into()));
         }
         let n = match from.read(&mut buf) {
             Ok(n) => n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(fail(format!("reading: {e}"))),
+            Err(e) => {
+                drop(out);
+                return Err(fail(format!("reading: {e}")));
+            }
         };
         if n == 0 {
             break;
@@ -537,12 +662,14 @@ fn copy_verified(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime
         a.update(&buf[..n]);
         sha1::Digest::update(&mut b, &buf[..n]);
         if let Err(e) = out.write_all(&buf[..n]) {
+            drop(out);
             return Err(fail(format!("{}: {e}", target.display())));
         }
         ctx.bytes.fetch_add(n as u64, Ordering::SeqCst);
         ctx.activity.fetch_add(1, Ordering::SeqCst);
     }
     if let Err(e) = out.sync_all() {
+        drop(out);
         return Err(fail(format!("{}: {e}", target.display())));
     }
     if let Some(t) = mtime {
@@ -561,6 +688,7 @@ fn copy_verified(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime
     if expect.is_some_and(|e| e != read1) {
         return Err(fail(format!("{}: download does not match Immich's checksum", target.display())));
     }
+    if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
     std::fs::rename(&part, target).map_err(|e| fail(format!("{}: {e}", target.display())))?;
     sync_dir(target.parent().unwrap_or(Path::new(".")));
     Ok(())
@@ -595,6 +723,7 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
     let mut placed = Placed::default();
     let result = (|| -> Result<(), String> {
         for ((f, r), same) in u.files.iter().zip(rel).zip(there) {
+            if ctx.cancelled() { return Err(CANCELLED.into()); }
             if *same {
                 continue;
             }
@@ -605,6 +734,7 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
             if target.symlink_metadata().is_ok() {
                 return Err(format!("{} appeared at the destination", target.display()));
             }
+            if ctx.cancelled() { return Err(CANCELLED.into()); }
             match &f.from {
                 Some(from) if rename && !copy && !u.keep_source => {
                     if std::fs::rename(from, &target).is_ok() {
@@ -639,6 +769,10 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
     if copy || u.keep_source {
         return Ok((false, None));
     }
+    if ctx.cancelled() {
+        placed.undo();
+        return Err(CANCELLED.into());
+    }
     // verified: the sources go, the photo's file first, so a sidecar that
     // will not go is left over rather than a photo without its edits
     let renamed: Vec<&PathBuf> = placed.renamed.iter().map(|(f, _)| f).collect();
@@ -650,6 +784,12 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
             gone |= i == 0;
             continue;
         }
+        if ctx.cancelled() {
+            // Once the photo is gone, the verified destination must stay.
+            if gone { return Ok((true, Some("stopped; some original sidecars were left behind".into()))); }
+            placed.undo();
+            return Err(CANCELLED.into());
+        }
         match std::fs::remove_file(from) {
             Ok(()) => gone |= i == 0,
             Err(e) if i == 0 => return Ok((false, Some(format!("{} was copied, but not removed: {e}", from.display())))),
@@ -659,128 +799,235 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
     Ok((gone, warning))
 }
 
-// moves (or, with `copy`, copies) the photos into `req.dest`. units whose
-// names clash with other files are skipped unless named in `keep_both`,
-// which numbers their names. progress goes to the window as
-// "move-progress"; move_cancel stops the file being copied and the rest
+type TransferResult = Result<Option<(bool, Option<String>)>, String>;
+
+// Reservation precedes checksum comparison: a positive "already there" result
+// must remain valid until a move removes its sources.
+fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener) -> TransferResult {
+    let original = file_names(u);
+    let mut reservation = DestinationReservation::try_new(dest, &original, u);
+    let mut selected = original;
+    let mut there = vec![false; selected.len()];
+    let mut needs_number = reservation.is_none() && keep;
+    if reservation.is_some() {
+        let (c, same) = clash(u, dest, &selected, Some(ctx));
+        if ctx.cancelled() { return Err(CANCELLED.into()); }
+        if c == Clash::Same && (copy || u.keep_source) { return Ok(None); }
+        if c == Clash::Different && !keep { return Ok(None); }
+        there = same;
+        needs_number = c == Clash::Different;
+    }
+    if needs_number {
+        drop(reservation.take());
+        for n in 1..=10_000 {
+            if ctx.cancelled() { return Err(CANCELLED.into()); }
+            let candidate = renamed(u, n);
+            if candidate.iter().any(|p| dest.join(p).symlink_metadata().is_ok()) { continue; }
+            if let Some(r) = DestinationReservation::try_new(dest, &candidate, u) {
+                // Recheck after claiming the names, including for another job
+                // that finished between the filesystem check and reservation.
+                if candidate.iter().any(|p| dest.join(p).symlink_metadata().is_ok()) { continue; }
+                selected = candidate;
+                there = vec![false; selected.len()];
+                reservation = Some(r);
+                break;
+            }
+        }
+    }
+    let Some(_reservation) = reservation else {
+        return Err("source or destination names are in use, or no unused numbered name is available".into());
+    };
+    if ctx.cancelled() { return Err(CANCELLED.into()); }
+    let rename = u.files[0].from.as_ref()
+        .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), dest));
+    transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open).map(Some)
+}
+
+struct Batch {
+    units: Vec<Unit>,
+    dest: PathBuf,
+    workers: usize,
+    cancel: Arc<AtomicBool>,
+    stall: Duration,
+}
+
+struct TransferProgress {
+    done: usize,
+    total: usize,
+    bytes: u64,
+    bytes_total: u64,
+    file: String,
+}
+
+// Only path strings are compared here. Filesystem probes and checksums belong
+// to workers, where a blocked call can time out without blocking the coordinator.
+fn scheduling_keys(u: &Unit) -> HashSet<String> {
+    let mut keys = HashSet::new();
+    for f in &u.files {
+        keys.insert(format!("dest:{}", reservation_key(&f.rel)));
+        keys.insert(format!("dest:{}", reservation_key(&part_of(&f.rel))));
+        if let Some(source) = &f.from { keys.insert(format!("source:{}", reservation_key(source))); }
+    }
+    keys
+}
+
+// The same coordinator runs in production and in headless regression tests.
+// Completion/catalog callbacks are serial; only whole photo tasks run in parallel.
+fn transfer_batch<F>(batch: Batch, run: F, mut progress: impl FnMut(TransferProgress),
+                     mut forget: impl FnMut(&[i64])) -> MoveSummary
+where F: Fn(&Unit, &Ctx) -> TransferResult + Send + Sync + 'static {
+    let Batch { units, dest, workers, cancel, stall } = batch;
+    let mut s = MoveSummary { dest: text(&dest), done: vec![], removed: vec![], skipped: vec![],
+                              failed: vec![], warnings: vec![], cancelled: false };
+    let total = units.len();
+    let bytes_total = units.iter().filter(|u| !u.here).flat_map(|u| &u.files).map(|f| f.size).sum();
+    struct Active { unit: Unit, keys: HashSet<String>, ctx: Arc<Ctx>, since: Instant, seen: u64 }
+    let run = Arc::new(run);
+    let (tx, rx) = mpsc::channel::<(usize, TransferResult)>();
+    let mut pending: std::collections::VecDeque<_> = units.into_iter().enumerate().collect();
+    let mut active: HashMap<usize, Active> = HashMap::new();
+    let (mut completed, mut finished_bytes) = (0usize, 0u64);
+    let mut admission_wait: Option<Instant> = None;
+    let mut stopping = false;
+    let poll = (stall / 4).clamp(Duration::from_millis(1), Duration::from_millis(100));
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            s.cancelled = true;
+            stopping = true;
+            pending.clear();
+            for a in active.values() { a.ctx.cancel.store(true, Ordering::SeqCst); }
+        }
+        while active.len() < workers && !pending.is_empty() && !stopping {
+            let (index, u) = pending.pop_front().unwrap();
+            if u.here { s.skipped.push(u.name); completed += 1; continue; }
+            let keys = scheduling_keys(&u);
+            // Preserve input order for overlapping names, including Keep Both.
+            // Independent names still get all available workers.
+            if active.values().any(|a| !a.keys.is_disjoint(&keys)) {
+                pending.push_front((index, u));
+                break;
+            }
+            let Some(permit) = WorkerPermit::try_acquire() else {
+                pending.push_front((index, u));
+                if active.is_empty() && admission_wait.get_or_insert_with(Instant::now).elapsed() >= stall {
+                    while let Some((_, u)) = pending.pop_front() {
+                        s.failed.push(MoveFailure { name: u.name, error: "all transfer workers are busy; try again after other jobs finish".into() });
+                        completed += 1;
+                    }
+                }
+                break;
+            };
+            admission_wait = None;
+            let mut context = Ctx::new(Arc::new(AtomicBool::new(false)));
+            context.job_cancel = Some(cancel.clone());
+            let ctx = Arc::new(context);
+            let (worker_ctx, worker_unit, task, send) = (ctx.clone(), u.clone(), run.clone(), tx.clone());
+            let spawned = std::thread::Builder::new().name("photo-transfer".into()).spawn(move || {
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task(&worker_unit, &worker_ctx)))
+                    .unwrap_or_else(|_| Err("the transfer worker stopped unexpectedly".into()));
+                // All filesystem work and reservation cleanup have finished.
+                drop(permit);
+                let _ = send.send((index, r));
+            });
+            match spawned {
+                Ok(_) => { active.insert(index, Active { unit: u, keys, ctx, since: Instant::now(), seen: 0 }); }
+                Err(e) => { s.failed.push(MoveFailure { name: u.name, error: format!("cannot start transfer worker: {e}") }); completed += 1; }
+            }
+        }
+        progress(TransferProgress { done: completed, total, bytes: finished_bytes + active.values().map(|a| a.ctx.bytes.load(Ordering::SeqCst)).sum::<u64>(),
+            bytes_total, file: active.values().min_by_key(|a| &a.unit.key).map(|a| a.unit.name.clone()).unwrap_or_default() });
+        if active.is_empty() && pending.is_empty() { break; }
+        if let Ok((index, result)) = rx.recv_timeout(poll) {
+            if let Some(a) = active.remove(&index) {
+                finished_bytes += a.ctx.bytes.load(Ordering::SeqCst);
+                completed += 1;
+                match result {
+                    Err(e) if e == CANCELLED => {
+                        if cancel.load(Ordering::SeqCst) { s.cancelled = true; }
+                        else { s.failed.push(MoveFailure { name: a.unit.name, error: "stopped after another transfer stalled".into() }); }
+                    }
+                    Err(e) => s.failed.push(MoveFailure { name: a.unit.name, error: e }),
+                    Ok(None) => s.skipped.push(a.unit.name),
+                    Ok(Some((gone, warning))) => {
+                        s.done.push(a.unit.name);
+                        s.warnings.extend(warning);
+                        if gone { forget(&a.unit.imgids); s.removed.extend(&a.unit.imgids); }
+                    }
+                }
+            }
+        }
+        let now = Instant::now();
+        let mut stalled = Vec::new();
+        for (id, a) in &mut active {
+            let activity = a.ctx.activity.load(Ordering::SeqCst);
+            if activity != a.seen { a.seen = activity; a.since = now; }
+            else if now.duration_since(a.since) >= stall { stalled.push(*id); }
+        }
+        for id in stalled {
+            let a = active.remove(&id).unwrap();
+            a.ctx.cancel.store(true, Ordering::SeqCst);
+            finished_bytes += a.ctx.bytes.load(Ordering::SeqCst);
+            s.failed.push(MoveFailure { name: a.unit.name, error: "the transfer stopped answering".into() });
+            completed += 1;
+            stopping = true;
+        }
+        if stopping {
+            if !s.cancelled {
+                while let Some((_, u)) = pending.pop_front() {
+                    s.failed.push(MoveFailure { name: u.name, error: "not started because another transfer stalled".into() });
+                    completed += 1;
+                }
+            }
+            pending.clear();
+            for a in active.values() { a.ctx.cancel.store(true, Ordering::SeqCst); }
+        }
+    }
+    progress(TransferProgress { done: completed, total, bytes: finished_bytes, bytes_total, file: String::new() });
+    s
+}
+
+fn transfer_workers(value: Option<String>) -> usize {
+    value.and_then(|s| s.trim().parse::<usize>().ok()).filter(|n| (1..=WORKER_LIMIT).contains(n)).unwrap_or(2)
+}
+
+// Moves or copies photos with a per-job worker preference snapshot. The blocking
+// coordinator runs away from Tauri's async workers so Stop remains available.
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, job: u64, req: MoveRequest, copy: bool,
-                               keep_both: Vec<String>) -> Result<MoveSummary, String> {
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, settings: State<'_, crate::settings::Settings>,
+                               job: u64, req: MoveRequest, copy: bool, keep_both: Vec<String>) -> Result<MoveSummary, String> {
+    let workers = transfer_workers(settings.get(crate::settings::THUMB_THREADS));
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.move_cancels.lock().unwrap().insert(job, cancel.clone());
+    let _registered = CancelEntry { map: &state.move_cancels, job };
     let dest = PathBuf::from(&req.dest);
     {
         let d = dest.clone();
         tauri::async_runtime::spawn_blocking(move || check_dest(&d)).await.map_err(|e| e.to_string())??;
     }
     let units = units(&app, &state, &req).await?;
-    let cancel = Arc::new(AtomicBool::new(false));
-    state.move_cancels.lock().unwrap().insert(job, cancel.clone());
-    let _registered = CancelEntry { map: &state.move_cancels, job };
-    let mut s = MoveSummary { dest: text(&dest), done: vec![], removed: vec![], skipped: vec![], failed: vec![],
-                              warnings: vec![], cancelled: false };
-    let total = units.len();
-    let bytes_total: u64 = units.iter().filter(|u| !u.here).flat_map(|u| &u.files).map(|f| f.size).sum();
-    let ctx = Arc::new(Ctx::new(cancel.clone()));
     let conn = tauri_plugin_immporter::immich_connection(&app).map(Arc::new);
-    for (n, u) in units.into_iter().enumerate() {
-        if cancel.load(Ordering::SeqCst) {
-            s.cancelled = true;
-            break;
-        }
-        let _ = app.emit("move-progress", json!({ "job": job, "done": n, "total": total,
-            "bytes": ctx.bytes.load(Ordering::SeqCst), "bytesTotal": bytes_total, "file": u.name }));
-        if u.here {
-            s.skipped.push(u.name.clone());
-            continue;
-        }
-        let (d, ctx2, keep, conn) = (dest.clone(), ctx.clone(), keep_both.contains(&u.key), conn.clone());
-        let (tx, rx) = mpsc::channel();
-        let unit = u.clone();
-        // its own thread, which a destination that stops answering can keep
-        std::thread::spawn(move || {
-            let names: Vec<PathBuf> = unit.files.iter().map(|f| f.rel.clone()).collect();
-            let (c, there) = clash(&unit, &d, &names, Some(&ctx2));
-            let r = match c {
-                Clash::Same if copy || unit.keep_source => Ok(None),
-                Clash::Different if !keep => Ok(None),
-                _ => {
-                    let (names, there) = if c == Clash::Different {
-                        let n = numbered(&unit, &d);
-                        let free = vec![false; n.len()];
-                        (n, free)
-                    } else {
-                        (names, there)
-                    };
-                    let rename = unit.files[0].from.as_ref()
-                        .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), &d));
-                    let client: std::cell::OnceCell<Result<immich_upload::Immich, String>> = std::cell::OnceCell::new();
-                    let open = |id: &str| -> Result<Box<dyn Read>, String> {
-                        let c = client.get_or_init(|| match &conn {
-                            Some(c) => immich_upload::Immich::new(c),
-                            None => Err("Immich is not set up".into()),
-                        });
-                        let c = c.as_ref().map_err(|e| e.clone())?;
-                        Ok(Box::new(c.original_stream(id)?))
-                    };
-                    transfer_unit(&unit, &d, &names, &there, copy, rename, &ctx2, &open).map(Some)
-                }
+    tauri::async_runtime::spawn_blocking(move || {
+        let d = dest.clone();
+        let forgotten = app.clone();
+        transfer_batch(Batch { units, dest, workers, cancel, stall: STALL }, move |unit, ctx| {
+            let client: std::cell::OnceCell<Result<immich_upload::Immich, String>> = std::cell::OnceCell::new();
+            let open = |id: &str| -> Result<Box<dyn Read>, String> {
+                let c = client.get_or_init(|| match &conn {
+                    Some(c) => immich_upload::Immich::new(c), None => Err("Immich is not set up".into()),
+                });
+                let c = c.as_ref().map_err(|e| e.clone())?;
+                Ok(Box::new(c.original_stream(id)?))
             };
-            let _ = tx.send(r);
-        });
-        let app2 = app.clone();
-        let ctx3 = ctx.clone();
-        let name = u.name.clone();
-        let waited = tauri::async_runtime::spawn_blocking(move || {
-            let (mut shown, mut seen) = (ctx3.bytes.load(Ordering::SeqCst), ctx3.activity.load(Ordering::SeqCst));
-            let mut since = Instant::now();
-            loop {
-                match rx.recv_timeout(Duration::from_millis(250)) {
-                    Ok(r) => return Some(r),
-                    Err(mpsc::RecvTimeoutError::Disconnected) => return Some(Err("the copy stopped".into())),
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-                let b = ctx3.bytes.load(Ordering::SeqCst);
-                if b != shown {
-                    shown = b;
-                    let _ = app2.emit("move-progress", json!({ "job": job, "done": n, "total": total,
-                        "bytes": b, "bytesTotal": bytes_total, "file": name }));
-                }
-                let a = ctx3.activity.load(Ordering::SeqCst);
-                if a != seen {
-                    (seen, since) = (a, Instant::now());
-                } else if since.elapsed() > STALL {
-                    ctx3.cancel.store(true, Ordering::SeqCst);
-                    return None;
-                }
-            }
-        }).await.map_err(|e| e.to_string())?;
-        match waited {
-            None => {
-                s.failed.push(MoveFailure { name: u.name.clone(), error: "the destination stopped answering".into() });
-                break;
-            }
-            Some(Err(e)) if e == CANCELLED => {
-                s.cancelled = true;
-                break;
-            }
-            Some(Err(e)) => s.failed.push(MoveFailure { name: u.name.clone(), error: e }),
-            Some(Ok(None)) => s.skipped.push(u.name.clone()),
-            Some(Ok(Some((gone, warning)))) => {
-                s.done.push(u.name.clone());
-                s.warnings.extend(warning);
-                // only once the file is gone: one put back later imports fresh
-                if gone {
-                    for id in &u.imgids {
-                        let _ = state.engine("move_files").request(json!({ "cmd": "forget", "imgid": id }));
-                    }
-                    s.removed.extend(&u.imgids);
-                }
-            }
-        }
-    }
-    let _ = app.emit("move-progress", json!({ "job": job, "done": total, "total": total,
-        "bytes": ctx.bytes.load(Ordering::SeqCst), "bytesTotal": bytes_total, "file": "" }));
-    Ok(s)
+            transfer_photo(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open)
+        }, |p| {
+            let _ = app.emit("move-progress", json!({ "job": job, "done": p.done, "total": p.total,
+                "bytes": p.bytes, "bytesTotal": p.bytes_total, "file": p.file }));
+        }, |ids| {
+            for id in ids { let _ = forgotten.state::<AppState>().engine("move_files").request(json!({ "cmd": "forget", "imgid": id })); }
+        })
+    }).await.map_err(|e| e.to_string())
 }
 
 // removes a move job's cancel flag when it goes out of scope
@@ -791,7 +1038,13 @@ struct CancelEntry<'a> {
 
 impl Drop for CancelEntry<'_> {
     fn drop(&mut self) {
-        self.map.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.job);
+        if let Some(cancel) = self.map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.job)
+        {
+            cancel.store(true, Ordering::SeqCst);
+        }
     }
 }
 
@@ -808,6 +1061,12 @@ pub(crate) fn move_cancel(state: State<'_, AppState>, job: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Condvar;
+
+    // Admission is intentionally process-wide. Tests that occupy all slots
+    // must not compete with other scheduler tests in the same test process.
+    static ADMISSION_TEST: Mutex<()> = Mutex::new(());
+
 
     fn test_dir(name: &str) -> PathBuf {
         // inside the build tree, not the system's temp folder
@@ -844,6 +1103,313 @@ mod tests {
 
     fn ctx() -> Ctx {
         Ctx::new(Arc::new(AtomicBool::new(false)))
+    }
+
+    #[test]
+    fn global_worker_admission_is_bounded_and_recovers() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let mut permits: Vec<_> = (0..WORKER_LIMIT)
+            .map(|_| WorkerPermit::try_acquire().unwrap())
+            .collect();
+        assert!(WorkerPermit::try_acquire().is_none());
+        permits.pop();
+        assert!(WorkerPermit::try_acquire().is_some());
+        drop(permits);
+        // The temporary permit above is dropped at statement end; capacity is
+        // available again for later jobs.
+        assert!(WorkerPermit::try_acquire().is_some());
+    }
+
+    #[test]
+    fn reservations_cover_destinations_parts_sources_and_release_on_exit() {
+        let d = test_dir("reservations");
+        let a = photo(&d.join("src"), "A.CR3");
+        let dest = d.join("dest");
+        let names = names(&a);
+        let first = DestinationReservation::try_new(&dest, &names, &a).unwrap();
+        assert!(DestinationReservation::try_new(&dest, &names, &a).is_none());
+
+        // A final name cannot overlap another transfer's temporary part file.
+        let mut part_collision = a.clone();
+        part_collision.files = vec![UnitFile {
+            from: None,
+            rel: ".A.CR3.immage-part".into(),
+            size: 0,
+        }];
+        assert!(DestinationReservation::try_new(
+            &dest,
+            &file_names(&part_collision),
+            &part_collision
+        )
+        .is_none());
+
+        // The same source unit cannot be moved to two destinations at once.
+        assert!(DestinationReservation::try_new(&d.join("elsewhere"), &names, &a).is_none());
+        drop(first);
+        assert!(DestinationReservation::try_new(&dest, &names, &a).is_some());
+    }
+
+    fn small_photo(dir: &Path, name: &str, id: i64) -> Unit {
+        std::fs::create_dir_all(dir).unwrap();
+        let raw = dir.join(name);
+        let xmp = dir.join(format!("{name}.xmp"));
+        std::fs::write(&raw, format!("original photo {name} id {id}")).unwrap();
+        std::fs::write(&xmp, format!("edits for {id}")).unwrap();
+        local_unit(&raw, vec![id], vec![xmp], Path::new("/nonexistent"), false)
+    }
+
+    fn batch(units: Vec<Unit>, dest: &Path, workers: usize, cancel: Arc<AtomicBool>, stall: Duration) -> Batch {
+        Batch { units, dest: dest.to_path_buf(), workers, cancel, stall }
+    }
+
+    #[test]
+    fn preference_defaults_and_valid_worker_counts() {
+        for value in [None, Some("0"), Some("9"), Some("bad"), Some("-1")] {
+            assert_eq!(transfer_workers(value.map(str::to_string)), 2);
+        }
+        for n in [1, 2, 3, 4, 6, 8] {
+            assert_eq!(transfer_workers(Some(format!(" {n} "))), n);
+        }
+    }
+
+    #[test]
+    fn photo_batches_overlap_up_to_each_worker_limit_and_verify_sidecars() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        for workers in [1, 2, 3, 4, 6, 8] {
+            let d = test_dir(&format!("parallel-{workers}"));
+            let units: Vec<_> = (0..workers + 2).map(|n| small_photo(&d.join("src"), &format!("photo-{n}.ORF"), n as i64 + 1)).collect();
+            let originals = units.clone();
+            let gate = Arc::new((Mutex::new((0usize, false)), Condvar::new()));
+            let (worker_gate, dest) = (gate.clone(), d.join("dest"));
+            let task_dest = dest.clone();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let reports = events.clone();
+            let b = batch(units, &dest, workers, Arc::new(AtomicBool::new(false)), Duration::from_secs(5));
+            let coordinator = std::thread::spawn(move || transfer_batch(b, move |u, ctx| {
+                let (lock, changed) = &*worker_gate;
+                let mut g = lock.lock().unwrap();
+                g.0 += 1;
+                changed.notify_all();
+                g = changed.wait_while(g, |g| !g.1).unwrap();
+                drop(g);
+                transfer_photo(u, &task_dest, true, false, ctx, &no_open)
+            }, |p| reports.lock().unwrap().push((p.done, p.bytes)), |_| panic!("copy must not forget a source")));
+            let (lock, changed) = &*gate;
+            let g = lock.lock().unwrap();
+            let (mut g, wait) = changed.wait_timeout_while(g, Duration::from_secs(3), |g| g.0 < workers).unwrap();
+            let admitted = g.0;
+            // Always release the gate before asserting, even on a slow failure.
+            g.1 = true;
+            changed.notify_all();
+            drop(g);
+            let result = coordinator.join().unwrap();
+            assert!(!wait.timed_out(), "{workers} workers did not overlap");
+            assert_eq!(admitted, workers, "admission exceeded the job preference");
+            assert!(result.failed.is_empty());
+            assert_eq!(result.done.len(), workers + 2);
+            for u in &originals {
+                for f in &u.files {
+                    assert_eq!(std::fs::read(f.from.as_ref().unwrap()).unwrap(), std::fs::read(dest.join(&f.rel)).unwrap());
+                }
+            }
+            let events = events.lock().unwrap();
+            assert!(events.windows(2).all(|p| p[1].0 >= p[0].0 && p[1].1 >= p[0].1), "progress regressed");
+            let expected: u64 = originals.iter().flat_map(|u| &u.files).map(|f| f.size).sum();
+            assert_eq!(events.last(), Some(&(workers + 2, expected)), "final progress omitted completed bytes");
+        }
+    }
+
+    #[test]
+    fn cancelling_keeps_completed_moves_and_never_starts_queued_photos() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let d = test_dir("batch-cancel");
+        let units: Vec<_> = ["done.ORF", "blocked.ORF", "queued.ORF"].iter().enumerate()
+            .map(|(i, name)| small_photo(&d.join("src"), name, i as i64 + 1)).collect();
+        let dest = d.join("dest");
+        let task_dest = dest.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let b = batch(units, &dest, 1, cancel.clone(), Duration::from_secs(2));
+        let (started, started_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let called = calls.clone();
+        let coordinator = std::thread::spawn(move || {
+            let mut forgotten = Vec::new();
+            let result = transfer_batch(b, move |u, ctx| {
+                called.lock().unwrap().push(u.name.clone());
+                if u.name == "blocked.ORF" {
+                    started.send(()).unwrap();
+                    release_rx.lock().unwrap().recv().unwrap();
+                }
+                transfer_unit(u, &task_dest, &file_names(u), &vec![false; u.files.len()], false, false, ctx, &no_open).map(Some)
+            }, |_| {}, |ids| forgotten.extend_from_slice(ids));
+            (result, forgotten)
+        });
+        started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        cancel.store(true, Ordering::SeqCst);
+        release.send(()).unwrap();
+        let (result, forgotten) = coordinator.join().unwrap();
+        assert!(result.cancelled);
+        assert_eq!(result.done, vec!["done.ORF"]);
+        assert_eq!(forgotten, vec![1]);
+        assert_eq!(result.removed, vec![1]);
+        assert_eq!(*calls.lock().unwrap(), vec!["done.ORF", "blocked.ORF"]);
+        assert!(!d.join("src/done.ORF").exists());
+        assert!(dest.join("done.ORF.xmp").exists());
+        for name in ["blocked.ORF", "queued.ORF"] {
+            assert!(d.join("src").join(name).exists());
+            assert!(!dest.join(name).exists());
+        }
+    }
+
+    #[test]
+    fn duplicate_names_keep_input_order_without_clobbering_photos_or_sidecars() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let d = test_dir("ordered-names");
+        let units = vec![small_photo(&d.join("src/a"), "same.ORF", 1), small_photo(&d.join("src/b"), "same.ORF", 2)];
+        let dest = d.join("dest");
+        let task_dest = dest.clone();
+        let result = transfer_batch(batch(units.clone(), &dest, 2, Arc::new(AtomicBool::new(false)), Duration::from_secs(2)),
+            move |u, ctx| transfer_photo(u, &task_dest, true, true, ctx, &no_open), |_| {}, |_| {});
+        assert!(result.failed.is_empty());
+        assert_eq!(result.done.len(), 2);
+        for (u, name) in units.iter().zip(["same.ORF", "same_1.ORF"]) {
+            assert_eq!(std::fs::read(u.files[0].from.as_ref().unwrap()).unwrap(), std::fs::read(dest.join(name)).unwrap());
+            assert_eq!(std::fs::read(u.files[1].from.as_ref().unwrap()).unwrap(), std::fs::read(dest.join(format!("{name}.xmp"))).unwrap());
+        }
+    }
+
+    #[test]
+    fn stalled_workers_retain_capacity_and_names_until_late_io_returns() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let d = test_dir("stalled-recovery");
+        let u = small_photo(&d.join("src"), "blocked.ORF", 1);
+        let queued = small_photo(&d.join("src"), "queued.ORF", 2);
+        let dest = d.join("dest");
+        let task_dest = dest.clone();
+        let (release, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let started = Arc::new(AtomicU64::new(0));
+        let calls = started.clone();
+        let result = transfer_batch(batch(vec![u.clone(), queued], &dest, 1, Arc::new(AtomicBool::new(false)), Duration::from_millis(80)), move |u, ctx| {
+            let _reservation = DestinationReservation::try_new(&task_dest, &file_names(u), u).unwrap();
+            calls.fetch_add(1, Ordering::SeqCst);
+            release_rx.lock().unwrap().recv().unwrap();
+            transfer_unit(u, &task_dest, &file_names(u), &vec![false; u.files.len()], false, false, ctx, &no_open).map(Some)
+        }, |_| {}, |_| panic!("a timed-out move must not forget its source"));
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        assert_eq!(result.failed.len(), 2);
+        assert!(result.failed.iter().any(|f| f.error.contains("stopped answering")));
+        assert!(DestinationReservation::try_new(&dest, &file_names(&u), &u).is_none());
+        let spare: Vec<_> = (0..WORKER_LIMIT - 1).map(|_| WorkerPermit::try_acquire().unwrap()).collect();
+        assert!(WorkerPermit::try_acquire().is_none(), "timed-out worker lost its permit");
+        let task_dest = dest.clone();
+        let b = batch(vec![u], &dest, 1, Arc::new(AtomicBool::new(false)), Duration::from_secs(2));
+        let recovered = std::thread::spawn(move || transfer_batch(b,
+            move |u, ctx| transfer_photo(u, &task_dest, true, false, ctx, &no_open), |_| {}, |_| {}));
+        release.send(()).unwrap();
+        let result = recovered.join().unwrap();
+        drop(spare);
+        assert!(result.failed.is_empty());
+        assert_eq!(result.done, vec!["blocked.ORF"]);
+        assert!(d.join("src/blocked.ORF").exists(), "late cancelled worker removed the original");
+        assert!(dest.join("blocked.ORF.xmp").exists());
+        assert!(!dest.join(".blocked.ORF.immage-part").exists());
+    }
+
+    #[test]
+    fn another_photos_activity_does_not_hide_a_stalled_transfer() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let d = test_dir("independent-stalls");
+        let units = vec![small_photo(&d.join("src"), "blocked.ORF", 1), small_photo(&d.join("src"), "busy.ORF", 2), small_photo(&d.join("src"), "queued.ORF", 3)];
+        let dest = d.join("dest");
+        let (release, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let busy_progress = Arc::new(AtomicU64::new(0));
+        let reads = busy_progress.clone();
+        // Each read really advances copy_verified's per-photo activity counter.
+        struct SlowRead { remaining: usize, reads: Arc<AtomicU64> }
+        impl Read for SlowRead {
+            fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                if self.remaining == 0 { return Ok(0); }
+                std::thread::sleep(Duration::from_millis(10));
+                let n = out.len().min(4096).min(self.remaining);
+                out[..n].fill(7);
+                self.remaining -= n;
+                self.reads.fetch_add(1, Ordering::SeqCst);
+                Ok(n)
+            }
+        }
+        let elapsed = Instant::now();
+        let result = transfer_batch(batch(units, &dest, 2, Arc::new(AtomicBool::new(false)), Duration::from_millis(150)), move |u, ctx| {
+            if u.name == "blocked.ORF" {
+                release_rx.lock().unwrap().recv().unwrap();
+                return Err(CANCELLED.into());
+            }
+            if u.name == "queued.ORF" { panic!("queued photo must not start after stall"); }
+            copy_verified(&mut SlowRead { remaining: 4096 * 300, reads: reads.clone() }, &dest.join("busy.ORF"), None, None, ctx)?;
+            Ok(Some((false, None)))
+        }, |_| {}, |_| {});
+        release.send(()).unwrap();
+        assert!(elapsed.elapsed() < Duration::from_secs(2));
+        assert!(busy_progress.load(Ordering::SeqCst) > 2);
+        assert_eq!(result.failed.len(), 3);
+        assert!(result.failed.iter().any(|f| f.name == "blocked.ORF" && f.error.contains("stopped answering")));
+        // Wait for the detached closure's permit to return through the real
+        // admission path before another test occupies the whole global cap.
+        let task_dest = d.join("dest");
+        let recovery = small_photo(&d.join("src"), "recovery.ORF", 4);
+        let permits: Vec<_> = (0..WORKER_LIMIT - 1).map(|_| WorkerPermit::try_acquire().unwrap()).collect();
+        let recovered = transfer_batch(batch(vec![recovery], &task_dest, 1, Arc::new(AtomicBool::new(false)), Duration::from_secs(2)),
+            move |u, ctx| transfer_photo(u, &task_dest, true, false, ctx, &no_open), |_| {}, |_| {});
+        drop(permits);
+        assert!(recovered.failed.is_empty());
+    }
+
+    #[test]
+    fn existing_part_files_are_never_truncated_or_removed() {
+        let d = test_dir("part-ownership");
+        let target = d.join("dest/photo.ORF");
+        let part = part_of(&target);
+        std::fs::write(&part, b"another transfer owns these bytes").unwrap();
+        let error = copy_verified(&mut &b"new photo"[..], &target, None, None, &ctx()).unwrap_err();
+        assert!(error.contains("immage-part"));
+        assert_eq!(std::fs::read(&part).unwrap(), b"another transfer owns these bytes");
+        assert!(!target.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn case_variants_transfer_in_order_on_a_case_sensitive_disk() {
+        let _serial = ADMISSION_TEST.lock().unwrap();
+        let d = test_dir("case-variants");
+        let upper = small_photo(&d.join("src"), "A.ORF", 1);
+        let lower = small_photo(&d.join("src"), "a.ORF", 2);
+        let dest = d.join("dest");
+        let task_dest = dest.clone();
+        let result = transfer_batch(batch(vec![upper.clone(), lower.clone()], &dest, 2, Arc::new(AtomicBool::new(false)), Duration::from_secs(2)),
+            move |u, ctx| transfer_photo(u, &task_dest, true, false, ctx, &no_open), |_| {}, |_| {});
+        assert!(result.failed.is_empty());
+        assert_eq!(result.done, vec!["A.ORF", "a.ORF"]);
+        for u in [upper, lower] {
+            assert_eq!(std::fs::read(u.files[0].from.as_ref().unwrap()).unwrap(), std::fs::read(dest.join(&u.name)).unwrap());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_symlink_aliases_share_reservations_before_parent_creation() {
+        let d = test_dir("symlink-reservations");
+        let dest = d.join("dest");
+        std::fs::create_dir(dest.join("actual")).unwrap();
+        std::os::unix::fs::symlink(dest.join("actual"), dest.join("alias")).unwrap();
+        let mut unit = small_photo(&d.join("src"), "raw.ORF", 1);
+        unit.files.clear();
+        let first = DestinationReservation::try_new(&dest, &["actual/new/raw.ORF".into()], &unit).unwrap();
+        assert!(DestinationReservation::try_new(&dest, &["alias/new/raw.ORF".into()], &unit).is_none());
+        drop(first);
+        assert!(DestinationReservation::try_new(&dest, &["alias/new/raw.ORF".into()], &unit).is_some());
     }
 
     #[test]

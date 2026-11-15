@@ -16,8 +16,9 @@ and Linux. **All builds are alpha; bugs are expected.**
 
 ORF metadata reads try a small prefix before reading the whole photo when
 possible. **Preferences > Performance > Memory > Library workers** controls
-thumbnail generation and ORF metadata preparation in separate bounded worker
-pools; metadata and database updates remain ordered and serial. See the
+thumbnail generation, ORF metadata preparation and photo moves/copies with
+separate worker limits. Transfers keep each photo and its sidecars together;
+metadata and database updates remain ordered and serial. See the
 [library guide](app/docs/library.md#orf-metadata-reads-and-library-workers).
 
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>

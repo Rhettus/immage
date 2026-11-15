@@ -70,10 +70,11 @@ Opening a photo for editing still needs its image data. Panasonic RW2 is not
 included.
 
 **Preferences > Performance > Memory > Library workers** controls how many
-library thumbnails are built at once and how many ORF metadata tasks are
-prepared at once. The thumbnail and metadata workers use separate pools, so
-the setting is not a shared total. It defaults to 2. A change applies to
-subsequent import batches. Metadata results are applied in file order, with
+library thumbnails are built at once, how many ORF metadata tasks are
+prepared at once and how many photos are moved or copied at once. These
+limits are separate, so the setting is not a shared total. It defaults to 2.
+A change applies to subsequent import batches and new move or copy jobs.
+Metadata results are applied in file order, with
 metadata, sidecars and database updates kept serial. The metadata task queue
 is bounded by this setting; the Exiv2 parser lock remains in place. Other
 formats continue through the existing serial import path.
@@ -169,6 +170,12 @@ Nothing happens until you confirm. The confirmation shows the following:
 Each photo goes with its XMP sidecars, every version's, and its mask
 sidecars, so its edits, ratings, labels and keywords arrive with it.
 
+Several photos can transfer at once, up to **Preferences > Performance >
+Memory > Library workers** (2 by default). Each photo's files stay together;
+its sidecars are not separate transfer jobs. The limit is chosen when the job
+starts, and also applies when copying originals from Immich. More workers
+can help with a NAS or fast disk, but fewer may be quicker on a busy drive.
+
 - **To another drive.** Each file is copied and flushed to the drive. It
   is then read back and checked against the original's checksum before it
   takes its name. A move removes the original only once every file of
@@ -177,13 +184,16 @@ sidecars, so its edits, ratings, labels and keywords arrive with it.
 - **On the same drive.** A move renames the files, which is instant.
 
 The work runs in the background, under the photo, with a progress bar and
-**Stop**. Stopping abandons the photo being copied (its original stays) and
-the ones after it. Photos that are moved disappear from the folder at once.
+**Stop**. Stopping asks active transfers to stop and leaves queued photos
+untouched. Photos already completed stay in the destination. A file operation
+already accepted by a drive may finish before it stops. Photos that
+are moved disappear from the folder at once.
 If any stay behind, the folder is read again to show them. When it's done,
 **Show** opens the destination folder.
 
-A share that stops answering for 30 seconds ends the job. The photo it was
-on stays where it was.
+A transfer that stops answering for 30 seconds ends the job and stops new
+transfers. Activity on another photo does not hide a stalled transfer.
+Blocked transfers continue to count against the worker cap until they return.
 
 ## The filmstrip and the grid
 

@@ -399,14 +399,14 @@ scale**; zoomed-in frames still use the full webview resolution.
   short of memory.
 - **Read ahead both ways**: as many photos behind the open one too, for
   stepping back. Off by default.
-- **Library workers**: how many library thumbnails are built at the same time
-  and how many ORF metadata tasks are prepared at once, from 1 to 8. Two by
-  default, which leaves most of the computer's cores to the photo being
-  edited. Thumbnail generation and ORF metadata preparation use separate
-  pools, so this is not a shared total. More can fill a folder sooner from a
-  fast disk; fewer can be quicker from a network drive (NAS), which slows down
-  when several files are read at once. Changes apply to subsequent import
-  batches.
+- **Library workers**: how many library thumbnails, ORF metadata tasks and
+  photo transfers run at the same time, from 1 to 8. Two by default.
+  These limits are separate, so this is not a shared total. Moves and copies
+  keep each photo and its sidecars together, including downloads from Immich.
+  More workers can help on fast disks or network drives (NAS); fewer may be
+  quicker on a spinning disk or when the drive is busy. Changes apply to
+  subsequent import batches and new move or copy jobs. A transfer job keeps
+  the worker limit it started with.
 
 **Cache**
 

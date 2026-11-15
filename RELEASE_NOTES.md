@@ -35,8 +35,9 @@ Improvements
   slider, so each set stands apart from the sliders around it.
 - Preferences > Performance > Memory has a Library workers setting: how many
   library thumbnails are built at once and how many ORF metadata tasks are
-  prepared at once (2 by default). The separate worker pools are each bounded
-  by this setting; changes apply to subsequent import batches.
+  prepared at once, plus the limit for photo moves and copies (2 by default).
+  The limits are separate; changes apply to subsequent import batches and
+  new transfer jobs.
 - Advanced mode offers a module-based editing panel, more like darktable,
   with its available modules except deprecated ones. Each module has its own
   card with settings, presets, on/off and reset, plus controls to add,
@@ -72,6 +73,9 @@ Improvements
 
 Performance
 
+- Photo moves and copies transfer several photos at once, up to Library
+  workers, including originals downloaded from Immich. Each photo stays with
+  its sidecars and is verified before its originals are removed.
 - ORF metadata reads try a small file prefix before reading the whole photo,
   reducing metadata read volume when metadata is near the beginning; embedded
   previews remain available, with full-file fallback when needed. ORF metadata
