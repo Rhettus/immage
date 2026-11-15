@@ -43,6 +43,8 @@ Improvements
 
 Bug fixes
 
+- Immich path mappings reject traversal and symlinks that lead outside the
+  configured local folder.
 - All rail panels keep the same header icons, including the Simple/Advanced
   switch. Masks now supports expand/collapse all for its settings and adjustments.
 - Grid context-menu keywording now keeps a selected group together, targets only

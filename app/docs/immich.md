@@ -175,3 +175,6 @@ the album without a second copy. See [Export](export.md).
 | **the API key lacks …: thumbnails need asset.view, downloading originals needs asset.download** | Add those permissions to the key. |
 | **the API key lacks …: give it those in Immich, or exporting may fail** | Add the export permissions (`asset.upload`, `album.read`, `album.create`, `albumAsset.create`). |
 | **no photos in Immich match the search** | Loosen the search, or set the library menu to **All photos**. |
+
+Mapped local files must stay inside the configured local folder after resolving
+symlinks. Paths that escape that folder are treated as unavailable locally.

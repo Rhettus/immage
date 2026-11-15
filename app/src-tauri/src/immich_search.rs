@@ -158,16 +158,31 @@ pub fn filter(a: &SearchArgs) -> Value {
 
 // a path as Immich has it, on this computer, when the file is there
 pub fn local_path(original: &str, map: &PathMap) -> Option<PathBuf> {
-    let from = map.immich.trim().trim_end_matches('/');
-    let to = map.local.trim();
-    if from.is_empty() || to.is_empty() {
+    let from = Path::new(map.immich.trim());
+    let to = Path::new(map.local.trim());
+    if !from.is_absolute() || !to.is_absolute() || from == Path::new("/") {
         return None;
     }
-    let rest = original.strip_prefix(from)?;
-    // a whole folder name: /mnt/photos does not cover /mnt/photos2
-    let rest = rest.strip_prefix('/')?;
-    let p = Path::new(to).join(rest);
-    p.is_file().then_some(p)
+    // Path component matching avoids string-prefix mistakes such as mapping
+    // /mnt/photos2 through /mnt/photos. Only ordinary relative components are
+    // accepted below the mapped root.
+    let original = Path::new(original);
+    let rest = original.strip_prefix(from).ok()?;
+    if rest.as_os_str().is_empty()
+        || rest.components().any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+
+    // Canonicalize both sides so a symlink inside the mapped tree cannot
+    // expose a file outside it. Existence alone does not establish that this
+    // file has the same contents as the Immich asset.
+    let root = std::fs::canonicalize(to).ok()?;
+    let candidate = std::fs::canonicalize(root.join(rest)).ok()?;
+    if !candidate.starts_with(&root) || !candidate.is_file() {
+        return None;
+    }
+    Some(candidate)
 }
 
 // asset ids name cache files, so nothing but a uuid's characters
@@ -453,11 +468,40 @@ mod tests {
         std::fs::create_dir_all(dir.join("2026")).unwrap();
         std::fs::write(dir.join("2026/a.raf"), b"x").unwrap();
         let map = PathMap { immich: "/mnt/photos/".into(), local: dir.to_string_lossy().into() };
-        assert_eq!(local_path("/mnt/photos/2026/a.raf", &map), Some(dir.join("2026/a.raf")));
+        assert_eq!(local_path("/mnt/photos/2026/a.raf", &map), Some(std::fs::canonicalize(dir.join("2026/a.raf")).unwrap()));
         assert_eq!(local_path("/mnt/photos/2026/b.raf", &map), None);
         assert_eq!(local_path("/mnt/photos2/2026/a.raf", &map), None);
         assert_eq!(local_path("/mnt/photos/2026/a.raf", &PathMap::default()), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn paths_reject_traversal_and_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = test_dir("immich-path-map-safety");
+        let root = dir.join("root");
+        let outside = dir.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.jpg"), b"not mapped").unwrap();
+        symlink(&outside, root.join("linked")).unwrap();
+        let map = PathMap { immich: "/mnt/photos".into(), local: root.to_string_lossy().into() };
+
+        assert_eq!(local_path("/mnt/photos/../outside/secret.jpg", &map), None);
+        assert_eq!(local_path("/mnt/photos/linked/secret.jpg", &map), None);
+        assert_eq!(local_path("/mnt/photos2/secret.jpg", &map), None);
+        assert_eq!(local_path("relative/file.jpg", &map), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn path_map_requires_absolute_roots() {
+        let map = PathMap { immich: "mnt/photos".into(), local: "/tmp".into() };
+        assert_eq!(local_path("mnt/photos/a.jpg", &map), None);
+        let map = PathMap { immich: "/mnt/photos".into(), local: "photos".into() };
+        assert_eq!(local_path("/mnt/photos/a.jpg", &map), None);
     }
 
     #[test]
