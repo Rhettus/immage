@@ -121,6 +121,8 @@ import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
+import { createCombinedSearchCoordinator } from "./combinedSearch";
+import { localSearch } from "./localSearch";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
@@ -2947,8 +2949,9 @@ export default function App() {
   const shownGen = useRef(0);
   const showFolder = async (dir: string, again = false,
                             seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
+    window.clearTimeout(immichTimer.current);
     setImmich(null);
-    immichToken.current++;
+    combined.current?.cancel();
     setFolder(dir);
     saveLibrary({ current: dir });
     if (!again) {
@@ -3009,36 +3012,51 @@ export default function App() {
     }
   };
 
-  // an Immich search into the filmstrip; `more` adds its next page. a newer
-  // search, or a folder opened, drops what an older one brings back
-  const immichToken = useRef(0);
-  const searchImmich = async (q: ImmichSearch, more = false) => {
-    const prev = immichRef.current;
-    if (more && (!prev?.next || prev.busy)) return;
-    const token = ++immichToken.current;
-    const after = more ? prev!.next : null;
-    if (!more) thumbError.current = false;
-    setImmich({ search: q, next: after, busy: true });
-    if (!more) {
-      loader.current!.clear();
-      setFilter(NO_FILTER);
-      setReading(null);
-      updateImages([]);
-      setGrid(true);
-    }
-    try {
-      const page = await searchImmichPage(q, after);
-      if (token !== immichToken.current) return;
-      const list = more ? [...imagesRef.current, ...page.entries] : page.entries;
+  type SearchQuery = { form: ImmichSearch; filters: Filter; folder: string; recursive: boolean; imageVariant?: string };
+  const combined = useRef<ReturnType<typeof createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>> | null>(null);
+  if (!combined.current) combined.current = createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>({
+    sources: {
+      local: (q, next, signal) => localSearch(q.form, q.filters, q.folder, q.recursive, next, signal, q.imageVariant),
+      immich: async (q, next, signal) => {
+        const page = await searchImmichPage(q.form, next);
+        if (signal.aborted) throw new Error("Search cancelled");
+        const f = q.filters;
+        // Server placeholders do not establish local edit/reject/label state.
+        const unknown = f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled
+          || f.bodies.length > 0 || f.keywords.length > 0;
+        return { items: unknown ? [] : page.entries.filter(i => passes(i, f)), next: page.next };
+      },
+    },
+    // Path mapping alone does not verify equal photo contents across sources.
+    verifiedIdentity: (source, i) => source === "local" && i.localIndex
+      ? `local:${i.localIndex.variantId}` : source === "immich" && i.remote ? `immich:${i.remote.assetId}` : null,
+    onUpdate: state => {
+      const q = state.query as SearchQuery | null;
+      if (!q) return;
+      const sources = Object.entries(state.sources);
+      const busy = sources.some(([, v]) => v.status === "searching");
+      const next = sources.some(([, v]) => v.next) ? "more" : null;
+      const list = state.results.map(r => r.item);
       updateImages(list);
-      loader.current!.request(page.entries.map((i) => i.imgid));
-      setImmich({ search: q, next: page.next, busy: false });
-      setStatus(`${list.length.toLocaleString()}${page.next ? "+" : ""} photos from Immich`);
-    } catch (e) {
-      if (token !== immichToken.current) return;
-      setImmich({ search: q, next: null, busy: false });
-      setStatus(`Immich: ${e}`);
+      loader.current?.request(list.map(i => i.imgid));
+      setImmich({ search: q.form, next, busy });
+      const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${String(v.error)}`);
+      setStatus(`${list.length.toLocaleString()}${next ? "+" : ""} photos${busy ? " · searching…" : ""}${errors.length ? ` · ${errors.join("; ")}` : ""}`);
+    },
+  });
+  useEffect(() => () => combined.current?.cancel(), []);
+  const searchImmich = async (q: ImmichSearch, more = false, imageVariant?: string) => {
+    if (more) {
+      await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
+      return;
     }
+    thumbError.current = false;
+    loader.current!.clear();
+    setReading(null);
+    setGrid(true);
+    const enabled: ("local" | "immich")[] = !immichBase || q.source === "local" ? ["local"]
+      : q.source === "immich" ? ["immich"] : ["local", "immich"];
+    await combined.current!.search({ form: q, filters: filter, folder: folder ?? "", recursive: includeSub, imageVariant }, enabled);
   };
 
   // a photo picked in the filmstrip. an Immich result opens the external
@@ -5792,7 +5810,7 @@ export default function App() {
   // filters leave the raw out
   const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   partnersRef.current = partners;
-  const passing = images.filter((i) => passes(i, filter));
+  const passing = immich ? images : images.filter((i) => passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
@@ -6101,12 +6119,12 @@ export default function App() {
             </div>
           )}
         </div>
-        {immichBase && (
-          <ImmichPanel open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
+        {
+          <ImmichPanel immichAvailable={!!immichBase} open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
                        active={!!immich} searching={!!immich?.busy} form={immichForm} onChange={updateImmich}
                        onSearch={() => { window.clearTimeout(immichTimer.current); void searchImmich(immichFormRef.current); }}
                        onMenu={showResultsMenu} />
-        )}
+        }
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
                              .map((h) => {
                                const st = session.current?.moduleStates.get(instanceKey(h));
@@ -6393,7 +6411,8 @@ export default function App() {
           )}
           {(() => {
             // the folder's reading, then its thumbnails
-            if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
+            if (immich?.busy) return <div className="activity"><span>Searching photos…</span>
+              <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus("Search stopped"); }}>Stop</button></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
               // the viewer's own pointer handling (zoom on click) stays off it
@@ -6425,7 +6444,7 @@ export default function App() {
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
             <Filmstrip images={cells} partners={partners} pending={pending}
-                       empty={immich ? (immich.busy ? "searching Immich…" : "no photos in Immich match the search")
+                       empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
@@ -6446,12 +6465,12 @@ export default function App() {
                          setSelection(new Set());
                          void openFile(k.path);
                        }}
-                       more={immich?.next && !immich.busy ? () => void searchImmich(immich.search, true) : undefined}
+                       more={immich?.next ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar filter={filter} images={images} immich={immich ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
+        <Toolbar filter={filter} images={images} immich={immich && immichForm.source !== "local" && immichBase ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
@@ -6491,7 +6510,10 @@ export default function App() {
                               fit={() => fitScale()} />
                    </div>
                  </>}
-                 onFilter={setFilter}
+                 onFilter={(f) => { setFilter(f); if (immichRef.current) { window.clearTimeout(immichTimer.current); immichTimer.current = window.setTimeout(() => {
+                   const q = combined.current?.getState().query as SearchQuery | null;
+                   if (q) void combined.current!.search({ ...q, filters: f }, Object.entries(combined.current!.getState().sources).filter(([, v]) => v.status !== "idle").map(([k]) => k as "local" | "immich"));
+                 }, 400); } }}
                  onLayout={toggleSide} />
       </section>
 

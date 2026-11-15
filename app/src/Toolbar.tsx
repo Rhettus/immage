@@ -131,7 +131,7 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
     onFilter(NO_FILTER);
     if (immich) {
       const s = immich.form;
-      immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library });
+      immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library, source: s.source, scope: s.scope, subject: s.subject });
     }
     say("Filters cleared", e);
   };

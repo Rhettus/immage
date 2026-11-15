@@ -9,6 +9,22 @@ use crate::immich_upload;
 use crate::immich_search;
 use crate::bindings;
 
+// Count actual blocking searches, including a request abandoned by the page.
+// A stalled filesystem mapping must not create an unbounded worker backlog.
+static SEARCH_ACTIVE: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+struct SearchPermit;
+impl SearchPermit {
+    fn acquire() -> Result<Self, String> {
+        let mut active = SEARCH_ACTIVE.lock().map_err(|_| "Immich search lock poisoned")?;
+        if *active >= 4 { return Err("Immich search is busy; retry shortly".into()); }
+        *active += 1;
+        Ok(Self)
+    }
+}
+impl Drop for SearchPermit {
+    fn drop(&mut self) { if let Ok(mut active) = SEARCH_ACTIVE.lock() { *active -= 1; } }
+}
+
 // the Immich side of exporting: run off the async runtime, as the client
 // blocks
 async fn immich_call<T: Send + 'static>(
@@ -54,7 +70,11 @@ pub(crate) async fn immich_browse_check(app: AppHandle) -> Result<Vec<String>, S
 #[specta::specta]
 pub(crate) async fn immich_search(app: AppHandle, args: immich_search::SearchArgs, map: Option<immich_search::PathMap>)
     -> Result<SearchPage, String> {
-    immich_call(&app, move |c| c.search(&args, &map.unwrap_or_default())).await
+    let permit = SearchPermit::acquire()?;
+    immich_call(&app, move |c| {
+        let _permit = permit;
+        c.search(&args, &map.unwrap_or_default())
+    }).await
 }
 
 #[tauri::command]
@@ -119,3 +139,22 @@ pub(crate) async fn immich_resolve(app: AppHandle, id: String, name: String, pat
     Ok(Resolved { path: p.to_string_lossy().into_owned(), downloaded: true })
 }
 
+
+#[cfg(test)]
+mod search_admission_tests {
+    use super::*;
+    #[test]
+    fn abandoned_blocking_work_retains_admission_until_it_exits() {
+        let mut held = (0..4).map(|_| SearchPermit::acquire().unwrap()).collect::<Vec<_>>();
+        assert!(SearchPermit::acquire().is_err());
+        let permit = held.pop().unwrap();
+        let (send, recv) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || { let _permit = permit; recv.recv().unwrap(); });
+        assert!(SearchPermit::acquire().is_err());
+        send.send(()).unwrap(); worker.join().unwrap();
+        let next = SearchPermit::acquire().unwrap();
+        assert!(SearchPermit::acquire().is_err());
+        drop(next); drop(held);
+        assert_eq!(*SEARCH_ACTIVE.lock().unwrap(), 0);
+    }
+}

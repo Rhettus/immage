@@ -100,6 +100,24 @@ pauses background checks, clears or rebuilds cached records, and offers the
 optional model download and CPU model check. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
+The **Search photos** card is available without an Immich connection. Choose
+**Local photos**, **Immich**, or **Local + Immich** when Immich is configured.
+Local searches cover the current folder (respecting Include subfolders) or all
+library folders. Choose original or edited analysis for local similarity.
+**Filename** and empty-text searches can use cached metadata without a model.
+Smart text needs a downloaded model and current indexed embeddings; automatic
+embedding creation is not connected yet in this experimental build.
+
+Each source displays results as soon as it finishes. A failure in one source
+leaves the other source's results available, with the error in the status line.
+More results load independently for each source. **Stop** keeps displayed results
+and ignores late replies; blocking Immich work may finish in the background,
+with at most four active requests. Opening a folder leaves search results.
+Combined results use equal reciprocal-rank weighting of each source's order.
+Cross-source duplicates are retained until their identity can be verified.
+Search retains active filters. Unknown local edit, reject, label, keyword and
+camera-body fields exclude remote results when those filters are selected.
+
 Local search uses only cached metadata and current model-versioned analysis.
 Selected filters exclude unknown values; capture-date filters do not substitute
 file modification dates. Similarity queries exclude the source photo and its

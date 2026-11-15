@@ -22,6 +22,7 @@ export type Exif = {
 export const takenAt = (i: Known) => i.exif.datetime || i.exif.file_datetime || "";
 
 export type ImageEntry = {
+  localIndex?: { assetId: string; variantId: string; subject: string };
   imgid: number;
   location?: { latitude: number; longitude: number } | null;
   path: string;
