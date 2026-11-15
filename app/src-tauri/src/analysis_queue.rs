@@ -8,6 +8,7 @@ use std::sync::{Arc, Condvar, Mutex};
 type Work = Box<dyn FnOnce(Job) + Send + 'static>;
 struct Pending {
     key: String,
+    foreground: bool,
     work: Work,
 }
 #[derive(Default)]
@@ -65,7 +66,9 @@ impl AnalysisQueue {
             changed: Condvar::new(),
             capacity,
         });
-        for _ in 0..workers {
+        // One reserved foreground worker keeps queries responsive when scans
+        // occupy every background slot (including blocked filesystem calls).
+        for foreground_only in std::iter::once(true).chain(std::iter::repeat_n(false, workers)) {
             let inner = inner.clone();
             std::thread::spawn(move || loop {
                 let (task, epoch) = {
@@ -74,11 +77,18 @@ impl AnalysisQueue {
                         if state.stopped {
                             return;
                         }
-                        if !state.paused {
-                            if let Some(task) = state.queue.pop_front() {
-                                state.active += 1;
-                                break (task, state.epoch);
+                        let foreground = state.queue.iter().position(|task| task.foreground);
+                        let position = foreground.or_else(|| {
+                            if !foreground_only && !state.paused && !state.queue.is_empty() {
+                                Some(0)
+                            } else {
+                                None
                             }
+                        });
+                        if let Some(position) = position {
+                            let task = state.queue.remove(position).unwrap();
+                            state.active += 1;
+                            break (task, state.epoch);
                         }
                         state = inner.changed.wait(state).unwrap();
                     }
@@ -105,6 +115,17 @@ impl AnalysisQueue {
     /// False means duplicate, full or stopping; callers retain their own retry
     /// source (the cache). Capacity includes queued and running jobs.
     pub fn submit(&self, key: String, work: impl FnOnce(Job) + Send + 'static) -> bool {
+        self.enqueue(key, false, work)
+    }
+    pub fn submit_foreground(&self, key: String, work: impl FnOnce(Job) + Send + 'static) -> bool {
+        self.enqueue(key, true, work)
+    }
+    fn enqueue(
+        &self,
+        key: String,
+        foreground: bool,
+        work: impl FnOnce(Job) + Send + 'static,
+    ) -> bool {
         let mut state = self.inner.state.lock().unwrap();
         let epoch = state.epoch;
         if state.stopped
@@ -115,9 +136,10 @@ impl AnalysisQueue {
         }
         state.queue.push_back(Pending {
             key,
+            foreground,
             work: Box::new(work),
         });
-        self.inner.changed.notify_one();
+        self.inner.changed.notify_all();
         true
     }
     pub fn pause(&self, paused: bool) {
@@ -210,6 +232,26 @@ mod tests {
         release_tx.send(()).unwrap();
         queue.pause(false);
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), Some(42));
+    }
+    #[test]
+    fn foreground_query_runs_while_background_is_blocked_and_paused() {
+        let q = AnalysisQueue::new(1, 3);
+        let (tx, rx) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        assert!(q.submit("scan".into(), move |_| {
+            tx.send(()).unwrap();
+            wait.recv().unwrap();
+        }));
+        rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        q.pause(true);
+        assert!(q.submit("paused".into(), |_| panic!("background remains paused")));
+        let (tx, rx) = mpsc::channel();
+        assert!(q.submit_foreground("query".into(), move |_| {
+            tx.send(42).unwrap();
+        }));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), 42);
+        q.cancel();
+        release.send(()).unwrap();
     }
     #[test]
     fn panicked_jobs_release_the_worker_and_capacity() {

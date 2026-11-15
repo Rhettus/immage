@@ -88,7 +88,7 @@ fn embedding(reply: Value) -> Result<Vec<f32>, String> {
     }
     Ok(result)
 }
-fn text(models: &Models, engine: &Tagged, runtime: &Path, query: &str) -> Result<Vec<f32>, String> {
+pub fn text(models: &Models, engine: &Tagged, runtime: &Path, query: &str) -> Result<Vec<f32>, String> {
     let (root, input) = models.prepare_text(query)?;
     let tensor = TensorFile::text(runtime, &input)?;
     embedding(engine.request(

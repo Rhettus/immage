@@ -1314,3 +1314,14 @@ both directions, and resets through a label double-click. Expected mean pixel
 error after reset is below 1/255. See `verify/gui/README.md` for setup, evidence,
 coverage limits and remaining scenarios. Results stay in `verify/results/gui/`;
 fixture originals and the user's running app are not test state.
+
+Local retrieval uses `local_search.rs`, `search_filters.rs` and
+`local_search_cmds.rs`: exact cosine ranking in 256-row batches with a bounded
+page heap, strict known-value filters, component-aware folder/library scopes,
+model-versioned image queries excluding the source asset and its virtual copies,
+and opaque query/revision cursors. Cache changes invalidate pagination; malformed
+vectors are skipped. Metadata-only queries avoid vector reads and model loading.
+A reserved foreground worker shares queue admission while background work is
+paused or blocked. Four request tickets bound overlapping searches; cancellation
+retains admission until work exits and guards publication. Search UI integration
+and automatic embedding generation remain separate work.

@@ -15,6 +15,9 @@ mod clip_text;
 mod clip_image;
 mod clip_infer;
 mod search_cmds;
+mod search_filters;
+mod local_search;
+mod local_search_cmds;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -71,6 +74,7 @@ struct AppState {
     search_cache: Option<Arc<search_cache::SearchCache>>,
     analysis_queue: analysis_queue::AnalysisQueue,
     search_clear_lock: Mutex<()>,
+    local_search_requests: Arc<local_search_cmds::Requests>,
     clip_models: Arc<clip_models::Models>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
@@ -276,6 +280,7 @@ fn main() {
                 search_cache,
                 analysis_queue,
                 search_clear_lock: Mutex::new(()),
+                local_search_requests: Arc::new(local_search_cmds::Requests::default()),
                 clip_models: Arc::new(clip_models::Models::new(runtime.join("clip-models"))),
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
@@ -317,6 +322,7 @@ fn main() {
         .expect("error while running Immage");
     app.run(|_app, _event| {
         if matches!(_event, tauri::RunEvent::Exit) {
+            _app.state::<AppState>().local_search_requests.cancel_all();
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();
             _app.state::<AppState>().clip_models.cancel();

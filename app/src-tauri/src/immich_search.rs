@@ -32,8 +32,8 @@ pub struct PathMap {
     pub local: String,
 }
 
-#[derive(Deserialize, Default, Type)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(serde::Serialize, Deserialize, Clone, Default, Type)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct SearchArgs {
     // "smart" asks Immich's machine learning; "filename" matches the file
     // name or description

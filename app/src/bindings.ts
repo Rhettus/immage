@@ -6,6 +6,8 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
 	searchStatus: () => __TAURI_INVOKE<SearchStatus>("search_status"),
+	localSearch: (args: LocalSearchArgs, requestId: number) => __TAURI_INVOKE<LocalPage>("local_search", { args, requestId }),
+	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
@@ -490,6 +492,25 @@ export type GpuEditState = {
 	next: boolean,
 };
 
+export type GridFilter = {
+	minRating?: number,
+	rejected?: string,
+	edited?: string,
+	labels?: number,
+	unlabeled?: boolean,
+	kinds?: string[],
+	cameras?: string[],
+	bodies?: string[],
+	lenses?: string[],
+	keywords?: string[],
+	takenFrom?: string,
+	takenTo?: string,
+	iso?: string[],
+	aperture?: string[],
+	focal?: string[],
+	shutter?: string[],
+};
+
 export type HdrReply = {
 	path: string,
 	image: LibraryImage,
@@ -569,6 +590,34 @@ export type Limits = {
 	thumbs: number,
 	immichThumbs: number,
 	immichOriginals: number,
+};
+
+export type LocalHit = {
+	asset_id: string,
+	variant_id: string,
+	subject: string,
+	score: number | null,
+	image: LibraryImage,
+};
+
+export type LocalPage = {
+	items: LocalHit[],
+	next: string | null,
+	revision: string,
+};
+
+export type LocalSearchArgs = {
+	text?: string,
+	mode?: string,
+	imageVariant?: string | null,
+	subject?: string,
+	scope?: string,
+	folder?: string | null,
+	recursive?: boolean,
+	filters?: GridFilter,
+	remote?: SearchArgs,
+	next?: string | null,
+	size?: number,
 };
 
 export type Location = {

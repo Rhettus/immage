@@ -45,10 +45,20 @@ pub struct Counts {
     pub metadata: i64,
     pub analyses: i64,
 }
+pub struct Candidate {
+    pub asset_id: i64,
+    pub variant_id: i64,
+    pub path: String,
+    pub copy_key: String,
+    pub capture_raw: Option<String>,
+    pub metadata: Option<String>,
+    pub embedding: Option<Vec<u8>>,
+}
 /// SQLite metadata/index store. The connection is serialized because rusqlite
 /// connections are not Sync; callers should keep expensive file work outside.
 pub struct SearchCache {
     db: Mutex<Connection>,
+    instance: String,
 }
 
 impl SearchCache {
@@ -231,7 +241,10 @@ impl SearchCache {
         )
         .map_err(|e| e.to_string())?;
         schema.commit().map_err(|e| e.to_string())?;
-        Ok(Self { db: Mutex::new(db) })
+        Ok(Self {
+            db: Mutex::new(db),
+            instance: uuid::Uuid::new_v4().to_string(),
+        })
     }
 
     /// Register a path and its original/edited fingerprints. A fingerprint
@@ -505,6 +518,73 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
+    pub fn revision(&self) -> Result<String, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let external: i64 = db
+            .query_row("PRAGMA data_version", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        Ok(format!(
+            "{}:{}:{external}",
+            self.instance,
+            db.total_changes()
+        ))
+    }
+    pub fn candidates(
+        &self,
+        after: i64,
+        subject: &str,
+        version: i64,
+        model: &str,
+        with_embedding: bool,
+    ) -> Result<Vec<Candidate>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let join = match subject {
+            "edited" => "n.variant_id=v.id",
+            "original" => "n.asset_id=a.id",
+            _ => return Err("Invalid analysis subject".into()),
+        };
+        // A fixed subject-specific join uses the partial analysis indexes and
+        // avoids an OR join over every vector in a large library.
+        let sql = if with_embedding {
+            format!(
+                "SELECT a.id,v.id,a.path,v.copy_key,v.capture_time_raw,v.metadata_json,n.embedding
+          FROM variants v JOIN assets a ON a.id=v.asset_id LEFT JOIN analyses n
+          ON n.analysis_version=?2 AND n.model_version=?3 AND n.subject='{subject}' AND {join}
+          WHERE v.id>?1 ORDER BY v.id LIMIT 256"
+            )
+        } else {
+            "SELECT a.id,v.id,a.path,v.copy_key,v.capture_time_raw,v.metadata_json,NULL FROM variants v JOIN assets a ON a.id=v.asset_id WHERE v.id>?1 ORDER BY v.id LIMIT 256".into()
+        };
+        let mut query = db.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut rows = if with_embedding {
+            query.query(params![after, version, model])
+        } else {
+            query.query([after])
+        }
+        .map_err(|e| e.to_string())?;
+        let mut result = Vec::new();
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            result.push(Candidate {
+                asset_id: row.get(0).map_err(|e| e.to_string())?,
+                variant_id: row.get(1).map_err(|e| e.to_string())?,
+                path: row.get(2).map_err(|e| e.to_string())?,
+                copy_key: row.get(3).map_err(|e| e.to_string())?,
+                capture_raw: row.get(4).map_err(|e| e.to_string())?,
+                metadata: row.get(5).map_err(|e| e.to_string())?,
+                embedding: row.get(6).map_err(|e| e.to_string())?,
+            });
+        }
+        Ok(result)
+    }
+    pub fn image_query(
+        &self,
+        variant: i64,
+        subject: &str,
+        version: i64,
+        model: &str,
+    ) -> Result<Option<(i64, Vec<u8>)>, String> {
+        self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row("SELECT v.asset_id,n.embedding FROM variants v JOIN analyses n ON n.subject=?2 AND n.analysis_version=?3 AND n.model_version=?4 AND ((?2='edited' AND n.variant_id=v.id) OR (?2='original' AND n.asset_id=v.asset_id)) WHERE v.id=?1",params![variant,subject,version,model],|row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())
+    }
     pub fn counts(&self) -> Result<Counts, String> {
         self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row(
             "SELECT (SELECT count(*) FROM assets),(SELECT count(*) FROM variants),(SELECT count(*) FROM variants WHERE metadata_json IS NOT NULL),(SELECT count(*) FROM analyses)",[],|row| Ok(Counts{assets:row.get(0)?,variants:row.get(1)?,metadata:row.get(2)?,analyses:row.get(3)?})).map_err(|e|e.to_string())

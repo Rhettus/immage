@@ -100,6 +100,11 @@ pauses background checks, clears or rebuilds cached records, and offers the
 optional model download and CPU model check. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
+Local search uses only cached metadata and current model-versioned analysis.
+Selected filters exclude unknown values; capture-date filters do not substitute
+file modification dates. Similarity queries exclude the source photo and its
+virtual copies. A changed cache requires restarting paginated local results.
+
 ### Thumbnail previews
 
 The grid and filmstrip support embedded JPEG and TIFF previews, including
