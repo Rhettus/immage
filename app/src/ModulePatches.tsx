@@ -16,6 +16,7 @@ import {
   altered, deletePatch, DEFAULT_PATCHES, editChannel, editSaturation, gridOf, highlightGray, labToSrgb, MAX_PATCHES,
   patchAt, resetPatch, sliderValues,
 } from "./colorchecker";
+import { t } from "./i18n";
 
 const W = 260;   // the viewBox's width; the grid keeps darktable's aspect ratio
 const pct = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255);
@@ -82,7 +83,7 @@ export function ModulePatches({ state, disabled, onFields }: {
 
   return (
     <div className="module-card-curve module-card-patches" data-patches="colorchecker">
-      <svg className={`patches-area${disabled ? " disabled" : ""}`} viewBox={`0 0 ${W} ${H}`} aria-label="Color look up table patches"
+      <svg className={`patches-area${disabled ? " disabled" : ""}`} viewBox={`0 0 ${W} ${H}`} aria-label={t("fields.patches.graph")}
            style={{ aspectRatio: `${cx} / ${cy}` }} shapeRendering="crispEdges"
            onMouseDown={press} onContextMenu={(e) => e.preventDefault()}>
         <rect x={0} y={0} width={W} height={H} fill="rgb(51,51,51)" />
@@ -91,7 +92,7 @@ export function ModulePatches({ state, disabled, onFields }: {
           const [r, g, b] = labToSrgb(P(`source_L[${k}]`), P(`source_a[${k}]`), P(`source_b[${k}]`));
           return (
             <g key={k}>
-              <title>{`(${["L", "a", "b"].map((c) => P(`source_${c}[${k}]`).toFixed(2)).join(" ")})\naltered patches are marked with an outline\nclick to select\ndouble-click to reset\nright-click to delete patch`}</title>
+              <title>{`(${["L", "a", "b"].map((c) => P(`source_${c}[${k}]`).toFixed(2)).join(" ")})\n${t("fields.patches.outline")}\n${t("fields.patches.click")}\n${t("fields.patches.doubleClick")}\n${t("fields.patches.rightClick")}`}</title>
               <rect x={x} y={y} width={w - 1} height={h - 1} fill={`rgb(${pct(r)},${pct(g)},${pct(b)})`} />
               {altered(P, k) && <>
                 <rect x={x + 1} y={y + 1} width={w - 3} height={h - 3} fill="none" stroke="rgb(204,204,204)" strokeWidth={2} />
@@ -106,15 +107,15 @@ export function ModulePatches({ state, disabled, onFields }: {
         )}
       </svg>
       <div className="choice-row" data-control-id="adv:colorchecker:patch">
-        <span title="color checker patch">Patch</span>
-        <select className="field" value={patch} disabled={disabled || !n} title="color checker patch" onChange={(e) => choose(Number(e.target.value))}>
-          {Array.from({ length: n }, (_, k) => <option key={k} value={k}>{`patch #${k}`}</option>)}
+        <span title={t("fields.patches.patch")}>{t("fields.patches.patch")}</span>
+        <select className="field" value={patch} disabled={disabled || !n} title={t("fields.patches.patch")} onChange={(e) => choose(Number(e.target.value))}>
+          {Array.from({ length: n }, (_, k) => <option key={k} value={k}>{t("fields.patches.patchNumber", { number: k })}</option>)}
         </select>
       </div>
       {(["L", "a", "b", "C"] as const).map(row)}
-      <Choice control={{ id: "adv:colorchecker:target", label: "Target color", kind: "choice", inline: true, min: 0, max: 1, step: 1,
-                         options: [["Relative", 0], ["Absolute", 1]], format: String,
-                         note: "control target color of the patches\nrelative - target color is relative from the patch original color\nabsolute - target color is absolute Lab value" }}
+      <Choice control={{ id: "adv:colorchecker:target", label: t("fields.patches.targetColor"), kind: "choice", inline: true, min: 0, max: 1, step: 1,
+                         options: [[t("fields.patches.relative"), 0], [t("fields.patches.absolute"), 1]], format: String,
+                         note: t("fields.patches.targetHint") }}
               value={absolute} neutral={0} values={p} disabled={false} onChange={setAbsolute} />
     </div>
   );

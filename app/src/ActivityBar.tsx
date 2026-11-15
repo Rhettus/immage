@@ -2,12 +2,13 @@
 // Copyright (C) 2026 the Immage authors
 
 import { type Job, dismissJob, stopJob } from "./background";
+import { t } from "./i18n";
 
 // the activity line's progress bar
 export function ActivityBar({ what, done, total }: { what: string; done: number; total: number }) {
   return (
     <div className="activity">
-      <span>{total ? `${what} ${done.toLocaleString()} of ${total.toLocaleString()}` : "Reading folder…"}</span>
+      <span>{total ? t("library.activity.progress", { what, done: done.toLocaleString(), total: total.toLocaleString() }) : t("library.activity.reading")}</span>
       <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
     </div>
   );
@@ -32,17 +33,17 @@ export function JobActivity({ job }: { job: Job }) {
           ) : <span>{job.what}: {job.stage}…</span>
         ) : job.total ? (
           <div className="progress">
-            <span>{job.what} {job.done.toLocaleString()} of {job.total.toLocaleString()}</span>
+            <span>{t("library.activity.jobProgress", { what: job.what, done: job.done.toLocaleString(), total: job.total.toLocaleString() })}</span>
             <div className="bar"><div style={{ width: `${(100 * job.done) / job.total}%` }} /></div>
           </div>
         ) : <span>{job.what}…</span>}
         {job.cancel && (
-          <button disabled={job.stopping} onClick={() => stopJob(job)}>{job.stopping ? "Stopping…" : "Stop"}</button>
+          <button disabled={job.stopping} onClick={() => stopJob(job)}>{job.stopping ? t("library.activity.stopping") : t("library.activity.stop")}</button>
         )}
       </> : <>
         <span className={job.failed ? "failed" : ""}>{job.summary}</span>
         {action && <button onClick={() => { dismissJob(job.id); action.run(); }}>{action.label}</button>}
-        <button onClick={() => dismissJob(job.id)}>OK</button>
+        <button onClick={() => dismissJob(job.id)}>{t("library.activity.ok")}</button>
       </>}
     </div>
   );

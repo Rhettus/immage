@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { withNodeLocales } from './vite-locales.mjs';
 const require=createRequire(new URL('../app/package.json',import.meta.url));
 const reactPath=require.resolve('react');
 const {transformSync}=await import(require.resolve('rolldown/experimental'));
@@ -18,7 +19,8 @@ registerHooks({
   },
   load(url,ctx,next){
     if(!url.startsWith('file:')||!/\.tsx?$/.test(url))return next(url,ctx);
-    const path=fileURLToPath(url),out=transformSync(path,readFileSync(path,'utf8'),{jsx:{runtime:'automatic'}});
+    const path=fileURLToPath(url), source=withNodeLocales(url,readFileSync(path,'utf8'));
+    const out=transformSync(path,source,{jsx:{runtime:'automatic'}});
     if(out.errors?.length)throw Error(JSON.stringify(out.errors));
     return {format:'module',source:out.code,shortCircuit:true};
   },

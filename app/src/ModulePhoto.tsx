@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { commands } from "./commands";
 import { fetchThumb, type ImageEntry } from "./library";
+import { t } from "./i18n";
 
 function Thumb({ imgid, entry, width, height }: { imgid: number; entry?: ImageEntry; width: number; height: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -31,7 +32,7 @@ function Thumb({ imgid, entry, width, height }: { imgid: number; entry?: ImageEn
     }).catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
   }, [imgid, entry?.path, width, height]);
-  return failed ? <div className="photo-thumb missing" style={{ width, height }}>missing</div>
+  return failed ? <div className="photo-thumb missing" style={{ width, height }}>{t("fields.photo.missing")}</div>
     : <canvas ref={canvas} className="photo-thumb" width={2 * width} height={2 * height} style={{ width, height }} />;
 }
 
@@ -58,23 +59,23 @@ export function ModulePhoto({ label, value, disabled, photos, onChange }: {
       <div className="choice-row"><span>{label}</span></div>
       <div className="photo-row">
         {chosen ? <Thumb imgid={value} entry={entry} width={96} height={72} />
-          : <div className="photo-thumb empty" style={{ width: 96, height: 72 }} title="no photo chosen">no photo</div>}
+          : <div className="photo-thumb empty" style={{ width: 96, height: 72 }} title={t("fields.photo.none")}>{t("fields.photo.none")}</div>}
         <div className="photo-side">
-          <div className="photo-name" title={name || undefined}>{chosen ? name || `Photo ${value}` : "No photo chosen"}</div>
+          <div className="photo-name" title={name || undefined}>{chosen ? name || t("fields.photo.number", { id: value }) : t("fields.photo.none")}</div>
           <div className="photo-buttons">
             <button type="button" className="btn small" disabled={disabled} onClick={() => setPicking(true)}
-                    title="choose the photo to put over this one">Choose photo</button>
+                    title={t("fields.photo.choose.hint")}>{t("fields.photo.choose")}</button>
             <button type="button" className="btn small" disabled={disabled || !chosen} onClick={() => onChange(0)}
-                    title="take the photo off the composite">Clear</button>
+                    title={t("fields.photo.clear.hint")}>{t("fields.photo.clear")}</button>
           </div>
         </div>
       </div>
       {picking && (
         <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) setPicking(false); }}>
-          <div className="modal photo-picker" role="dialog" aria-label="Choose photo">
-            <div className="modal-head"><h2>Choose photo</h2></div>
+          <div className="modal photo-picker" role="dialog" aria-label={t("fields.photo.choose") }>
+            <div className="modal-head"><h2>{t("fields.photo.choose")}</h2></div>
             <div className="modal-body">
-              {photos.length === 0 ? <p className="note-plain">The folder has no photos to choose from. Open a folder first.</p> : (
+              {photos.length === 0 ? <p className="note-plain">{t("fields.photo.emptyFolder")}</p> : (
                 <div className="photo-picker-grid">
                   {photos.map((p) => (
                     <button key={p.imgid} type="button" className={`photo-pick${p.imgid === value ? " active" : ""}`} title={p.filename}
@@ -86,7 +87,7 @@ export function ModulePhoto({ label, value, disabled, photos, onChange }: {
                 </div>
               )}
             </div>
-            <div className="modal-foot"><button className="btn" onClick={() => setPicking(false)}>Cancel</button></div>
+            <div className="modal-foot"><button className="btn" onClick={() => setPicking(false)}>{t("fields.photo.cancel")}</button></div>
           </div>
         </div>
       )}

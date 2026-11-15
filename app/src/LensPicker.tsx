@@ -4,6 +4,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { commands, type Lens, type LensMenu as Menu } from "./commands";
+import { t } from "./i18n";
 
 
 // every word of the query, in any order, in the lens's maker and model:
@@ -74,7 +75,7 @@ export function LensPicker({ value, disabled, photo, onChange }: {
   }, [active, open]);
 
   const chosen = value ? menu?.lenses.find((l) => l.hash === value) : null;
-  const label = value ? (chosen?.name ?? "Chosen lens") : menu?.auto ? `Auto: ${menu.auto}` : "Auto";
+  const label = value ? (chosen?.name ?? t("fields.lens.chosen")) : menu?.auto ? t("fields.lens.autoNamed", { name: menu.auto }) : t("fields.lens.auto");
   const choose = (l: Lens | null) => { setOpen(false); setQuery(""); if ((l?.hash ?? 0) !== value) onChange(l?.hash ?? 0); };
 
   const key = (e: React.KeyboardEvent) => {
@@ -86,7 +87,7 @@ export function LensPicker({ value, disabled, photo, onChange }: {
 
   return (
     <div className="choice-row lens-pick" data-control-id="lens_pick" ref={box}>
-      <span>Lens</span>
+      <span>{t("fields.lens.label")}</span>
       <div className="lens-field">
         <button type="button" className="field lens-button" disabled={disabled} title={label} aria-haspopup="listbox"
                 aria-expanded={open} onClick={() => setOpen((o) => !o)}>{label}</button>
@@ -94,17 +95,17 @@ export function LensPicker({ value, disabled, photo, onChange }: {
         {open && createPortal(
           <div ref={pop} className="context-menu lens-menu" data-lens-menu
                style={pos ? { left: pos.left, top: pos.top, width: pos.width } : { visibility: "hidden" }}>
-            <input ref={field} className="field" placeholder="Search lenses" aria-label="Search lenses" value={query}
+            <input ref={field} className="field" placeholder={t("fields.lens.search")} aria-label={t("fields.lens.search")} value={query}
                    onChange={(e) => setQuery(e.target.value)} onKeyDown={key} />
             <div className="lens-list" ref={list} role="listbox" style={pos ? { maxHeight: pos.maxHeight - 52 } : undefined}>
               {rows.map((l, i) => (
                 <button key={l ? l.hash : "auto"} type="button" role="option" aria-selected={(l?.hash ?? 0) === value}
                         className={`${(l?.hash ?? 0) === value ? "chosen" : ""}${i === active ? " on" : ""}`}
                         onMouseEnter={() => setActive(i)} onClick={() => choose(l)}>
-                  {l ? l.name : menu?.auto ? `Auto: ${menu.auto}` : "Auto"}
+                  {l ? l.name : menu?.auto ? t("fields.lens.autoNamed", { name: menu.auto }) : t("fields.lens.auto")}
                 </button>
               ))}
-              {!rows.length && <div className="menu-label">{menu ? "No lens matches" : "Loading lenses…"}</div>}
+              {!rows.length && <div className="menu-label">{menu ? t("fields.lens.empty") : t("fields.lens.loading")}</div>}
             </div>
           </div>,
           document.body,

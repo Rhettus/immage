@@ -8,6 +8,9 @@
 import { useEffect, useRef, useState } from "react";
 import { grayShare, moveHandle, nearestHandle, wheelPosition, type Levels } from "./levels";
 import type { AdvancedState } from "./session";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
+import { moduleName } from "./manifest";
 
 const W = 260, H = 70, TRI = 9;
 const CHANNELS = ["R", "G", "B"];
@@ -72,7 +75,7 @@ export function ModuleLevels({ op, state, disabled, onFields }: {
         </div>
       )}
       <svg ref={svg} className={`curve levels-area${disabled ? " disabled" : ""}`} viewBox={`0 0 ${W} ${H + TRI}`}
-           preserveAspectRatio="none" aria-label={`${op} ${CHANNELS[ch]} levels`}
+           preserveAspectRatio="none" aria-label={t("fields.levels.graph", { module: fieldText(moduleName(op)), channel: CHANNELS[ch] })}
            onPointerMove={(e) => {
              if (disabled) return;
              if (grab.current) {

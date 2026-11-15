@@ -14,6 +14,8 @@ import { keys } from "./keys";
 import { loadSliderScroll, loadSliderScrollStep } from "./Preferences";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { perf } from "./perf";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // what ⌥-dragging a slider shows over the photo
 export type OptionPreview = { kind: "mask"; op: string } | { kind: "gray" };
@@ -147,16 +149,16 @@ export const SliderWidget = memo(function SliderWidget({ control: c, value, neut
     <div ref={box} data-control-id={c.id} className={`slider${compact ? " compact" : ""}${disabled ? " disabled" : ""}`
                               + `${glow > 0.1 ? " probed" : ""}${value === neutral ? " at-neutral" : ""}`}
          style={glow > 0.1 ? { ["--glow" as string]: glow } : undefined}
-         title={rawOnly ? "needs a raw photo: darktable makes the detail mask from the raw"
-                : c.note ? keys(c.note) : m ? `darktable: ${moduleName(m.op)}` : ""}>
+         title={rawOnly ? t("fields.control.rawOnly")
+                : c.note ? fieldText(keys(c.note)) : m ? t("fields.control.darktableModule", { name: fieldText(moduleName(m.op)) }) : ""}>
       {/* double-click resets, as in Lightroom */}
       {moduleChoice && onModule ? (
         <span className="label-line">
-          <label onDoubleClick={reset}>{c.label}</label>
+          <label onDoubleClick={reset}>{fieldText(c.label)}</label>
           <ModuleSwitch choice={moduleChoice} value={moduleValue ?? preferredChoice(moduleChoice)} scope={moduleScope} adjusted={moduleAdjusted}
                         disabled={disabled} onPick={onModule} />
         </span>
-      ) : <label onDoubleClick={reset}>{c.label}</label>}
+      ) : <label onDoubleClick={reset}>{fieldText(c.label)}</label>}
       {editing ? (
         <input className="value-edit" autoFocus defaultValue={String(+value.toFixed(4))}
                onFocus={(e) => e.target.select()}
@@ -176,7 +178,7 @@ export const SliderWidget = memo(function SliderWidget({ control: c, value, neut
                }} />
       ) : (
         // double-click the number to type one
-        <span className="value" title="double-click to type a value"
+        <span className="value" title={t("fields.control.typeValue")}
               onDoubleClick={() => { if (!disabled) setEditing(true); }}>{c.format(value)}</span>
       )}
       <input type="range" disabled={disabled} onDoubleClick={reset} onPointerDown={startDrag}
@@ -205,8 +207,8 @@ export function Choice({ control: c, value, disabled, onChange }: ControlProps) 
   useAgxProfiles();
   if (c.menu) return (
     <div className="choice-row" data-control-id={c.id}>
-      <span title={c.note}>{c.label}</span>
-      <select title={c.note} className="field" value={value} disabled={disabled} onChange={(e) => {
+      <span title={fieldText(c.note ?? "")}>{fieldText(c.label)}</span>
+      <select title={c.note ? fieldText(c.note) : undefined} className="field" value={value} disabled={disabled} onChange={(e) => {
         const v = Number(e.target.value);
         if (c.loadPreset && (v === LOAD_PRESET || v === DELETE_PRESET)) {
           e.target.value = String(value);
@@ -215,16 +217,16 @@ export function Choice({ control: c, value, disabled, onChange }: ControlProps) 
       }}>
         {c.optionGroups
           ? c.optionGroups.map(([group, opts]) => (
-            <optgroup key={group} label={group}>
-              {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
+            <optgroup key={group} label={fieldText(group)}>
+              {opts.map(([label, v]) => <option key={v} value={v}>{fieldText(label)}</option>)}
             </optgroup>))
-          : (c.options ?? []).map(([label, v]) => <option key={v} value={v}>{label}</option>)}
+          : (c.options ?? []).map(([label, v]) => <option key={v} value={v}>{fieldText(label)}</option>)}
         {c.loadPreset && <>
           {!c.options?.some(([, v]) => v === value) && value >= AGX_USER_FIRST
             && <option hidden value={value}>{profileLabel(value)}</option>}
           <optgroup label="">
-            <option value={LOAD_PRESET}>Load AgX Preset</option>
-            <option value={DELETE_PRESET} disabled={!userProfiles().length}>Delete AgX Preset</option>
+            <option value={LOAD_PRESET}>{t("fields.control.loadAgxPreset")}</option>
+            <option value={DELETE_PRESET} disabled={!userProfiles().length}>{t("fields.control.deleteAgxPreset")}</option>
           </optgroup>
         </>}
       </select>
@@ -236,22 +238,22 @@ export function Choice({ control: c, value, disabled, onChange }: ControlProps) 
         const Icon = c.optionIcons?.[v];
         return (
           <button key={label} className={value === v ? "active" : ""} disabled={disabled}
-                  title={c.optionLabels?.[v] ? label : undefined} onClick={() => onChange(v)}>
-            {Icon && <Icon size={15} strokeWidth={1.8} />}{c.optionLabels?.[v] ?? label}
+                  title={c.optionLabels?.[v] ? fieldText(label) : undefined} onClick={() => onChange(v)}>
+            {Icon && <Icon size={15} strokeWidth={1.8} />}{fieldText(c.optionLabels?.[v] ?? label)}
           </button>
         );
       })}
     </div>
   );
-  return c.inline ? <div className="choice-row"><span>{c.label}</span>{options}</div> : options;
+  return c.inline ? <div className="choice-row"><span>{fieldText(c.label)}</span>{options}</div> : options;
 }
 
 export function Toggle({ control: c, value, disabled, onChange }: ControlProps) {
   const m = mapOf.get(c.id);
   return (
     <label data-control-id={c.id} className={`toggle${disabled ? " disabled" : ""}`}
-           title={c.note ?? (m ? `darktable: ${moduleName(m.op)}` : "")}>
-      <span>{c.label}</span>
+           title={c.note ? fieldText(c.note) : m ? t("fields.control.darktableModule", { name: fieldText(moduleName(m.op)) }) : ""}>
+      <span>{fieldText(c.label)}</span>
       <input type="checkbox" className="switch" checked={value === 1} disabled={disabled}
              onChange={(e) => onChange(e.target.checked ? 1 : 0)} />
     </label>

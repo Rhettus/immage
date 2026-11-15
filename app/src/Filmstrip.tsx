@@ -12,6 +12,7 @@ import { settings } from "./settings";
 import { SecondaryClickGuard } from "./secondaryClick";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n";
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -212,19 +213,19 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
         {/* altered, as darktable counts it, so its lighttable agrees */}
-        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{types}{copyName(i)}</span>
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}
       <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
-        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
+        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title={t("library.filmstrip.reject")}
                 onClick={() => on.current!.onMeta(i, { rejected: !i.rejected })}>✕</button>}
         <span className="thumb-stars">
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
-                    title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
+                    title={isRemote(i) ? t("library.filmstrip.immichRating") : t("library.filmstrip.stars", { count: n })}
                     disabled={isRemote(i)}
                     onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
           ))}
@@ -250,7 +251,7 @@ export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open,
          onDoubleClick={() => { if (doubleOpens) open.current!(i, true); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
-        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>
@@ -294,8 +295,8 @@ export function ThumbProgress({ loader }: { loader: ThumbLoader }) {
     });
     return () => { off(); window.clearTimeout(timer); };
   }, [loader]);
-  const t = loader.progress();
-  return t.done < t.total ? <ActivityBar what="Loading thumbnails" done={t.done} total={t.total} /> : null;
+  const progress = loader.progress();
+  return progress.done < progress.total ? <ActivityBar what={t("library.filmstrip.loading")} done={progress.done} total={progress.total} /> : null;
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes

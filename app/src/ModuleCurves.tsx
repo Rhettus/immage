@@ -8,6 +8,9 @@ import { PointCurve } from "./PointCurve";
 import { curveFn, MAX_NODES, type Point } from "./tonecurve";
 import { INTERPOLATIONS, type ModuleLayout } from "./advancedLayout";
 import type { AdvancedState } from "./session";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
+import { moduleName } from "./manifest";
 
 type Curves = NonNullable<ModuleLayout["curves"]>;
 
@@ -33,23 +36,23 @@ export function ModuleCurves({ op, curves, state, disabled, onFields }: {
         <div className="segmented small module-card-tabs" role="tablist">
           {curves.channels.map((label, i) => (
             <button key={label} role="tab" aria-selected={i === ch} className={i === ch ? "active" : ""}
-                    data-curve-channel={label} onClick={() => setTab(i)}>{label}</button>
+                    data-curve-channel={label} onClick={() => setTab(i)}>{fieldText(label)}</button>
           ))}
         </div>
       )}
       <PointCurve points={points} disabled={off} histogram={null} channel={curves.colored ? (ch as 0 | 1 | 2) : null}
-                  draw={(pts) => curveFn(type, pts)} label={`${op} ${curves.channels[ch]} curve`}
+                  draw={(pts) => curveFn(type, pts)} label={t("fields.moduleCurve.graph", { module: fieldText(moduleName(op)), channel: fieldText(curves.channels[ch]) })}
                   onChange={(pts) => {
                     const edit: Record<string, number> = { [curves.count(ch)]: pts.length };
                     pts.forEach(([x, y], k) => { edit[curves.node(ch, k, "x")] = x; edit[curves.node(ch, k, "y")] = y; });
                     onFields(edit, true, `${op}-curve-${ch}`);
                   }} />
       <div className="choice-row" data-control-id={`${op}-interpolation`}>
-        <span>Interpolation method</span>
+        <span>{t("fields.moduleCurve.interpolation")}</span>
         <select className="field" value={type} disabled={disabled}
                 onChange={(e) => onFields(Object.fromEntries(curves.channels.map((_, i) => [curves.type(i), Number(e.target.value)])),
                                           false, `${op}-interpolation`)}>
-          {INTERPOLATIONS.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
+          {INTERPOLATIONS.map(([label, v]) => <option key={v} value={v}>{fieldText(label)}</option>)}
         </select>
       </div>
     </div>

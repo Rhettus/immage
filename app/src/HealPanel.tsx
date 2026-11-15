@@ -6,6 +6,7 @@
 import type { Control } from "./manifest";
 import type { ShowSpots, SpotTool } from "./SpotOverlay";
 import type { Spot } from "./spots";
+import { t } from "./i18n";
 
 export function HealPanel({ tool, spots, selected, show, visualize, disabled, renderSlider,
                             onTool, onSpot, onDelete, onClear, onShow, onVisualize }: {
@@ -35,50 +36,47 @@ export function HealPanel({ tool, spots, selected, show, visualize, disabled, re
   const pct = (v: number) => `${Math.round(v)}`;
   return (
     <div className="panel">
-      <div className="panel-title"><span>Heal</span></div>
+      <div className="panel-title"><span>{t("fields.heal.title")}</span></div>
       <section>
         <div className="seg heal-mode">
           {(["heal", "clone"] as const).map((m) => (
             <button key={m} className={`btn small${mode === m ? " on" : ""}`} disabled={disabled}
-                    title={m === "heal" ? "copy texture from the source, matched to the spot's color and light"
-                                        : "copy the source as it is"}
-                    onClick={() => set({ mode: m })}>{m === "heal" ? "Heal" : "Clone"}</button>
+                    title={m === "heal" ? t("fields.heal.mode.heal.hint") : t("fields.heal.mode.clone.hint")}
+                    onClick={() => set({ mode: m })}>{m === "heal" ? t("fields.heal.mode.heal") : t("fields.heal.mode.clone")}</button>
           ))}
         </div>
-        {renderSlider({ id: "spot_size", label: "Size", min: 0.2, max: 20, step: 0.1, neutral: 3,
+        {renderSlider({ id: "spot_size", label: t("fields.heal.size"), min: 0.2, max: 20, step: 0.1, neutral: 3,
                         format: (v) => `${v.toFixed(1)}%` }, size * 100, (v) => set({ size: v / 100 }))}
-        {renderSlider({ id: "spot_feather", label: "Feather", min: 0, max: 100, step: 1, neutral: 50, format: pct },
+        {renderSlider({ id: "spot_feather", label: t("fields.heal.feather"), min: 0, max: 100, step: 1, neutral: 50, format: pct },
                       feather * 100, (v) => set({ feather: v / 100 }))}
-        {renderSlider({ id: "spot_opacity", label: "Opacity", min: 0, max: 100, step: 1, neutral: 100, format: pct },
+        {renderSlider({ id: "spot_opacity", label: t("fields.heal.opacity"), min: 0, max: 100, step: 1, neutral: 100, format: pct },
                       opacity * 100, (v) => set({ opacity: v / 100 }))}
         <div className="note-plain">
-          {sel ? "drag the spot or its source to move them; Delete removes it"
-               : "click a spot to heal it, or paint over a line"}
+          {sel ? t("fields.heal.selected.hint") : t("fields.heal.empty.hint")}
         </div>
         <div className="heal-actions">
-          <button className="btn small" disabled={disabled || !sel} onClick={onDelete}>Delete spot</button>
+          <button className="btn small" disabled={disabled || !sel} onClick={onDelete}>{t("fields.heal.delete")}</button>
           <button className="btn small" disabled={disabled || !spots.length} onClick={onClear}>
-            Clear all{spots.length ? ` (${spots.length})` : ""}</button>
+            {t("fields.heal.clearAll")}{spots.length ? ` (${spots.length})` : ""}</button>
         </div>
       </section>
       <section>
         <div className="heal-show">
-          <span title="H hides the spots or shows them again">Show spots (H)</span>
+          <span title={t("fields.heal.show.hint")}>{t("fields.heal.show")}</span>
           <div className="seg heal-mode">
             {(["always", "selected", "never"] as const).map((v) => (
               <button key={v} className={`btn small${show === v ? " on" : ""}`} disabled={disabled}
-                      title={v === "always" ? "show every spot" : v === "selected" ? "show only the selected spot"
-                                                                                   : "hide every spot"}
-                      onClick={() => onShow(v)}>{v === "always" ? "Always" : v === "selected" ? "Selected" : "Never"}</button>
+                      title={v === "always" ? t("fields.heal.show.always.hint") : v === "selected" ? t("fields.heal.show.selected.hint") : t("fields.heal.show.never.hint")}
+                      onClick={() => onShow(v)}>{v === "always" ? t("fields.heal.show.always") : v === "selected" ? t("fields.heal.show.selected") : t("fields.heal.show.never")}</button>
             ))}
           </div>
         </div>
         <label className="toggle">
-          <span>Visualize spots (A)</span>
+          <span>{t("fields.heal.visualize")}</span>
           <input type="checkbox" className="switch" checked={visualize !== null} disabled={disabled}
                  onChange={(e) => onVisualize(e.target.checked ? 50 : null)} />
         </label>
-        {visualize !== null && renderSlider({ id: "spot_vis", label: "Threshold", min: 0, max: 100, step: 1,
+        {visualize !== null && renderSlider({ id: "spot_vis", label: t("fields.heal.threshold"), min: 0, max: 100, step: 1,
                                               neutral: 50, format: pct }, visualize, (v) => onVisualize(v))}
       </section>
     </div>

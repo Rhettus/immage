@@ -10,6 +10,7 @@ import { invert } from "./probe";
 import { keys } from "./keys";
 import { useEffect, useRef, useState } from "react";
 import { type Zoom } from "./zoom";
+import { t } from "./i18n";
 
 // a drag handle between panels. `invert` for a panel that grows as the
 // handle moves left or up (the right panel, the filmstrip)
@@ -37,8 +38,8 @@ export function Splitter({ axis, value, min, max, invert, hidden, onChange }: {
 // everything back to the image's defaults, as one undo step
 export function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: () => void }) {
   return (
-    <button className="tool" disabled={disabled} onClick={onReset} aria-label="reset all"
-            title={keys("reset all: take the image back to its defaults, sliders, crop, look and masks (⌘Z undoes it)")}>
+    <button className="tool" disabled={disabled} onClick={onReset} aria-label={t("library.toolbar.reset")}
+            title={keys(t("library.toolbar.resetHint"))}>
       <ResetIcon />
     </button>
   );
@@ -63,16 +64,16 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   };
   useEffect(() => register((z, isFit) => {
     if (range.current) range.current.value = String(isFit ? 0 : toPos(z));
-    if (label.current) label.current.textContent = isFit ? "Fit" : `${Math.round(z * 100)}%`;
+    if (label.current) label.current.textContent = isFit ? t("library.toolbar.fit") : `${Math.round(z * 100)}%`;
   }), []);
   return (
-    <div className="tool-group zoom-bar" title="zoom: double-click for Fit or 100%" onDoubleClick={onToggle}>
+    <div className="tool-group zoom-bar" title={t("library.toolbar.zoomHint")} onDoubleClick={onToggle}>
       <input ref={range} type="range" min={-1000} max={1000} step={1} defaultValue={0} disabled={disabled}
              onChange={(e) => {
                const p = Number(e.target.value), f = fit();
                onZoom(Math.abs(p) < 25 ? "fit" : p > 0 ? f * (ZOOM_MAX / f) ** (p / 1000) : f * ZOOM_OUT ** (p / 1000));
              }} />
-      <span ref={label} className="zoom-label">Fit</span>
+      <span ref={label} className="zoom-label">{t("library.toolbar.fit")}</span>
     </div>
   );
 }
@@ -85,8 +86,8 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 }) {
   const pos = (1000 * Math.log(size / min)) / Math.log(max / min);
   return (
-    <div className="tool-group zoom-bar" title="thumbnail size: double-click for the default size" onDoubleClick={() => onSize(standard)}>
-      <input type="range" min={0} max={1000} step={1} value={Math.round(pos)} aria-label="thumbnail size"
+    <div className="tool-group zoom-bar" title={t("library.toolbar.thumbnailHint")} onDoubleClick={() => onSize(standard)}>
+      <input type="range" min={0} max={1000} step={1} value={Math.round(pos)} aria-label={t("library.toolbar.thumbnailSize")}
              onChange={(e) => onSize(min * (max / min) ** (Number(e.target.value) / 1000))} />
       <span className="zoom-label">{`${Math.round((size / standard) * 100)}%`}</span>
     </div>
@@ -133,27 +134,25 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
       const s = immich.form;
       immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library, source: s.source, scope: s.scope, subject: s.subject });
     }
-    say("Filters cleared", e);
+    say(t("library.toolbar.filtersCleared"), e);
   };
   const cycleRejected = (e: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.rejected === "all" ? "hide" : f.rejected === "hide" ? "only" : "all";
     onFilter({ ...f, rejected: next });
-    say(next === "all" ? "Showing all photos" : next === "hide" ? "Hiding rejected photos"
-        : "Showing only rejected photos", e);
+    say(t(next === "all" ? "library.toolbar.showAll" : next === "hide" ? "library.toolbar.hideRejected" : "library.toolbar.onlyRejected"), e);
   };
   const cycleEdited = (e: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.edited === "all" ? "edited" : f.edited === "edited" ? "unedited" : "all";
     onFilter({ ...f, edited: next });
-    say(next === "all" ? "Showing all photos" : next === "edited" ? "Showing only edited photos"
-        : "Showing only unedited photos", e);
+    say(t(next === "all" ? "library.toolbar.showAll" : next === "edited" ? "library.toolbar.onlyEdited" : "library.toolbar.onlyUnedited"), e);
   };
   return (
     <div className="toolbar" ref={ref}>
       <div className={`tool-group filter${filtering ? " active" : ""}`}>
-        <button className={`tool${filtering ? " on" : ""}`} title={filtering ? "clear filters" : "no filters on"}
+        <button className={`tool${filtering ? " on" : ""}`} title={filtering ? t("library.toolbar.clearFilters") : t("library.toolbar.noFilters")}
                 onClick={clearFilters}><FilterIcon /></button>
         {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} className="tool" title={`${n} star${n > 1 ? "s" : ""} and up`}
+          <button key={n} className="tool" title={t("library.toolbar.starsAndUp", { count: n })}
                   onClick={() => immich ? immich.update({ minRating: stars === n ? 0 : n })
                                         : onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
             <StarIcon filled={stars >= n} />
@@ -163,33 +162,29 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
         <span className="sep" />
         {/* all, then without the rejected, then only them (to delete) */}
         <button className={`tool${f.rejected === "hide" ? " on" : f.rejected === "only" ? " on only-rejected" : ""}`}
-                title={f.rejected === "all" ? "hide rejected photos"
-                       : f.rejected === "hide" ? "rejected photos hidden: click to show only them"
-                       : "only rejected photos: click to show all"}
+                title={t(f.rejected === "all" ? "library.toolbar.hideRejected" : f.rejected === "hide" ? "library.toolbar.rejectedHidden" : "library.toolbar.onlyRejected")}
                 onClick={cycleRejected}>
           <BanIcon />
           {note && <span className="filter-note" key={note.text} style={{ left: note.x, top: note.y }}>{note.text}</span>}
         </button>
         {/* all, then the edited, then the ones still untouched */}
         <button className={`tool${f.edited === "edited" ? " on" : f.edited === "unedited" ? " on only-unedited" : ""}`}
-                title={f.edited === "all" ? "show only edited photos"
-                       : f.edited === "edited" ? "only edited photos: click to show only unedited ones"
-                       : "only unedited photos: click to show all"}
+                title={t(f.edited === "all" ? "library.toolbar.onlyEdited" : f.edited === "edited" ? "library.toolbar.editedOnly" : "library.toolbar.onlyUnedited")}
                 onClick={cycleEdited}>
           <SlidersIcon />
         </button>
         <span className="sep" />
         {LABEL_COLORS.map((c, k) => (
           <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
-                  title="images with this label" onClick={() => onFilter({ ...f, labels: f.labels ^ (1 << k) })} />
+                  title={t("library.toolbar.withLabel")} onClick={() => onFilter({ ...f, labels: f.labels ^ (1 << k) })} />
         ))}
         <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
-                title="images without a label" onClick={() => onFilter({ ...f, unlabeled: !f.unlabeled })} />
+                title={t("library.toolbar.withoutLabel")} onClick={() => onFilter({ ...f, unlabeled: !f.unlabeled })} />
         </>}
         <span className="sep" />
         <FilterPopup filter={f} images={images} onFilter={onFilter} immich={immich} bounds={filterBounds} onSearch={onFiltered} />
         {filtering && (
-          <button className="tool clear-filters" title="show every photo again" onClick={clearFilters}>Clear</button>
+          <button className="tool clear-filters" title={t("library.toolbar.showEveryPhoto")} onClick={clearFilters}>{t("library.filters.clear")}</button>
         )}
       </div>
 
@@ -201,15 +196,15 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
         <span className="sep" />
         {/* named, not an icon alone: new users missed the arrow it replaces, and G with it */}
         <button className={`tool grid-toggle${grid ? " on" : ""}`} disabled={!onGrid}
-                title={grid ? "back to the filmstrip (G, Esc)" : "grid view (G)"} onClick={onGrid}>
-          <GridIcon />Grid
+                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")} onClick={onGrid}>
+          <GridIcon />{t("library.toolbar.gridLabel")}
         </button>
         <span className="sep" />
-        <button className={`tool${layout.left ? " on" : ""}`} title="library panel"
+        <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")}
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
-        <button className={`tool${layout.strip ? " on" : ""}`} title="filmstrip"
+        <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")}
                 onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
-        <button className={`tool${layout.right ? " on" : ""}`} title="adjustments panel"
+        <button className={`tool${layout.right ? " on" : ""}`} title={t("library.toolbar.adjustmentsPanel")}
                 onClick={() => onLayout("right")}><PanelIcon side="right" /></button>
         {/* the filmstrip's pin, after the panel switches rather than among them */}
         {pin}

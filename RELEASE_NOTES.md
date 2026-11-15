@@ -12,6 +12,9 @@ Improvements
   menu and Preferences translations. Changes apply at the next launch or with
   Relaunch, which saves the current photo first. Additional languages use one
   JSON file each, including regional variants and language-specific plurals.
+- French translations extend across editing fields, library controls, status
+  messages, dialogs, and export and print settings. Advanced module wording reuses translations
+  from the pinned darktable version. Untranslated text falls back to English.
 - Preferences > Performance adds Local photo cache status, pause/resume, clear
   and rebuild, plus explicit optional CLIP model download and CPU checks.
 - Search photos adds local folder/library scopes and optional combined Immich

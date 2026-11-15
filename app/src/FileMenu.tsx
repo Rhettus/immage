@@ -8,6 +8,7 @@ import { isRemote } from "./immich";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { parentDir } from "./paths";
 import { useEffect, useRef } from "react";
+import { t } from "./i18n";
 
 // what the system's file manager is called
 export const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
@@ -79,11 +80,11 @@ export function FileMenu({ onSimilar, onKeywords, captureCount, onCaptureTime, c
   const flip = left + 230 + 230 > window.innerWidth;
   return (
     <div ref={ref} className={`context-menu${flip ? " flip" : ""}`} style={{ left, top }}>
-      {onSimilar && <button onClick={() => { onClose(); onSimilar(); }}>Show more like this</button>}
-      {onKeywords && <button onClick={() => { onClose(); onKeywords(); }}>Keywords… (K)</button>}
+      {onSimilar && <button onClick={() => { onClose(); onSimilar(); }}>{t("library.menu.similar")}</button>}
+      {onKeywords && <button onClick={() => { onClose(); onKeywords(); }}>{t("library.menu.keywords")}</button>}
       {editIn && <>
         <div className="has-sub">
-          <button>Edit In</button>
+          <button>{t("library.menu.editIn")}</button>
           <div className="context-menu submenu">
             {editIn.map(({ cfg, why }) => (
               <button key={cfg.id} disabled={!!why} title={why ?? undefined}
@@ -91,36 +92,36 @@ export function FileMenu({ onSimilar, onKeywords, captureCount, onCaptureTime, c
             ))}
             {editIn.length > 0 && <div className="menu-sep" />}
             <button onClick={() => { onClose(); onSetUpPlugins(); }}>
-              {editIn.length ? "Plugins…" : "Set Up Plugins…"}</button>
+              {editIn.length ? t("library.menu.plugins") : t("library.menu.setupPlugins")}</button>
           </div>
         </div>
         <div className="menu-sep" />
       </>}
-      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>Adjust Capture Time…</button>}
-      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>Undo Capture Time Adjustment…</button>}
+      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>{t("library.menu.adjustCapture")}</button>}
+      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>{t("library.menu.undoCapture")}</button>}
       {copyable > 0 && <>
         <button onClick={() => { onClose(); onCopy(); }}>
-          {copyable > 1 ? `Create ${copyable} Virtual Copies` : "Create Virtual Copy"}</button>
+          {copyable > 1 ? t("library.menu.createCopies", { count: copyable }) : t("library.menu.createCopy")}</button>
         {copies > 0 && <button onClick={() => { onClose(); onRemoveCopies(); }}>
-          {copies > 1 ? `Remove ${copies} Virtual Copies` : "Remove Virtual Copy"}</button>}
+          {copies > 1 ? t("library.menu.removeCopies", { count: copies }) : t("library.menu.removeCopy")}</button>}
         {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
       </>}
       {(mergeable > 1 || stitchable > 1) && <>
-        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>}
-        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>Panorama Merge…</button>}
+        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>{t("library.menu.hdr")}</button>}
+        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>{t("library.menu.panorama")}</button>}
         <div className="menu-sep" />
       </>}
-      {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
+      {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>}
       {parentFolder !== undefined && <button disabled={!parentFolder}
-        title={parentFolder ? parentDir(parentFolder) : "Set up Opening photos in Preferences > Immich so this file is available on this computer"}
-        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>Import Parent Folder</button>}
-      {photo && <button onClick={() => go(photo)}>Show in Immich</button>}
-      {results && <button onClick={() => go(results)}>Show Results in Immich</button>}
+        title={parentFolder ? parentDir(parentFolder) : t("library.menu.parentHint")}
+        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>{t("library.menu.importParent")}</button>}
+      {photo && <button onClick={() => go(photo)}>{t("library.menu.showImmich")}</button>}
+      {results && <button onClick={() => go(results)}>{t("library.menu.showResults")}</button>}
       {rejected !== null && <>
         {(reveal || photo || results) && <div className="menu-sep" />}
-        <button className="danger" disabled={!rejected} title={rejected ? undefined : "only rejected photos (X) can be deleted"}
+        <button className="danger" disabled={!rejected} title={rejected ? undefined : t("library.menu.deleteHint")}
                 onClick={() => { onClose(); onDelete(); }}>
-          {rejected > 1 ? `Delete ${rejected} Rejected Photos…` : "Delete Rejected Photo…"}</button>
+          {rejected > 1 ? t("library.menu.deleteRejectedMany", { count: rejected }) : t("library.menu.deleteRejectedOne")}</button>
       </>}
     </div>
   );

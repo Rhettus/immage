@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withNodeLocales } from './vite-locales.mjs';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
 registerHooks({
@@ -25,7 +26,8 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    return { format: 'module', source: transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
+    const source = withNodeLocales(url, readFileSync(path, 'utf8'));
+    return { format: 'module', source: transformSync(path, source, { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
   },
 });
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/upgrade/${name}`, import.meta.url), 'utf8'));

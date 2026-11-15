@@ -5,6 +5,7 @@
 // the left, Lightroom's sections in the middle, a preview of the result on
 // the right. settings are remembered
 import { useEffect, useRef, useState } from "react";
+import { t, formatNumber } from "./i18n";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -27,7 +28,7 @@ import {
 import { commands, type Album, type ExportReply, type Value } from "./commands";
 
 export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
-  : navigator.userAgent.includes("Mac") ? "Finder" : "File Manager";
+  : navigator.userAgent.includes("Mac") ? "Finder" : t("dialogs.export.fileManager");
 
 
 // Lightroom's Super Resolution, as darktable's upscale model on a GPU
@@ -55,9 +56,9 @@ const OPEN_DEFAULT: Record<SectionId, boolean> = {
 
 // a file name's photo info, as the menu names it
 const FILE_TOKEN_NAMES: Record<string, string> = {
-  filename: "Original name", title: "Title", caption: "Caption", creator: "Creator", copyright: "Copyright",
-  datecaptured: "Date taken", timecaptured: "Time taken", year: "Year", month: "Month", day: "Day",
-  camera: "Camera", lens: "Lens", iso: "ISO", rating: "Rating", seq: "Number in this export",
+    filename: t("dialogs.export.fileToken.originalName"), title: t("dialogs.export.fileToken.title"), caption: t("dialogs.export.fileToken.caption"), creator: t("dialogs.export.fileToken.creator"), copyright: t("dialogs.export.fileToken.copyright"),
+  datecaptured: t("dialogs.export.fileToken.dateTaken"), timecaptured: t("dialogs.export.fileToken.timeTaken"), year: t("dialogs.export.fileToken.year"), month: t("dialogs.export.fileToken.month"), day: t("dialogs.export.fileToken.day"),
+  camera: t("dialogs.export.fileToken.camera"), lens: t("dialogs.export.fileToken.lens"), iso: t("dialogs.export.fileToken.iso"), rating: t("dialogs.export.fileToken.rating"), seq: t("dialogs.export.fileToken.sequence"),
 };
 const loadOpen = (): Record<SectionId, boolean> => {
   try {
@@ -74,30 +75,25 @@ const loadOpen = (): Record<SectionId, boolean> => {
 type MetadataKey = "includeCamera" | "includeSerials" | "removeLocation" | "includeDescription" | "includeKeywords"
   | "includeHistory";
 const METADATA: [string, MetadataKey, boolean][] = [
-  ["Camera and lens (make, model, exposure)", "includeCamera", false],
-  ["Serial numbers and owner name", "includeSerials", false],
-  ["Location (GPS)", "removeLocation", true],
-  ["Title, caption, creator, copyright", "includeDescription", false],
-  ["Keywords", "includeKeywords", false],
-  ["darktable edit history", "includeHistory", false],
+  ["cameraLens", "includeCamera", false], ["serialsOwner", "includeSerials", false], ["location", "removeLocation", true],
+  ["description", "includeDescription", false], ["keywords", "includeKeywords", false], ["history", "includeHistory", false],
 ];
 const METADATA_SHORT: Record<MetadataKey, string> = {
-  includeCamera: "camera", includeSerials: "serial numbers", removeLocation: "location",
-  includeDescription: "title and caption", includeKeywords: "keywords", includeHistory: "edit history",
+  includeCamera: t("dialogs.export.metadata.camera"), includeSerials: t("dialogs.export.metadata.serials"), removeLocation: t("dialogs.export.metadata.location"),
+  includeDescription: t("dialogs.export.metadata.titleCaption"), includeKeywords: t("dialogs.export.metadata.keywords"), includeHistory: t("dialogs.export.metadata.editHistory"),
 };
 const metadataSummary = (s: Settings) => {
   const out = METADATA.filter(([, k, flip]) => k !== "includeHistory" && (flip ? s[k] : !s[k]))
     .map(([, k]) => METADATA_SHORT[k]);
-  const extra = s.includeHistory ? ", with edit history" : "";
-  return (out.length ? `${out.join(", ")} left out` : "all included") + extra;
+  return t("dialogs.export.metadataSummary", { omitted: out.length ? t("dialogs.export.leftOut", { items: out.join(", ") }) : t("dialogs.export.allIncluded"), history: s.includeHistory ? t("dialogs.export.withHistory") : "" });
 };
 
 // a Lightroom section: its title, and when shut, what it is set to
-function Section({ title, summary, open, onToggle, children }: {
-  title: string; summary?: string; open: boolean; onToggle: (alt: boolean) => void; children: React.ReactNode;
+function Section({ id, title, summary, open, onToggle, children }: {
+  id: SectionId; title: string; summary?: string; open: boolean; onToggle: (alt: boolean) => void; children: React.ReactNode;
 }) {
   return (
-    <section data-export-section={title} className={`export-section${open ? " open" : ""}`}>
+    <section data-export-section={id} className={`export-section${open ? " open" : ""}`}>
       <button className="export-section-head" onClick={(e) => onToggle(e.altKey)}>
         <Chevron open={open} />
         <span className="title">{title}</span>
@@ -495,7 +491,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
   const canRun = (toImmich ? !!s.album && albums?.some((a) => a.id === s.album) : !!s.dir) && items.length > 0 && !busy
     && (s.naming !== "custom" || !!s.customName.trim()) && (s.naming !== "template" || !!s.template.trim());
 
-  const conflictNames = { ask: "Ask me", unique: "Add a number", overwrite: "Replace it", skip: "Skip it" };
+  const conflictNames = { ask: t("dialogs.export.askMe"), unique: t("dialogs.export.addNumber"), overwrite: t("dialogs.export.replaceIt"), skip: t("dialogs.export.skipIt") };
   const formatNames = { jpeg: "JPEG", tiff: "TIFF", png: "PNG", webp: "WebP", jxl: "JPEG XL" };
   const spaceNames = { srgb: "sRGB", adobergb: "Adobe RGB (1998)", displayp3: "Display P3", prophoto: "ProPhoto RGB" };
 
@@ -508,16 +504,16 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                  onBlur={finishNaming} onKeyDown={(e) => { if (e.key === "Enter") finishNaming(); }} />
         ) : (
           <button onClick={() => applyPreset(p)} onDoubleClick={() => !p.builtin && setNaming({ id: p.id, name: p.name })}
-                  title={p.builtin ? undefined : "double-click to rename"}>
+              title={p.builtin ? undefined : t("dialogs.export.doubleClickRename")}>
             {p.builtin ? <Icon className="icon" strokeWidth={1.7} /> : (
               // a preset of the user's: its icon is theirs to choose
-              <span className={`icon-pick${iconFor === p.id ? " on" : ""}`} role="button" title="choose an icon"
+              <span className={`icon-pick${iconFor === p.id ? " on" : ""}`} role="button" title={t("dialogs.export.chooseIconHint")}
                     onClick={(e) => { e.stopPropagation(); setIconFor(iconFor === p.id ? null : p.id); }}
                     onDoubleClick={(e) => e.stopPropagation()}>
                 <Icon className="icon" strokeWidth={1.7} />
               </span>
             )}
-            <span className="name">{p.name}{p.id === presetId && edited && <span className="edited"> (edited)</span>}</span>
+            <span className="name">{p.name}{p.id === presetId && edited && <span className="edited"> ({t("dialogs.export.edited")})</span>}</span>
           </button>
         )}
         {iconFor === p.id && (
@@ -527,7 +523,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                       onClick={() => setIcon(p.id, name)}><I className="icon" strokeWidth={1.7} /></button>
             ))}
             <button className={`auto${p.icon ? "" : " on"}`} onClick={() => setIcon(p.id, null)}
-                    title="pick one from what the preset does">Automatic</button>
+                    title={t("dialogs.export.automaticIconHint")}>{t("dialogs.export.automatic")}</button>
           </div>
         )}
       </li>
@@ -548,25 +544,25 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="modal export">
         <div className="modal-head">
-          <h2>Export</h2>
+          <h2>{t("dialogs.export.title")}</h2>
         </div>
 
         <div className="export-columns">
           <nav className="export-presets">
             <div className="preset-tools">
-              <button className="tool" title="new preset from the settings as they are now"
+              <button className="tool" title={t("dialogs.export.newPresetHint")}
                       onClick={() => setNaming({ id: null, name: "" })}><Plus className="icon" strokeWidth={1.8} /></button>
               <button className={`tool${unsaved ? " dirty" : ""}`} disabled={!unsaved}
-                      title={unsaved ? `save the changes to “${chosen!.name}”` : "save changes to the chosen preset"}
+                      title={unsaved ? t("dialogs.export.saveChangesNamed", { name: chosen!.name }) : t("dialogs.export.saveChanges")}
                       onClick={() => storePresets(presets.map((p) => p.id === chosen!.id ? { ...p, settings: presetOf(s) } : p))}>
                 <Save className="icon" strokeWidth={1.8} /></button>
-              <button className="tool" title="import presets from a file" onClick={() => void importPresets()}>
+              <button className="tool" title={t("dialogs.export.importPresetsHint")} onClick={() => void importPresets()}>
                 <FileDown className="icon" strokeWidth={1.8} /></button>
               <button className="tool" disabled={!chosen}
-                      title={chosen ? `save “${chosen.name}” as a file to share` : "export the chosen preset to a file"}
+                      title={chosen ? t("dialogs.export.sharePreset", { name: chosen.name }) : t("dialogs.export.exportChosenPreset")}
                       onClick={() => void exportPreset()}><Share className="icon" strokeWidth={1.8} /></button>
               <button className="tool delete" disabled={!chosen || chosen.builtin}
-                      title={chosen && !chosen.builtin ? `delete “${chosen.name}”` : "delete the chosen preset"}
+                      title={chosen && !chosen.builtin ? t("dialogs.export.deletePresetNamed", { name: chosen.name }) : t("dialogs.export.deleteChosenPreset")}
                       onClick={() => { storePresets(presets.filter((p) => p.id !== presetId)); choosePreset(null); }}>
                 <Trash className="icon" strokeWidth={1.8} /></button>
             </div>
@@ -576,105 +572,102 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 {presets.map(presetRow)}
                 {naming && naming.id === null && (
                   <li className="on">
-                    <input className="field" autoFocus placeholder="preset name" value={naming.name}
+                    <input className="field" autoFocus placeholder={t("dialogs.export.presetName")} value={naming.name}
                            onChange={(e) => setNaming({ ...naming, name: e.target.value })}
                            onBlur={finishNaming} onKeyDown={(e) => { if (e.key === "Enter") finishNaming(); }} />
                   </li>
                 )}
-                {!presets.length && !naming && <li className="empty">+ keeps the settings as they are now</li>}
+                {!presets.length && !naming && <li className="empty">{t("dialogs.export.emptyPresets")}</li>}
               </ul>)}
             </div>
           </nav>
 
           <div className="modal-body export-sections">
-            <Section title="Destination" open={openSections.destination} onToggle={(alt) => toggle("destination", alt)}
-                     summary={toImmich ? `Immich: ${albums?.find((a) => a.id === s.album)?.name ?? "no album chosen"}`
-                       : s.dir ? s.dir.split(/[/\\]/).pop() : "no folder chosen"}>
+            <Section id="destination" title={t("dialogs.export.destination")} open={openSections.destination} onToggle={(alt) => toggle("destination", alt)}
+                     summary={toImmich ? t("dialogs.export.immichSummary", { album: albums?.find((a) => a.id === s.album)?.name ?? t("dialogs.export.noAlbum") })
+                       : s.dir ? s.dir.split(/[/\\]/).pop() : t("dialogs.export.noFolder")}>
               <div className="row">
-                <span className="k">Save to</span>
+                <span className="k">{t("dialogs.export.saveTo")}</span>
                 <div className="segmented small">
-                  <button className={!toImmich ? "active" : ""} onClick={() => set("target", "folder")}>Folder</button>
-                  <button className={toImmich ? "active" : ""} onClick={() => set("target", "immich")}>Immich album</button>
+                  <button className={!toImmich ? "active" : ""} onClick={() => set("target", "folder")}>{t("dialogs.export.folder")}</button>
+                  <button className={toImmich ? "active" : ""} onClick={() => set("target", "immich")}>{t("dialogs.export.immichAlbum")}</button>
                 </div>
               </div>
               {!toImmich ? (
                 <>
                   <div className="row">
-                    <span className="k">Folder</span>
-                    <button className="folder" onClick={pickDir}><span>{s.dir || "Choose a folder…"}</span></button>
+                    <span className="k">{t("dialogs.export.folder")}</span>
+                    <button className="folder" onClick={pickDir}><span>{s.dir || t("dialogs.export.chooseFolder")}</span></button>
                   </div>
                   <label className="row check">
                     <input type="checkbox" checked={s.useSubfolder} onChange={(e) => set("useSubfolder", e.target.checked)} />
-                    Inside a new folder
+                    {t("dialogs.export.insideNewFolder")}
                     <input className="field" value={s.subfolder} disabled={!s.useSubfolder}
                            onChange={(e) => set("subfolder", e.target.value)} />
                   </label>
                   <div className="row">
-                    <span className="k">If a file exists</span>
+                    <span className="k">{t("dialogs.export.ifFileExists")}</span>
                     <select data-export-field="conflict" value={s.conflict} onChange={(e) => set("conflict", e.target.value as Settings["conflict"])}>
                       {Object.entries(conflictNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
                   <label className="row check">
                     <input type="checkbox" checked={s.reveal} onChange={(e) => set("reveal", e.target.checked)} />
-                    Show in {FILE_MANAGER} when done
+                    {t("dialogs.export.showInFileManager", { manager: FILE_MANAGER })}
                   </label>
                 </>
               ) : (
                 <>
                   <div className="row">
-                    <span className="k">Album</span>
+                    <span className="k">{t("dialogs.export.album")}</span>
                     {newAlbum === null ? (
                       <>
                         <select value={albums?.some((a) => a.id === s.album) ? s.album : ""} disabled={!albums}
                                 onChange={(e) => set("album", e.target.value)}>
-                          <option value="" disabled>{albums ? "Choose an album…" : "loading…"}</option>
+                          <option value="" disabled>{albums ? t("dialogs.export.chooseAlbum") : t("dialogs.export.loading")}</option>
                           {albums?.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.count})</option>)}
                         </select>
-                        <button className="btn small" disabled={!albums} onClick={() => setNewAlbum("")}>New album…</button>
+                        <button className="btn small" disabled={!albums} onClick={() => setNewAlbum("")}>{t("dialogs.export.newAlbum")}</button>
                       </>
                     ) : (
                       <>
-                        <input className="field" autoFocus placeholder="album name" value={newAlbum}
+                        <input className="field" autoFocus placeholder={t("dialogs.export.albumName")} value={newAlbum}
                                onChange={(e) => setNewAlbum(e.target.value)}
                                onKeyDown={(e) => { if (e.key === "Enter") void createAlbum(); }} />
-                        <button className="btn small" disabled={!newAlbum.trim()} onClick={() => void createAlbum()}>Create</button>
-                        <button className="btn small" onClick={() => setNewAlbum(null)}>Cancel</button>
+                        <button className="btn small" disabled={!newAlbum.trim()} onClick={() => void createAlbum()}>{t("dialogs.export.create")}</button>
+                        <button className="btn small" onClick={() => setNewAlbum(null)}>{t("dialogs.export.cancel")}</button>
                       </>
                     )}
                   </div>
                   {immichError && <div className="note-plain warn">{immichError}</div>}
-                  {missing.length > 0 && (
-                    <div className="note-plain warn">the API key lacks {missing.join(", ")}: give it those in Immich,
-                      or exporting may fail</div>
-                  )}
-                  <div className="note-plain">a photo Immich already has goes into the album without a second copy</div>
+                  {missing.length > 0 && <div className="note-plain warn">{t("dialogs.export.apiMissing", { permissions: missing.join(", ") })}</div>}
+                  <div className="note-plain">{t("dialogs.export.immichDuplicateHint")}</div>
                 </>
               )}
             </Section>
 
-            <Section title="File Name" open={openSections.name} onToggle={(alt) => toggle("name", alt)}
-                     summary={s.naming === "original" ? "same as original" : s.naming === "custom"
-                       ? `${s.customName || "name"}-001` : s.template}>
+            <Section id="name" title={t("dialogs.export.fileName")} open={openSections.name} onToggle={(alt) => toggle("name", alt)}
+                     summary={s.naming === "original" ? t("dialogs.export.sameAsOriginalLower") : s.naming === "custom"
+                       ? `${s.customName || t("dialogs.export.nameLower")}-001` : s.template}>
               <div className="row">
-                <span className="k">Name</span>
+                <span className="k">{t("dialogs.export.name")}</span>
                 <select data-export-field="naming" value={s.naming} onChange={(e) => set("naming", e.target.value as Settings["naming"])}>
-                  <option value="original">Same as original</option>
-                  <option value="custom">Custom name + number</option>
-                  <option value="template">Built from photo info</option>
+                  <option value="original">{t("dialogs.export.sameAsOriginal")}</option>
+                  <option value="custom">{t("dialogs.export.customNameNumber")}</option>
+                  <option value="template">{t("dialogs.export.builtFromPhotoInfo")}</option>
                 </select>
               </div>
               {s.naming === "custom" && (
                 <div className="row">
-                  <span className="k">Custom name</span>
-                  <input className="field" placeholder="name" value={s.customName}
+                  <span className="k">{t("dialogs.export.customName")}</span>
+                  <input className="field" placeholder={t("dialogs.export.name")} value={s.customName}
                          onChange={(e) => set("customName", e.target.value)} />
                 </div>
               )}
               {s.naming === "template" && (
                 <>
                   <div className="row">
-                    <span className="k">Pattern</span>
+                    <span className="k">{t("dialogs.export.pattern")}</span>
                     <input className="field" value={s.template} onChange={(e) => set("template", e.target.value)} />
                   </div>
                   <div className="row">
@@ -682,12 +675,12 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                     <select className="token-menu" value="" onChange={(e) => {
                       if (e.target.value) set("template", `${s.template}{${e.target.value}}`);
                     }}>
-                      <option value="">Insert photo info…</option>
+                      <option value="">{t("dialogs.export.insertPhotoInfo")}</option>
                       {TOKENS.map((t) => <option key={t} value={t}>{FILE_TOKEN_NAMES[t] ?? t}</option>)}
                     </select>
                   </div>
                   <div className="row">
-                    <span className="k">Date style</span>
+                    <span className="k">{t("dialogs.export.dateStyle")}</span>
                     <select data-export-field="dateFormat" value={s.dateFormat} onChange={(e) => set("dateFormat", e.target.value)}>
                       {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>
@@ -701,34 +694,34 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               )}
             </Section>
 
-            <Section title="Format & Size" open={openSections.format} onToggle={(alt) => toggle("format", alt)}
+            <Section id="format" title={t("dialogs.export.formatSize")} open={openSections.format} onToggle={(alt) => toggle("format", alt)}
                      summary={`${formatNames[s.format]}${hasQuality(s.format) ? ` ${s.quality}` : ""}, `
                        + `${upscale ? `AI ${upscale}×` : canvas ? `canvas ${s.canvasW} × ${s.canvasH}` : s.resize ? `${s.longEdge} px` : "original size"}`}>
               <div className="row">
-                <span className="k">Format</span>
+                <span className="k">{t("dialogs.export.format")}</span>
                 <select data-export-field="format" value={s.format} onChange={(e) => set("format", e.target.value as Settings["format"])}>
                   {Object.entries(formatNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
               {hasQuality(s.format) && (
                 <div className="row">
-                  <span className="k">Quality</span>
+                  <span className="k">{t("dialogs.export.quality")}</span>
                   <input type="range" min={10} max={100} value={s.quality}
                          onChange={(e) => set("quality", Number(e.target.value))} />
                   <span className="num">{s.quality}</span>
-                  {s.format === "jxl" && s.quality === 100 && <span className="note-plain">Lossless</span>}
+                  {s.format === "jxl" && s.quality === 100 && <span className="note-plain">{t("dialogs.export.lossless")}</span>}
                 </div>
               )}
               {bitDepths(s.format).length > 0 && (
                 <div className="row">
-                  <span className="k">Bit depth</span>
+                  <span className="k">{t("dialogs.export.bitDepth")}</span>
                   <select data-export-field="bpp" value={depthOf(s.format, s.bpp)} onChange={(e) => set("bpp", Number(e.target.value) as BitDepth)}>
-                    {bitDepths(s.format).map((b) => <option key={b} value={b}>{b} bit</option>)}
+                    {bitDepths(s.format).map((b) => <option key={b} value={b}>{t("dialogs.export.bitDepthValue", { count: b })}</option>)}
                   </select>
                 </div>
               )}
               <div className="row">
-                <span className="k">Size</span>
+                <span className="k">{t("dialogs.export.size")}</span>
                 <select data-export-field="resize" value={upscale ? `ai${upscale}` : canvas ? "canvas" : s.resize ? "fit" : "original"} onChange={(e) => {
                   const v = e.target.value;
                   setS((old) => {
@@ -738,93 +731,91 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                     return n;
                   });
                 }}>
-                  <option value="original">Original size</option>
-                  <option value="fit">Fit long edge to…</option>
-                  <option value="canvas">Fixed canvas…</option>
-                  {canUpscale && <option value="ai2">AI upscale 2×</option>}
-                  {canUpscale && <option value="ai4">AI upscale 4×</option>}
+                  <option value="original">{t("dialogs.export.originalSize")}</option>
+                  <option value="fit">{t("dialogs.export.fitLongEdge")}</option>
+                  <option value="canvas">{t("dialogs.export.fixedCanvas")}</option>
+                  {canUpscale && <option value="ai2">{t("dialogs.export.aiUpscale2")}</option>}
+                  {canUpscale && <option value="ai4">{t("dialogs.export.aiUpscale4")}</option>}
                 </select>
                 {s.resize && !upscale && (
                   <>
                     <input className="field num-field" type="number" min={16} max={30000} value={s.longEdge}
                            onChange={(e) => set("longEdge", Math.max(16, Number(e.target.value)))} />
-                    px
+                    {t("dialogs.export.pixels")}
                   </>
                 )}
               </div>
               {canvas && (
                 <>
                   <div className="row">
-                    <span className="k">Canvas</span>
+                    <span className="k">{t("dialogs.export.canvas")}</span>
                     <input className="field num-field" type="number" min={16} max={30000} value={s.canvasW}
-                           title="Width" onChange={(e) => set("canvasW", Math.max(16, Number(e.target.value)))} />
+                           title={t("dialogs.print.width")} onChange={(e) => set("canvasW", Math.max(16, Number(e.target.value)))} />
                     ×
                     <input className="field num-field" type="number" min={16} max={30000} value={s.canvasH}
-                           title="Height" onChange={(e) => set("canvasH", Math.max(16, Number(e.target.value)))} />
-                    px
+                           title={t("dialogs.print.height")} onChange={(e) => set("canvasH", Math.max(16, Number(e.target.value)))} />
+                    {t("dialogs.export.pixels")}
                   </div>
                   <div className="row">
-                    <span className="k">Color</span>
+                    <span className="k">{t("dialogs.export.color")}</span>
                     <ColorPick value={s.canvasColor} onChange={(v) => set("canvasColor", v)} />
                   </div>
                   <label className="row check">
                     <input type="checkbox" checked={s.canvasFlip} onChange={(e) => set("canvasFlip", e.target.checked)} />
-                    Turn for landscape photos
+                    {t("dialogs.export.turnForLandscape")}
                   </label>
                   <div className="hint">
-                    each photo and its frame are fitted inside the canvas and centered; the rest is the canvas color
+                  {t("dialogs.export.canvasHint")}
                   </div>
                 </>
               )}
               {upscale > 0 && (
                 <div className="hint">
-                  a 20 MP photo becomes {upscale === 2 ? "80" : "320"} MP and takes about
-                  {upscale === 2 ? " three" : " four"} minutes, during which editing waits; the model (55 MB) downloads
-                  on first use
+                  {t("dialogs.export.upscaleHint", { output: upscale === 2 ? 80 : 320, minutes: upscale === 2 ? 3 : 4 })}
                 </div>
               )}
               <div className="row">
-                <span className="k">Color space</span>
+                <span className="k">{t("dialogs.export.colorSpace")}</span>
                 <select data-export-field="colorSpace" value={s.colorSpace} onChange={(e) => set("colorSpace", e.target.value as Settings["colorSpace"])}>
                   {Object.entries(spaceNames).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
             </Section>
 
-            <Section title="Frame & Captions" open={openSections.frame} onToggle={(alt) => toggle("frame", alt)}
-                     summary={[s.borders.length && "frame", s.inner.length && "keyline",
-                               s.texts.length && `${s.texts.length} caption${s.texts.length > 1 ? "s" : ""}`]
-                       .filter(Boolean).join(", ") || "none"}>
+            <Section id="frame" title={t("dialogs.export.frameCaptions")} open={openSections.frame} onToggle={(alt) => toggle("frame", alt)}
+                     summary={[s.borders.length && t("dialogs.export.frame"), s.inner.length && t("dialogs.export.keyline"),
+                               s.texts.length && t("dialogs.export.captionCount", { count: s.texts.length })]
+                       .filter(Boolean).join(", ") || t("dialogs.export.none")}>
               <FrameEditor s={s} set={set} />
             </Section>
 
-            <Section title="Keywords" open={openSections.keywords} onToggle={(alt) => toggle("keywords", alt)}
+            <Section id="keywords" title={t("dialogs.export.keywords")} open={openSections.keywords} onToggle={(alt) => toggle("keywords", alt)}
                      summary={s.keywords.length
                        ? s.keywords.map((k) => k.slice(k.lastIndexOf("|") + 1)).join(", ")
                          + (s.keywordsOnOriginal ? " (also originals)" : "")
-                       : "none"}>
+                       : t("dialogs.export.none")}>
               <KeywordChips keywords={s.keywords}
                             onRemove={(k) => set("keywords", s.keywords.filter((x) => x !== k))} />
               <KeywordInput attached={new Set(s.keywords)} known={knownKeywords} onAdd={addKeywords} addOnBlur />
               <label className="row check">
                 <input type="checkbox" checked={s.keywordsOnOriginal}
                        onChange={(e) => set("keywordsOnOriginal", e.target.checked)} />
-                Also add to the original photos
+                {t("dialogs.export.addOriginalKeywords")}
               </label>
               <div className="note-plain">{s.includeKeywords
-                ? "added to each exported file with the photo's own keywords; without the box ticked the originals keep only theirs"
-                : "keywords are left out of the exported files (Metadata)"}</div>
+                ? t("dialogs.export.keywordsIncluded")
+                : t("dialogs.export.keywordsOmitted")}</div>
             </Section>
 
-            <Section title="Metadata" open={openSections.metadata} onToggle={(alt) => toggle("metadata", alt)}
+            <Section id="metadata" title={t("dialogs.export.metadata")} open={openSections.metadata} onToggle={(alt) => toggle("metadata", alt)}
                      summary={metadataSummary(s)}>
               {METADATA.map(([label, on, flip]) => (
                 <label key={on} className="row check">
                   <input type="checkbox" checked={flip ? !s[on] : s[on]} onChange={(e) => set(on, flip ? !e.target.checked : e.target.checked)} />
-                  {label}
+                  {t(`dialogs.export.metadata.${label}`)}
                 </label>
               ))}
-              <div className="note-plain">the date taken is always included</div>
+              <div className="note-plain">{t("dialogs.export.dateAlwaysIncluded")}</div>
             </Section>
           </div>
 
@@ -833,13 +824,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
               {preview ? (
                 <img src={preview.url} className={preview.key !== previewKey ? "stale" : ""} alt="" />
               ) : (
-                <div className="note-plain">{shownImage ? "rendering…" : "no photo to export"}</div>
+                <div className="note-plain">{shownImage ? t("dialogs.export.rendering") : t("dialogs.export.noPhoto")}</div>
               )}
             </div>
             <div className="preview-caption">
               {previewError ? <span className="warn">{previewError}</span>
                 : shownImage ? <>{stemFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1)}
-                    .{ext(s.format)}{items.length > 1 ? `, first of ${items.length}` : ""}</> : null}
+                    .{ext(s.format)}{items.length > 1 ? t("dialogs.export.firstOf", { count: items.length }) : ""}</> : null}
             </div>
           </div>
         </div>
@@ -850,20 +841,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
         <div className="modal-foot">
           <div className="segmented small scope">
             <button className={s.scope === "current" ? "active" : ""} onClick={() => set("scope", "current")}>
-              Current image
+              {t("dialogs.export.currentImage")}
             </button>
             {selected.length > 1 && (
               <button className={s.scope === "selected" ? "active" : ""} onClick={() => set("scope", "selected")}>
-                Selected ({selected.length})
+                {t("dialogs.export.selectedCount", { count: selected.length })}
               </button>
             )}
             <button className={s.scope === "shown" ? "active" : ""} onClick={() => set("scope", "shown")}>
-              All shown ({shown.length})
+              {t("dialogs.export.allShownCount", { count: shown.length })}
             </button>
           </div>
-          <button className="btn" disabled={busy} onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={busy} onClick={onClose}>{t("dialogs.export.cancel")}</button>
           <button className="btn primary" disabled={!canRun} onClick={run}>
-            {busy ? "Preparing…" : `Export ${items.length} image${items.length === 1 ? "" : "s"}`}
+            {busy ? t("dialogs.common.preparing") : t("dialogs.export.exportCount", { count: items.length })}
           </button>
         </div>
       </div>
@@ -871,22 +862,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
         <div className="modal-backdrop">
           <div className="modal conflict">
             <div className="modal-body">
-              <h3>“{ask.name}” {ask.inBatch ? "is named twice in this export" : "already exists"}</h3>
-              <div className="note-plain">in {ask.dir}</div>
+              <h3>{ask.inBatch ? t("dialogs.export.duplicateName", { name: ask.name }) : t("dialogs.export.fileExists", { name: ask.name })}</h3>
+              <div className="note-plain">{t("dialogs.export.inFolder", { folder: ask.dir })}</div>
               {ask.left > 1 && (
                 <label className="row check">
                   <input type="checkbox" checked={ask.all} onChange={(e) => setAsk({ ...ask, all: e.target.checked })} />
-                  Apply to the other {ask.left - 1} file{ask.left === 2 ? "" : "s"} with a name clash
+                  {t("dialogs.export.applyOtherConflicts", { count: ask.left - 1 })}
                 </label>
               )}
             </div>
             <div className="modal-foot">
-              <button className="btn" onClick={() => answer.current?.("cancel", false)}>Cancel</button>
-              <button className="btn" onClick={() => answer.current?.("skip", ask.all)}>Skip</button>
-              <button className="btn" onClick={() => answer.current?.("overwrite", ask.all)}>Overwrite</button>
-              <button className="btn primary" autoFocus onClick={() => answer.current?.("unique", ask.all)}>
-                Use Unique Name
-              </button>
+              <button className="btn" onClick={() => answer.current?.("cancel", false)}>{t("dialogs.export.cancel")}</button>
+              <button className="btn" onClick={() => answer.current?.("skip", ask.all)}>{t("dialogs.export.skip")}</button>
+              <button className="btn" onClick={() => answer.current?.("overwrite", ask.all)}>{t("dialogs.export.overwrite")}</button>
+              <button className="btn primary" autoFocus onClick={() => answer.current?.("unique", ask.all)}>{t("dialogs.export.useUniqueName")}</button>
             </div>
           </div>
         </div>

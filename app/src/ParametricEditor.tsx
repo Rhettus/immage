@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { channelActive, defaultBoost, neutralChannel, type BlendifChannel, type ChannelRange,
          type ParametricRange, type Rgb } from "./masks";
 import type { Control } from "./manifest";
+import { t } from "./i18n";
 
 export type Picked = Partial<Record<BlendifChannel, { min: number; mean: number; max: number }>>;
 
@@ -164,21 +165,21 @@ export function ParametricEditor({ range, picked, showing, setting, disabled, re
       <div className="pm-head">
         <div className="pm-tabs">
           {CHANNELS.map((c) => (
-            <button key={c.id} title={`sliders for ${c.tip}`}
+            <button key={c.id} title={t("fields.parametric.slidersFor", { channel: t(`fields.parametric.channel.${c.id}`) })}
                     className={`${c.id === tab ? "on" : ""}${channelActive(range.channels[c.id]) ? " changed" : ""}`}
-                    onClick={() => { setTab(c.id); if (setting) onSet(c.id); }}>{c.id}</button>
+                    onClick={() => { setTab(c.id); if (setting) onSet(c.id); }}>{t(`fields.parametric.channel.${c.id}`)}</button>
           ))}
         </div>
         <button className={`pm-tool${showing ? " on" : ""}`} disabled={disabled}
-                title="show what the photo holds under the pointer on the slider"
+                title={t("fields.parametric.showPicker")}
                 onClick={() => onShow(!showing)}>{DROPPER}</button>
         <button className={`pm-tool${setting ? " on" : ""}`} disabled={disabled}
-                title="set this channel's range: drag a box on the photo, or click it"
+                title={t("fields.parametric.setRange")}
                 onClick={() => onSet(setting ? null : tab)}>{DROPPER_SET}</button>
       </div>
       <div className="pm-row">
         <button className="pm-polarity" disabled={disabled}
-                title="polarity: the range is selected (+), or everything outside it (−)"
+                title={t("fields.parametric.polarity")}
                 onClick={() => set(tab, { ...cur, invert: !cur.invert })}>{cur.invert ? "−" : "+"}</button>
         <div className="pm-slider">
           <div className="pm-values top">{label(0)}{label(2)}</div>
@@ -223,14 +224,14 @@ export function ParametricEditor({ range, picked, showing, setting, disabled, re
         {/* darktable's boost lifts a channel's scale past 1, shown from its
             starting point; hue has none */}
         {tab !== "hz" && renderSlider(
-          { id: `pm_boost_${tab}`, label: "Boost (EV)", min: 0, max: 18, step: 0.1, neutral: 0,
+          { id: `pm_boost_${tab}`, label: t("fields.parametric.boost"), min: 0, max: 18, step: 0.1, neutral: 0,
             format: (v) => v.toFixed(1) },
           Math.round((cur.boost - defaultBoost(tab)) * 10) / 10,
           (v) => set(tab, { ...cur, boost: v + defaultBoost(tab) }))}
         <button className="pm-invert-all" disabled={disabled}
-                title="turn every channel's polarity round"
+                title={t("fields.parametric.invertAllHint")}
                 onClick={() => onChange(Object.fromEntries(Object.entries(range.channels)
-                  .map(([c, r]) => [c, { ...r, invert: !r.invert }])))}>Invert Polarities</button>
+                  .map(([c, r]) => [c, { ...r, invert: !r.invert }])))}>{t("fields.parametric.invertAll")}</button>
       </div>
     </div>
   );

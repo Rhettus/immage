@@ -12,9 +12,10 @@ import { useState } from "react";
 import { commands } from "./commands";
 import type { AdvancedState } from "./session";
 import { clusterSwatches, MAXN, PREVIEW_H, PREVIEW_W, type Side } from "./colormapping";
+import { t } from "./i18n";
 
-const LABEL: Record<Side, string> = { source: "source clusters:", target: "target clusters:" };
-const TIP: Record<Side, string> = { source: "analyze this image as a source image", target: "analyze this image as a target image" };
+const LABEL: Record<Side, string> = { source: t("fields.clusters.source"), target: t("fields.clusters.target") };
+const TIP: Record<Side, string> = { source: t("fields.clusters.sourceHint"), target: t("fields.clusters.targetHint") };
 
 export function ModuleClusters({ state, disabled, settle, onFields }: {
   state: AdvancedState; disabled: boolean;
@@ -56,7 +57,7 @@ export function ModuleClusters({ state, disabled, settle, onFields }: {
       <div className="clusters-buttons">
         {(["source", "target"] as const).map((side) => (
           <button key={side} type="button" className="btn" data-control-id={`adv:acquire-${side}`} title={TIP[side]}
-                  disabled={disabled || busy} onClick={() => void acquire(side)}>{`acquire as ${side}`}</button>
+                  disabled={disabled || busy} onClick={() => void acquire(side)}>{t(`fields.clusters.acquire.${side}`)}</button>
         ))}
       </div>
       {problem && <div className="note module-file-note">{problem}</div>}

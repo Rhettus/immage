@@ -11,6 +11,8 @@ import { ArrowLeftRight } from "lucide-react";
 import { useDismiss } from "./MasksPanel";
 import { loadModuleChoice, storeModuleChoice, storeModuleMode } from "./moduleChoice";
 import type { ModuleChoice } from "./manifest";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 export type ModuleScope = "global" | "masks";
 
@@ -54,7 +56,7 @@ export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], on
     <span className="module-switch" ref={box}>
       <button type="button" className={`module-switch-btn${at ? " on" : ""}${otherNames.length ? " others" : ""}`} disabled={disabled}
               data-module-switch={choice.id} aria-haspopup="menu" aria-expanded={!!at}
-              aria-label={`Module for ${choice.label}`} title={`Module: ${current.name}${otherNames.length ? `. Also adjusted in: ${otherNames.join(", ")}` : ""}`}
+              aria-label={t("fields.moduleSwitch.moduleFor", { label: fieldText(choice.label) })} title={t("fields.moduleSwitch.moduleTitle", { name: fieldText(current.name), other: otherNames.length ? t("fields.moduleSwitch.alsoAdjustedIn", { names: otherNames.map(fieldText).join(", ") }) : "" })}
               onClick={(e) => { e.stopPropagation(); if (at) close(); else open(e.currentTarget); }}
               onDoubleClick={(e) => e.stopPropagation()}>
         <ArrowLeftRight size={11} strokeWidth={2} />
@@ -68,27 +70,27 @@ export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], on
                const i = items.indexOf(document.activeElement as HTMLButtonElement);
                items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
              }}>
-          <div className="menu-label">Module for {choice.label}</div>
+          <div className="menu-label">{t("fields.moduleSwitch.moduleFor", { label: fieldText(choice.label) })}</div>
           {choice.options.map((o) => (
             <button key={o.value} type="button" role="menuitemradio" aria-checked={o.value === current.value}
                     className={o.value === current.value ? "on" : ""} data-module-option={o.value}
                     autoFocus={o.value === current.value}
                     onClick={(e) => { e.stopPropagation(); close(); if (o.value !== current.value) onPick(o.value); }}>
               <span className="check">{o.value === current.value ? "✓" : ""}</span>
-              <span className="name">{o.name}</span>
-              {o.preferred && <span className="tag">preferred</span>}
-              {adjusted.includes(o.value) && <span className="adjusted-dot" title="has adjustments" />}
+              <span className="name">{fieldText(o.name)}</span>
+              {o.preferred && <span className="tag">{t("fields.moduleSwitch.preferred")}</span>}
+              {adjusted.includes(o.value) && <span className="adjusted-dot" title={t("fields.moduleSwitch.hasAdjustments")} />}
             </button>
           ))}
           <div className="menu-sep" />
           <button type="button" role="menuitem" data-module-default disabled={isDefault}
-                  title={isDefault ? "already the default" : `use ${current.name} for ${choice.label} on photos that have not used it yet`}
+                  title={isDefault ? t("fields.moduleSwitch.alreadyDefault") : t("fields.moduleSwitch.useDefaultHint", { name: fieldText(current.name), label: fieldText(choice.label) })}
                   onClick={(e) => {
                     e.stopPropagation(); close();
                     storeModuleMode("custom");
                     storeModuleChoice(choice.id, current.value, scope);
                   }}>
-            <span className="check" /><span className="name">Set as default</span>
+            <span className="check" /><span className="name">{t("fields.moduleSwitch.setDefault")}</span>
           </button>
         </div>, document.body)}
     </span>

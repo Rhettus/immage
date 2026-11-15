@@ -8,8 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import { type MovePlan } from "./commands";
 import { bytesText } from "./background";
 import { baseName } from "./paths";
+import { t, formatNumber } from "./i18n";
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many = `${one}s`) => `${formatNumber(n)} ${n === 1 ? one : many}`;
 
 export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }: {
   plan: MovePlan | null;           // null while it is worked out
@@ -34,7 +35,7 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
   const immichFiles = units.filter((u) => u.keepSource && !u.download).length;
   const versions = units.filter((u) => u.versions > 1 && u.clash !== "here");
   const count = fresh.length + keep.size + (moving ? same.length : 0);
-  const verb = moving ? "Move" : "Copy";
+  const verb = moving ? t("dialogs.move.move") : t("dialogs.move.copy");
   const low = plan?.free != null && plan.free < plan.bytes;
   const where = plan ? plan.dest : "";
   const confirm = () => { if (plan && count && !low) onConfirm(!moving, [...keep]); };
@@ -45,40 +46,38 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
       if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "SELECT") { e.preventDefault(); confirm(); }
     }}>
     <div ref={box} className="modal move-photos" role="dialog" aria-modal="true" aria-labelledby="move-title">
-      <div className="modal-head"><h2 id="move-title">{verb} Photos</h2></div>
+      <div className="modal-head"><h2 id="move-title">{moving ? t("dialogs.move.moveTitle") : t("dialogs.move.copyTitle")}</h2></div>
       <div className="modal-body">
-        {error ? <p role="alert">{error}</p> : !plan ? <p>Checking the folder…</p> : <>
+        {error ? <p role="alert">{error}</p> : !plan ? <p>{t("dialogs.move.checking")}</p> : <>
           <p>
-            {verb} <strong>{plural(count, "photo")}</strong>
-            {plan.bytes > 0 && <> ({bytesText(plan.bytes)})</>} to <strong title={where}>{baseName(where) || where}</strong>
+            {t("dialogs.move.destinationSummary", { action: verb, count: plural(count, t("dialogs.move.photo")), size: plan.bytes > 0 ? ` (${bytesText(plan.bytes)})` : ""})}
+            <strong title={where}>{baseName(where) || where}</strong>
             <span className="move-dest">{where}</span>
           </p>
           <p className="note-plain">
             {moving && plan.sameDrive
-              ? "On the same drive, the files are renamed: nothing is copied."
-              : `Each photo and its XMP sidecars are copied, read back and checked against the original's checksum${
-                  moving ? ". The original is removed only once every copy matches" : ""}.`}
+              ? t("dialogs.move.sameDrive")
+              : t(moving ? "dialogs.move.checkedMove" : "dialogs.move.checkedCopy")}
           </p>
           {versions.length > 0 && <p className="note-plain">
-            {versions.length === 1 ? `${versions[0].name} has ${versions[0].versions} versions` : `${plural(versions.length, "photo")} have virtual copies`}:
-            {" "}every version {moving ? "moves" : "is copied"} with {versions.length === 1 ? "it" : "them"}.
+            {versions.length === 1 ? t("dialogs.move.oneVersion", { name: versions[0].name, count: versions[0].versions }) : t("dialogs.move.virtualCopies", { count: plural(versions.length, t("dialogs.move.photo")) })}:
+            {" "}{t(moving ? "dialogs.move.versionsMove" : "dialogs.move.versionsCopy", { pronoun: versions.length === 1 ? t("dialogs.move.it") : t("dialogs.move.them") })}.
           </p>}
           {downloads > 0 && <p className="note-plain">
-            {plural(downloads, "photo")} from Immich {downloads === 1 ? "is" : "are"} downloaded and checked; Immich keeps {downloads === 1 ? "it" : "them"}.
+            {t("dialogs.move.immichDownloads", { count: plural(downloads, t("dialogs.move.photo")), verb: downloads === 1 ? t("dialogs.move.is") : t("dialogs.move.are"), pronoun: downloads === 1 ? t("dialogs.move.it") : t("dialogs.move.them") })}
           </p>}
           {immichFiles > 0 && <p className="note-plain">
-            {plural(immichFiles, "Immich photo")} {immichFiles === 1 ? "is" : "are"} copied from this computer; Immich keeps the original{immichFiles === 1 ? "" : "s"}.
+            {t("dialogs.move.immichCopies", { count: plural(immichFiles, t("dialogs.move.immichPhoto")), verb: immichFiles === 1 ? t("dialogs.move.is") : t("dialogs.move.are"), suffix: immichFiles === 1 ? "" : "s" })}
           </p>}
           {same.length > 0 && <p className="note-plain">
-            {plural(same.length, "photo")} {same.length === 1 ? "is" : "are"} already there, identical
-            {moving ? `: only ${same.length === 1 ? "its original is" : "the originals are"} removed.` : ", and skipped."}
+            {t(moving ? "dialogs.move.identicalMoved" : "dialogs.move.identicalSkipped", { count: plural(same.length, t("dialogs.move.photo")), verb: same.length === 1 ? t("dialogs.move.is") : t("dialogs.move.are"), original: same.length === 1 ? t("dialogs.move.itsOriginal") : t("dialogs.move.theOriginals") })}
           </p>}
-          {here.length > 0 && <p className="note-plain">{plural(here.length, "photo")} already in this folder {here.length === 1 ? "is" : "are"} skipped.</p>}
+          {here.length > 0 && <p className="note-plain">{t("dialogs.move.alreadyHere", { count: plural(here.length, t("dialogs.move.photo")), verb: here.length === 1 ? t("dialogs.move.is") : t("dialogs.move.are") })}</p>}
           {clashes.length > 0 && <>
-            <h3>Already there, with other content</h3>
+            <h3>{t("dialogs.move.conflictsHeading")}</h3>
             <div className="row move-all">
-              <button className="btn small" onClick={() => setKeep(new Set())}>Skip all</button>
-              <button className="btn small" onClick={() => setKeep(new Set(clashes.map((u) => u.key)))}>Keep both for all</button>
+              <button className="btn small" onClick={() => setKeep(new Set())}>{t("dialogs.move.skipAll")}</button>
+              <button className="btn small" onClick={() => setKeep(new Set(clashes.map((u) => u.key)))}>{t("dialogs.move.keepAll")}</button>
             </div>
             <ul className="move-clashes">
               {clashes.map((u) => (
@@ -89,24 +88,24 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
                     if (e.target.value === "keep") next.add(u.key); else next.delete(u.key);
                     setKeep(next);
                   }}>
-                    <option value="skip">Skip</option>
-                    <option value="keep">Keep both (numbered)</option>
+                    <option value="skip">{t("dialogs.move.skip")}</option>
+                    <option value="keep">{t("dialogs.move.keepBothNumbered")}</option>
                   </select>
                 </li>
               ))}
             </ul>
           </>}
-          {low && <p role="alert">Not enough space: {bytesText(plan.free!)} free, {bytesText(plan.bytes)} needed.</p>}
+          {low && <p role="alert">{t("dialogs.move.lowSpace", { free: bytesText(plan.free!), needed: bytesText(plan.bytes) })}</p>}
           {movable && <label className="row check">
             <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} />
-            Keep the originals (copy instead of move)
+            {t("dialogs.move.keepOriginals")}
           </label>}
         </>}
       </div>
       <div className="modal-foot">
-        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
         {plan && !error && <button className="btn primary" disabled={!count || low} onClick={confirm}>
-          {verb} {plural(count, "photo")}
+          {verb} {plural(count, t("dialogs.move.photo"))}
         </button>}
       </div>
     </div>

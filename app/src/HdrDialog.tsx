@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { commands } from "./commands";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 const ALIGN_KEY = "immage.hdrAlign";
 function loadAlign(): boolean {
@@ -30,21 +31,20 @@ export function HdrDialog({ count, onRun, onClose }: {
   return (
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal hdr-merge">
-        <div className="modal-head"><h2>HDR Merge</h2></div>
+        <div className="modal-head"><h2>{t("dialogs.hdr.title")}</h2></div>
         <div className="modal-body">
-          <label className="row check" title={canAlign === false ? "this build cannot align photos" : undefined}>
+          <label className="row check" title={canAlign === false ? t("dialogs.hdr.cannotAlign") : undefined}>
             <input type="checkbox" checked={align && canAlign !== false} disabled={!canAlign}
                    onChange={(e) => setAlign(e.target.checked)} />
-            Auto Align
+            {t("dialogs.hdr.autoAlign")}
           </label>
           <p className="note-plain">
-            darktable's HDR merge combines the {count} raw exposures into a new DNG beside the first, with
-            the range of them all. Auto Align lines up photos taken handheld; a tripod's need none
+            {t("dialogs.hdr.description", { count })}
           </p>
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" autoFocus onClick={run}>Merge</button>
+          <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
+          <button className="btn primary" autoFocus onClick={run}>{t("dialogs.common.merge")}</button>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { commands, type BundleView as Bundle, type Value } from "./commands";
 import { immichUrl } from "./immich";
 import { settings } from "./settings";
+import { t, formatNumber } from "./i18n";
 
 // what only the page knows and the scrubber must find in the text: folders,
 // photo names, the Immich server, and the preferences the user has set
@@ -37,8 +38,8 @@ export async function supportValues(known: { folders: (string | null | undefined
 }
 
 const KINDS: Record<string, string> = {
-  home: "home folder", user: "user name", host: "computer name", folder: "folder", photo: "photo name", extra: "server",
-  email: "email address", url: "web address", path: "path", serial: "serial number",
+  home: "homeFolder", user: "userName", host: "computerName", folder: "folder", photo: "photoName", extra: "server",
+  email: "emailAddress", url: "webAddress", path: "path", serial: "serialNumber",
 };
 const ROW = 18;
 const VIEW = 300;
@@ -129,19 +130,18 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) close(); }}
     onKeyDown={(e) => e.stopPropagation()}>
     <div ref={box} className="modal support-bundle" role="dialog" aria-modal="true" aria-labelledby="support-bundle-title">
-      <div className="modal-head"><h2 id="support-bundle-title">Create Support Bundle</h2></div>
+      <div className="modal-head"><h2 id="support-bundle-title">{t("dialogs.support.title")}</h2></div>
       <div className="modal-body">
-        <p>Private information, such as your user name, computer name, folders and photo names, has been replaced
-          in the text below. Nothing is uploaded: you save a file and decide where it goes.</p>
+        <p>{t("dialogs.support.description")}</p>
         {bundle && <p className="note-plain">{counts.length
-          ? `Replaced: ${counts.map(([k, n]) => `${n} ${KINDS[k] ?? k}${n === 1 ? "" : "s"}`).join(", ")}.`
-          : "Nothing needed replacing."} Click a line to leave it out; Shift-click leaves out a range.</p>}
-        {busy && !bundle && <p role="status">Collecting…</p>}
+          ? t("dialogs.support.replaced", { counts: counts.map(([k, n]) => t(`dialogs.support.kind.${KINDS[k] ?? k}`, { count: formatNumber(n) })).join(", ") })
+          : t("dialogs.support.nothingToReplace")} {t("dialogs.support.selectionHelp")}</p>}
+        {busy && !bundle && <p role="status">{t("dialogs.common.collecting")}</p>}
         {bundle && <>
           <div className="sb-tabs" role="tablist">
             {bundle.files.map((f, n) => <button key={f.name} role="tab" aria-selected={n === tab}
               className={`sb-tab${n === tab ? " on" : ""}`} onClick={() => switchTab(n)}>
-              {f.name}{removed[f.name]?.size ? ` (${removed[f.name].size} left out)` : ""}</button>)}
+              {f.name}{removed[f.name]?.size ? ` (${t("dialogs.support.leftOut", { count: formatNumber(removed[f.name].size) })})` : ""}</button>)}
           </div>
           <div ref={scroller} className="sb-lines" style={{ height: VIEW }} onScroll={(e) => setTop(e.currentTarget.scrollTop)}>
             <div style={{ height: lines.length * ROW, position: "relative" }}>
@@ -154,14 +154,14 @@ export function SupportBundleDialog({ values, onClose }: { values: SupportValues
           </div>
         </>}
         {error && <p role="alert">{error}</p>}
-        {saved && <p role="status">Saved to {saved}</p>}
+        {saved && <p role="status">{t("dialogs.support.saved", { path: saved })}</p>}
       </div>
       <div className="modal-foot">
         <button className="btn" disabled={busy || !bundle || !!saved} onClick={() => void addBenchmark()}
-          style={{ marginRight: "auto" }}>Add GUI Benchmark Report…</button>
-        <button className="btn" disabled={busy} onClick={close}>{saved ? "Done" : "Cancel"}</button>
+          style={{ marginRight: "auto" }}>{t("dialogs.support.addBenchmark")}</button>
+        <button className="btn" disabled={busy} onClick={close}>{saved ? t("dialogs.common.done") : t("dialogs.common.cancel")}</button>
         {!saved && <button className="btn primary" disabled={busy || !bundle} onClick={() => void save()}>
-          {busy && bundle ? "Saving…" : total ? `Save (${total} left out)…` : "Save…"}</button>}
+          {busy && bundle ? t("dialogs.common.saving") : total ? t("dialogs.support.saveWithLeftOut", { count: formatNumber(total) }) : t("dialogs.support.save")}</button>}
       </div>
     </div>
   </div>;

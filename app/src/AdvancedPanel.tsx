@@ -18,6 +18,8 @@ import { GRAPHS } from "./graphMaps";
 import { MAX_NODES } from "./tonecurve";
 import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 import type { ImageEntry } from "./library";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
@@ -35,7 +37,7 @@ export function AdvancedSearch({ photo, applicable, onPick }: {
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => [...panels.filter((p) => !p.hidden).map((p) => ({ id: p.id, title: p.advancedTitle ?? p.title })),
-                                { id: TECHNICAL_ID, title: "Technical" }], []);
+                                { id: TECHNICAL_ID, title: t("fields.advanced.technical") }], []);
   // read on each render: closing Preferences re-renders the panel
   const hidden = loadHiddenModules();
   const hits = useMemo(() => searchModules(visibleLayouts(LAYOUTS, hidden), groups, text), [groups, text, hidden]);
@@ -51,7 +53,7 @@ export function AdvancedSearch({ photo, applicable, onPick }: {
   };
   return (
     <div className="advanced-search" ref={box}>
-      <input type="search" className="field" placeholder="Search modules" aria-label="Search modules" spellCheck={false}
+      <input type="search" className="field" placeholder={t("fields.advanced.search")} aria-label={t("fields.advanced.search")} spellCheck={false}
              value={text} role="combobox" aria-expanded={open && hits.length > 0} aria-controls="advanced-search-results"
              onChange={(e) => { setText(e.target.value); setActive(0); setOpen(true); }}
              onFocus={() => setOpen(true)}
@@ -65,11 +67,11 @@ export function AdvancedSearch({ photo, applicable, onPick }: {
           {hits.map((h, i) => (
             <button key={`${h.group}:${h.op}:${h.title}`} type="button" role="option" aria-selected={i === active}
                     className={i === active ? "active" : ""} data-search-hit={h.op} disabled={!ok(h)}
-                    title={!photo ? "Open a photo to add modules" : ok(h) ? undefined : "darktable cannot apply this module to this photo"}
+                    title={!photo ? t("fields.advanced.openPhoto") : ok(h) ? undefined : t("fields.advanced.notApplicable")}
                     onMouseEnter={() => { if (ok(h)) setActive(i); }}
                     onClick={() => pick(h)}>
-              <span className="name">{h.title}{h.setting && <span className="tag"> · {h.setting}</span>}</span>
-              <span className="tag">{h.groupTitle}</span>
+              <span className="name">{fieldText(h.title)}{h.setting && <span className="tag"> · {fieldText(h.setting)}</span>}</span>
+              <span className="tag">{fieldText(h.groupTitle)}</span>
             </button>
           ))}
         </div>
@@ -220,12 +222,12 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
   return (
     <div className="panel adjust" data-panel-id={id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
-        <span>{title}</span>
+        <span>{fieldText(title)}</span>
         <Chevron open={open} />
       </div>
       <Collapse open={open}>
         <div className="panel-body">
-          {cards.length === 0 && choices.length === 0 && <div className="advanced-empty">No darktable modules yet</div>}
+          {cards.length === 0 && choices.length === 0 && <div className="advanced-empty">{t("fields.advanced.noModules")}</div>}
           {cards.map(({ i, layout, schema, state }) => {
             const key = `${i.op}#${i.priority}`;
             const sib = cards.filter((c) => c.i.op === i.op).map((c) => c.i);
@@ -359,8 +361,8 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
       />;
     })}
     {session && ready && choices.length > 0 && <AddModuleMenu group={`mask ${mask}`} choices={choices} onAdd={add} />}
-    {!session && <div className="advanced-empty">Open a photo to edit mask modules</div>}
-    {session && !ready && <div className="advanced-empty">Loading mask modules…</div>}
-    {instances.length === 0 && session && ready && choices.length === 0 && <div className="advanced-empty">No modules available for this mask</div>}
+    {!session && <div className="advanced-empty">{t("fields.advanced.maskOpenPhoto")}</div>}
+    {session && !ready && <div className="advanced-empty">{t("fields.advanced.maskLoading")}</div>}
+    {instances.length === 0 && session && ready && choices.length === 0 && <div className="advanced-empty">{t("fields.advanced.maskNoModules")}</div>}
   </div>;
 }

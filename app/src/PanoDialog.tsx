@@ -8,14 +8,15 @@
 import { useEffect, useRef, useState } from "react";
 import { commands, type PanoPreview as Preview } from "./commands";
 import { settings } from "./settings";
+import { t, formatNumber } from "./i18n";
 
 export type Projection = "auto" | "spherical" | "cylindrical" | "perspective";
 
 const PROJECTIONS: { id: Projection; label: string; title: string }[] = [
-  { id: "auto", label: "Auto", title: "Chooses a projection to suit the width of your panorama." },
-  { id: "spherical", label: "Spherical", title: "For very wide panoramas and photos captured in multiple rows." },
-  { id: "cylindrical", label: "Cylindrical", title: "For wide panoramas. Keeps vertical lines straight." },
-  { id: "perspective", label: "Perspective", title: "For architecture. Keeps straight lines straight; best below about 100°." },
+  { id: "auto", label: t("dialogs.pano.auto"), title: t("dialogs.pano.autoHint") },
+  { id: "spherical", label: t("dialogs.pano.spherical"), title: t("dialogs.pano.sphericalHint") },
+  { id: "cylindrical", label: t("dialogs.pano.cylindrical"), title: t("dialogs.pano.cylindricalHint") },
+  { id: "perspective", label: t("dialogs.pano.perspective"), title: t("dialogs.pano.perspectiveHint") },
 ];
 
 // Separate from background job IDs, including across page reloads.
@@ -113,28 +114,28 @@ export function PanoDialog({ photos, onRun, onClose }: {
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal pano-merge" role="dialog" aria-modal="true" aria-labelledby="pano-title"
            onKeyDown={(e) => { if(e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
-        <div className="modal-head"><h2 id="pano-title">Panorama Merge</h2>
-          <span className="pano-count">{count} photos selected</span></div>
+        <div className="modal-head"><h2 id="pano-title">{t("dialogs.pano.title")}</h2>
+          <span className="pano-count">{t("dialogs.pano.selectedCount", { count: formatNumber(count) })}</span></div>
         <div className="modal-body">
           <div className="pano-preview" aria-busy={busy}>
-            {preview && <canvas ref={canvas} aria-label="Panorama projection preview" />}
-            {preview && <span className="pano-badge">Preview</span>}
+            {preview && <canvas ref={canvas} aria-label={t("dialogs.pano.previewAlt")} />}
+            {preview && <span className="pano-badge">{t("dialogs.common.preview")}</span>}
             {!preview && <div className="pano-preview-state" role="status">
-              {can === false ? "Panorama preview unavailable in this build"
-                : error ? <>Preview unavailable: {error}<button className="btn" onClick={() => setRetry((v) => v + 1)}>Retry</button></>
-                : <>{busy && <span className="spinner" />}Preparing preview…</>}
+              {can === false ? t("dialogs.pano.previewUnavailableBuild")
+                : error ? <>{t("dialogs.pano.previewUnavailable", { error })}<button className="btn" onClick={() => setRetry((v) => v + 1)}>{t("dialogs.common.retry")}</button></>
+                : <>{busy && <span className="spinner" />}{t("dialogs.pano.preparingPreview")}</>}
             </div>}
           </div>
           <div className="pano-preview-meta" aria-live="polite">
-            <span>{preview ? `${projection === "auto" ? "Auto → " : ""}${PROJECTIONS.find((p) => p.id === preview.projection)?.label}`
-                          : busy ? "Building preview from selected photos" : ""}</span>
-            <span>{preview && (crop ? "Auto Crop on · Empty edges removed" : "Auto Crop off · Full stitched area")}</span>
+            <span>{preview ? `${projection === "auto" ? `${t("dialogs.pano.auto")} → ` : ""}${PROJECTIONS.find((p) => p.id === preview.projection)?.label}`
+                          : busy ? t("dialogs.pano.buildingPreview") : ""}</span>
+            <span>{preview && (crop ? t("dialogs.pano.cropOn") : t("dialogs.pano.cropOff"))}</span>
           </div>
           {preview && preview.used < count && <p className="note-plain warn" role="status">
-            Preview uses {preview.used} of {count} photos; the others did not overlap.
+            {t("dialogs.pano.previewOverlap", { used: formatNumber(preview.used), count: formatNumber(count) })}
           </p>}
-          <div className="pano-label">Projection</div>
-          <div className="segmented choice" role="group" aria-label="Projection">
+          <div className="pano-label">{t("dialogs.pano.projection")}</div>
+          <div className="segmented choice" role="group" aria-label={t("dialogs.pano.projection")}>
             {PROJECTIONS.map((p) => (
               <button key={p.id} className={projection === p.id ? "active" : ""} title={p.title} aria-pressed={projection === p.id}
                       onClick={() => setProjection(p.id)}>{p.label}</button>
@@ -143,20 +144,18 @@ export function PanoDialog({ photos, onRun, onClose }: {
           <p className="pano-hint">{PROJECTIONS.find((p) => p.id === projection)?.title}</p>
           <label className="row check">
             <input type="checkbox" checked={crop} onChange={(e) => setCrop(e.target.checked)} />
-            <span>Auto Crop<small className="pano-crop-hint">Trim empty edges from the merged photo.</small></span>
+            <span>{t("dialogs.pano.autoCrop")}<small className="pano-crop-hint">{t("dialogs.pano.trimEdges")}</small></span>
           </label>
           {can === false
-            ? <p className="note-plain warn">this build cannot stitch panoramas</p>
+            ? <p className="note-plain warn">{t("dialogs.pano.cannotStitch")}</p>
             : <p className="note-plain">
-                Creates an editable DNG beside the first photo, with lens corrections applied.
-                Your source photos are kept. Preview shows the shape at reduced resolution;
-                final detail and color may differ.
+                {t("dialogs.pano.description")}
               </p>}
         </div>
         <div className="modal-foot">
-          <span className="pano-foot-status">{busy ? "Preparing preview…" : preview ? "Preview ready" : ""}</span>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" autoFocus disabled={!can} onClick={run}>Merge</button>
+          <span className="pano-foot-status">{busy ? t("dialogs.pano.preparingPreview") : preview ? t("dialogs.pano.previewReady") : ""}</span>
+          <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
+          <button className="btn primary" autoFocus disabled={!can} onClick={run}>{t("dialogs.common.merge")}</button>
         </div>
       </div>
     </div>

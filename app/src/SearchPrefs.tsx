@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { commands, type SearchStatus } from "./commands";
 import { PrefCard, PrefRow } from "./PrefsUI";
+import { t } from "./i18n";
 
 export function SearchPrefs() {
   const [status, setStatus] = useState<SearchStatus | null>(null);
@@ -34,27 +35,27 @@ export function SearchPrefs() {
   const count = status?.counts;
   const downloading = !!model?.downloading;
   const size = model ? `${Math.ceil(model.bytes / 1_000_000)} MB` : "608 MB";
-  return <PrefCard title="Local photo cache">
-    <PrefRow label="Metadata" summary={count ? `${count.assets.toLocaleString()} photos, ${count.variants.toLocaleString()} versions; ${count.metadata.toLocaleString()} metadata records, ${count.analyses.toLocaleString()} analyses.` : status ? "Unavailable for this session." : "Reading status…"}
-      hint="Disposable cached metadata speeds up repeated folder visits. Clear removes cached records. Rebuild also checks your saved folders again; metadata is filled as photos are browsed, or by bounded background imports after model opt-in. Your photos and sidecars stay in place. Offline drives retain their last known identity.">
-      <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(false))}>Clear</button>
-      <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(true))}>Rebuild</button>
+  return <PrefCard title={t("library.cache.title")}>
+    <PrefRow label={t("library.cache.metadata")} summary={count ? t("library.cache.count", { photos: count.assets.toLocaleString(), versions: count.variants.toLocaleString(), records: count.metadata.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")}
+      hint={t("library.cache.hint")}>
+      <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(false))}>{t("library.cache.clear")}</button>
+      <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(true))}>{t("library.cache.rebuild")}</button>
     </PrefRow>
-    <PrefRow label="Background work" summary={queue ? `${queue.paused ? "Paused" : "Running"}; ${queue.active} active, ${queue.queued} queued.` : "Reading status…"}
-      hint="Pause stops new background file checks and analysis from starting. Active work finishes. Folder browsing stays available. The pause setting is remembered; model downloads have their own Cancel button.">
-      <button className="btn small" disabled={busy || !queue} onClick={() => void run(() => commands.searchPause(!queue!.paused))}>{queue?.paused ? "Resume" : "Pause"}</button>
+    <PrefRow label={t("library.cache.background")} summary={queue ? t(queue.paused ? "library.cache.queuePaused" : "library.cache.queueRunning", { active: queue.active, queued: queue.queued }) : t("library.cache.reading")}
+      hint={t("library.cache.backgroundHint")}>
+      <button className="btn small" disabled={busy || !queue} onClick={() => void run(() => commands.searchPause(!queue!.paused))}>{queue?.paused ? t("library.cache.resume") : t("library.cache.pause")}</button>
     </PrefRow>
-    {status?.roots.map(root => <PrefRow key={root.path} label={root.path} summary={`Last check: ${root.state}${root.error ? ` — ${root.error}` : ""}`} children={null} />)}
-    <PrefRow label="CLIP model (optional)" summary={downloading ? "Downloading and checking model files…" : model?.verified ? "Model files verified. CPU analysis stays on this computer." : "No model files verified in this session."}
-      hint={`Download ${size} of matched CLIP ViT-B/32 models and tokenizer files from Hugging Face. This is optional and starts only when you press Download or repair. Existing valid files are reused. Model files are kept when the metadata cache is cleared.`}>
-      <button className="btn small" disabled={busy || downloading || !model} onClick={() => void run(() => commands.searchModelDownload(true))}>Download or repair ({size})</button>
-      {downloading && <button className="btn small" onClick={() => void commands.searchModelCancel().catch(e => setError(String(e)))}>Cancel</button>}
+    {status?.roots.map(root => <PrefRow key={root.path} label={root.path} summary={t("library.cache.lastCheck", { state: root.state, error: root.error ? ` — ${root.error}` : "" })} children={null} />)}
+    <PrefRow label={t("library.cache.model")} summary={downloading ? t("library.cache.downloading") : model?.verified ? t("library.cache.verified") : t("library.cache.notVerified")}
+      hint={t("library.cache.modelHint", { size })}>
+      <button className="btn small" disabled={busy || downloading || !model} onClick={() => void run(() => commands.searchModelDownload(true))}>{t("library.cache.download", { size })}</button>
+      {downloading && <button className="btn small" onClick={() => void commands.searchModelCancel().catch(e => setError(String(e)))}>{t("library.cache.cancel")}</button>}
     </PrefRow>
-    <PrefRow label="Model check" summary={probe || "Checks both CPU inference towers using a test prompt and a synthetic image."}>
+    <PrefRow label={t("library.cache.modelCheck")} summary={probe || t("library.cache.modelCheckHint")}>
       <button className="btn small" disabled={busy || downloading || !model?.verified || !!queue?.paused} onClick={() => void run(async () => {
         setProbe(""); const result = await commands.searchModelProbe();
-        setProbe(`Text: ${result.dimensions} values; image: ${result.image_dimensions} values. ${result.elapsed_ms === null ? "Timing unavailable." : `${Math.round(result.elapsed_ms)} ms including model loading.`}`);
-      })}>Check</button>
+        setProbe(t("library.cache.probe", { text: result.dimensions, image: result.image_dimensions, timing: result.elapsed_ms === null ? t("library.cache.timingUnavailable") : t("library.cache.elapsed", { ms: Math.round(result.elapsed_ms) }) }));
+      })}>{t("library.cache.check")}</button>
     </PrefRow>
     {(error || model?.error) && <p role="alert" className="prefs-error">{error || model?.error}</p>}
   </PrefCard>;

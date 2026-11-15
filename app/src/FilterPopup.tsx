@@ -13,6 +13,7 @@ import { commands, type Named } from "./commands";
 import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
 import type { ImageEntry } from "./library";
 import { immichFilterCount, NO_SEARCH, type ImmichSearch } from "./immich";
+import { formatDate, formatNumber, t } from "./i18n";
 
 export type ImmichFilters = { form: ImmichSearch; update: (patch: Partial<ImmichSearch>, now?: boolean) => void };
 
@@ -75,8 +76,8 @@ export function FilterPopup({ filter: f, images, onFilter, immich, bounds, onSea
   return (
     <div className="kind-filter" ref={box}>
       <button ref={button} className={`tool kind-button${count ? " on" : ""}`}
-              title={immich ? "filter the Immich search" : "filter by rejected status, file type, camera, camera body, lens, keywords, date and exposure"}
-              onClick={() => setOpen(!open)}>{count ? `${count} filter${count > 1 ? "s" : ""}` : "Filters"}</button>
+              title={t(immich ? "library.filters.immichTitle" : "library.filters.folderTitle")}
+              onClick={() => setOpen(!open)}>{count ? t("library.filters.count", { count }) : t("library.filters.title")}</button>
       {/* over everything, as the toolbar's own layer sits under the side panels */}
       {at && createPortal(
         <div className="filter-pop" ref={pop}
@@ -126,11 +127,11 @@ function Categories<T>({ title, value, none, apply, cats, onSearch }: {
         <h3>{cat.title}</h3>
         <div className="filter-body">{cat.body(draft, set)}</div>
         <div className="filter-foot">
-          <button className="btn small clear-all" title="clear every filter" disabled={!cats.some((c) => c.summary(draft))}
-                  onClick={() => set(none)}>Clear all</button>
-          <button className="btn small" title={`clear ${cat.title}`} disabled={!cat.summary(draft)}
-                  onClick={() => set(cat.clear)}>Clear</button>
-          <button className="btn small primary" onClick={search}>Search</button>
+          <button className="btn small clear-all" title={t("library.filters.clearAll")} disabled={!cats.some((c) => c.summary(draft))}
+                  onClick={() => set(none)}>{t("library.filters.clearAll")}</button>
+          <button className="btn small" title={t("library.filters.clearCategory", { category: cat.title })} disabled={!cat.summary(draft)}
+                  onClick={() => set(cat.clear)}>{t("library.filters.clear")}</button>
+          <button className="btn small primary" onClick={search}>{t("library.filters.search")}</button>
         </div>
       </div>
     </>
@@ -142,7 +143,7 @@ function Row({ title, summary, shown, onClick }: { title: string; summary: strin
   return (
     <button className={`filter-cat${shown ? " shown" : ""}${summary ? " on" : ""}`} onClick={onClick}>
       <span className="name">{title}</span>
-      <span className="summary">{summary || "Any"}</span>
+      <span className="summary">{summary || t("library.filters.any")}</span>
     </button>
   );
 }
@@ -171,16 +172,16 @@ function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts =
           <button key={v} className={chosen.includes(v) ? "on" : ""}
                   onClick={() => onChange(chosen.includes(v) ? chosen.filter((x) => x !== v) : [...chosen, v])}>
             <span className="tick">{chosen.includes(v) ? "✓" : ""}</span><span className="name">{show(v)}</span>
-            {counts && <span className="count">{n.toLocaleString()}</span>}</button>
+            {counts && <span className="count">{formatNumber(n)}</span>}</button>
         ))}
-        {!all.length && <div className="empty">{w ? "no match" : empty}</div>}
+        {!all.length && <div className="empty">{w ? t("library.filters.noMatch") : empty}</div>}
       </div>
     </>
   );
 }
 
-const EXPOSURE_LABEL: Record<ExposureKey, string> = { iso: "ISO", aperture: "Aperture", focal: "Focal length",
-                                                     shutter: "Shutter speed" };
+const EXPOSURE_LABEL: Record<ExposureKey, string> = { iso: "ISO", aperture: t("library.filters.aperture"), focal: t("library.filters.focalLength"),
+                                                     shutter: t("library.filters.shutterSpeed") };
 
 // the exposure settings as rows, and the values of the one chosen beside them
 function Exposure({ v, set, within }: {
@@ -195,7 +196,7 @@ function Exposure({ v, set, within }: {
       </div>
       <div className="filter-values">
         <Ticks key={shown} items={within({ [shown]: [] })[shown]} chosen={v[shown]} onChange={(x) => set({ [shown]: x })}
-               empty="none recorded" />
+               empty={t("library.filters.noneRecorded")} />
       </div>
     </div>
   );
@@ -203,35 +204,33 @@ function Exposure({ v, set, within }: {
 
 // a list's summary: its one value, or how many
 const chosen = (v: string[], name: (x: string) => string = (x) => x) =>
-  v.length === 1 ? name(v[0]) : v.length ? `${v.length} chosen` : "";
+  v.length === 1 ? name(v[0]) : v.length ? t("library.filters.chosen", { count: v.length }) : "";
 const keyword = (k: string) => k.split("|").join(" › ");
 
 // a span of capture dates, YYYY-MM-DD, "" for open
 type Span = { label: string; from: string; to: string };
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-                "November", "December"];
 const yearSpan = (y: string): Span => ({ label: y, from: `${y}-01-01`, to: `${y}-12-31` });
 // "YYYY-MM"
 const monthSpan = (ym: string): Span => {
   const [y, m] = ym.split("-").map(Number);
-  return { label: `${MONTHS[m - 1]} ${y}`, from: `${ym}-01`, to: ymd(new Date(y, m, 0)) };
+  return { label: formatDate(new Date(y, m - 1, 1), { month: "long", year: "numeric" }), from: `${ym}-01`, to: ymd(new Date(y, m, 0)) };
 };
 // counted back from today, which they include; open at the end, so a
 // photo taken since still shows
 function recent(): Span[] {
-  const t = new Date(), y = t.getFullYear(), m = t.getMonth();
-  const ago = (days: number) => ymd(new Date(y, m, t.getDate() - days));
+  const today = new Date(), y = today.getFullYear(), m = today.getMonth();
+  const ago = (days: number) => ymd(new Date(y, m, today.getDate() - days));
   return [
-    { label: "Today", from: ymd(t), to: "" },
-    { label: "Last 7 days", from: ago(6), to: "" },
-    { label: "Last 30 days", from: ago(29), to: "" },
-    { label: "Last 90 days", from: ago(89), to: "" },
-    { label: "This month", from: ymd(new Date(y, m, 1)), to: "" },
-    { label: "Last month", from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) },
-    { label: "This year", from: `${y}-01-01`, to: "" },
-    { label: "Last year", from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
+    { label: t("library.filters.today"), from: ymd(today), to: "" },
+    { label: t("library.filters.lastDays", { count: 7 }), from: ago(6), to: "" },
+    { label: t("library.filters.lastDays", { count: 30 }), from: ago(29), to: "" },
+    { label: t("library.filters.lastDays", { count: 90 }), from: ago(89), to: "" },
+    { label: t("library.filters.thisMonth"), from: ymd(new Date(y, m, 1)), to: "" },
+    { label: t("library.filters.lastMonth"), from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) },
+    { label: t("library.filters.thisYear"), from: `${y}-01-01`, to: "" },
+    { label: t("library.filters.lastYear"), from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
   ];
 }
 const same = (s: Span, from: string, to: string) => s.from === from && s.to === to;
@@ -241,7 +240,7 @@ const dates = (from: string, to: string) => {
   const named = recent().find((s) => same(s, from, to))
     ?? (/^\d{4}-01-01$/.test(from) && same(yearSpan(from.slice(0, 4)), from, to) ? yearSpan(from.slice(0, 4)) : undefined)
     ?? (/-01$/.test(from) && same(monthSpan(from.slice(0, 7)), from, to) ? monthSpan(from.slice(0, 7)) : undefined);
-  return named ? named.label : from && to ? `${from} – ${to}` : from ? `from ${from}` : `to ${to}`;
+  return named ? named.label : from && to ? `${from} – ${to}` : from ? t("library.filters.fromDate", { date: from }) : t("library.filters.toDate", { date: to });
 };
 
 // the capture dates: typed, or picked from recent spans, years and the
@@ -258,27 +257,27 @@ function Captured({ from, to, months, onChange }: {
   const year = from && from.slice(0, 4) === to.slice(0, 4) ? from.slice(0, 4) : null;
   const inYear: [string, number | null][] = !year ? []
     : months ? months.filter(([ym]) => ym.startsWith(year))
-    : MONTHS.map((_, k) => [`${year}-${pad(k + 1)}`, null]);
+    : Array.from({ length: 12 }, (_, k) => [`${year}-${pad(k + 1)}`, null]);
   const row = (s: Span, n: number | null, indent = false) => (
     <button key={s.label} className={`${same(s, from, to) ? "on" : ""}${indent ? " indent" : ""}`}
             onClick={() => (same(s, from, to) ? onChange("", "") : onChange(s.from, s.to))}>
       <span className="tick">{same(s, from, to) ? "✓" : ""}</span><span className="name">{s.label}</span>
-      {n !== null && <span className="count">{n.toLocaleString()}</span>}</button>
+      {n !== null && <span className="count">{formatNumber(n)}</span>}</button>
   );
   return (
     <>
       <div className="filter-range">
-        <input className="field" type="date" value={from} onChange={(e) => onChange(e.target.value, to)} />
-        <span>to</span>
-        <input className="field" type="date" value={to} onChange={(e) => onChange(from, e.target.value)} />
+        <input className="field" type="date" aria-label={t("library.filters.from")} value={from} onChange={(e) => onChange(e.target.value, to)} />
+        <span>{t("library.filters.to")}</span>
+        <input className="field" type="date" aria-label={t("library.filters.through")} value={to} onChange={(e) => onChange(from, e.target.value)} />
       </div>
       <div className="filter-ticks">
-        <div className="filter-group">Recent</div>
+        <div className="filter-group">{t("library.filters.recent")}</div>
         {recent().map((s) => row(s, null))}
-        <div className="filter-group">Years</div>
+        <div className="filter-group">{t("library.filters.years")}</div>
         {years.map(([y, n]) => [row(yearSpan(y), n),
                                 ...(y === year ? inYear.map(([ym, c]) => row(monthSpan(ym), c, true)) : [])])}
-        {!years.length && <div className="empty">no dates recorded</div>}
+        {!years.length && <div className="empty">{t("library.filters.noDates")}</div>}
       </div>
     </>
   );
@@ -289,47 +288,47 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
 }) {
   const within = (v: Filter, clear: Partial<Filter>) => facetsWithin(images, v, clear);
   const cats: Category<Filter>[] = [
-    { key: "rejected", title: "Rejected", summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? "Hidden" : "Only rejected",
+    { key: "rejected", title: t("library.filters.rejected"), summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? t("library.filters.hidden") : t("library.filters.onlyRejected"),
       clear: { rejected: "all" },
       body: (v, set) => (
         <div className="meta-grid filter-immich">
-          <label className="k" htmlFor="filter-rejected">Show</label>
+          <label className="k" htmlFor="filter-rejected">{t("library.filters.show")}</label>
           <select id="filter-rejected" className="field" value={v.rejected}
                   onChange={(e) => set({ rejected: e.target.value as Filter["rejected"] })}>
-            <option value="all">All photos</option>
-            <option value="hide">Hide rejected</option>
-            <option value="only">Only rejected</option>
+            <option value="all">{t("library.search.allPhotos")}</option>
+            <option value="hide">{t("library.filters.hideRejected")}</option>
+            <option value="only">{t("library.filters.onlyRejected")}</option>
           </select>
         </div>
       ) },
-    { key: "kinds", title: "File type", summary: (v) => chosen(v.kinds), clear: { kinds: [] },
-      body: (v, set) => <Ticks items={within(v, { kinds: [] }).kinds} chosen={v.kinds} onChange={(kinds) => set({ kinds })} empty="no photos" /> },
-    { key: "cameras", title: "Camera", summary: (v) => chosen(v.cameras), clear: { cameras: [] },
+    { key: "kinds", title: t("library.filters.fileType"), summary: (v) => chosen(v.kinds), clear: { kinds: [] },
+      body: (v, set) => <Ticks items={within(v, { kinds: [] }).kinds} chosen={v.kinds} onChange={(kinds) => set({ kinds })} empty={t("library.filters.noPhotos")} /> },
+    { key: "cameras", title: t("library.filters.camera"), summary: (v) => chosen(v.cameras), clear: { cameras: [] },
       body: (v, set) => <Ticks items={within(v, { cameras: [] }).cameras} chosen={v.cameras} onChange={(cameras) => set({ cameras })}
-                               empty="none recorded" /> },
-    { key: "bodies", title: "Camera body", summary: (v) => chosen(v.bodies, bodyLabel), clear: { bodies: [] },
+                               empty={t("library.filters.noneRecorded")} /> },
+    { key: "bodies", title: t("library.filters.cameraBody"), summary: (v) => chosen(v.bodies, bodyLabel), clear: { bodies: [] },
       body: (v, set) => <div className="filter-bodies">
         <Ticks items={within(v, { bodies: [] }).bodies} chosen={v.bodies} onChange={(bodies) => set({ bodies })}
-               show={bodyLabel} empty="no photos" find="find a model or serial" />
-        <p className="hint">Identify a body regardless of lens.</p>
+               show={bodyLabel} empty={t("library.filters.noPhotos")} find={t("library.filters.findModelSerial")} />
+        <p className="hint">{t("library.filters.bodyHint")}</p>
       </div> },
-    { key: "lenses", title: "Lens", summary: (v) => chosen(v.lenses), clear: { lenses: [] },
+    { key: "lenses", title: t("library.filters.lens"), summary: (v) => chosen(v.lenses), clear: { lenses: [] },
       body: (v, set) => <Ticks items={within(v, { lenses: [] }).lenses} chosen={v.lenses} onChange={(lenses) => set({ lenses })}
-                               empty="none recorded" /> },
-    { key: "keywords", title: "Keywords", summary: (v) => chosen(v.keywords, keyword), clear: { keywords: [] },
+                               empty={t("library.filters.noneRecorded")} /> },
+    { key: "keywords", title: t("library.keywording.title"), summary: (v) => chosen(v.keywords, keyword), clear: { keywords: [] },
       // every one ticked, and a keyword covers those under it
       body: (v, set) => <Ticks items={within(v, { keywords: [] }).keywords} chosen={v.keywords} onChange={(keywords) => set({ keywords })}
-                               show={keyword} empty="no keywords" find="find a keyword" /> },
-    { key: "taken", title: "Captured", summary: (v) => dates(v.takenFrom, v.takenTo), clear: { takenFrom: "", takenTo: "" },
+                               show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} /> },
+    { key: "taken", title: t("library.filters.captured"), summary: (v) => dates(v.takenFrom, v.takenTo), clear: { takenFrom: "", takenTo: "" },
       body: (v, set) => <Captured from={v.takenFrom} to={v.takenTo} months={within(v, { takenFrom: "", takenTo: "" }).months}
                                   onChange={(takenFrom, takenTo) => set({ takenFrom, takenTo })} /> },
-    { key: "exposure", title: "Exposure",
+    { key: "exposure", title: t("library.filters.exposure"),
       summary: (v) => EXPOSURE.filter((k) => v[k].length).map((k) => EXPOSURE_LABEL[k]).join(", "),
       clear: Object.fromEntries(EXPOSURE.map((k) => [k, []])),
       body: (v, set) => <Exposure v={v} set={set} within={(clear) => within(v, clear)} /> },
   ];
   return (
-    <Categories title="Filters" value={f} apply={onFilter} cats={cats} onSearch={onSearch}
+    <Categories title={t("library.filters.title")} value={f} apply={onFilter} cats={cats} onSearch={onSearch}
                 none={{ ...NO_FILTER, minRating: f.minRating, edited: f.edited, labels: f.labels,
                         unlabeled: f.unlabeled }} />
   );
@@ -354,7 +353,7 @@ function Pick({ label, value, options, onChange }: {
     <>
       <span className="k">{label}</span>
       <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Any</option>
+        <option value="">{t("library.filters.any")}</option>
         {/* a stored value the server no longer lists stays choosable */}
         {value && !options?.includes(value) && <option value={value}>{value}</option>}
         {options?.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -369,9 +368,9 @@ function Camera({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) =
   const lenses = useSuggestions("camera-lens-model", { make: v.make, model: v.model });
   return (
     <div className="meta-grid filter-immich">
-      <Pick label="Make" value={v.make} options={makes} onChange={(make) => set({ make, model: "", lens: "" })} />
-      <Pick label="Model" value={v.model} options={models} onChange={(model) => set({ model, lens: "" })} />
-      <Pick label="Lens" value={v.lens} options={lenses} onChange={(lens) => set({ lens })} />
+      <Pick label={t("library.filters.make")} value={v.make} options={makes} onChange={(make) => set({ make, model: "", lens: "" })} />
+      <Pick label={t("library.filters.model")} value={v.model} options={models} onChange={(model) => set({ model, lens: "" })} />
+      <Pick label={t("library.filters.lens")} value={v.lens} options={lenses} onChange={(lens) => set({ lens })} />
     </div>
   );
 }
@@ -381,8 +380,8 @@ function Place({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) =>
   const cities = useSuggestions("city", { country: v.country });
   return (
     <div className="meta-grid filter-immich">
-      <Pick label="Country" value={v.country} options={countries} onChange={(country) => set({ country, city: "" })} />
-      <Pick label="City" value={v.city} options={cities} onChange={(city) => set({ city })} />
+      <Pick label={t("library.filters.country")} value={v.country} options={countries} onChange={(country) => set({ country, city: "" })} />
+      <Pick label={t("library.filters.city")} value={v.city} options={cities} onChange={(city) => set({ city })} />
     </div>
   );
 }
@@ -390,7 +389,7 @@ function Place({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) =>
 // the server's named things to tick, as the folder's keywords are
 const ids = (all: Named[], chosen: string[], onChange: (ids: string[]) => void, empty: string) => (
   <Ticks items={all.map((x) => [x.id, 0] as [string, number])} chosen={chosen} onChange={onChange} empty={empty}
-         show={(id) => all.find((x) => x.id === id)?.name ?? "…"} find="find" counts={false} />
+         show={(id) => all.find((x) => x.id === id)?.name ?? "…"} find={t("library.filters.find")} counts={false} />
 );
 
 // the Immich search's filters, which the Immich card's words and library
@@ -407,33 +406,33 @@ function ImmichCategories({ form, update, onSearch }: ImmichFilters & { onSearch
   }, []);
   const names = (all: Named[]) => (id: string) => all.find((x) => x.id === id)?.name ?? "…";
   const cats: Category<ImmichSearch>[] = [
-    { key: "taken", title: "Captured", summary: (v) => dates(v.takenFrom, v.takenTo), clear: { takenFrom: "", takenTo: "" },
+    { key: "taken", title: t("library.filters.captured"), summary: (v) => dates(v.takenFrom, v.takenTo), clear: { takenFrom: "", takenTo: "" },
       body: (v, set) => <Captured from={v.takenFrom} to={v.takenTo} months={null}
                                   onChange={(takenFrom, takenTo) => set({ takenFrom, takenTo })} /> },
-    { key: "only", title: "Show only",
-      summary: (v) => [v.favorites && "Favorites", v.rawOnly && "RAW"].filter(Boolean).join(", "),
+    { key: "only", title: t("library.filters.showOnly"),
+      summary: (v) => [v.favorites && t("library.filters.favorites"), v.rawOnly && "RAW"].filter(Boolean).join(", "),
       clear: { favorites: false, rawOnly: false },
       body: (v, set) => (
         <div className="meta-grid filter-immich">
-          <span className="k">Favorites</span>
+          <span className="k">{t("library.filters.favorites")}</span>
           <input type="checkbox" className="switch" checked={v.favorites} onChange={(e) => set({ favorites: e.target.checked })} />
           <span className="k">RAW</span>
           <input type="checkbox" className="switch" checked={v.rawOnly} onChange={(e) => set({ rawOnly: e.target.checked })} />
         </div>
       ) },
-    { key: "camera", title: "Camera", summary: (v) => [v.make, v.model, v.lens].filter(Boolean).join(", "),
+    { key: "camera", title: t("library.filters.camera"), summary: (v) => [v.make, v.model, v.lens].filter(Boolean).join(", "),
       clear: { make: "", model: "", lens: "" }, body: (v, set) => <Camera v={v} set={set} /> },
-    { key: "keywords", title: "Keywords", summary: (v) => chosen(v.tagIds, names(tags)), clear: { tagIds: [] },
-      body: (v, set) => ids(tags, v.tagIds, (tagIds) => set({ tagIds }), "no tags") },
-    { key: "people", title: "People", summary: (v) => chosen(v.personIds, names(people)), clear: { personIds: [] },
-      body: (v, set) => ids(people, v.personIds, (personIds) => set({ personIds }), "no people") },
-    { key: "albums", title: "Albums", summary: (v) => chosen(v.albumIds, names(albums)), clear: { albumIds: [] },
-      body: (v, set) => ids(albums, v.albumIds, (albumIds) => set({ albumIds }), "no albums") },
-    { key: "place", title: "Place", summary: (v) => [v.city, v.country].filter(Boolean).join(", "),
+    { key: "keywords", title: t("library.keywording.title"), summary: (v) => chosen(v.tagIds, names(tags)), clear: { tagIds: [] },
+      body: (v, set) => ids(tags, v.tagIds, (tagIds) => set({ tagIds }), t("library.filters.noTags")) },
+    { key: "people", title: t("library.filters.people"), summary: (v) => chosen(v.personIds, names(people)), clear: { personIds: [] },
+      body: (v, set) => ids(people, v.personIds, (personIds) => set({ personIds }), t("library.filters.noPeople")) },
+    { key: "albums", title: t("library.filters.albums"), summary: (v) => chosen(v.albumIds, names(albums)), clear: { albumIds: [] },
+      body: (v, set) => ids(albums, v.albumIds, (albumIds) => set({ albumIds }), t("library.filters.noAlbums")) },
+    { key: "place", title: t("library.filters.place"), summary: (v) => [v.city, v.country].filter(Boolean).join(", "),
       clear: { country: "", city: "" }, body: (v, set) => <Place v={v} set={set} /> },
   ];
   return (
-    <Categories title="Immich search" value={form} apply={(v) => update(v, true)} cats={cats}
+    <Categories title={t("library.filters.immichSearch")} value={form} apply={(v) => update(v, true)} cats={cats}
                 onSearch={onSearch}
                 none={{ ...NO_SEARCH, mode: form.mode, text: form.text, library: form.library, minRating: form.minRating, source: form.source, scope: form.scope, subject: form.subject }} />
   );

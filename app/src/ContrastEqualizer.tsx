@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { useRef, useState } from "react";
 import { EQ_CHANNELS, EQ_IDS, type Values } from "./manifest";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 // the graph's 260×140 plot, with room round it for a point's handle: a
 // point at either end, or at the top or bottom, was drawn half outside the
 // box, cut in half, and the last one hard to hit
@@ -28,12 +30,12 @@ export function ContrastEqualizer({ values, disabled, onChange, module, heading 
     return `${path} C${i * 52 + 52 / 3},${(1 - bands[i] - (y - previous) / 6) * 140} ${(i + 1) * 52 - 52 / 3},${(1 - y + (next - bands[i]) / 6) * 140} ${(i + 1) * 52},${(1 - y) * 140}`;
   }, `M0,${(1 - bands[0]) * 140}`);
   return <div className="contrast-equalizer">
-    {heading && <div className="equalizer-heading"><span className="name">{"Contrast equalizer"}{module}</span><button disabled={disabled}
-      onClick={() => onChange(EQ_IDS.map((id, i) => [id, i < 18 ? .5 : 0]))}>Reset</button></div>}
-    <select aria-label="Equalizer channel" disabled={disabled} value={channel} onChange={(e) => setChannel(+e.target.value)}>
+    {heading && <div className="equalizer-heading"><span className="name">{t("fields.equalizer.title")}{module}</span><button disabled={disabled}
+      onClick={() => onChange(EQ_IDS.map((id, i) => [id, i < 18 ? .5 : 0]))}>{t("fields.reset")}</button></div>}
+    <select aria-label={t("fields.equalizer.channel")} disabled={disabled} value={channel} onChange={(e) => setChannel(+e.target.value)}>
       {EQ_CHANNELS.map((label, c) => <option key={c} value={c}>{label}</option>)}
     </select>
-    <svg className="equalizer-graph" viewBox={`${-PAD} ${-PAD} ${W} ${H}`} preserveAspectRatio="none" aria-label="Contrast equalizer"
+    <svg className="equalizer-graph" viewBox={`${-PAD} ${-PAD} ${W} ${H}`} preserveAspectRatio="none" aria-label={t("fields.equalizer.title")}
       onPointerDown={(e) => {
         if (disabled || e.button !== 0) return;
         e.preventDefault();
@@ -56,7 +58,7 @@ export function ContrastEqualizer({ values, disabled, onChange, module, heading 
       <line x1="0" x2="260" y1={(1 - neutral) * 140} y2={(1 - neutral) * 140} className="eq-neutral" />
       <path d={curve} />
       {bands.map((y, k) => <circle key={k} cx={k * 52} cy={(1 - y) * 140} r="4" role="slider"
-        tabIndex={disabled ? -1 : 0} aria-label={`${EQ_CHANNELS[channel]} band ${k + 1}`}
+        tabIndex={disabled ? -1 : 0} aria-label={t("fields.equalizer.band", { channel: fieldText(EQ_CHANNELS[channel]), band: k + 1 })}
         aria-valuemin={0} aria-valuemax={1} aria-valuenow={y} aria-disabled={disabled}
         onKeyDown={(e) => {
           if (disabled || !["ArrowUp", "ArrowDown", "Home"].includes(e.key)) return;
@@ -65,7 +67,7 @@ export function ContrastEqualizer({ values, disabled, onChange, module, heading 
             Math.round((y + (e.key === "ArrowUp" ? .01 : -.01)) * 1000) / 1000))]]);
         }} />)}
     </svg>
-    <div className="equalizer-scale"><span>Coarse</span><span>Fine</span></div>
-    <div className="equalizer-hint">Pull up to boost, down to reduce. Arrow keys adjust a focused point.</div>
+    <div className="equalizer-scale"><span>{t("fields.equalizer.coarse")}</span><span>{t("fields.equalizer.fine")}</span></div>
+    <div className="equalizer-hint">{t("fields.equalizer.hint")}</div>
   </div>;
 }
