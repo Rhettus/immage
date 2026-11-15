@@ -54,6 +54,7 @@ uuid = { version = "1", features = ["v4"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 # the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tokenizers = { version = "=0.23.2", default-features = false, features = ["fancy-regex"] }
 
 # the main dispatch queue, to act after tao's own work there (preview_fullscreen;
 # already in the tree, via tao)

@@ -5,6 +5,9 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
+	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
+	searchModelDownload: (consent: boolean) => __TAURI_INVOKE<null>("search_model_download", { consent }),
+	searchModelCancel: () => __TAURI_INVOKE<void>("search_model_cancel"),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -660,6 +663,15 @@ export type MetaText = {
 	publisher: string,
 	rights: string,
 	notes: string,
+};
+
+export type ModelStatus = {
+	revision: string,
+	bytes: number,
+	downloading: boolean,
+	/**  Installation verified in this process; not an inference availability claim. */
+	verified: boolean,
+	error: string | null,
 };
 
 export type ModuleEdit = {

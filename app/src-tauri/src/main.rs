@@ -10,6 +10,8 @@ mod search_cache;
 mod library_ids;
 mod analysis_queue;
 mod search_reconcile;
+mod clip_models;
+mod clip_text;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -65,6 +67,7 @@ struct AppState {
     // disposable local search metadata; darktable's catalog remains in-memory
     search_cache: Option<Arc<search_cache::SearchCache>>,
     analysis_queue: analysis_queue::AnalysisQueue,
+    clip_models: Arc<clip_models::Models>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
@@ -267,6 +270,7 @@ fn main() {
             app.manage(AppState {
                 search_cache,
                 analysis_queue,
+                clip_models: Arc::new(clip_models::Models::new(runtime.join("clip-models"))),
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
@@ -309,6 +313,7 @@ fn main() {
         if matches!(_event, tauri::RunEvent::Exit) {
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();
+            _app.state::<AppState>().clip_models.cancel();
         }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &_event {
