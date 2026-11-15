@@ -509,6 +509,14 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     })
     .await
     .map_err(|e| e.to_string())??;
+    // Native-resolution previews may come from the independent export pipe.
+    // Normalize both sources to the same RGBA frame protocol.
+    let reply = if reply.get("encoding").and_then(|v| v.as_str()) == Some("jpeg") {
+        let image = image::load_from_memory(&pixels).map_err(|e| format!("preview: {e}"))?.to_rgba8();
+        let dimensions = json!({ "width": image.width(), "height": image.height() });
+        pixels = image.into_raw();
+        dimensions
+    } else { reply };
     // the thumbnail cache leaves the fourth byte at 0, which a canvas takes
     // for fully transparent
     for a in pixels.iter_mut().skip(3).step_by(4) {
@@ -525,7 +533,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
                 if thumbs.write(&name, &jpeg).is_ok() {
-                    thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
+                    if size > 0 { thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name); }
                 }
             }
         });
@@ -545,7 +553,7 @@ pub(crate) async fn thumb_cached(caches: State<'_, Caches>, path: String, versio
         let name = cache::listed_thumb_name(&listed, photo, version, size)?;
         let bytes = thumbs.read(&name)?;
         // a cache from before known thumbnails learns them as it is read
-        thumbs.set_known(photo, version, size, &name);
+        if size > 0 { thumbs.set_known(photo, version, size, &name); }
         Some(bytes)
     }).await.map_err(|e| e.to_string())?;
     Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))

@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
+
+test('keyword selection wins over hover, including filtered-out selections', () => {
+  const images = [{imgid: 1}, {imgid: 2}, {imgid: 3}];
+  assert.deepEqual(keywordTargets(images, new Set([1, 2]), 3), images.slice(0, 2));
+  assert.deepEqual(keywordTargets(images, new Set(), 3), [images[2]]);
+  assert.deepEqual(keywordTargets(images, new Set()), []);
+  assert.deepEqual(keywordTargets([{imgid: 1, remote: {}}], new Set([1]), 1), []);
+});
+
+test('rapid navigation replaces queued neighbors but lets active work finish', async () => {
+  const q = new PreviewQueue();
+  let finish;
+  const calls = [];
+  const first = q.enqueue(() => new Promise(resolve => { calls.push('active'); finish = resolve; }));
+  const old = q.enqueue(async () => calls.push('obsolete'));
+  const rejection = assert.rejects(old, /superseded/);
+  q.replace();
+  const next = q.enqueue(async () => calls.push('foreground'));
+  assert.deepEqual(calls, ['active']);
+  finish();
+  await Promise.all([first, next, rejection]);
+  assert.deepEqual(calls, ['active', 'foreground']);
+});
+
+test('failed work does not block subsequent previews', async () => {
+  const q = new PreviewQueue();
+  const failed = q.enqueue(async () => { throw Error('decode failed'); });
+  const next = q.enqueue(async () => 42);
+  await assert.rejects(failed, /decode failed/);
+  assert.equal(await next, 42);
+});
+
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+const require = createRequire(new URL('../app/package.json', import.meta.url));
+const { transformSync } = await import(require.resolve('rolldown/experimental'));
+const component = readFileSync(new URL('../app/src/GridCulling.tsx', import.meta.url), 'utf8');
+const start = component.indexOf('    const key = (e: KeyboardEvent)');
+const end = component.indexOf('    window.addEventListener("keydown"', start);
+const body = transformSync('handler.ts', component.slice(start, end)).code;
+const createHandler = new Function('env', `with(env) { ${body}; return key; }`);
+function fixture(overrides = {}) {
+  const calls = [];
+  const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
+  const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images,
+    selection: new Set([1,2]), anchor: 2, keywordTargets, direction: {current:1},
+    document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
+    setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
+    setPhoto: v => calls.push(['photo', v]), keywords: v => calls.push(['keywords', v.map(i => i.imgid)]),
+    onMeta: (i, v) => calls.push(['meta', i.imgid, v]), ...overrides };
+  const press = (key, target = {}) => createHandler(env)({key, target: {closest: () => false, ...target},
+    preventDefault() {}, stopImmediatePropagation() {}});
+  return { env, calls, press };
+}
+test('actual K handler prefers selection; F starts under the pointer', () => {
+  const {press, calls} = fixture();
+  press('k'); press('f');
+  assert.deepEqual(calls, [['keywords', [1,2]], ['photo', 3]]);
+});
+test('lightbox arrows and metadata operate on displayed photo only', () => {
+  const f = fixture({ photo: 2, current: {imgid: 2, labels: 0} });
+  f.env.current = f.env.images[1];
+  f.press('ArrowRight'); f.press('5'); f.press('k');
+  assert.deepEqual(f.calls, [['photo',3], ['meta',2,{rating:5,rejected:false}], ['keywords',[2]]]);
+});
+test('typing in a keyword input never runs F or K', () => {
+  const f = fixture();
+  f.press('f', {closest: () => true}); f.press('k', {closest: () => true});
+  assert.deepEqual(f.calls, []);
+});
+test('Escape closes keyword dialog before closing the lightbox', () => {
+  const f = fixture({photo: 2, targets: [{imgid:2}]});
+  f.press('Escape', {closest: () => true});
+  assert.deepEqual(f.calls, [['targets', []]]);
+});
+
+test('first paint borrows the exact virtual-copy thumbnail without closing it', () => {
+  const begin = component.indexOf('    const small = thumbnail(current.imgid);');
+  const end = component.indexOf('    const load = async', begin);
+  const paint = new Function('thumbnail', 'current', 'zoom', 'canvas', 'setPaintSize', component.slice(begin, end));
+  const calls = [];
+  const bitmaps = new Map([[1, {width: 240, height: 160}], [2, {width: 160, height: 240}]]);
+  const canvas = {current: {width: 0, height: 0, getContext: () => ({drawImage: b => calls.push(b)})}};
+  paint(id => bitmaps.get(id), {imgid: 2}, false, canvas, () => {});
+  assert.deepEqual(calls, [bitmaps.get(2)]);
+  assert.equal(canvas.current.height, 240);
+  paint(id => bitmaps.get(id), {imgid: 1}, true, canvas, () => {});
+  assert.equal(calls.length, 1, 'detail loading keeps the existing frame');
+});
+
+test('floating box hugs landscape, portrait and small embedded previews', () => {
+  assert.deepEqual(fitLightbox(400, 300, 1600, 900, 80), {width:424, height:404});
+  for (const [w,h] of [[6000,4000],[4000,6000]]) {
+    const box = fitLightbox(w,h,1600,900,80);
+    assert.ok(box.width <= 1600*.86+1 && box.height <= 900*.86+1);
+    assert.ok(Math.abs((box.width-24)/(box.height-104)-w/h) < .01);
+  }
+});
+
+const sessionSource = readFileSync(new URL('../app/src/session.ts', import.meta.url), 'utf8');
+const saveStart = sessionSource.indexOf('  async saveForPreview() {');
+const saveEnd = sessionSource.indexOf('  async close()', saveStart);
+const saveSource = sessionSource.slice(saveStart, saveEnd).replace('  async saveForPreview()', 'async function saveForPreview()');
+const saveForPreview = new Function('traced', 'commands', 'window',
+  `${saveSource}; return saveForPreview;`)((_, fn) => fn(), {save: async () => ({edited:true})}, {clearTimeout(){}});
+test('an unchanged editor never delays preview waiting for its background rendering', async () => {
+  const owner = {unsaved:false, dirty:new Set(), modulePending:[],
+    settled() { throw Error('must not wait for unrelated rendering'); }};
+  await saveForPreview.call(owner);
+});
+test('pending edits are flushed and saved before their processed preview', async () => {
+  const calls = [];
+  const owner = {unsaved:true, dirty:new Set(), modulePending:[],
+    flushEdits() { calls.push('flush'); }, async settled() { calls.push('settle'); },
+    onSaved(edited) { calls.push(edited); }};
+  await saveForPreview.call(owner);
+  assert.deepEqual(calls, ['flush','settle',true]);
+  assert.equal(owner.unsaved, false);
+});
+
+test('preview read-ahead honors count, direction, behind toggle and boundaries', () => {
+  const images = Array.from({length:7}, (_, i) => ({imgid:i+1}));
+  const ids = (at, dir, count, both) => previewNeighbors(images, at, dir, count, both).map(i => i.imgid);
+  for (const both of [false,true]) assert.deepEqual(ids(4,1,0,both), []);
+  for (let count=1; count<=3; count++) {
+    assert.deepEqual(ids(4,1,count,false), [5,6,7].slice(0,count));
+    assert.deepEqual(ids(4,-1,count,false), [3,2,1].slice(0,count));
+    assert.deepEqual(ids(4,-1,count,true), [...[3,2,1].slice(0,count), ...[5,6,7].slice(0,count)]);
+  }
+  assert.deepEqual(ids(1,-1,3,true), [2,3,4]);
+  assert.deepEqual(ids(7,1,3,false), []);
+  assert.deepEqual(ids(99,1,3,true), []);
+  assert.deepEqual(previewNeighbors([{imgid:1},{imgid:2,remote:{}}],1,1,3,true), []);
+});
+
+test('lightbox rating, color and rejection keys match the regular photo shortcuts', () => {
+  const f = fixture({photo:2});
+  f.env.current = {...f.env.images[1], rejected:true};
+  for (const key of ['0','1','2','3','4','5','6','7','8','9','x']) f.press(key);
+  assert.deepEqual(f.calls.slice(0,6), Array.from({length:6}, (_, rating) => ['meta',2,{rating,rejected:false}]));
+  assert.deepEqual(f.calls.slice(6,10), [1,2,4,8].map(labels => ['meta',2,{labels}]));
+  assert.deepEqual(f.calls[10], ['meta',2,{rejected:false}]);
+});
+
+test('Space in the lightbox arms panning and leaves photo/metadata unchanged', () => {
+  const f = fixture({photo:2});
+  f.press(' ');
+  assert.equal(f.env.space.current, true);
+  assert.deepEqual(f.calls, []);
+});
+
+const viewportStart = component.indexOf('<div ref={viewport}');
+const clickStart = component.indexOf('onClick={', viewportStart) + 'onClick={'.length;
+const clickEnd = component.indexOf('\n          onDoubleClick=', clickStart);
+const clickSource = component.slice(clickStart, clickEnd).trim().slice(0,-1);
+const createClick = new Function('env', `with(env) { return (${clickSource}); }`);
+test('single click toggles zoom, second click of double-click does not toggle again', () => {
+  let zoom=false, count=0;
+  const env = {panClick:{current:false},space:{current:false},zoomAnchor:{current:null},
+    canvas:{current:{getBoundingClientRect:()=>({left:0,top:0,width:400,height:300})}},
+    setZoom(fn) { zoom=fn(zoom); count++; }};
+  const click=createClick(env);
+  const e={detail:1, clientX:100,clientY:150,currentTarget:{getBoundingClientRect:()=>({left:0,top:0})}};
+  click(e);
+  assert.equal(zoom,true);
+  assert.deepEqual(env.zoomAnchor.current,{ix:.25,iy:.5,sx:100,sy:150});
+  click({...e,detail:2});
+  assert.equal(count,1);
+});
+test('Space-click and a pan-release click never toggle zoom', () => {
+  const env={panClick:{current:true},space:{current:false},setZoom(){throw Error('unexpected zoom');}};
+  const click=createClick(env);
+  click({detail:1});
+  assert.equal(env.panClick.current,false);
+  env.space.current=true;
+  click({detail:1});
+});

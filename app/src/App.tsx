@@ -44,7 +44,7 @@ import { Pipette } from "lucide-react";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
-import { KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
+import { easeZoom, ZOOM_EASE, KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
 import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
@@ -118,6 +118,8 @@ import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
 import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
+import { keywordTargets as keywordTargetsForGrid } from "./culling";
+import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
@@ -2802,7 +2804,6 @@ export default function App() {
                         end: { x: number; y: number } | null; asked: View | null }>(
     { raf: null, target: 0, zoom: "fit", settleAt: 0, anchor: null, end: null, asked: null });
   // the share of the way left that one frame eases: half the frames 0.3 took
-  const ZOOM_EASE = 1 - 0.7 * 0.7;
 
   // the view's center that keeps the anchor under its screen point at zoom z
   const anchoredCenter = (an: Anchor, z: number) => {
@@ -2838,8 +2839,7 @@ export default function App() {
     }
     if (running) return;
     const step = () => {
-      let zz = viewZ.current + (a.target - viewZ.current) * ZOOM_EASE;
-      if (Math.abs(a.target - zz) < a.target * 0.002) zz = a.target;
+      const zz = easeZoom(viewZ.current, a.target);
       viewZ.current = zz;
       if (a.zoom === "fit") {
         center.current = { x: center.current.x + (0.5 - center.current.x) * ZOOM_EASE,
@@ -5997,6 +5997,12 @@ export default function App() {
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
       <div className="modal"><div className="modal-head"><h2>{pasting}</h2></div></div>
     </div>}
+    {grid && <GridCulling key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
+      anchor={pickAnchor.current}
+      thumbnail={id => loader.current?.get(id)}
+      prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
+      onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
+      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -6975,6 +6981,9 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
+                  onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
+                    detail: keywordTargetsForGrid(images, selection, hit?.imgid).map(i => i.imgid),
+                  })) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}

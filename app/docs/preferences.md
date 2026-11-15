@@ -396,9 +396,11 @@ scale**; zoomed-in frames still use the full webview resolution.
   waiting for the decode. Up to three are decoded at once. Each holds its
   raw in memory, about 50 MB for a 24-megapixel photo. One by default.
   Reading ahead pauses while an export runs and while the computer is
-  short of memory.
+  short of memory. In the grid's F lightbox, the same count prepares
+  screen-sized previews one at a time in the last navigation direction.
+  Off disables speculative preview loading; 100% detail remains on demand.
 - **Read ahead both ways**: as many photos behind the open one too, for
-  stepping back. Off by default.
+  stepping back, including previews in the grid lightbox. Off by default.
 - **Library workers**: how many library thumbnails, ORF metadata tasks and
   photo transfers run at the same time, from 1 to 8. Two by default.
   These limits are separate, so this is not a shared total. Moves and copies

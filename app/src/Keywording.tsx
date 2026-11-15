@@ -33,13 +33,14 @@ const path = (k: string) => k.split("|").join(" > ");
 // the box to type keywords in, with the known ones that match below it:
 // Enter takes the highlighted suggestion for the last entry, or the text as
 // typed; commas separate several
-export function KeywordInput({ attached, known, onAdd, addOnBlur = false }: {
+export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFocus = false }: {
   attached: Set<string>;         // keywords already there, not suggested
   known: string[];               // every keyword ever used
   onAdd: (names: string[]) => void;
   // what is typed is added when the box loses focus, as a setting nobody
   // presses Enter for would otherwise be lost
   addOnBlur?: boolean;
+  autoFocus?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [hi, setHi] = useState(0);
@@ -68,7 +69,7 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false }: {
 
   return (
     <div className="kw-add">
-      <input ref={input} className="field" value={draft} placeholder="add keywords, separated by commas"
+      <input ref={input} autoFocus={autoFocus} className="field" value={draft} placeholder="add keywords, separated by commas"
              onChange={(e) => setDraft(e.target.value)}
              onBlur={() => {
                if (addOnBlur && !discarding.current && draft.trim()) { onAdd(draft.split(",")); setDraft(""); }

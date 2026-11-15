@@ -49,8 +49,9 @@ export function useMenuClose(onClose: () => void) {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
+export function FileMenu({ onKeywords, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+  onKeywords?: () => void;
   captureCount: number; onCaptureTime: () => void;
   canUndoCapture: boolean; onUndoCapture: () => void;
   x: number; y: number;
@@ -77,6 +78,7 @@ export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCa
   const flip = left + 230 + 230 > window.innerWidth;
   return (
     <div ref={ref} className={`context-menu${flip ? " flip" : ""}`} style={{ left, top }}>
+      {onKeywords && <button onClick={() => { onClose(); onKeywords(); }}>Keywords… (K)</button>}
       {editIn && <>
         <div className="has-sub">
           <button>Edit In</button>

@@ -33,7 +33,8 @@ const GROUPS: Group[] = [
   {
     title: "View",
     keys: [
-      ["F", "Full screen preview (F or Esc leaves)"],
+      ["F", "Preview (grid: quick culling lightbox; F or Esc leaves)"],
+      ["K", "In grid view: keyword selected photos, otherwise the hovered photo"],
       ["L", "Next canvas: dark, neutral gray, white"],
       ["Tab", "Hide or show the side panels"],
       ["⇧Tab", "Hide or show the side panels and filmstrip"],

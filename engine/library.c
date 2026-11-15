@@ -1702,6 +1702,55 @@ void library_import_wait(void)
 gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err)
 {
+  // Size zero requests native-resolution inspection independently of the
+  // editor session. Never substitute camera pixels for an edited image.
+  if(size == 0)
+  {
+    if(!dt_is_valid_imgid(imgid) || !dt_image_exists(imgid))
+    { *err = g_strdup("no such image"); return FALSE; }
+    const dt_image_t *image = dt_image_cache_get(imgid, 'r');
+    const gboolean raw = image && dt_image_is_raw(image);
+    if(image) dt_image_cache_read_release(image);
+    uint8_t *pixels = NULL;
+    int32_t width = 0, height = 0;
+    dt_colorspaces_color_profile_type_t space;
+    char path[PATH_MAX] = { 0 };
+    gboolean from_cache = TRUE;
+    dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+    if(raw && !dt_image_altered(imgid)
+       && !dt_imageio_large_thumbnail(path, &pixels, &width, &height, &space)
+       && space == DT_COLORSPACE_SRGB)
+    {
+      const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
+      uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * width * height);
+      if(!oriented) { dt_free_align(pixels); *err = g_strdup("preview allocation failed"); return FALSE; }
+      uint32_t w, h;
+      dt_iop_flip_and_zoom_8(pixels, width, height, oriented,
+        orientation & ORIENTATION_SWAP_XY ? height : width,
+        orientation & ORIENTATION_SWAP_XY ? width : height, orientation, &w, &h);
+      const gboolean ok = engine_transient_write(out, oriented, (size_t)4 * w * h, NULL, 0);
+      dt_free_align(pixels);
+      dt_free_align(oriented);
+      json_builder_set_member_name(b, "width"); json_builder_add_int_value(b, w);
+      json_builder_set_member_name(b, "height"); json_builder_add_int_value(b, h);
+      json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, "embedded");
+      if(!ok) *err = g_strdup("could not write preview");
+      return ok;
+    }
+    dt_free_align(pixels);
+    JsonObject *req = json_object_new();
+    json_object_set_string_member(req, "out", out);
+    json_object_set_string_member(req, "format", "jpeg");
+    json_object_set_string_member(req, "color_space", "srgb");
+    json_object_set_int_member(req, "quality", 85);
+    json_object_set_boolean_member(req, "transient", TRUE);
+    json_object_set_int_member(req, "long_edge", 0);
+    const gboolean ok = export_export(imgid, req, err);
+    json_object_unref(req);
+    json_builder_set_member_name(b, "encoding"); json_builder_add_string_value(b, "jpeg");
+    json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, "rendered");
+    return ok;
+  }
   const dt_mipmap_size_t mip = dt_mipmap_cache_get_matching_size(size, size);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, mip, DT_MIPMAP_BLOCKING, 'r');

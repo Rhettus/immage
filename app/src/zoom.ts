@@ -13,3 +13,11 @@ export const KEY_ZOOMS: Zoom[] = ["fit", "fill", 1, 2, 3, 4];
 // navigator's rectangle
 export type Placement = { fullWidth: number; fullHeight: number; scale: number; x: number; y: number;
                    width: number; height: number; upscale?: number };
+
+
+// Shared per-frame easing and snap threshold for viewer and lightbox zoom.
+export const ZOOM_EASE = 1 - 0.7 * 0.7;
+export function easeZoom(value: number, target: number): number {
+  const next = value + (target - value) * ZOOM_EASE;
+  return Math.abs(target - next) < target * .002 ? target : next;
+}

@@ -2316,6 +2316,18 @@ export class Session {
     this.unsaved = false;
   }
 
+  async saveForPreview() {
+    if (!this.unsaved && !this.dirty.size && !this.modulePending.length) return;
+    this.flushEdits();
+    await this.settled();
+    if (this.before || this.viewing) return;
+    window.clearTimeout(this.saveTimer);
+    if (!this.unsaved) return;
+    const r = await traced("save", () => commands.save());
+    this.unsaved = false;
+    this.onSaved?.(r.edited);
+  }
+
   async close() {
     if (this.dead) return;
     this.requestRender();

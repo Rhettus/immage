@@ -538,3 +538,37 @@ used. A program that sends photos with **Open With**, such as digiKam,
 works the same way: choose **Other Application** and give it the path to
 Immage.
 <!-- check: dropping a file on the Dock icon, and whether Immage appears in Finder's Open With menu -->
+
+
+### Grid culling shortcuts
+
+Press **K** in the grid to keyword selected photos, or the photo under the
+pointer when nothing is selected. Shared keywords can be removed from every
+target; new keywords are added to every target. Close the dialog before moving
+to another selection.
+
+Press **F** over a photo to show a floating preview over the dimmed library,
+sized to fit the preview within about three quarters of the window area, without opening it in the
+editor. Click the dimmed area to close it. Otherwise the first selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
+arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
+rating, X toggles rejection, 6–9 toggle color labels, and K keywords the displayed photo.
+The grid selection is preserved. The lightbox also has the same star icons
+and color swatches as the bottom rail. Click a star to rate (click the same
+star again to clear), or click a swatch to toggle that color label. Rating
+clears rejection, as it does elsewhere in the app. Purple is available by click.
+
+Unedited RAW previews use the embedded camera preview; edited photos use the
+processed thumbnail pipeline. An uncached edited preview can take time to
+render. Single-click the photo to toggle Fit and **100%** detail, with the same zoom
+animation as the editor. Zoom centers on the clicked point. Hold **Space** and
+drag to pan at 100%; releasing a Space-drag does not toggle zoom. The **100% /
+Fit** button also switches views. Embedded detail is limited to the camera preview's
+native resolution. Double-click opens the displayed photo in the editor.
+The existing grid thumbnail appears immediately while a larger preview loads.
+Screen-sized previews are prepared one at a time in the background using
+Preferences’ **Read ahead** count, in the last arrow-navigation direction.
+Enable **Read ahead both ways** to prepare the same count in the opposite direction.
+Setting Read ahead to zero disables both directions;
+native detail loads only when requested. Cached previews are reused until the
+photo or its sidecars change. Keywording is also available from the grid photo's
+context menu.

@@ -7,6 +7,14 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- In grid view, K keywords selected photos (or the hovered photo), and F opens
+  a floating culling preview over the dimmed library, with arrow navigation,
+  ratings, labels and rejection, using the bottom rail’s star icons and color
+  swatches with the usual photo shortcuts (0–5, 6–9 and X). Subtle triangle
+  buttons beside the lightbox also navigate between photos.
+  Unedited RAWs use camera previews; edited photos show their processing.
+  Single-click toggles Fit and 100% with the editor's zoom animation, Space-drag
+  pans, and double-click opens the photo for editing.
 - The quick start guide points out the Advanced mode button in Adjustments.
 - Y cycles through the side-by-side and split before / after views, then turns
   them off. The toolbar button still includes **Hold for before**; `\` still
@@ -73,6 +81,9 @@ Improvements
 
 Performance
 
+- Grid previews show the existing thumbnail immediately while loading a larger
+  image sized for the lightbox, without waiting for an unrelated editor render.
+  Preview prefetch follows the Read ahead count and Read behind preference.
 - Photo moves and copies transfer several photos at once, up to Library
   workers, including originals downloaded from Immich. Each photo stays with
   its sidecars and is verified before its originals are removed.

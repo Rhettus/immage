@@ -164,7 +164,7 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 
 // the thumbnail kept on disk for the file as it is now (its sidecar too),
 // without the engine; null when there is none
-async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageBitmap | null> {
+export async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageBitmap | null> {
   const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
