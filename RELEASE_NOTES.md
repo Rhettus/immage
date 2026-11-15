@@ -10,7 +10,8 @@ Improvements
 - Preferences > Performance adds Local photo cache status, pause/resume, clear
   and rebuild, plus explicit optional CLIP model download and CPU checks.
 - Search photos adds local folder/library scopes and optional combined Immich
-  queries, with independent results, errors and pagination. Filename searches
+  queries, with independent results, errors and pagination. Combined results
+  merge exact verified local paths and weight each source equally. Filename searches
   use cached metadata; automatic local embedding creation is still pending.
 - Advanced mode adds searchable editing modules, presets and groups, with
   controls to customize their order and instances. Module edits support masks,

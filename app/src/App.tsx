@@ -123,6 +123,7 @@ import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { localSearch } from "./localSearch";
+import { remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
@@ -3021,15 +3022,10 @@ export default function App() {
         const page = await searchImmichPage(q.form, next);
         if (signal.aborted) throw new Error("Search cancelled");
         const f = q.filters;
-        // Server placeholders do not establish local edit/reject/label state.
-        const unknown = f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled
-          || f.bodies.length > 0 || f.keywords.length > 0;
-        return { items: unknown ? [] : page.entries.filter(i => passes(i, f)), next: page.next };
+        return { items: remoteFieldsKnown(f) ? page.entries.filter(i => passes(i, f)) : [], next: page.next };
       },
     },
-    // Path mapping alone does not verify equal photo contents across sources.
-    verifiedIdentity: (source, i) => source === "local" && i.localIndex
-      ? `local:${i.localIndex.variantId}` : source === "immich" && i.remote ? `immich:${i.remote.assetId}` : null,
+    verifiedIdentity: searchIdentity,
     onUpdate: state => {
       const q = state.query as SearchQuery | null;
       if (!q) return;

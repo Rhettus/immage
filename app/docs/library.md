@@ -114,7 +114,10 @@ More results load independently for each source. **Stop** keeps displayed result
 and ignores late replies; blocking Immich work may finish in the background,
 with at most four active requests. Opening a folder leaves search results.
 Combined results use equal reciprocal-rank weighting of each source's order.
-Cross-source duplicates are retained until their identity can be verified.
+A mapped Immich result merges with a primary local result only when its
+verified local path exactly matches the indexed path. Virtual copies stay
+separate. This identifies the local file path; it does not compare server and
+local file contents. Unmapped or differently spelled paths stay separate.
 Search retains active filters. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 

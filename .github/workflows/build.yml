@@ -129,6 +129,7 @@ jobs:
             verify/settings-store.test.mjs \
             verify/startup-restore.test.mjs \
             verify/theme.test.mjs \
+            verify/search-identity.test.mjs \
             verify/combined-search.test.mjs \
             verify/local-search-ui.test.mjs \
             verify/search-prefs.test.mjs \
