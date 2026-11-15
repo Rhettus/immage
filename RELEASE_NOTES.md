@@ -41,8 +41,9 @@ Bug fixes
 
 - Grid context-menu keywording now keeps a selected group together, targets only
   the clicked photo when it is outside that group, and preserves the selection.
-- The culling preview keeps a fixed 80% window frame while photos and detail
-  load or while switching between Fit and 100%.
+- The culling preview keeps a fixed 80% window frame and a bottom bar for
+  ratings and color labels. Fit thumbnails stay at the displayed preview size
+  as sharper pixels arrive, avoiding the small-to-large navigation jump.
 - Startup shows the grid until the last photo's first preview is ready. If
   the photo is missing or cannot load, the grid stays available instead of
   leaving a grey viewer.
@@ -63,6 +64,9 @@ Bug fixes
 
 Performance
 
+- Lightbox navigation reuses nearby previews in memory and waits briefly before
+  starting speculative previews, reducing repeated loading and read-ahead work
+  during rapid navigation.
 - Grid previews show thumbnails immediately while loading larger images.
   Prefetch follows the Read ahead count and Read ahead both ways preference.
 - Photo moves and copies transfer several photos at once, up to Library

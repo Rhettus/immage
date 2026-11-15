@@ -2781,3 +2781,14 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .culling-arrow.previous::before { transform: rotate(180deg); }
 .culling-arrow:hover:not(:disabled), .culling-arrow:focus-visible { opacity: .85; background: #ffffff0d; }
 .culling-arrow:disabled { opacity: .1; cursor: default; }
+
+.culling-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 32px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #555);
+}
+.culling-status { margin-left: auto; font-size: 12px; color: var(--text-2); }

@@ -80,15 +80,17 @@ test('Escape closes keyword dialog before closing the lightbox', () => {
 
 test('first paint borrows the exact virtual-copy thumbnail without closing it', () => {
   const begin = component.indexOf('    const small = thumbnail(current.imgid);');
-  const end = component.indexOf('    const load = async', begin);
-  const paint = new Function('thumbnail', 'current', 'zoom', 'canvas', 'setPaintSize', component.slice(begin, end));
+  const end = component.indexOf('    const key = (entry:', begin);
+  const paint = new Function('thumbnail', 'current', 'zoom', 'canvas', 'setPaintSize', 'viewport', component.slice(begin, end));
   const calls = [];
   const bitmaps = new Map([[1, {width: 240, height: 160}], [2, {width: 160, height: 240}]]);
-  const canvas = {current: {width: 0, height: 0, getContext: () => ({drawImage: b => calls.push(b)})}};
-  paint(id => bitmaps.get(id), {imgid: 2}, false, canvas, () => {});
+  const canvas = {current: {width: 0, height: 0, style: {}, getContext: () => ({drawImage: b => calls.push(b)})}};
+  paint(id => bitmaps.get(id), {imgid: 2}, false, canvas, () => {}, {current:{clientWidth:800,clientHeight:600}});
   assert.deepEqual(calls, [bitmaps.get(2)]);
   assert.equal(canvas.current.height, 240);
-  paint(id => bitmaps.get(id), {imgid: 1}, true, canvas, () => {});
+  assert.equal(canvas.current.style.height, "600px");
+  assert.equal(canvas.current.style.width, "400px");
+  paint(id => bitmaps.get(id), {imgid: 1}, true, canvas, () => {}, {current:null});
   assert.equal(calls.length, 1, 'detail loading keeps the existing frame');
 });
 
@@ -178,4 +180,53 @@ test('Space-click and a pan-release click never toggle zoom', () => {
   assert.equal(env.panClick.current,false);
   env.space.current=true;
   click({detail:1});
+});
+
+const loaderStart = component.indexOf('    const key = (entry:');
+const loaderEnd = component.indexOf('    const show = async', loaderStart);
+const loaderSource = transformSync('loader.ts', component.slice(loaderStart, loaderEnd)).code;
+const makeLoader = new Function('env', `with(env) { ${loaderSource}; return load; }`);
+test('preview memory cache reuses pixels, bounds ownership and separates virtual copies', async () => {
+  let reads = 0, closes = 0;
+  const env = {previews:{current:new Map()}, epoch:0, previewEpoch:{current:0},
+    fetchCachedThumb:async () => { reads++; return {close(){closes++;}}; },
+    fetchThumb:async () => { throw Error('unexpected render'); }};
+  const load = makeLoader(env);
+  const first = await load({imgid:1,path:'raw',version:0}, 800);
+  assert.equal(await load({imgid:1,path:'raw',version:0}, 800), first);
+  assert.equal(reads, 1);
+  for (let imgid=2;imgid<=10;imgid++) await load({imgid,path:'raw',version:0},800);
+  assert.equal(env.previews.current.size,8);
+  assert.equal(closes,2);
+  await load({imgid:10,path:'raw',version:1},800);
+  assert.equal(reads,11,'changed version needs fresh pixels');
+  const before=env.previews.current.size;
+  const detail=await load({imgid:10,path:'raw',version:1},0);
+  assert.equal(env.previews.current.size,before,'native detail is not retained');
+  detail.close();
+});
+test('closing lightbox disposes late preview results instead of retaining them', async () => {
+  let finish, closed=false;
+  const env={previews:{current:new Map()},epoch:0,previewEpoch:{current:0},
+    fetchCachedThumb:() => new Promise(resolve => { finish=resolve; })};
+  const pending=makeLoader(env)({imgid:1},800);
+  env.previewEpoch.current++;
+  finish({close(){closed=true;}});
+  assert.equal(await pending,null);
+  assert.equal(closed,true);
+  assert.equal(env.previews.current.size,0);
+});
+
+test('cached foreground draws immediately even while native speculative work is busy', async () => {
+  const start=component.indexOf('    const show = async');
+  const end=component.indexOf('    void show().catch', start);
+  const source=transformSync('show.ts',component.slice(start,end)).code;
+  const pixels={}; const calls=[];
+  const env={current:{imgid:2},size:800,key:()=> 'second',
+    previews:{current:new Map([['second',pixels]])},stale:false,zoom:false,
+    q:{enqueue(){throw Error('cached foreground must bypass native queue');}},
+    draw:b=>calls.push(b),setDetail(){},setBusy(){},
+    setTimeout:()=>123,timer:undefined};
+  await new Function('env',`with(env) { ${source}; return show(); }`)(env);
+  assert.deepEqual(calls,[pixels]);
 });

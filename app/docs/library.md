@@ -554,8 +554,8 @@ more preview detail. Click the dimmed area to close it. Otherwise the first
 selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
 arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
 rating, X toggles rejection, 6–9 toggle color labels, and K keywords the displayed photo.
-The grid selection is preserved. The lightbox also has the same star icons
-and color swatches as the bottom rail. Click a star to rate (click the same
+The grid selection is preserved. The lightbox bottom bar has the same star icons
+and color swatches as the main grid bar. Click a star to rate (click the same
 star again to clear), or click a swatch to toggle that color label. Rating
 clears rejection, as it does elsewhere in the app. Purple is available by click.
 
@@ -566,14 +566,19 @@ animation as the editor. Zoom centers on the clicked point. Hold **Space** and
 drag to pan at 100%; releasing a Space-drag does not toggle zoom. The **100% /
 Fit** button also switches views. Embedded detail is limited to the camera preview's
 native resolution. Double-click opens the displayed photo in the editor.
-The existing grid thumbnail appears immediately while a larger preview loads.
-Screen-sized previews are prepared one at a time in the background using
+The existing grid thumbnail appears immediately at Fit size while a larger preview loads,
+so sharper pixels do not make the photo grow. Nearby screen previews stay in memory
+while the lightbox is open and appear immediately when revisited.
+After navigation settles briefly, screen-sized previews are prepared one at a time
+in the background using
 Preferences’ **Read ahead** count, in the last arrow-navigation direction.
 Enable **Read ahead both ways** to prepare the same count in the opposite direction.
 Setting Read ahead to zero disables both directions;
 native detail loads only when requested. Cached previews are reused until the
-photo or its sidecars change. Fit scales the image down to the available viewport
-without enlarging it; 100% uses image pixels at screen scale and can be panned
+photo or its sidecars change. This prepares previews, not decoded RAWs for the editor.
+More read-ahead can increase disk and rendering work; an already running native
+preview must finish before another uncached preview can load. Fit scales the image
+to the available viewport; 100% uses image pixels at screen scale and can be panned
 inside the same frame. Keywording is also available from the grid photo's
 context menu. With a multi-selection, right-clicking a selected photo keeps the
 selection as the keyword target; right-clicking an unselected photo targets only

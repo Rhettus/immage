@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
@@ -23,6 +23,8 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const [paintSize, setPaintSize] = useState({width: 300, height: 150});
   const direction = useRef<1 | -1>(1);
   const queue = useRef(new PreviewQueue());
+  const previews = useRef(new Map<string, ImageBitmap>());
+  const previewEpoch = useRef(0);
   const [windowSize, setWindowSize] = useState({width: window.innerWidth, height: window.innerHeight});
   const animation = useRef<{ frame: number; width: number; height: number } | null>(null);
   const targetSize = useRef({ width: 300, height: 150 });
@@ -120,7 +122,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const targetHeight = zoom ? (detail ? paintSize.height : current?.height || paintSize.height) / devicePixelRatio : paintSize.height;
   const box = viewport.current;
   const factor = zoom ? 1 : box
-    ? Math.min(1, box.clientWidth / Math.max(1, targetWidth), box.clientHeight / Math.max(1, targetHeight)) : 1;
+    ? Math.min(box.clientWidth / Math.max(1, targetWidth), box.clientHeight / Math.max(1, targetHeight)) : 1;
   targetSize.current = { width: Math.max(1, targetWidth * factor), height: Math.max(1, targetHeight * factor) };
   zooming.current = zoom;
   useEffect(() => {
@@ -128,7 +130,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     if (!image || !viewportBox || !current) return;
     const w = zoom ? (detail ? paintSize.width : current.width || paintSize.width) / devicePixelRatio : paintSize.width;
     const h = zoom ? (detail ? paintSize.height : current.height || paintSize.height) / devicePixelRatio : paintSize.height;
-    const scale = zoom ? 1 : Math.min(1, viewportBox.clientWidth / Math.max(1, w),
+    const scale = zoom ? 1 : Math.min(viewportBox.clientWidth / Math.max(1, w),
       viewportBox.clientHeight / Math.max(1, h));
     targetSize.current = { width: Math.max(1, w * scale), height: Math.max(1, h * scale) };
     if (animation.current) return;
@@ -153,9 +155,16 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     };
     animation.current.frame = requestAnimationFrame(step);
   }, [zoom, detail, paintSize, fitted.width, fitted.height, photo]);
-  useEffect(() => {
-    if (!current) return;
+  useLayoutEffect(() => {
+    if (!current) {
+      ++previewEpoch.current;
+      for (const bitmap of previews.current.values()) bitmap.close();
+      previews.current.clear();
+      return;
+    }
     let stale = false;
+    const epoch = previewEpoch.current;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const q = queue.current;
     q.replace();
     setDetail(false); setBusy(true); setError("");
@@ -165,38 +174,70 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       box?.clientHeight ?? window.innerHeight * .86) * devicePixelRatio);
     const draw = (bitmap: ImageBitmap) => {
       if (!stale && canvas.current) {
+        if (!zoom && viewport.current && canvas.current) {
+          const scale = Math.min(viewport.current.clientWidth / bitmap.width, viewport.current.clientHeight / bitmap.height);
+          canvas.current.style.width = bitmap.width * scale + "px";
+          canvas.current.style.height = bitmap.height * scale + "px";
+        }
         setPaintSize({width: bitmap.width, height: bitmap.height});
         canvas.current.width = bitmap.width; canvas.current.height = bitmap.height;
         canvas.current.getContext("2d")?.drawImage(bitmap, 0, 0);
       }
-      bitmap.close();
     };
     // Borrow the grid bitmap only for this synchronous draw; its loader owns it.
     // A virtual copy is looked up by imgid, never by the shared original path.
     const small = thumbnail(current.imgid);
     if (!zoom && small && canvas.current) {
+      if (!zoom && viewport.current && canvas.current) {
+        const scale = Math.min(viewport.current.clientWidth / small.width, viewport.current.clientHeight / small.height);
+        canvas.current.style.width = small.width * scale + "px";
+        canvas.current.style.height = small.height * scale + "px";
+      }
       setPaintSize({width: small.width, height: small.height});
       canvas.current.width = small.width; canvas.current.height = small.height;
       canvas.current.getContext("2d")?.drawImage(small, 0, 0);
     }
-    const load = async (entry: ImageEntry, requested: number) =>
-      await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry);
-    void q.enqueue(async () => {
-      await prepare(current.imgid);
-      if (stale) return;
-      draw(await load(current, size));
-      if (!stale) setDetail(zoom);
-    }).then(() => {
-      if (stale || zoom) return;
-      const { count, both } = loadReadAhead();
-      for (const neighbor of previewNeighbors(images, current.imgid, direction.current, count, both)) {
-        if (neighbor) void q.enqueue(async () => { (await load(neighbor, size)).close(); }).catch(() => {});
+    const key = (entry: ImageEntry, requested: number) =>
+      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested]);
+    const load = async (entry: ImageEntry, requested: number) => {
+      const id = key(entry, requested);
+      const cached = previews.current.get(id);
+      if (cached) return cached;
+      const bitmap = await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry);
+      if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
+      if (requested === 0) return bitmap;
+      previews.current.set(id, bitmap);
+      while (previews.current.size > 8) {
+        const oldest = previews.current.keys().next().value!;
+        previews.current.get(oldest)!.close(); previews.current.delete(oldest);
       }
-    }).catch(e => { if (!stale) setError(String(e)); }).finally(() => { if (!stale) setBusy(false); });
-    return () => { stale = true; q.replace(); };
+      return bitmap;
+    };
+    const show = async () => {
+      const cached = previews.current.get(key(current, size));
+      if (cached) draw(cached);
+      else await q.enqueue(async () => {
+        await prepare(current.imgid);
+        if (stale) return;
+        const bitmap = await load(current, size);
+        if (bitmap) { draw(bitmap); if (size === 0) bitmap.close(); }
+      });
+      if (stale) return;
+      setDetail(zoom); setBusy(false);
+      if (zoom) return;
+      // Let navigation settle before starting speculative native rendering.
+      timer = setTimeout(() => {
+        const { count, both } = loadReadAhead();
+        for (const neighbor of previewNeighbors(images, current.imgid, direction.current, count, both)) {
+          void q.enqueue(async () => { await load(neighbor, size); }).catch(() => {});
+        }
+      }, 180);
+    };
+    void show().catch(e => { if (!stale) { setError(String(e)); setBusy(false); } });
+    return () => { stale = true; clearTimeout(timer); q.replace(); };
   }, [current?.imgid, current?.version, current?.edited, zoom, retry]);
   useEffect(() => { setZoom(false); }, [photo]);
-  useEffect(() => () => { queue.current.replace(); ++keywordGeneration.current; }, []);
+  useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
   useEffect(() => {
     if (targets.length && lists.length === targets.length)
       document.querySelector<HTMLInputElement>('[aria-label="Grid keywords"] input')?.focus();
@@ -231,25 +272,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
           <button onClick={() => setPhoto(null)}>Close (F / Esc)</button><button onClick={() => void keywords([current])}>Keywords (K)</button>
           <button onClick={() => { zoomAnchor.current = null; setZoom(!zoom); }}>{zoom ? "Fit" : "100%"}</button>
           <button onClick={() => onEdit(current)}>Edit</button>
-          <span className="tool-group" role="group" aria-label="Photo rating">
-            <button className={`tool${current.rejected ? " on" : ""}`} aria-label="Reject photo" aria-pressed={current.rejected}
-              title="Reject (X)" onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
-            {[1, 2, 3, 4, 5].map(n => <button key={n} className="tool"
-              aria-label={`${n} star${n > 1 ? "s" : ""}`} aria-pressed={!current.rejected && current.rating >= n}
-              title={`${n} star${n > 1 ? "s" : ""} (${n}); click again to clear`}
-              onClick={() => onMeta(current, { rating: current.rating === n ? 0 : n, rejected: false })}>
-              <StarIcon filled={!current.rejected && current.rating >= n} />
-            </button>)}
-          </span>
-          <span className="tool-group" role="group" aria-label="Photo color labels">
-            {LABEL_COLORS.map((color, n) => {
-              const name = ["Red", "Yellow", "Green", "Blue", "Purple"][n];
-              return <button key={color} className={`swatch${current.labels & (1 << n) ? " on" : ""}`}
-                style={{ background: color }} aria-label={`${name} label`} aria-pressed={!!(current.labels & (1 << n))}
-                title={`${name} label${n < 4 ? ` (${n + 6})` : ""}`}
-                onClick={() => onMeta(current, { labels: current.labels ^ (1 << n) })} />;
-            })}
-          </span></div>
+</div>
         <div ref={viewport} style={{ flex: 1, overflow: "auto", minHeight: 0,
           cursor: zoom && spaceHeld ? (panning ? "grabbing" : "grab") : zoom ? "zoom-out" : "zoom-in" }}
           onClick={e => {
@@ -280,7 +303,29 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
             <canvas ref={canvas} style={{ maxWidth: "none", flexShrink: 0 }} />
           </div>
         </div>
-        {busy && <div>Loading preview…</div>}{error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
+        <div className="culling-bottom-bar">
+          <span className="tool-group" role="group" aria-label="Photo rating">
+            <button className={`tool${current.rejected ? " on" : ""}`} aria-label="Reject photo" aria-pressed={current.rejected}
+              title="Reject (X)" onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
+            {[1, 2, 3, 4, 5].map(n => <button key={n} className="tool"
+              aria-label={`${n} star${n > 1 ? "s" : ""}`} aria-pressed={!current.rejected && current.rating >= n}
+              title={`${n} star${n > 1 ? "s" : ""} (${n}); click again to clear`}
+              onClick={() => onMeta(current, { rating: current.rating === n ? 0 : n, rejected: false })}>
+              <StarIcon filled={!current.rejected && current.rating >= n} />
+            </button>)}
+          </span>
+          <span className="tool-group" role="group" aria-label="Photo color labels">
+            {LABEL_COLORS.map((color, n) => {
+              const name = ["Red", "Yellow", "Green", "Blue", "Purple"][n];
+              return <button key={color} className={`swatch${current.labels & (1 << n) ? " on" : ""}`}
+                style={{ background: color }} aria-label={`${name} label`} aria-pressed={!!(current.labels & (1 << n))}
+                title={`${name} label${n < 4 ? ` (${n + 6})` : ""}`}
+                onClick={() => onMeta(current, { labels: current.labels ^ (1 << n) })} />;
+            })}
+          </span>
+          <span className="culling-status" role="status">{busy ? "Loading preview…" : ""}</span>
+        </div>
+        {error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
       </div>
     </div>}
     {!!targets.length && <div className="modal-backdrop" style={{ zIndex: 1001 }} role="dialog" aria-label="Grid keywords">
