@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
@@ -17,7 +17,15 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    return { format: 'module', source: transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
+    let source = readFileSync(path, 'utf8');
+    // Vite expands eager locale imports in the app; expose the same catalogs in Node.
+    if (url.endsWith('/i18n.ts')) {
+      const dir = new URL('./locales/', url);
+      const catalogs = Object.fromEntries(readdirSync(dir).filter(f => f.endsWith('.json'))
+        .map(f => [`./locales/${f}`, JSON.parse(readFileSync(new URL(f, dir), 'utf8'))]));
+      source = source.replace(/import\.meta\.glob<Dict>\([^;]+\)/, JSON.stringify(catalogs));
+    }
+    return { format: 'module', source: transformSync(path, source, { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
   },
 });
 const M = await import('../app/src/menu.ts');

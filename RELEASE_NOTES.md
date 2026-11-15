@@ -7,6 +7,11 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Interface language setting in Preferences > General defaults to the system’s
+  preferred supported language, with English fallback. French adds the initial
+  menu and Preferences translations. Changes apply at the next launch or with
+  Relaunch, which saves the current photo first. Additional languages use one
+  JSON file each, including regional variants and language-specific plurals.
 - Preferences > Performance adds Local photo cache status, pause/resume, clear
   and rebuild, plus explicit optional CLIP model download and CPU checks.
 - Search photos adds local folder/library scopes and optional combined Immich

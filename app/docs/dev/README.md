@@ -24,6 +24,8 @@ the headless darktable engine. The photographer's guide is
   - [masks sharing an instance](diagrams/mask-sharing.svg) ([.excalidraw](diagrams/mask-sharing.excalidraw)):
     several masks' groups summed into a combined mask that drives one shared
     instance
+- [Translating Immage](i18n.md): the locale files, `t()`, and how to add a
+  language.
 - [Masks in darktable's pipe](masks.md): how a mask and its local sliders
   become darktable mask groups and module instances, where those run, and
   how masks share them.

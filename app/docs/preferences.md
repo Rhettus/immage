@@ -52,6 +52,13 @@ starts with default settings. To start with defaults on purpose, see
 
 **Workspace**
 
+- **Language**: the interface language, or **System default**. Immage
+  chooses the first supported language from the system’s language preferences
+  at startup, with English as the fallback. Choosing a language explicitly
+  overrides the system setting. Changes apply on the next launch; **Relaunch**
+  saves the current photo and restarts Immage. English and French are bundled.
+  The menus and Preferences have the initial translations; remaining screens
+  and shared panel descriptions stay in English until translated.
 - **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
   `darktable-elegant-grey` palette) or **Light** with the swatches.
   The selected name and **Import theme…** action appear below the swatches;
