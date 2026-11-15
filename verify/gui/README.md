@@ -58,10 +58,13 @@ its `data-render-quality="final"` marker, drags Exposure to approximately +1 and
 reset. Reset must restore pixels within a mean difference of 1/255. It does not
 use approved screenshot references yet; PNGs are diagnostic evidence.
 
-Before launching on a tiling desktop, prepare an empty workspace so the app
-gets sufficient space. Workspace switching is outside the runner's app-only
-boundary; prepare it manually or authorize that one-time desktop action.
-The runner leaves the compositor configuration untouched.
+Before launching on a tiling desktop, prepare an empty workspace and maximize
+the test app so it gets sufficient space. Workspace switching and maximization
+are outside the runner's app-only boundary; prepare them externally. Pass
+`--viewport WIDTHxHEIGHT` when the run needs a particular logical viewport.
+The runner waits for that size after launch and before its first test input, and
+records the observed geometry. The runner leaves compositor configuration
+untouched.
 
 A kernel `flock` keyed by user and display serializes runs across worktrees.
 Missing tools/display/config or a busy lock yield a blocked report and exit 1.
