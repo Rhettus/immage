@@ -36,6 +36,12 @@ Clicking the button of the panel that is already showing slides the right
 panel shut. Crop, Masks, Heal, Zone System, Film Simulation and Negative need
 a photo open.
 
+Every rail panel keeps the same header icons in the same order: pin,
+Simple/Advanced mode, expand/collapse all, and Reset all. The stacked-cards
+button switches the shared editing mode, including the controls in Masks.
+Expand/collapse all folds the groups in Adjustments, Presets and Masks;
+it stays visible but disabled in tools without this group-folding control.
+
 Each tool remembers how far you scrolled its panel, so going back to
 Adjustments returns you to the same place. A tool opens at its top the
 first time.

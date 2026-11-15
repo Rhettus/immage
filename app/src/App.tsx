@@ -5102,9 +5102,14 @@ export default function App() {
     setPick({ op: h.op, group: h.group, nonce: ++pickCount.current });
   };
   const searchPicked = (nonce: number) => setPick((p) => p?.nonce === nonce ? null : p);
-  const anyOpen = rightMode === "presets" ? presetGroupsOpen : openPanels.size > 0;
+  const [maskGroupsOpen, setMaskGroupsOpen] = useState(true);
+  const [maskFold, setMaskFold] = useState({ open: true, n: 0 });
+  const canFoldPanels = !cropping && ["adjust", "presets", "masks"].includes(rightMode);
+  const anyOpen = rightMode === "presets" ? presetGroupsOpen
+    : rightMode === "masks" ? maskGroupsOpen : rightMode === "adjust" && !cropping && openPanels.size > 0;
   const toggleAllPanels = () => {
-    if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
+    if (rightMode === "masks") setMaskFold((f) => ({ open: !maskGroupsOpen, n: f.n + 1 }));
+    else if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
     else setOpenPanels(openPanels.size ? new Set() : new Set([...panels.filter((p) => !p.hidden).map((p) => p.id), ...(editMode === "advanced" ? [TECHNICAL_ID] : [])]));
   };
 
@@ -6498,18 +6503,14 @@ export default function App() {
         <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
-            {rightMode === "adjust" && !cropping && (
-              <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
+            <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
                       data-tour="advanced-mode"
                       title={editMode === "advanced" ? "Advanced mode is on: click for Simple's sliders" : "switch to Advanced mode: darktable's modules"}>
                 <ModulesIcon /></button>
-            )}
-            {(rightMode === "adjust" || rightMode === "presets") && !cropping && (
-              <button className="tool" onClick={toggleAllPanels}
+            <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys("collapse all panels (⌥-click a panel to open it alone)") : "expand all panels"}>
                 <FoldIcon open={anyOpen} /></button>
-            )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
@@ -6519,7 +6520,7 @@ export default function App() {
         <div className="panels" data-tour="panels" ref={panelsRef}
              onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
           {masksMode && !cropping && (
-            <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
+            <MasksPanel fold={maskFold} onAnyOpen={setMaskGroupsOpen} masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         advancedMode={editMode === "advanced"} session={session.current} sessionRevision={historyRev}
                         onAdvancedEdit={record} onAdvancedEdits={openEditingMode} photos={shown}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}

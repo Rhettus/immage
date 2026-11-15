@@ -39,6 +39,8 @@ Improvements
 
 Bug fixes
 
+- All rail panels keep the same header icons, including the Simple/Advanced
+  switch. Masks now supports expand/collapse all for its settings and adjustments.
 - Grid context-menu keywording now keeps a selected group together, targets only
   the clicked photo when it is outside that group, and preserves the selection.
 - The culling preview keeps a fixed 80% window frame and a bottom bar for

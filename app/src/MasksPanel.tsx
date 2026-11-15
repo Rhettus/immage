@@ -121,12 +121,14 @@ export const TOOL_ICONS: Record<MaskTool, React.ReactNode> = {
                    <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></>),
 };
 
-export function MasksPanel({ masks, selected, shape, tool, target, brush, overlay, disabled, raw, image, thumbMaps,
+export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, target, brush, overlay, disabled, raw, image, thumbMaps,
                              renderSlider, onTool, onSelect, onShape, onShapeMode, onShapeDelete,
                              onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek,
                              onBrush, onOverlay, onLocal, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
                              onHslShown, presenceLoupe, advancedMode = false, session, sessionRevision = 0, onAdvancedEdit, onAdvancedEdits, photos }: {
+  fold?: { open: boolean; n: number };
+  onAnyOpen?: (open: boolean) => void;
   masks: Mask[]; selected: string | null; shape: number;
   tool: MaskTool | null; target: ToolTarget; brush: BrushSettings; overlay: boolean; disabled: boolean;
   raw: boolean;                              // detail refinement needs a raw
@@ -228,7 +230,15 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
   // the selected mask's card and its adjustment groups fold as the edit
   // panels do: in focus mode opening one shuts the others, ⌥ keeps them
   const [open, setOpen] = useState<Set<string>>(
-    () => new Set(focusMode ? ["mask", "brush"] : ["mask", "brush", ...LOCAL_GROUPS.map(([t]) => t)]));
+    () => new Set(focusMode ? ["mask", "brush", "advanced"] : ["mask", "brush", "advanced", ...LOCAL_GROUPS.map(([t]) => t)]));
+  useEffect(() => {
+    if (!fold?.n) return;
+    setOpen(new Set(fold.open ? ["mask", "brush", "advanced", ...LOCAL_GROUPS.map(([t]) => t)] : []));
+  }, [fold?.n]);
+  useEffect(() => {
+    const groups = advancedMode ? ["mask", "brush", "advanced"] : ["mask", "brush", ...LOCAL_GROUPS.map(([t]) => t)];
+    onAnyOpen?.(groups.some((id) => open.has(id)));
+  }, [open, advancedMode, onAnyOpen]);
   const toggle = (id: string, alt: boolean) =>
     setOpen((old) => {
       const solo = focusMode ? !alt && !old.has(id) : alt;
@@ -558,8 +568,9 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
       {m && (
         // what the mask does: its adjustments, in one card apart from the masks
         <div className="panel adjust">
-          <div className="panel-title adj-title">
+          <div className="panel-title adj-title" onClick={advancedMode ? (e) => toggle("advanced", e.altKey) : undefined}>
             <span>Adjustments <span className="of">· {m.name.replace(/^mask/, "Mask")}</span></span>
+            {advancedMode && <Chevron open={open.has("advanced")} />}
             {!advancedMode && advancedIds.length > 0 && (
               <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
                 edited={advancedEdited(advancedIds, m.values,
@@ -573,7 +584,7 @@ export function MasksPanel({ masks, selected, shape, tool, target, brush, overla
             )}
           </div>
           {advancedMode
-            ? <section><AdvancedMaskCards mask={m.name} session={session} revision={sessionRevision} record={onAdvancedEdit} photos={photos} /></section>
+            ? <Collapse open={open.has("advanced")}><section><AdvancedMaskCards mask={m.name} session={session} revision={sessionRevision} record={onAdvancedEdit} photos={photos} /></section></Collapse>
             : (mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
               <h3 data-mask-group={title} className="fold" onClick={(e) => toggle(title, e.altKey)}>

@@ -170,6 +170,11 @@ Where masks overlap, their adjustments add up. **Contrast**,
 
 ## Advanced mode
 
+Use the stacked-cards button in the Masks header to switch between Simple and
+Advanced. This is the same editing mode used by Adjustments. The header's
+expand/collapse all button folds Mask settings, Brush and the adjustment groups;
+in Advanced it folds the Adjustments section containing the module cards.
+
 In [Advanced mode](advanced-mode.md), the selected mask has an **Adjustments**
 list of darktable module cards in place of the local sliders. The mask's
 shapes, invert, opacity, refinements and visibility controls remain above it.

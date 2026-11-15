@@ -1,7 +1,7 @@
 # Advanced mode
 
 Advanced mode is for working with darktable's own modules. Turn it on with
-the **Advanced mode** button (stacked cards) at the top of Adjustments, left of
+the **Advanced mode** button (stacked cards) at the top of any right-hand rail panel, including Masks, left of
 expand/collapse all; it is highlighted while Advanced is on, and clicking it
 again goes back to **Simple**. [Preferences](preferences.md#general) > General
 > **Editing mode** sets the same choice. Switching does not change the photo or

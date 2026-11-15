@@ -31,6 +31,7 @@ a smaller preview when an unedited photo's RAW data cannot be decoded.
 - Edit with familiar tone, color, detail and lens correction tools.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  Consistent rail headers let you switch between Simple and Advanced in any tool.
   Advanced mode adds darktable module cards inside each mask. Copied AI masks
   are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
