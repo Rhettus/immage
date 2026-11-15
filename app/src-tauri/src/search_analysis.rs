@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Automatic CPU embeddings for metadata already cached by folder browsing.
+//! Bounded metadata backfill and automatic CPU embeddings after model opt-in.
 use crate::{
     analysis_queue::{AnalysisQueue, Job},
     clip_models::Models,
@@ -91,6 +91,16 @@ impl Service {
         let rows = self.cache.pending_analyses(*after, 32)?;
         *after = rows.last().map_or(0, |r| r.variant_id);
         for row in rows {
+            if row.needs_metadata {
+                let service = self.clone();
+                self.queue
+                    .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
+                        if let Err(e) = service.refresh_metadata(&row, &job) {
+                            eprintln!("local analysis metadata: {e}");
+                        }
+                    });
+                continue;
+            }
             for subject in ["original", "edited"] {
                 if job.cancelled() || self.stop.load(Ordering::Acquire) {
                     return Ok(());
@@ -118,6 +128,48 @@ impl Service {
         }
         Ok(())
     }
+    fn refresh_metadata(&self, row: &PendingAnalysis, job: &Job) -> Result<(), String> {
+        if job.cancelled() || self.stop.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let version = version(&row.copy_key)?;
+        let listing = Mutex::new(crate::cache::Listed::default());
+        let before =
+            crate::cache::listed_metadata_fingerprints(&listing, Path::new(&row.path), version);
+        let Some((original, edited)) = before.as_ref() else {
+            return Ok(());
+        };
+        if original != &row.original {
+            return Ok(());
+        }
+        let imgid = self.engine.cached_photo(&row.path, version);
+        let reply = self
+            .engine
+            .request(self.engine.tag(), json!({"cmd":"meta","imgid":imgid}))?;
+        if before
+            != crate::cache::listed_metadata_fingerprints(&listing, Path::new(&row.path), version)
+        {
+            return Ok(());
+        }
+        if let Some(mut image) = reply.get("image").cloned() {
+            let (ns, raw, offset) = crate::library_cmds::precise_capture(&image);
+            if let Some(fields) = image.as_object_mut() {
+                fields.remove("imgid");
+            }
+            let metadata = serde_json::to_string(&image).map_err(|e| e.to_string())?;
+            job.commit(|| {
+                self.cache.finish_analysis_metadata(
+                    row,
+                    edited,
+                    &metadata,
+                    (ns, raw.as_deref(), offset),
+                )
+            })
+            .transpose()?;
+        }
+        Ok(())
+    }
+
     fn analyze(&self, row: &PendingAnalysis, subject: &str, job: &Job) -> Result<(), String> {
         if job.cancelled() || self.stop.load(Ordering::Acquire) {
             return Ok(());
@@ -225,10 +277,11 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert!(
-            cache.pending_analyses(0, 32).unwrap().is_empty(),
-            "uncached metadata must not trigger analysis imports"
-        );
+        assert!(cache
+            .pending_analyses(0, 32)
+            .unwrap()
+            .iter()
+            .all(|r| r.needs_metadata));
         cache.store_metadata(a.id, "{}").unwrap();
         cache.store_metadata(b.id, "{}").unwrap();
         let rows = cache.pending_analyses(0, 32).unwrap();
@@ -276,6 +329,32 @@ mod tests {
         assert!(cache.pending_analyses(b.id, 32).unwrap().is_empty());
     }
     #[test]
+    fn metadata_backfill_cannot_recreate_cleared_or_changed_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let a = cache
+            .upsert_variant("/photos/a.jpg", "", "source", "edit", None, None, None)
+            .unwrap();
+        let row = cache.pending_analyses(0, 1).unwrap().remove(0);
+        cache.invalidate_edited("/photos/a.jpg", "").unwrap();
+        assert!(!cache
+            .finish_analysis_metadata(&row, "fresh", "{}", (None, None, None))
+            .unwrap());
+        let row = cache.pending_analyses(0, 1).unwrap().remove(0);
+        assert!(cache
+            .finish_analysis_metadata(&row, "fresh", "{}", (None, Some("raw"), None))
+            .unwrap());
+        assert_eq!(cache.metadata(a.id).unwrap().as_deref(), Some("{}"));
+        cache.clear().unwrap();
+        cache
+            .upsert_variant("/photos/a.jpg", "", "source", "edit", None, None, None)
+            .unwrap();
+        assert!(!cache
+            .finish_analysis_metadata(&row, "fresh", "{}", (None, None, None))
+            .unwrap());
+    }
+
+    #[test]
     fn input_guard_distinguishes_source_and_edit_changes_and_ignores_missing_files() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.jpg");
@@ -293,6 +372,7 @@ mod tests {
             copy_key: String::new(),
             original,
             edited,
+            needs_metadata: false,
             needs_original: true,
             needs_edited: true,
         };

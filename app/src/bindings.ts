@@ -694,6 +694,8 @@ export type MetaExif = {
 	sensor_width?: number,
 	sensor_height?: number,
 	datetime: string,
+	capture_time_raw?: string,
+	capture_offset?: string,
 	file_datetime?: string,
 };
 

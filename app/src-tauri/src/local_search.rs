@@ -447,6 +447,27 @@ mod tests {
             || false,
         )
     }
+    /// Synthetic vectors isolate retrieval; this does not measure CLIP inference.
+    #[test]
+    #[ignore = "manual retrieval benchmark"]
+    fn benchmark_cached_retrieval() {
+        let f = fixture();
+        let count = std::env::var("IMMAGE_SEARCH_BENCH_ROWS").ok().and_then(|s|s.parse::<usize>().ok()).unwrap_or(10_000).clamp(100,100_000);
+        for n in 0..count {
+            let angle = (n % 1000) as f32 / 1000.0;
+            seed(&f.cache, &f.roots[0].join(format!("bench-{n:06}.jpg")), 0, &unit(angle, (1.0-angle*angle).sqrt()));
+        }
+        for (label,args) in [
+            ("metadata",LocalSearchArgs{mode:"filename".into(),size:250,..Default::default()}),
+            ("vector",LocalSearchArgs{text:"synthetic query".into(),size:250,..Default::default()}),
+        ] {
+            let mut samples=Vec::new();
+            for _ in 0..6 { let start=std::time::Instant::now(); let page=run(&f,&args).unwrap();assert_eq!(page.items.len(),250);samples.push(start.elapsed().as_secs_f64()*1000.0); }
+            let first=samples.remove(0);samples.sort_by(f64::total_cmp);
+            eprintln!("SEARCH_BENCH rows={} mode={} first_ms={:.3} warm_median_ms={:.3} warm_samples_ms={:?} debug={}",count+7,label,first,samples[2],samples,cfg!(debug_assertions));
+        }
+    }
+
     #[test]
     fn ranks_with_stable_ties_paginates_and_enforces_component_scopes() {
         let f = fixture();

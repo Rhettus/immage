@@ -266,6 +266,31 @@ static void dng_fixture(const std::string &path)
           "could not write orientation DNG fixture");
 }
 
+static void capture_metadata_check(const std::string &dir)
+{
+  const auto path = dir + "/capture.jpg";
+  write(path, jpeg(32, 24));
+  {
+    auto image = Exiv2::ImageFactory::open(path); image->readMetadata();
+    auto &exif = image->exifData();
+    exif["Exif.Photo.BodySerialNumber"] = "BODY-123";
+    exif["Exif.Photo.DateTimeOriginal"] = "2026:11:15 12:34:56";
+    exif["Exif.Photo.SubSecTimeOriginal"] = "123456789";
+    exif["Exif.Photo.OffsetTimeOriginal"] = "-07:30";
+    image->writeMetadata();
+  }
+  for(int n = 0; n < 2; n++)
+  {
+    char *raw = nullptr, *offset = nullptr;
+    char *serial = camera_source_metadata(path.c_str(), &raw, &offset);
+    require(!g_strcmp0(serial, "BODY-123"), "capture read lost body serial");
+    require(!g_strcmp0(raw, "2026:11:15 12:34:56.123456789"), "capture fraction lost");
+    require(!g_strcmp0(offset, "-07:30"), "capture offset lost");
+    g_free(serial); g_free(raw); g_free(offset);
+  }
+  std::cout << "PASS precise capture source metadata and cached reread" << std::endl;
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 2) return 2;
@@ -280,6 +305,8 @@ int main(int argc, char **argv)
   int result = 0;
   try
   {
+    if(argc == 3 && !g_strcmp0(argv[2], "--capture-only"))
+    { capture_metadata_check(dir); dt_cleanup(); return 0; }
     for(const bool late : {false, true})
     {
       const auto path = dir + (late ? "/late.tif" : "/bounded.tif");
@@ -297,6 +324,7 @@ int main(int argc, char **argv)
           fixture(path, late, true, big, subifd);
           check(path, true, !late);
         }
+    capture_metadata_check(dir);
     const auto dng = dir + "/orientation.dng";
     dng_fixture(dng);
     check_dng_orientation(dng);

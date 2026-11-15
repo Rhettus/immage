@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 /// A stable cache-owned identity for one source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +26,7 @@ pub struct PendingAnalysis {
     pub copy_key: String,
     pub original: String,
     pub edited: String,
+    pub needs_metadata: bool,
     pub needs_original: bool,
     pub needs_edited: bool,
 }
@@ -246,6 +247,10 @@ impl SearchCache {
         db.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS original_analysis_key ON analyses(asset_id,analysis_version,model_version) WHERE subject='original';
                           CREATE UNIQUE INDEX IF NOT EXISTS edited_analysis_key ON analyses(variant_id,analysis_version,model_version) WHERE subject='edited';")
             .map_err(|e| e.to_string())?;
+        if prior.is_some_and(|v|v<6) {
+            // Re-extract richer capture metadata once; visual embeddings remain valid.
+            db.execute("UPDATE variants SET metadata_json=NULL",[]).map_err(|e|e.to_string())?;
+        }
         db.execute(
             "INSERT INTO search_cache_meta(key,value) VALUES('schema_version',?1)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -596,16 +601,27 @@ impl SearchCache {
     ) -> Result<Option<(i64, Vec<u8>)>, String> {
         self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row("SELECT v.asset_id,n.embedding FROM variants v JOIN analyses n ON n.subject=?2 AND n.analysis_version=?3 AND n.model_version=?4 AND ((?2='edited' AND n.variant_id=v.id) OR (?2='original' AND n.asset_id=v.asset_id)) WHERE v.id=?1",params![variant,subject,version,model],|row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())
     }
+    pub fn finish_analysis_metadata(&self, row: &PendingAnalysis, edited: &str, metadata: &str,
+        capture: (Option<i64>,Option<&str>,Option<i32>)) -> Result<bool,String> {
+        let (ns,raw,offset)=capture;
+        self.db.lock().map_err(|_|"search cache lock poisoned")?.execute(
+            "UPDATE variants SET edited_fingerprint=?1,metadata_json=?2,capture_time_ns=?3,capture_time_raw=?4,timezone_offset_seconds=?5
+             WHERE id=?6 AND asset_id=?7 AND edited_fingerprint=?8 AND metadata_json IS NULL
+             AND EXISTS(SELECT 1 FROM assets WHERE id=?7 AND path=?9 AND original_fingerprint=?10)",
+            params![edited,metadata,ns,raw,offset,row.variant_id,row.asset_id,row.edited,row.path,row.original])
+            .map(|n|n==1).map_err(|e|e.to_string())
+    }
+
     pub fn pending_analyses(&self, after: i64, limit: u32) -> Result<Vec<PendingAnalysis>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
-        let mut query = db.prepare("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,o.embedding IS NULL,e.embedding IS NULL
+        let mut query = db.prepare("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,o.embedding IS NULL,e.embedding IS NULL,v.metadata_json IS NULL
           FROM variants v JOIN assets a ON a.id=v.asset_id
           LEFT JOIN analyses o ON o.asset_id=a.id AND o.subject='original' AND o.analysis_version=?3 AND o.model_version=?4
           LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
-          WHERE v.id>?1 AND v.metadata_json IS NOT NULL AND (o.embedding IS NULL OR e.embedding IS NULL)
+          WHERE v.id>?1 AND (v.metadata_json IS NULL OR o.embedding IS NULL OR e.embedding IS NULL)
           ORDER BY v.id LIMIT ?2").map_err(|e| e.to_string())?;
         let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION], |r| Ok(PendingAnalysis {
-          variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_original:r.get(6)?,needs_edited:r.get(7)?,
+          variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_original:r.get(6)?,needs_edited:r.get(7)?,needs_metadata:r.get(8)?,
         })).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
@@ -867,6 +883,17 @@ mod tests {
 
     fn cache() -> SearchCache {
         SearchCache::from_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn v5_metadata_refresh_preserves_ids_and_visual_analysis() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("cache.sqlite");
+        let cache=SearchCache::open(&path).unwrap();
+        let v=cache.upsert_variant("/photos/a.jpg","","source","edit",None,None,None).unwrap();
+        cache.store_metadata(v.id,"{}").unwrap();cache.put_analysis(v.id,"original","source",1,"model",&[1,2]).unwrap();drop(cache);
+        let db=Connection::open(&path).unwrap();db.execute("UPDATE search_cache_meta SET value=5 WHERE key='schema_version'",[]).unwrap();drop(db);
+        let cache=SearchCache::open(&path).unwrap();assert_eq!(cache.variant("/photos/a.jpg","").unwrap().unwrap().id,v.id);
+        assert!(cache.metadata(v.id).unwrap().is_none());assert_eq!(cache.analysis(v.id,"original",1,"model").unwrap(),Some(vec![1,2]));
     }
 
     #[test]

@@ -111,8 +111,10 @@ opt in to the model download, background CPU analysis fills original and edited
 embeddings for photos whose metadata has been cached by browsing. Analysis starts
 within a few seconds and respects Pause; existing results remain searchable.
 Browsing or reading metadata again refreshes invalidated records for analysis.
-Unvisited folders are reconciled for paths but are not automatically imported
-for metadata or analysis yet.
+After model opt-in, reconciled paths also receive bounded background metadata
+imports before analysis, including unvisited folders. Missing or offline files
+wait for a later pass. Metadata caching without the optional model still fills
+as you browse.
 
 Each source displays results as soon as it finishes. A failure in one source
 leaves the other source's results available, with the error in the status line.
@@ -129,14 +131,20 @@ camera-body fields exclude remote results when those filters are selected.
 
 Local search uses only cached metadata and current model-versioned analysis.
 Selected filters exclude unknown values; capture-date filters do not substitute
-file modification dates. In the grid, right-click a local photo and choose **Show more like this**.
+file modification dates. Capture metadata retains the source’s fractional digits
+and UTC offset when recorded. Dates adjusted in Immage take precedence; an
+unknown timezone stays unknown.
+
+In the grid, right-click a local photo and choose **Show more like this**.
 The clicked photo supplies the image query, independently of the open editor.
 The query covers all local library folders, retains selected filters and uses
 the chosen original/edited subject. An **Image query** indicator names the seed;
 **Clear image query** returns to a metadata listing. Missing or stale seed
-analysis produces an error rather than substituting another photo. Background embeddings require the optional model and cached metadata; a photo
-without current analysis cannot supply a similarity query.
-Similarity queries exclude the source photo and its virtual copies. A changed cache requires restarting paginated local results.
+analysis produces an error rather than substituting another photo. Background
+embeddings require the optional model and cached metadata; a photo without
+current analysis cannot supply a similarity query.
+Similarity queries exclude the source photo and its virtual copies. A changed
+cache requires restarting paginated local results.
 
 ### Thumbnail previews
 

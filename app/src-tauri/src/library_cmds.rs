@@ -217,11 +217,10 @@ fn index_imported_metadata(
         let Some((original_fingerprint, edited_fingerprint)) =
             cache::listed_metadata_fingerprints(listed, Path::new(path), version)
         else { continue };
-        let raw_capture = image.get("exif").and_then(|e| e.get("datetime"))
-            .and_then(Value::as_str).filter(|s| !s.is_empty());
+        let (capture_ns, raw_capture, offset) = precise_capture(image);
         let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
         let Ok(record) = index.upsert_variant(path, &copy_key, &original_fingerprint,
-            &edited_fingerprint, None, raw_capture, None) else { continue };
+            &edited_fingerprint, capture_ns, raw_capture.as_deref(), offset) else { continue };
         let mut metadata = image.clone();
         if let Some(fields) = metadata.as_object_mut() { fields.remove("imgid"); }
         match serde_json::to_string(&metadata) {
@@ -231,6 +230,32 @@ fn index_imported_metadata(
             Err(e) => eprintln!("search metadata serialization: {e}"),
         }
     }
+}
+
+// Preserve camera fractional digits and only assign an instant when its UTC
+// offset is known. A changed sidecar capture date takes precedence over EXIF.
+pub(crate) fn precise_capture(image: &Value) -> (Option<i64>, Option<String>, Option<i32>) {
+    let exif = &image["exif"];
+    let datetime = exif["datetime"].as_str().unwrap_or("");
+    let source = exif["capture_time_raw"].as_str().unwrap_or("");
+    let source_matches = datetime.len() >= 19 && source.get(..19) == datetime.get(..19);
+    let raw = if source_matches { source } else { datetime };
+    if raw.is_empty() { return (None,None,None); }
+    let zone = if source_matches { exif["capture_offset"].as_str().unwrap_or("") } else { "" };
+    let offset = (|| {
+        let b = zone.as_bytes();
+        if b.len()!=6 || !matches!(b[0], b'+'|b'-') || b[3]!=b':'
+            || ![b[1],b[2],b[4],b[5]].iter().all(u8::is_ascii_digit) { return None; }
+        let hours=i32::from(b[1]-b'0')*10+i32::from(b[2]-b'0');
+        let minutes=i32::from(b[4]-b'0')*10+i32::from(b[5]-b'0');
+        if hours>23 || minutes>59 { return None; }
+        Some((hours*3600+minutes*60)*if b[0]==b'-' {-1} else {1})
+    })();
+    let instant = chrono::NaiveDateTime::parse_from_str(raw,"%Y:%m:%d %H:%M:%S%.f").ok()
+        .zip(offset.and_then(chrono::FixedOffset::east_opt))
+        .and_then(|(dt,zone)|dt.and_local_timezone(zone).single())
+        .and_then(|dt|dt.timestamp_nanos_opt());
+    (instant,Some(raw.to_owned()),offset)
 }
 
 // the folder's images as its last whole read found them, for open_folder()
@@ -872,6 +897,39 @@ mod tests {
         for name in ["photo.ACR", "photo.orf.xmp", "photo.jpg.txt", "notes", "movie.MOV", "data.json"] {
             assert!(!photo_candidate(Path::new(name)), "{name}");
         }
+    }
+
+    /// Cache lookup/listing costs only; no engine extraction or GUI timing.
+    #[test]
+    #[ignore = "manual metadata cache benchmark"]
+    fn benchmark_warm_folder_metadata() {
+        let dir=tempfile::tempdir().unwrap();let photos=dir.path().join("photos");std::fs::create_dir(&photos).unwrap();
+        let index=crate::search_cache::SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let fixture:Value=serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut metadata=Vec::new();
+        for n in 0..1000 { let path=photos.join(format!("photo-{n:04}.jpg"));std::fs::write(&path,b"synthetic source").unwrap();
+            let mut image=fixture[2]["reply"]["images"][0].clone();image["path"]=json!(path);image["filename"]=json!(path.file_name().unwrap().to_str().unwrap());image["version"]=json!(0);image["copy"]=json!(false);metadata.push(image); }
+        let listing=|| {let mut listed=cache::Listed::default();let mut paths=Vec::new();folder_files(&photos,false,&HashSet::new(),&mut paths,&mut listed);(paths,Mutex::new(listed))};
+        let (paths,listed)=listing();let start=Instant::now();
+        assert!(paths.iter().all(|p|cached_folder_metadata(Some(&index),&listed,p).is_none()));
+        let misses=start.elapsed().as_secs_f64()*1000.0;
+        index_imported_metadata(Some(&index),&listed,&metadata);
+        let mut times=Vec::new();
+        for _ in 0..6 {let start=Instant::now();let (paths,listed)=listing();assert!(paths.iter().all(|p|cached_folder_metadata(Some(&index),&listed,p).is_some()));times.push(start.elapsed().as_secs_f64()*1000.0);}
+        let first=times.remove(0);times.sort_by(f64::total_cmp);
+        eprintln!("FOLDER_CACHE_BENCH rows=1000 missing_lookup_ms={misses:.3} first_warm_ms={first:.3} warm_median_ms={:.3} warm_samples_ms={times:?} debug={}",times[2],cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn precise_capture_retains_fraction_and_known_offset_without_inventing_timezone() {
+        let mut image=json!({"exif":{"datetime":"2026:11:15 12:34:56.123","capture_time_raw":"2026:11:15 12:34:56.123456789","capture_offset":"-07:30"}});
+        let (ns,raw,offset)=precise_capture(&image);
+        assert_eq!(raw.as_deref(),Some("2026:11:15 12:34:56.123456789"));assert_eq!(offset,Some(-27000));
+        assert_eq!(ns,chrono::DateTime::parse_from_rfc3339("2026-11-15T12:34:56.123456789-07:30").unwrap().timestamp_nanos_opt());
+        image["exif"]["capture_offset"]=json!("");let (ns,raw,offset)=precise_capture(&image);assert!(ns.is_none()&&offset.is_none());assert!(raw.unwrap().ends_with("123456789"));
+        image["exif"]["datetime"]=json!("2026:11:16 12:34:56");image["exif"]["capture_offset"]=json!("+01:00");
+        let (ns,raw,offset)=precise_capture(&image);assert_eq!(raw.as_deref(),Some("2026:11:16 12:34:56"));assert!(ns.is_none()&&offset.is_none());
+        image["exif"]["datetime"]=json!("");assert_eq!(precise_capture(&image),(None,None,None));
     }
 
     #[test]

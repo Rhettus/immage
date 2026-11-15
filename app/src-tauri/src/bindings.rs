@@ -324,6 +324,10 @@ pub struct MetaExif {
     #[serde(default)]
     pub sensor_height: u32,
     pub datetime: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub capture_time_raw: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub capture_offset: String,
     // the file's modified time, sent only when there is no capture time
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file_datetime: String,

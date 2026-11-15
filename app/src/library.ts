@@ -15,6 +15,8 @@ export type Exif = {
   exposure_bias: number; focus_distance: number; datetime: string;
   // the file's modified time, sent only when there is no capture time
   file_datetime?: string;
+  capture_time_raw?: string;
+  capture_offset?: string;
 };
 
 // when a photo was taken, for its order and the date filters: its file's

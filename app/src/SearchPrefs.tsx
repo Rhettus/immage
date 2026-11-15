@@ -36,7 +36,7 @@ export function SearchPrefs() {
   const size = model ? `${Math.ceil(model.bytes / 1_000_000)} MB` : "608 MB";
   return <PrefCard title="Local photo cache">
     <PrefRow label="Metadata" summary={count ? `${count.assets.toLocaleString()} photos, ${count.variants.toLocaleString()} versions; ${count.metadata.toLocaleString()} metadata records, ${count.analyses.toLocaleString()} analyses.` : status ? "Unavailable for this session." : "Reading status…"}
-      hint="Disposable cached metadata speeds up repeated folder visits. Clear removes cached records. Rebuild also checks your saved folders again; metadata is filled as photos are browsed. Your photos and sidecars stay in place. Offline drives retain their last known identity.">
+      hint="Disposable cached metadata speeds up repeated folder visits. Clear removes cached records. Rebuild also checks your saved folders again; metadata is filled as photos are browsed, or by bounded background imports after model opt-in. Your photos and sidecars stay in place. Offline drives retain their last known identity.">
       <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(false))}>Clear</button>
       <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(true))}>Rebuild</button>
     </PrefRow>

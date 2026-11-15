@@ -117,9 +117,10 @@ Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% wind
 The Search photos card queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths.
 After the optional model download, background CPU analysis builds original and
-edited embeddings for browsed, cached photos. Unvisited folders are not yet
-imported for automatic analysis in this experimental branch. Image queries use the grid
-context menu’s Show more like this action and retain active filters.
+edited embeddings, backfilling metadata for reconciled library paths through
+bounded lazy imports. Image queries use the grid
+context menu’s Show more like this action and retain active filters. Cached
+capture metadata preserves source fractions and known UTC offsets.
 
 Immich local path mappings keep resolved files within the configured folder,
 including when subfolders contain symbolic links.

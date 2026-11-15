@@ -1334,11 +1334,28 @@ sidecars. Export metadata’s history switch does not control rendered edits.
 
 `search_analysis.rs` polls locally installed model availability every five seconds
 and submits a bounded keyset scan (32 variants) to the shared background queue.
-Only rows with cached metadata are eligible; startup reconciliation does not force
-metadata imports. Original jobs deduplicate by asset, edited jobs by variant.
+Missing metadata is imported on separate bounded jobs after model opt-in;
+startup reconciliation alone does not import photos. Row identity and fingerprint
+compare-and-swap prevent metadata backfill recreating cleared or changed records. Original jobs deduplicate by asset, edited jobs by variant.
 The scan wraps its keyset so failed rows cannot permanently starve later rows.
 Models are verified before any photo import. Live source/edit stamps are checked
 before rendering, after rendering and after inference; database fingerprint and
 queue generation checks guard publication. Inputs and JPEG frames are removed
 on failure as well as success. There is no download in this path. Foreground
 metadata reads refresh disposable metadata, making invalidated rows eligible again.
+
+Precise capture metadata shares `camera_source_metadata`’s existing Exiv2 read
+with body serial extraction. Cached source stamps include subsecond mtime/ctime
+on Unix. JSON carries raw fractional capture text and the recorded UTC offset;
+Rust stores nanosecond instants only when a valid offset exists. The current
+sidecar-adjusted date takes precedence when it differs from the source date.
+
+Manual cache microbenchmarks run with:
+`cargo test --offline --locked --bin immage benchmark_ -- --ignored --nocapture --test-threads=1`
+from `app/src-tauri`. These use disposable synthetic metadata and normalized
+vectors, report first-query and warm medians separately, and state whether the
+build has debug assertions. They isolate cache lookup/listing and retrieval;
+they do not measure model inference, cold filesystem I/O or full folder loading.
+
+Schema 6 invalidates old metadata JSON once to acquire richer capture fields,
+while retaining cache IDs and reusable visual embeddings.

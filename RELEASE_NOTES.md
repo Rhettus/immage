@@ -13,7 +13,9 @@ Improvements
   queries, with independent results, errors and pagination. Combined results
   merge exact verified local paths and weight each source equally. Filename searches
   use cached metadata. Optional CPU analysis fills original and edited embeddings
-  for browsed photos; unvisited folders are not yet imported automatically.
+  for library photos, with bounded metadata backfill after model opt-in.
+- Cached capture metadata preserves fractional seconds and recorded UTC offsets;
+  dates adjusted in Immage take precedence over the source capture date.
 - Local analysis previews render original and edited appearances independently
   of the open editor, without changing photo sidecars.
 - The grid adds Show more like this for indexed local photos, searching all
