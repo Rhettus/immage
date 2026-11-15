@@ -25,6 +25,8 @@ import { ModulePhoto } from "./ModulePhoto";
 import type { ImageEntry } from "./library";
 import { graphFields } from "./graphMaps";
 import { LensPicker } from "./LensPicker";
+import { t as tr } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // the card's fields as the controls the rest of the app draws
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -68,14 +70,14 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
   // darktable's formats put "%" and "°" right after the number
   const unit = l.unit ? (l.unit === "%" || l.unit === "°" ? l.unit : ` ${l.unit}`) : "";
   // digits count on the shown value, so the step is in shown units too
-  const base = { id: `adv:${l.path}`, label: l.label, min, max, step: 10 ** -digits / Math.abs(factor),
-                 format: (v: number) => `${(v * factor + offset).toFixed(digits)}${unit}`, note: f.description || undefined };
+  const base = { id: `adv:${l.path}`, label: fieldText(l.label), min, max, step: 10 ** -digits / Math.abs(factor),
+                 format: (v: number) => `${(v * factor + offset).toFixed(digits)}${unit}`, note: f.description ? fieldText(f.description) : undefined };
   if (f.type === "bool") return { ...base, kind: "toggle", min: 0, max: 1, step: 1 };
   if (l.choices) return { ...base, kind: "choice", min: 0, max: Math.max(...l.choices.map(([, v]) => v)), step: 1,
                           options: l.choices, inline: l.choices.length > 3, menu: l.choices.length > 3 };
   if (f.type === "enum") {
     const options = (f.values ?? []).filter((e) => !l.options || l.options.includes(e.value))
-      .map((e): [string, number] => [sentence(e.description || e.name), e.value]);
+      .map((e): [string, number] => [fieldText(sentence(e.description || e.name)), e.value]);
     return { ...base, kind: "choice", min: 0, max: Math.max(...options.map(([, v]) => v)), step: 1,
              options, inline: options.length > 3, menu: options.length > 3 };
   }
@@ -135,8 +137,8 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
     return () => { live = false; };
   }, [shown]);   // eslint-disable-line react-hooks/exhaustive-deps
   const profileField = (l: LayoutField, value: number): [SchemaField, LayoutField] => {
-    const list = profiles?.[l.profiles!] ?? [];
-    const choices = list.some(([, v]) => v === value) ? list : [...list, ["Current profile", value] as [string, number]];
+    const list = (profiles?.[l.profiles!] ?? []).map(([name, n]) => [fieldText(name), n] as [string, number]);
+    const choices = list.some(([, v]) => v === value) ? list : [...list, [tr("fields.module.currentProfile"), value] as [string, number]];
     return [{ path: l.path, type: "int" }, { ...l, choices }];
   };
   // white balance's camera presets, once per photo (wb_presets: empty for a
@@ -157,9 +159,9 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
       return [{ path: l.path, type: "int", min: wbCurrent.tune_min, max: wbCurrent.tune_max }, { ...l, soft: [wbCurrent.tune_min, wbCurrent.tune_max] }];
     }
     // temperature.c's own order; from image area (index 1) is not offered
-    const std: [string, number][] = [["As shot", 0], ["User modified", 2], ["Camera reference", 3], ["As shot to reference", 4]];
-    const list = [...std, ...wbList.map((p): [string, number] => [p.name, p.value])];
-    const choices = list.some(([, v]) => v === value) ? list : [...list, ["Current setting", value] as [string, number]];
+    const std: [string, number][] = [[tr("fields.module.wb.asShot"), 0], [tr("fields.module.wb.userModified"), 2], [tr("fields.module.wb.cameraReference"), 3], [tr("fields.module.wb.asShotToReference"), 4]];
+    const list = [...std, ...wbList.map((p): [string, number] => [fieldText(p.name), p.value])];
+    const choices = list.some(([, v]) => v === value) ? list : [...list, [tr("fields.module.currentSetting"), value] as [string, number]];
     return [{ path: l.path, type: "int" }, { ...l, choices }];
   };
   // darktable's notebook pages, in its order; the first is shown at first
@@ -181,7 +183,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
     const off = window.setTimeout(() => setFlash(false), 1300);
     return () => { window.clearTimeout(scroll); window.clearTimeout(off); };
   }, [focus]);
-  const name = instance.label ? `${layout.title} ${instance.label}` : layout.title;
+  const name = instance.label ? `${fieldText(layout.title)} ${instance.label}` : fieldText(layout.title);
   const done = (el: HTMLInputElement, keep: boolean) => {
     if (ended.current) return;
     ended.current = true;
@@ -192,11 +194,11 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   return (
     <div ref={card} className={`module-card${state.enabled ? "" : " off"}${fresh || flash ? " fresh" : ""}`} data-module={`${instance.op}#${instance.priority}`}>
       <div className="module-card-head" onClick={() => setFold(!open)}>
-        <input type="checkbox" className="switch" checked={state.enabled} aria-label={`${name} on or off`} disabled={fixed}
+        <input type="checkbox" className="switch" checked={state.enabled} aria-label={tr("fields.module.onOff", { name })} disabled={fixed}
                onClick={(e) => e.stopPropagation()} onChange={(e) => onEnabled(e.target.checked)} />
         {renaming
           ? <input className="field module-card-rename" autoFocus defaultValue={instance.hand_edited ? instance.name : ""}
-                   placeholder={instance.label || layout.title} aria-label={`Name for ${name}`} maxLength={127}
+                   placeholder={instance.label || fieldText(layout.title)} aria-label={tr("fields.module.nameFor", { name })} maxLength={127}
                    spellCheck={false} onClick={(e) => e.stopPropagation()}
                    onFocus={(e) => e.currentTarget.select()}
                    onKeyDown={(e) => {
@@ -209,10 +211,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
         {family && <span onClick={(e) => e.stopPropagation()}>
           <FamilySwitch label={family.label} current={instance.op} options={family.options} onPick={family.onPick} />
         </span>}
-        {hidden && <span className="module-card-tag" title="Hidden in Preferences > Modules; this photo uses it, so its card stays">hidden</span>}
-        {(simple || (siblings > 1 && instance.priority === 0)) && <span className="module-card-tag" title="Simple's sliders also edit this module">Simple</span>}
+        {hidden && <span className="module-card-tag" title={tr("fields.module.hiddenHint")}>{tr("fields.module.hidden")}</span>}
+        {(simple || (siblings > 1 && instance.priority === 0)) && <span className="module-card-tag" title={tr("fields.module.simpleHint")}>{tr("fields.module.simple")}</span>}
         {!maskOwned && <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />}
-        <button className="module-card-reset" title="Reset to darktable's defaults" aria-label={`Reset ${name}`}
+        <button className="module-card-reset" title={tr("fields.module.resetHint")} aria-label={tr("fields.module.reset", { name })}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />
         </button>
@@ -225,12 +227,12 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
       <Collapse open={open}>
         <div className="module-card-body">
           {layout.op === "temperature" && wbInModule && (
-            <div className="note" style={{ marginLeft: 0, marginRight: 0 }}>color calibration is off, so this module sets the white balance</div>
+            <div className="note" style={{ marginLeft: 0, marginRight: 0 }}>{tr("fields.module.wbNote")}</div>
           )}
           {layout.turns && onTurn && (
             <div className="crop-turn module-card-turns">
               {layout.turns.map(({ label, how }) => (
-                <button key={how} className="tool" title={label} aria-label={label} onClick={() => onTurn(how)}>
+                <button key={how} className="tool" title={fieldText(label)} aria-label={fieldText(label)} onClick={() => onTurn(how)}>
                   {how === "h" || how === "v" ? <FlipIcon vertical={how === "v"} /> : <RotateIcon right={how === "cw"} />}
                 </button>
               ))}
@@ -239,7 +241,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
           {tabs.length > 1 && (
             <div className="segmented small module-card-tabs" role="tablist">
               {tabs.map((t) => <button key={t} role="tab" aria-selected={t === tab} className={t === tab ? "active" : ""}
-                                       onClick={() => setTab(t)}>{t}</button>)}
+                                       onClick={() => setTab(t)}>{fieldText(t)}</button>)}
             </div>
           )}
           {layout.curves && [layout.curves.count(0), layout.curves.node(0, 0, "x")].every((p) => fields.has(p.replace(/\[.*$/, ""))) && (
@@ -266,18 +268,18 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
             return layout.fields.map((l) => {
               if (l.file) {
                 if (l.tab && l.tab !== tab) return null;
-                return <ModuleFile key={l.path} kind={l.file} label={l.label} priority={instance.priority} photo={photo ?? null}
+                return <ModuleFile key={l.path} kind={l.file} label={fieldText(l.label)} priority={instance.priority} photo={photo ?? null}
                                    value={state.params[l.path] ?? state.defaults[l.path] ?? 0} disabled={fixed && !state.enabled}
                                    onChange={(hash) => onFields({ [l.path]: hash }, false, l.path)} />;
               }
               if (l.align) {
                 if (!fields.has(l.path) || (l.tab && l.tab !== tab)) return null;
-                return <ModuleAlign key={l.path} label={l.label} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
+                return <ModuleAlign key={l.path} label={fieldText(l.label)} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
                                     disabled={fixed && !state.enabled} onChange={(index) => onField(l.path, index, false)} />;
               }
               if (l.photo) {
                 if (!fields.has(l.path) || (l.tab && l.tab !== tab)) return null;
-                return <ModulePhoto key={l.path} label={l.label} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
+                return <ModulePhoto key={l.path} label={fieldText(l.label)} value={state.params[l.path] ?? state.defaults[l.path] ?? 0}
                                     disabled={fixed && !state.enabled} photos={photos ?? []}
                                     onChange={(imgid) => { onField(l.path, imgid, false); onSettled?.(); }} />;
               }
@@ -288,7 +290,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
                 const why = l.grey?.(state.params) ?? undefined;
                 return (
                   <div key={l.path} className="choice-row" data-control-id={`adv:${l.path}`} title={why}>
-                    <span>{l.label}</span>
+                    <span>{fieldText(l.label)}</span>
                     <input type="color" className="color-pick" value={toHex(rgb)} disabled={(fixed && !state.enabled) || !!why}
                            onChange={(e) => onFields(Object.fromEntries(paths.map((p, k) => [p, fromHex(e.target.value)[k]])), false, l.path)} />
                   </div>
@@ -313,7 +315,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
               return (
                 <Fragment key={l.path}>
                   {bands}
-                  {title && <div className="module-card-section">{title}</div>}
+                  {title && <div className="module-card-section">{fieldText(title)}</div>}
                   {wheel && fields.has(wheel.hue) && fields.has(wheel.chroma) && (() => {
                     const top = layout.fields.find((x) => x.path === wheel.chroma)?.soft?.[1] ?? fields.get(wheel.chroma)!.max ?? 1;
                     const hue = state.params[wheel.hue] ?? 0, chroma = state.params[wheel.chroma] ?? 0;

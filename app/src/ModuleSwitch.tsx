@@ -11,6 +11,7 @@ import { ArrowLeftRight } from "lucide-react";
 import { useDismiss } from "./MasksPanel";
 import { loadModuleChoice, storeModuleChoice, storeModuleMode } from "./moduleChoice";
 import type { ModuleChoice } from "./manifest";
+import { t } from "./i18n";
 
 export type ModuleScope = "global" | "masks";
 
@@ -76,7 +77,7 @@ export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], on
                     onClick={(e) => { e.stopPropagation(); close(); if (o.value !== current.value) onPick(o.value); }}>
               <span className="check">{o.value === current.value ? "✓" : ""}</span>
               <span className="name">{o.name}</span>
-              {o.preferred && <span className="tag">preferred</span>}
+              {o.preferred && <span className="tag">{t("fields.moduleSwitch.preferred")}</span>}
               {adjusted.includes(o.value) && <span className="adjusted-dot" title="has adjustments" />}
             </button>
           ))}
@@ -88,7 +89,7 @@ export function ModuleSwitch({ choice, value, scope, disabled, adjusted = [], on
                     storeModuleMode("custom");
                     storeModuleChoice(choice.id, current.value, scope);
                   }}>
-            <span className="check" /><span className="name">Set as default</span>
+            <span className="check" /><span className="name">{t("fields.moduleSwitch.setDefault")}</span>
           </button>
         </div>, document.body)}
     </span>

@@ -23,6 +23,8 @@ import { keys } from "./keys";
 import { Chevron, Collapse } from "./Collapse";
 import { bandWeights, useProbe } from "./probe";
 import type { BrushSettings, MaskTool } from "./MaskOverlay";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 export type ToolTarget = "new" | "add" | "subtract";
 export type LandscapeKind = "sky" | "water" | "vegetation" | "mountains" | "ground" | "architecture" | "artificial_ground";
@@ -393,7 +395,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                        onMouseEnter={() => peekSoon(x.name)} onMouseLeave={() => peekSoon(null)}>
                     {chevron(x)}
                     {/* the eye compares with and without the mask, so the overlay keeps out of the way */}
-                    <button className="eye" title={x.hidden ? "show this mask's adjustments" : "hide this mask's adjustments"}
+                    <button className="eye" title={x.hidden ? t("fields.masks.showAdjustments") : t("fields.masks.hideAdjustments")}
                             onMouseEnter={() => peekSoon(null)} onMouseLeave={() => peekSoon(x.name)}
                             onClick={(e) => { e.stopPropagation(); onHidden(x.name, !x.hidden); }}>
                       {eyeIcon(!x.hidden)}</button>
@@ -404,7 +406,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                     <MaskMenu onDuplicate={(inv, adj) => onDuplicate(x.name, inv, adj)} onRename={() => setRenaming(x.name)}
                               onReset={() => onResetAdjustments(x.name)} adjusted={maskHasAdjustments(x)}
                               onDelete={() => onDelete(x.name)} />
-                    <button className="mask-del" title="delete this mask"
+                    <button className="mask-del" title={t("fields.masks.delete")}
                             onClick={(e) => { e.stopPropagation(); onDelete(x.name); }}>×</button>
                   </div>
                   {x.name === selected && !folded.has(x.name) && (
@@ -417,11 +419,11 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                             {k > 0 && !isRange(s) && (
                               // as it reads on what shows, which an inverted mask turns round
                               <button className={`mode${(s.mode === "subtract") !== x.invert ? " sub" : ""}`}
-                                      title="add to the mask or take away from it"
+                                      title={t("fields.masks.shapeModeHint")}
                                       onClick={(e) => { e.stopPropagation(); onShapeMode(k); }}>
                                 {(s.mode === "subtract") !== x.invert ? "−" : "+"}</button>
                             )}
-                            <button className="del" title="delete this shape"
+                            <button className="del" title={t("fields.masks.deleteShape")}
                                     onClick={(e) => { e.stopPropagation(); onShapeDelete(k); }}>×</button>
                           </li>
                         ))}
@@ -433,15 +435,15 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
               ))}
             </ul>
           )}
-          {!masks.length && <div className="note-plain">pick a kind of mask to start one</div>}
+          {!masks.length && <div className="note-plain">{t("fields.masks.empty")}</div>}
         </section>
         {m && (
           // what the mask is: the selected one's own settings
           <section>
-            <h3 className="fold" onClick={(e) => toggle("mask", e.altKey)}>Mask settings<Chevron open={open.has("mask")} /></h3>
+            <h3 className="fold" onClick={(e) => toggle("mask", e.altKey)}>{t("fields.masks.settings")}<Chevron open={open.has("mask")} /></h3>
             <Collapse open={open.has("mask")}>
               <label className="toggle">
-                <span>Invert</span>
+                <span>{t("fields.masks.invert")}</span>
                 <input type="checkbox" className="switch" checked={m.invert} disabled={disabled}
                        onChange={(e) => onInvert(e.target.checked)} />
               </label>
@@ -470,8 +472,8 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                         // over a plain, colorful background the outline goes
                         // just over the edge and stops at its color (masks.ts,
                         // Backdrop); off, it is the outline any selection gets
-                        <label className="toggle" title="stop the mask at the background's color, so no halo shows around the subject">
-                          <span>Fit to Background</span>
+                        <label className="toggle" title={t("fields.masks.fitBackgroundHint")}>
+                          <span>{t("fields.masks.fitBackground")}</span>
                           <input type="checkbox" className="switch" checked={!r.backdrop.off} disabled={disabled}
                                  onChange={(e) => onFeather(shape, { backdrop: { ...r.backdrop!, off: !e.target.checked } })} />
                         </label>
@@ -569,7 +571,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
         // what the mask does: its adjustments, in one card apart from the masks
         <div className="panel adjust">
           <div className="panel-title adj-title" onClick={advancedMode ? (e) => toggle("advanced", e.altKey) : undefined}>
-            <span>Adjustments <span className="of">· {m.name.replace(/^mask/, "Mask")}</span></span>
+            <span>{t("fields.masks.adjustments")} <span className="of">· {m.name.replace(/^mask/, `${t("fields.masks.mask")} `)}</span></span>
             {advancedMode && <Chevron open={open.has("advanced")} />}
             {!advancedMode && advancedIds.length > 0 && (
               <AdvancedToggle on={advanced} onToggle={toggleAdvanced}
@@ -578,8 +580,8 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
             )}
             {!advancedMode && !!m.extra?.length && (
               <button type="button" className="advanced-edits" data-advanced-edits={m.extra.length} onClick={onAdvancedEdits}
-                      title="Edits made in Advanced mode that these sliders cannot show">
-                <span className="advanced-dot" /><span><b>{m.extra.length} advanced {m.extra.length === 1 ? "edit" : "edits"}</b> · Editing mode…</span>
+                          title={t("fields.panel.advancedEditsHint")}>
+                <span className="advanced-dot" /><span>{t(m.extra.length === 1 ? "fields.panel.advancedEdit" : "fields.panel.advancedEdits", { count: m.extra.length })}</span>
               </button>
             )}
           </div>
@@ -588,11 +590,11 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
             : (mono ? MONO_GROUPS : LOCAL_GROUPS).map(([title, ids]) => (
             <section key={title}>
               <h3 data-mask-group={title} className="fold" onClick={(e) => toggle(title, e.altKey)}>
-                {title}
+                {fieldText(title)}
                 {title === "HSL" && probe && (
-                  <span className="probe-chip" title="the color under the pointer, and its band">
+                  <span className="probe-chip" title={t("fields.panel.probeColorHint")}>
                     <i style={{ background: `rgb(${probe.rgb.map(Math.round).join(",")})` }} />
-                    {weights ? BANDS[weights.indexOf(Math.max(...weights))][1] : "neutral"}
+                    {weights ? fieldText(BANDS[weights.indexOf(Math.max(...weights))][1]) : t("fields.panel.neutral")}
                   </span>
                 )}
                 <Chevron open={open.has(title)} />
@@ -645,16 +647,16 @@ function MaskMenu({ onDuplicate, onRename, onReset, adjusted, onDelete }: {
   );
   return (
     <span className="mask-more" ref={box} onClick={(e) => e.stopPropagation()}>
-      <button className={`more-btn${open ? " on" : ""}`} title="more" onClick={() => setOpen(!open)}>…</button>
+      <button className={`more-btn${open ? " on" : ""}`} title={t("fields.masks.more")} onClick={() => setOpen(!open)}>…</button>
       {open && (
         <div className="tile-menu mask-more-list">
-          {item("Duplicate Mask", () => onDuplicate(false, true))}
-          {item("Duplicate Mask Only", () => onDuplicate(false, false))}
-          {item("Duplicate and Invert Mask", () => onDuplicate(true, true))}
-          {item("Duplicate and Invert Mask Only", () => onDuplicate(true, false))}
-          {item("Reset Mask Adjustments", onReset, "", !adjusted)}
-          {item("Rename Mask", onRename)}
-          {item("Delete Mask", onDelete, "danger")}
+          {item(t("fields.masks.duplicate"), () => onDuplicate(false, true))}
+          {item(t("fields.masks.duplicateOnly"), () => onDuplicate(false, false))}
+          {item(t("fields.masks.duplicateInvert"), () => onDuplicate(true, true))}
+          {item(t("fields.masks.duplicateInvertOnly"), () => onDuplicate(true, false))}
+          {item(t("fields.masks.resetAdjustments"), onReset, "", !adjusted)}
+          {item(t("fields.masks.rename"), onRename)}
+          {item(t("fields.masks.delete"), onDelete, "danger")}
         </div>
       )}
     </span>

@@ -10,6 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import { bandCurve, grabOffset, pull, pullRange, RES, startRadius, wheelRadius } from "./bands";
 import type { ModuleLayout } from "./advancedLayout";
 import type { AdvancedState } from "./session";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
+import { moduleName } from "./manifest";
 
 type Bands = NonNullable<ModuleLayout["bands"]>;
 
@@ -86,12 +89,12 @@ export function ModuleBands({ op, bands, state, disabled, onFields }: {
     <div className="module-card-curve module-card-bands" data-bands={op}>
       <div className="segmented small module-card-tabs" role="tablist">
         {tabs.map((t, i) => (
-          <button key={t.ch} role="tab" aria-selected={t.ch === ch} className={t.ch === ch ? "active" : ""} title={t.title}
-                  data-bands-channel={t.label} onClick={() => setTab(i)}>{t.label}</button>
+          <button key={t.ch} role="tab" aria-selected={t.ch === ch} className={t.ch === ch ? "active" : ""} title={t.title ? fieldText(t.title) : undefined}
+                  data-bands-channel={t.label} onClick={() => setTab(i)}>{fieldText(t.label)}</button>
         ))}
       </div>
       <svg ref={svg} className={`curve bands-area${disabled ? " disabled" : ""}`} viewBox={`0 0 ${W} ${H}`}
-           aria-label={`${op} ${cur.label} wavelet curve`}
+           aria-label={t("fields.bands.graph", { module: fieldText(moduleName(op)), channel: fieldText(cur.label) })}
            onPointerMove={(e) => {
              if (disabled) return;
              const m = at(e);
@@ -144,10 +147,10 @@ export function ModuleBands({ op, bands, state, disabled, onFields }: {
         {active && !disabled && (
           <circle cx={px(mx)} cy={py(bandCurve(xs, ys)(mx))} r={radius * PW} className="bands-focus" />
         )}
-        <text className="bands-label" transform={`translate(${INSET + 0.02 * PW + 8},${INSET + PH / 2}) rotate(-90)`} textAnchor="middle">coarse</text>
-        <text className="bands-label" transform={`translate(${INSET + 0.98 * PW - 2},${INSET + PH / 2}) rotate(-90)`} textAnchor="middle">fine</text>
-        <text className="bands-label" x={INSET + PW / 2} y={INSET + 0.08 * PH + 4} textAnchor="middle">smooth</text>
-        <text className="bands-label" x={INSET + PW / 2} y={INSET + 0.97 * PH - 2} textAnchor="middle">noisy</text>
+        <text className="bands-label" transform={`translate(${INSET + 0.02 * PW + 8},${INSET + PH / 2}) rotate(-90)`} textAnchor="middle">{t("fields.bands.coarse")}</text>
+        <text className="bands-label" transform={`translate(${INSET + 0.98 * PW - 2},${INSET + PH / 2}) rotate(-90)`} textAnchor="middle">{t("fields.bands.fine")}</text>
+        <text className="bands-label" x={INSET + PW / 2} y={INSET + 0.08 * PH + 4} textAnchor="middle">{t("fields.bands.smooth")}</text>
+        <text className="bands-label" x={INSET + PW / 2} y={INSET + 0.97 * PH - 2} textAnchor="middle">{t("fields.bands.noisy")}</text>
       </svg>
     </div>
   );

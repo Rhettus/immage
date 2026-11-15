@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Check, Lock } from "lucide-react";
 import { Chevron, Collapse } from "./Collapse";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 export type Step = {
   id: string; title: string; summary: string;
@@ -84,10 +85,10 @@ export function GuidedSteps({ steps, open, onOpen }: {
                 {s.content}
                 <div className="step-nav">
                   <button type="button" className="btn small" disabled={at <= 0}
-                          onClick={() => go(walk[at - 1].id)}>Back</button>
+                          onClick={() => go(walk[at - 1].id)}>{t("fields.steps.back")}</button>
                   <button type="button" className="btn small primary"
                           onClick={() => go(at >= walk.length - 1 ? "" : walk[at + 1].id)}>
-                    {at >= walk.length - 1 ? "Done" : "Next"}</button>
+                    {at >= walk.length - 1 ? t("fields.steps.done") : t("fields.steps.next")}</button>
                 </div>
               </div>
             </Collapse>

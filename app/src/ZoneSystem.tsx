@@ -9,6 +9,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Control } from "./manifest";
 import type { ObjectPrompt } from "./MaskOverlay";
 import { useProbe } from "./probe";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 import {
   DEFAULT_TRANSITION, PLACE_FIRST, PLACE_MAX, PLACE_NODES, ROMAN, ZONE_COLORS, ZONE_COUNT, placeInOrder,
   grayRange, grayWeights, localReverses, placeTable, placedZone, placementCrossing, placementFit, rangeCenter,
@@ -16,8 +18,7 @@ import {
   zoneMaskName as zoneMaskNameOf, zoneText, type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange,
 } from "./zones";
 
-const SOURCE_NOTE = "measured on the black and white image in scene-referred light, before the tone mapper: "
-  + "zone V is 18% middle gray and each zone is one stop";
+const SOURCE_NOTE = t("fields.zone.sourceNote");
 
 const span = (a: number, b: number): ZoneRange => [Math.min(a, b), Math.max(a, b)];
 const inRange = (k: number, r: ZoneRange | null) => !!r && k >= r[0] && k <= r[1];
@@ -123,7 +124,7 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
   return (
     <section className={`zones${disabled ? " disabled" : ""}`}>
       <div className={`zone-hist${stale ? " stale" : ""}`} tabIndex={disabled ? -1 : 0} onKeyDown={key}
-           role="listbox" aria-label="zones" title={SOURCE_NOTE}>
+           role="listbox" aria-label={t("fields.zone.zones")} title={SOURCE_NOTE}>
         <div className="zone-bars"
              onPointerMove={(e) => setHover(zoneAt(e))}
              onPointerLeave={() => { if (dragFrom.current === null) setHover(null); }}
@@ -134,7 +135,7 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
           </svg>
           {zones.map((v, k) => (
             <div key={k} role="option" aria-selected={inRange(k, pinned)}
-                 aria-label={`zone ${ROMAN[k]}: ${(v * 100).toFixed(1)}%`}
+                 aria-label={t("fields.zone.zonePercent", { zone: ROMAN[k], percent: (v * 100).toFixed(1) })}
                  className={`zone-col${inRange(k, pinned) ? " pinned" : ""}${inRange(k, hoverRange(hover)) ? " hover" : ""}`
                    + `${probed === k ? " probed" : ""}`}
                  onPointerDown={(e) => down(k, e)}>
@@ -150,33 +151,33 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
         {s && (s.below > 0.001 || s.above > 0.001) && (
           <div className="zone-clips">
             <span className={`${s.below > 0.001 ? "" : "none"}${probed === "below" ? " probed" : ""}`}
-                  title="darker than zone 0">◀ {(s.below * 100).toFixed(1)}%</span>
+                  title={t("fields.zone.darkerThanZero")}>◀ {(s.below * 100).toFixed(1)}%</span>
             <span className={`${s.above > 0.001 ? "" : "none"}${probed === "above" ? " probed" : ""}`}
-                  title="brighter than zone X">{(s.above * 100).toFixed(1)}% ▶</span>
+                  title={t("fields.zone.brighterThanTen")}>{(s.above * 100).toFixed(1)}% ▶</span>
           </div>
         )}
       </div>
       {error && <div className="note">{error}</div>}
 
       <div className="zone-inspect">
-        <canvas ref={thumb} className="zone-thumb" title="the selection's mask: white is fully selected" />
+        <canvas ref={thumb} className="zone-thumb" title={t("fields.zone.maskHint")} />
         <div className="zone-facts">
           {shown && sel ? (
             <>
-              <div className="zone-name">{rangeLabel(shown)}{shown === pinned ? "" : " (hover)"}</div>
-              <div>{(sel.share * 100).toFixed(1)}% of the image</div>
-              {!Number.isNaN(sel.mean) && <div>mean {zoneText(sel.mean)}</div>}
+              <div className="zone-name">{rangeLabel(shown)}{shown === pinned ? "" : ` (${t("fields.zone.hover")})`}</div>
+              <div>{t("fields.zone.share", { percent: (sel.share * 100).toFixed(1) })}</div>
+              {!Number.isNaN(sel.mean) && <div>{t("fields.zone.mean", { zone: zoneText(sel.mean) })}</div>}
             </>
           ) : (
-            <div className="zone-hint">point at a zone to see where it is; click to pin it, shift-click or drag for a run</div>
+            <div className="zone-hint">{t("fields.zone.inspectHint")}</div>
           )}
-          {probeZone !== null && <div className="zone-probe">pointer: zone {zoneText(probeZone)}</div>}
-          {s && <div className="zone-image">image: median {zoneText(s.p50)} · 5–95% {zoneText(s.p5)}–{zoneText(s.p95)}</div>}
+          {probeZone !== null && <div className="zone-probe">{t("fields.zone.pointer", { zone: zoneText(probeZone) })}</div>}
+          {s && <div className="zone-image">{t("fields.zone.imageStats", { median: zoneText(s.p50), low: zoneText(s.p5), high: zoneText(s.p95) })}</div>}
         </div>
       </div>
 
       <label className="toggle">
-        <span>Show mask overlay</span>
+        <span>{t("fields.zone.showMask")}</span>
         <input type="checkbox" className="switch" checked={overlay.show} disabled={disabled}
                onChange={(e) => onOverlay({ ...overlay, show: e.target.checked })} />
       </label>
@@ -186,25 +187,25 @@ export function ZoneSystem({ data, unplaced, stale, error, disabled, pinned, onP
       {advanced && (
         <div className="zone-adv">
           <div className="zone-adv-row">
-            <span>Overlay color</span>
+            <span>{t("fields.zone.overlayColor")}</span>
             <div className="presets">
               {ZONE_COLORS.map(([name, [r, g, b]]) => (
-                <button key={name} className={`swatch${overlay.color === name ? " on" : ""}`} title={name}
-                        aria-label={name} style={{ background: `rgb(${r},${g},${b})` }}
+                <button key={name} className={`swatch${overlay.color === name ? " on" : ""}`} title={fieldText(name)}
+                        aria-label={fieldText(name)} style={{ background: `rgb(${r},${g},${b})` }}
                         onClick={() => onOverlay({ ...overlay, color: name })} />
               ))}
             </div>
           </div>
           <label className="zone-adv-row">
-            <span>Overlay opacity</span>
+            <span>{t("fields.zone.overlayOpacity")}</span>
             <input type="range" min={10} max={100} step={5} value={Math.round(overlay.opacity * 100)}
                    onChange={(e) => onOverlay({ ...overlay, opacity: Number(e.target.value) / 100 })} />
             <span className="zone-num">{Math.round(overlay.opacity * 100)}%</span>
           </label>
-          {unplaced && <div className="zone-source">dashed: the zones before Placement moved them</div>}
+          {unplaced && <div className="zone-source">{t("fields.zone.dashedBefore")}</div>}
           <div className="zone-row">
             <button className="btn small" disabled={disabled || !onReset} onClick={onReset}
-                    title="remove the placement and every zone adjustment; other edits stay">Reset zones</button>
+                    title={t("fields.zone.resetHint")}>{t("fields.zone.reset")}</button>
           </div>
           <div className="zone-source">{SOURCE_NOTE}</div>
         </div>
@@ -302,14 +303,14 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
   return (
     <div className="zone-adjust">
       <div className="segmented tabs">
-        <button className={tab === "placement" ? "active" : ""} onClick={() => setTab("placement")}>Placement</button>
-        <button className={tab === "local" ? "active" : ""} onClick={() => setTab("local")}>Local</button>
+        <button className={tab === "placement" ? "active" : ""} onClick={() => setTab("placement")}>{t("fields.zone.placement")}</button>
+        <button className={tab === "local" ? "active" : ""} onClick={() => setTab("local")}>{t("fields.zone.local")}</button>
       </div>
 
       {tab === "placement" && (
         <>
           <svg className="zone-curve" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
-               aria-label="where each zone is placed">
+               aria-label={t("fields.zone.placementGraph")}>
             {pinned && <rect x={x(pinned[0] - 0.5)} y={0} width={x(pinned[1] + 0.5) - x(pinned[0] - 0.5)} height={H}
                              className="band" />}
             {Array.from({ length: ZONE_COUNT - 1 }, (_, k) => (
@@ -322,15 +323,15 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
             const c = rangeCenter(pinned);
             const shift = shiftOf(offsets, pinned);
             const lo = Math.max(-0.5, c - PLACE_MAX), hi = Math.min(10.5, c + PLACE_MAX);
-            const target = ctl("zp_target", "Place at", lo, hi, 0.05, c, zoneText,
-                               "the zone the pinned zones' middle goes to");
-            const spread = ctl("zp_transition", "Transition", 0.5, 4, 0.5, 1.5, (v) => `${v.toFixed(1)} zones`,
-                               "how many zones either side follow the move, fading out");
+            const target = ctl("zp_target", t("fields.zone.placeAt"), lo, hi, 0.05, c, zoneText,
+                               t("fields.zone.placeAtHint"));
+            const spread = ctl("zp_transition", t("fields.zone.transition"), 0.5, 4, 0.5, 1.5, (v) => t("fields.zone.zonesCount", { count: v.toFixed(1) }),
+                               t("fields.zone.transitionHint"));
             return (
               <>
                 <div className="zone-readout">
                   {rangeLabel(pinned)} → {zoneText(c + shift)}
-                  <span className="zone-dim"> (comes out at {zoneText(placedZone(c, fit))})</span>
+                  <span className="zone-dim"> {t("fields.zone.comesOutAt", { zone: zoneText(placedZone(c, fit)) })}</span>
                 </div>
                 {renderSlider(target, c + shift, (v) => place(pinned, v, transition))}
                 {renderSlider(spread, transition, (v) => {
@@ -338,19 +339,19 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
                   const b = live(pinned);
                   if (b) place(pinned, b.target, v);
                 })}
-                {pinned[1] < PLACE_FIRST && <div className="note">zones 0 and I move with zone II</div>}
+                {pinned[1] < PLACE_FIRST && <div className="note">{t("fields.zone.zoneZeroAndOneMove")}</div>}
                 {widened !== null && (
-                  <div className="note">transition widened to {widened.toFixed(1)} zones to keep tones in order</div>
+                  <div className="note">{t("fields.zone.transitionWidened", { count: widened.toFixed(1) })}</div>
                 )}
               </>
             );
-          })() : <div className="zone-hint">pin a zone or a run of zones to place it</div>}
+          })() : <div className="zone-hint">{t("fields.zone.pinToPlace")}</div>}
           {crossing !== null && (
-            <div className="note">tones cross over near zone {zoneText(crossing)}: widen the transition</div>
+            <div className="note">{t("fields.zone.tonesCross", { zone: zoneText(crossing) })}</div>
           )}
           <div className="zone-row">
             <button className="btn small" disabled={disabled || offsets.every((o) => o === 0)}
-                    onClick={() => { base.current = null; onPlace(offsets.map(() => 0)); }}>Reset placement</button>
+                    onClick={() => { base.current = null; onPlace(offsets.map(() => 0)); }}>{t("fields.zone.resetPlacement")}</button>
           </div>
         </>
       )}
@@ -361,56 +362,55 @@ export function ZoneAdjust({ pinned, offsets, onPlace, zoneMasks, selected: sel,
             <div className="zone-chips">
               {zoneMasks.map((m) => (
                 <span key={m.name} className={`zone-chip${m.name === sel?.name ? " on" : ""}`}>
-                  <button onClick={() => onPickMask(m.range, m.part)} title="pin these zones">{m.name}</button>
-                  <button className="x" onClick={() => onDeleteMask(m.name)} aria-label={`delete ${m.name}`}
-                          title="delete this adjustment">×</button>
+                  <button onClick={() => onPickMask(m.range, m.part)} title={t("fields.zone.pinZones")}>{m.name}</button>
+                  <button className="x" onClick={() => onDeleteMask(m.name)} aria-label={t("fields.zone.deleteAdjustment", { name: m.name })}
+                          title={t("fields.zone.deleteAdjustment", { name: m.name })}>×</button>
                 </span>
               ))}
             </div>
           )}
-          <div className="zone-parts" title="narrow the zones to a part of the photo, found by AI in its original colors">
-            <span className="zone-parts-label">Color mask</span>
+          <div className="zone-parts" title={t("fields.zone.colorMaskHint")}>
+            <span className="zone-parts-label">{t("fields.zone.colorMask")}</span>
             <div className="segmented small">
-              <button className={!part ? "active" : ""} disabled={disabled} onClick={() => onPart(null, false)}>All</button>
+              <button className={!part ? "active" : ""} disabled={disabled} onClick={() => onPart(null, false)}>{t("fields.zone.all")}</button>
               {parts.map(([kind, label]) => (
                 <button key={kind} className={part?.kind === kind ? "active" : ""} disabled={disabled || partBusy}
-                        onClick={() => onPart(kind, part?.invert ?? false)}>{label}</button>
+                        onClick={() => onPart(kind, part?.invert ?? false)}>{fieldText(label)}</button>
               ))}
             </div>
             <button className={`btn small${boxing ? " on" : ""}`} disabled={disabled || partBusy}
-                    title="drag a box around an object on the photo, or click it" onClick={() => onBoxing(!boxing)}>
-              + Object
+                    title={t("fields.zone.objectHint")} onClick={() => onBoxing(!boxing)}>
+              + {t("fields.zone.object")}
             </button>
             {part && (
               <label className="zone-invert">
                 <input type="checkbox" checked={part.invert} disabled={disabled}
                        onChange={(e) => onPart(part.kind, e.target.checked)} />
-                everything but it
+                {t("fields.zone.everythingElse")}
               </label>
             )}
           </div>
-          {boxing && <div className="zone-hint">drag a box around the object on the photo, or click it (Esc cancels)</div>}
+          {boxing && <div className="zone-hint">{t("fields.zone.boxObjectHint")}</div>}
           {pinned ? (
             <>
               <div className="zone-readout">{zoneMaskNameOf(pinned, part)}</div>
-              {renderSlider(ctl("l_exposure", "Exposure", -2, 2, 0.01, 0, signed(2, " EV")), lv("l_exposure"),
+              {renderSlider(ctl("l_exposure", t("fields.zone.exposure"), -2, 2, 0.01, 0, signed(2, " EV")), lv("l_exposure"),
                             (v) => onLocal(pinned, "l_exposure", v))}
-              {renderSlider(ctl("l_contrast", "Contrast", -100, 100, 1, 0, signed(0), "around the zones' middle"),
+              {renderSlider(ctl("l_contrast", t("fields.zone.contrast"), -100, 100, 1, 0, signed(0), t("fields.zone.contrastHint")),
                             lv("l_contrast"), (v) => onLocal(pinned, "l_contrast", v))}
-              {renderSlider(ctl("z_strength", "Mask strength", 0, 100, 1, 100, (v) => `${Math.round(v)}%`),
+              {renderSlider(ctl("z_strength", t("fields.zone.maskStrength"), 0, 100, 1, 100, (v) => `${Math.round(v)}%`),
                             sel?.opacity ?? 100, (v) => onOpacity(pinned, v))}
-              {renderSlider(ctl("z_transition", "Transition", 0.1, 2, 0.05, LOCAL_TRANSITION, (v) => `${v.toFixed(2)} EV`,
-                                "how softly the mask fades into the neighboring zones"),
+              {renderSlider(ctl("z_transition", t("fields.zone.transition"), 0.1, 2, 0.05, LOCAL_TRANSITION, (v) => `${v.toFixed(2)} EV`,
+                                t("fields.zone.localTransitionHint")),
                             w, (v) => onTransition(pinned, v))}
-              {renderSlider(ctl("z_edge", "Edge aware", 0, 100, 1, 0, (v) => `${Math.round(v)}`,
-                                "follow the photo's edges, so the change does not halo across them"),
+              {renderSlider(ctl("z_edge", t("fields.zone.edgeAware"), 0, 100, 1, 0, (v) => `${Math.round(v)}`,
+                                t("fields.zone.edgeAwareHint")),
                             sel?.edge ?? 0, (v) => onEdge(pinned, v))}
               {reverses && (
-                <div className="note">this much exposure turns tones around at the zones' edge: widen the
-                  transition, lower the strength, or move them with Placement</div>
+                <div className="note">{t("fields.zone.reversalHint")}</div>
               )}
             </>
-          ) : <div className="zone-hint">pin a zone or a run of zones to adjust it</div>}
+          ) : <div className="zone-hint">{t("fields.zone.pinToAdjust")}</div>}
         </>
       )}
     </div>

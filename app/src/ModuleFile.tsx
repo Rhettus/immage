@@ -12,6 +12,7 @@ import { FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { commands, type ChosenFile, type LutFiles } from "./commands";
 import { onLutFolder } from "./lutFolder";
+import { t } from "./i18n";
 
 export function ModuleFile({ kind, label, priority, value, disabled, photo, onChange }: {
   kind: "lut" | "marker"; label: string; priority: number; value: number; disabled: boolean;
@@ -50,11 +51,11 @@ export function ModuleFile({ kind, label, priority, value, disabled, photo, onCh
     return (
       <div className="choice-row module-file" data-control-id="adv:lut_file">
         <span>{label}</span>
-        <button type="button" className="tool" disabled={disabled || !lut} aria-label="Select LUT file"
-                title={`select a png (haldclut), a cube or a 3dl file in the 3D LUT folder${lut ? ` (${lut.folder})` : ""}; the folder is set in Preferences > Modules`}
+        <button type="button" className="tool" disabled={disabled || !lut} aria-label={t("fields.moduleFile.selectLut")}
+                title={t("fields.moduleFile.selectLutHint", { folder: lut?.folder ?? "" })}
                 onClick={browse}><FolderOpen size={16} strokeWidth={1.8} /></button>
         <select className="field" disabled={disabled || !chosen} value={chosen ? value : 0} aria-label={label}
-                title="the file path (relative to the LUT folder) is saved with the photo, not the LUT data themselves"
+                title={t("fields.moduleFile.lutPathHint")}
                 onChange={(e) => onChange(Number(e.target.value))}>
           {!chosen && <option value={0} />}
           {files.map((f) => <option key={f.hash ?? f.path} value={f.hash ?? 0}>{f.path}</option>)}
@@ -70,12 +71,12 @@ export function ModuleFile({ kind, label, priority, value, disabled, photo, onCh
     <div className="choice-row module-file" data-control-id="adv:wm_marker">
       <span>{label}</span>
       <select className="field" disabled={disabled} value={value} aria-label={label}
-              title={markers ? `SVG watermarks in ${markers.dirs[1]} or ${markers.dirs[0]}` : undefined}
+              title={markers ? t("fields.moduleFile.markerDirs", { dirs: `${markers.dirs[1]} / ${markers.dirs[0]}` }) : undefined}
               onChange={(e) => onChange(Number(e.target.value))}>
         {!known && <option value={value} />}
         {list.map((m, k) => <option key={`${m.hash}-${k}`} value={m.hash ?? 0}>{m.label ?? m.path}</option>)}
       </select>
-      <button type="button" className="tool" disabled={disabled} aria-label="Refresh the marker list" title="refresh the marker list"
+      <button type="button" className="tool" disabled={disabled} aria-label={t("fields.moduleFile.refreshMarkers")} title={t("fields.moduleFile.refreshMarkers")}
               onClick={refresh}><RefreshCw size={16} strokeWidth={1.8} /></button>
       {problem && <div className="note module-file-note">{problem}</div>}
     </div>

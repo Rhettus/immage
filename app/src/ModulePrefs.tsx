@@ -11,6 +11,7 @@ import { loadModuleChoice, loadModuleMode, storeModuleChoice, storeModuleMode, t
 import { Chevron, Collapse } from "./Collapse";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 import { LAYOUTS, groupLayouts } from "./advancedLayout";
 import { essentialsHidden, hiddenKey, loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { panels } from "./manifest";
@@ -51,7 +52,7 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   const [, setPicked] = useState(0);
   const chooseMode = (v: ModuleMode) => { setMode(v); storeModuleMode(v); };
   const menu = (choice: ModuleChoice, scope: "global" | "masks") => {
-    const label = `${scope === "global" ? t("modules.global") : t("modules.masks")} ${choice.label}`;
+    const label = `${scope === "global" ? t("modules.global") : t("modules.masks")} ${fieldText(choice.label)}`;
     const selected = loadModuleChoice(choice.id, scope);
     if (mode === "default") {
       const name = choice.options.find((o) => o.value === selected)?.name ?? "";
@@ -61,7 +62,7 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       <select className="field" aria-label={label} value={selected}
               onChange={(e) => { storeModuleChoice(choice.id, Number(e.target.value), scope); setPicked((n) => n + 1); }}>
         {choice.options.map((o) => (
-          <option key={o.value} value={o.value}>{o.name}{o.preferred ? ` ${t("modules.default")}` : ""}</option>
+          <option key={o.value} value={o.value}>{fieldText(o.name)}{o.preferred ? ` ${t("modules.default")}` : ""}</option>
         ))}
       </select>
     );
@@ -92,7 +93,7 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
               <PrefRow key={tool.title} label={tool.title}>
                 {tool.choice ? (
                   menu(tool.choice, "global")
-                ) : <span className="pref-value" title={tool.modules.join(", ")}>{tool.modules.join(", ")}</span>}
+                ) : <span className="pref-value" title={tool.modules.map(fieldText).join(", ")}>{tool.modules.map(fieldText).join(", ")}</span>}
               </PrefRow>
             ))}
           </PrefCard>
@@ -109,13 +110,13 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
             {MASK_MODULE_CHOICES.map((c) => (
               <PrefRow key={c.id} label={c.label}>{menu(c, "masks")}</PrefRow>
             ))}
-            <PrefRow label="White Balance"><span className="pref-value">color calibration</span></PrefRow>
-            <PrefRow label="Exposure and Blacks"><span className="pref-value">exposure</span></PrefRow>
-            <PrefRow label="Whites, Hue and Saturation"><span className="pref-value">color balance rgb</span></PrefRow>
-            <PrefRow label="HSL"><span className="pref-value">color equalizer</span></PrefRow>
-            <PrefRow label="Color Grading"><span className="pref-value">color balance rgb</span></PrefRow>
-            <PrefRow label="Dehaze"><span className="pref-value">haze removal</span></PrefRow>
-            <PrefRow label="Noise"><span className="pref-value">denoise (profiled)</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.whiteBalance")}><span className="pref-value">{t("fields.darktable.colorCalibration")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.exposureBlacks")}><span className="pref-value">{t("fields.darktable.exposure")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.whitesHueSaturation")}><span className="pref-value">{t("fields.darktable.colorBalanceRgb")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.hsl")}><span className="pref-value">{t("fields.darktable.colorEqualizer")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.colorGrading")}><span className="pref-value">{t("fields.darktable.colorBalanceRgb")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.dehaze")}><span className="pref-value">{t("fields.darktable.hazeRemoval")}</span></PrefRow>
+            <PrefRow label={t("fields.maskModule.noise")}><span className="pref-value">{t("fields.darktable.denoiseProfiled")}</span></PrefRow>
           </PrefCard>
         </div>
       </Collapse>

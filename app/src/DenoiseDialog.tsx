@@ -9,6 +9,7 @@
 // small photo beside it moves the piece, as the Navigator moves the view
 import { useEffect, useRef, useState } from "react";
 import { commands } from "./commands";
+import { t } from "./i18n";
 import { settings } from "./settings";
 
 const AMOUNT_KEY = "immage.denoiseAmount";
@@ -144,16 +145,16 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
   return (
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal denoise">
-        <div className="modal-head"><h2>AI Denoise</h2></div>
+        <div className="modal-head"><h2>{t("dialogs.denoise.title")}</h2></div>
         <div className="modal-body denoise-body">
-          <div className="denoise-view" title="hold to see it without AI Denoise"
+          <div className="denoise-view" title={t("dialogs.denoise.holdToCompare")}
                onPointerDown={() => setHolding(true)} onPointerUp={() => setHolding(false)}
                onPointerLeave={() => setHolding(false)}>
             <canvas ref={view} />
             {(busy || error) && (
               <div className={`denoise-state${error ? " error" : ""}`}>{error ?? "previewing…"}</div>
             )}
-            {holding && piece && <div className="denoise-tag">Before</div>}
+            {holding && piece && <div className="denoise-tag">{t("dialogs.common.before")}</div>}
           </div>
           <div className="denoise-side">
             <div className="nav-image denoise-overview">
@@ -180,9 +181,9 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
                 )}
               </div>
             </div>
-            <p className="note-plain">drag on the photo to preview another part</p>
+            <p className="note-plain">{t("dialogs.denoise.dragPreview")}</p>
             <div className="row">
-              <span className="k">Amount</span>
+              <span className="k">{t("dialogs.denoise.amount")}</span>
               <input type="range" min={1} max={100} step={1} value={amount}
                      onChange={(e) => setAmount(Number(e.target.value))} />
               <span className="num">{amount}</span>
@@ -194,8 +195,8 @@ export function DenoiseDialog({ thumb, center, prepare, onRun, onClose }: {
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={run}>Denoise</button>
+          <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
+          <button className="btn primary" onClick={run}>{t("dialogs.denoise.action")}</button>
         </div>
       </div>
     </div>

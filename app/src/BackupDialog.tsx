@@ -7,13 +7,18 @@
 import { useEffect, useState } from "react";
 import { commands, type BackupComponent as Component, type BackupSummary as Summary } from "./commands";
 import { settings } from "./settings";
+import { formatDate, formatNumber, t } from "./i18n";
 
 export type BackupMode = "create" | "restore";
 
 
 const size = (n: number) => n < 1024 ? `${n} B` : n < 1 << 20 ? `${(n / 1024).toFixed(0)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`;
 const detail = (c: { bytes: number; files: number; id: string }) =>
-  c.id === "looks" ? `${c.files} ${c.files === 1 ? "look" : "looks"}, ${size(c.bytes)}` : size(c.bytes);
+  c.id === "looks" ? t("dialogs.backup.looksDetail", { count: formatNumber(c.files), size: size(c.bytes) }) : size(c.bytes);
+const componentLabel = (id: string, fallback: string) => {
+  const key: Record<string, string> = { settings: "settings", presets: "presets", export_presets: "exportPresets", looks: "looks", plugins: "plugins", darktable: "darktable" };
+  return key[id] ? t(`dialogs.backup.component.${key[id]}`) : fallback;
+};
 
 export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () => void }) {
   const [items, setItems] = useState<Omit<Component, "available">[] | null>(null);
@@ -44,7 +49,7 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
       // the backup holds what the page has, not what it has yet to send
       await settings.flush();
       await commands.backupCreate(to, items!.filter((c) => chosen.has(c.id)).map((c) => c.id));
-      setDone(`Saved to ${to}`);
+      setDone(t("dialogs.backup.saved", { path: to }));
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   };
@@ -66,47 +71,44 @@ export function BackupDialog({ mode, onClose }: { mode: BackupMode; onClose: () 
       const out = await commands.backupRestore(path, items!.filter((c) => chosen.has(c.id)).map((c) => c.id));
       // the page's own copy must not be written over what was restored
       settings.discard();
-      setDone(`Restored. A copy of what was replaced is in ${out.savedTo}`);
+      setDone(t("dialogs.backup.restored", { path: out.savedTo }));
       window.setTimeout(() => location.reload(), 1200);
     } catch (e) { setError(String(e)); setBusy(false); }
   };
 
   const when = summary?.created ? new Date(summary.created) : null;
-  const dated = when && !Number.isNaN(when.getTime()) ? when.toLocaleString() : "";
+  const dated = when && !Number.isNaN(when.getTime()) ? formatDate(when, { dateStyle: "medium", timeStyle: "short" }) : "";
   const nothing = items !== null && items.length === 0;
 
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
     onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape" && !busy) onClose(); }}>
     <div className="modal backup-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-title">
-      <div className="modal-head"><h2 id="backup-title">{mode === "create" ? "Back Up" : "Restore from a Backup"}</h2></div>
+      <div className="modal-head"><h2 id="backup-title">{mode === "create" ? t("dialogs.backup.title") : t("dialogs.backup.restoreTitle")}</h2></div>
       <div className="modal-body">
-        {mode === "create" && <p className="note-plain">Choose what to save in the backup file. API keys for Immich and map
-          search stay in your system's keychain and are not included.</p>}
-        {mode === "restore" && !summary && <p>Choose a backup file made with Back Up.</p>}
-        {summary && <p className="note-plain">Made {dated ? `on ${dated} ` : ""}by Immage {summary.version || "(unknown version)"}.</p>}
-        {summary?.newer && <p className="note-plain warn" role="alert">This backup was made by a newer Immage than this one
-          ({summary.version}). Some of it may not be understood here.</p>}
-        {busy && !items && mode === "create" && <p role="status">Looking…</p>}
-        {nothing && mode === "create" && <p>There is nothing to back up yet.</p>}
-        {items && items.length > 0 && <div role="group" aria-label="Items">
+        {mode === "create" && <p className="note-plain">{t("dialogs.backup.description")}</p>}
+        {mode === "restore" && !summary && <p>{t("dialogs.backup.chooseExisting")}</p>}
+        {summary && <p className="note-plain">{t("dialogs.backup.madeBy", { date: dated ? t("dialogs.backup.onDate", { date: dated }) : "", version: summary.version || t("dialogs.backup.unknownVersion") })}</p>}
+        {summary?.newer && <p className="note-plain warn" role="alert">{t("dialogs.backup.newerVersion", { version: summary.version })}</p>}
+        {busy && !items && mode === "create" && <p role="status">{t("dialogs.common.looking")}</p>}
+        {nothing && mode === "create" && <p>{t("dialogs.backup.nothingToBackUp")}</p>}
+        {items && items.length > 0 && <div role="group" aria-label={t("dialogs.backup.items")}>
           {items.map((c) => <label key={c.id} className="row check">
             <input type="checkbox" checked={chosen.has(c.id)} disabled={busy || !!done} onChange={() => toggle(c.id)} />
-            <span>{c.label}</span><span className="note-plain" style={{ marginLeft: "auto" }}>{detail(c)}</span>
+            <span>{componentLabel(c.id, c.label)}</span><span className="note-plain" style={{ marginLeft: "auto" }}>{detail(c)}</span>
           </label>)}
         </div>}
-        {mode === "restore" && summary && !done && <p className="note-plain warn">The chosen items replace the current ones. A copy of
-          what is replaced is kept in the backups folder in Immage's data folder. Immage reloads when it is done.</p>}
+        {mode === "restore" && summary && !done && <p className="note-plain warn">{t("dialogs.backup.restoreWarning")}</p>}
         {error && <p role="alert">{error}</p>}
         {done && <p role="status">{done}</p>}
       </div>
       <div className="modal-foot">
         <button className="btn" disabled={busy && !done} onClick={onClose}>
-          {done && mode === "create" ? "Done" : "Cancel"}</button>
+          {done && mode === "create" ? t("dialogs.common.done") : t("dialogs.common.cancel")}</button>
         {mode === "create" && !done && <button className="btn primary" disabled={busy || chosen.size === 0} onClick={() => void create()}>
-          {busy && items ? "Backing up…" : "Back Up…"}</button>}
-        {mode === "restore" && !summary && <button className="btn primary" disabled={busy} onClick={() => void choose()}>Choose File…</button>}
+          {busy && items ? t("dialogs.backup.backingUp") : t("dialogs.backup.action")}</button>}
+        {mode === "restore" && !summary && <button className="btn primary" disabled={busy} onClick={() => void choose()}>{t("dialogs.common.chooseFile")}</button>}
         {mode === "restore" && summary && !done && <button className="btn primary" disabled={busy || chosen.size === 0} onClick={() => void restore()}>
-          {busy ? "Restoring…" : "Restore"}</button>}
+          {busy ? t("dialogs.backup.restoring") : t("dialogs.backup.restoreAction")}</button>}
       </div>
     </div>
   </div>;

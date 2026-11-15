@@ -10,53 +10,54 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { keys } from "./keys";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 type Callout = { target: string; title: string; body: string };
 type Step = { target?: string; title: string; body: string; callouts?: Callout[] };
 
 const STEPS: Step[] = [
-  { title: "Welcome to Immage",
-    body: "A quick look at the whole workflow: bringing photos in, editing them and sending them out. It takes about a minute; Esc skips it." },
-  { target: "import", title: "Import",
-    body: keys("Copy photos off a card or a folder. Ones already in the destination, or in Immich, are marked, and the new ones open here when it is done. ⇧⌘I.") },
-  { target: "folders", title: "Your folders",
-    body: "Folders you add, or import into, stay listed; open one to see its subfolders. Edits are saved next to each photo as an XMP sidecar." },
-  { target: "immich", title: "Immich",
-    body: "Search your Immich library by words, people, places or albums, and edit what it finds as if it were local. It shows once your server is set up in Preferences." },
-  { target: "filmstrip", title: "Pick a photo",
-    body: "The filmstrip shows the folder. Click a photo, or use the arrow keys; 1 to 5 rate it and X rejects it." },
-  { target: "viewer", title: "Look closely",
-    body: "Click to zoom to 100% at that point and click again to fit. Scroll to zoom, drag to pan; press \\ for before, and Y steps through the before and after views." },
-  { target: "edit", title: "Edit",
-    body: keys("The editing tools sit together on the right; each opens its own panel. ⌘Z undoes any of them."),
+  { title: t("dialogs.tour.welcome.title"),
+    body: t("dialogs.tour.welcome.body") },
+  { target: "import", title: t("dialogs.tour.import.title"),
+    body: keys(t("dialogs.tour.import.body")) },
+  { target: "folders", title: t("dialogs.tour.folders.title"),
+    body: t("dialogs.tour.folders.body") },
+  { target: "immich", title: t("dialogs.tour.immich.title"),
+    body: t("dialogs.tour.immich.body") },
+  { target: "filmstrip", title: t("dialogs.tour.pickPhoto.title"),
+    body: t("dialogs.tour.pickPhoto.body") },
+  { target: "viewer", title: t("dialogs.tour.viewer.title"),
+    body: t("dialogs.tour.viewer.body") },
+  { target: "edit", title: t("dialogs.tour.edit.title"),
+    body: keys(t("dialogs.tour.edit.body")),
     callouts: [
-      { target: "adjust", title: "Adjustments",
-        body: "The familiar develop panels. Drag a slider or scroll over it; double-click resets it." },
-      { target: "crop", title: "Crop",
-        body: "Aspect ratios, straighten and rotate. R opens it, Enter applies." },
-      { target: "masks", title: "Masks",
-        body: "Brush, gradients, ranges and AI selections: adjust just one part." },
-      { target: "heal", title: "Heal",
-        body: "Click a spot or paint over a line to remove it. Q opens it." },
-      { target: "zones", title: "Zone System",
-        body: "Black and white tones as zones 0–X: see where each falls, then place or adjust it." },
-      { target: "film", title: "Film Simulation",
-        body: "Render the photo as a film, developed and printed or scanned, from measured film and paper data." },
-      { target: "negative", title: "Negative",
-        body: "Turn a photo of a film negative into a positive, picked from its border." },
-      { target: "presets", title: "Presets",
-        body: "Live previews of presets and film looks; save your own." },
+      { target: "adjust", title: t("dialogs.tour.adjust.title"),
+        body: t("dialogs.tour.adjust.body") },
+      { target: "crop", title: t("dialogs.tour.crop.title"),
+        body: t("dialogs.tour.crop.body") },
+      { target: "masks", title: t("dialogs.tour.masks.title"),
+        body: t("dialogs.tour.masks.body") },
+      { target: "heal", title: t("dialogs.tour.heal.title"),
+        body: t("dialogs.tour.heal.body") },
+      { target: "zones", title: t("dialogs.tour.zones.title"),
+        body: t("dialogs.tour.zones.body") },
+      { target: "film", title: t("dialogs.tour.film.title"),
+        body: t("dialogs.tour.film.body") },
+      { target: "negative", title: t("dialogs.tour.negative.title"),
+        body: t("dialogs.tour.negative.body") },
+      { target: "presets", title: t("dialogs.tour.presets.title"),
+        body: t("dialogs.tour.presets.body") },
     ] },
-  { target: "advanced-mode", title: "Advanced modules",
-    body: "The stacked-cards button at the top of Adjustments switches to darktable's modules. Click it again to return to Simple; your photo and edits stay the same." },
-  { target: "history", title: "History",
-    body: keys("Every edit as a step, newest at the top. Click one to go back to it; ⌘Z and ⇧⌘Z step through them.") },
-  { target: "export", title: "Export",
-    body: keys("Export the photo, or every photo shown, to a folder or straight into an Immich album, with borders and file names of your choosing. ⇧⌘E.") },
-  { target: "print", title: "Print",
-    body: keys("Print the photo, or save it as a PDF, with a printer profile; soft proof it first to see the print on screen (S). ⌘P.") },
-  { target: "prefs", title: "Preferences",
-    body: keys("What new photos start with (profile and a preset), and your Immich server. ⌘, opens them.") },
+  { target: "advanced-mode", title: t("dialogs.tour.advanced.title"),
+    body: t("dialogs.tour.advanced.body") },
+  { target: "history", title: t("dialogs.tour.history.title"),
+    body: keys(t("dialogs.tour.history.body")) },
+  { target: "export", title: t("dialogs.tour.export.title"),
+    body: keys(t("dialogs.tour.export.body")) },
+  { target: "print", title: t("dialogs.tour.print.title"),
+    body: keys(t("dialogs.tour.print.body")) },
+  { target: "prefs", title: t("dialogs.tour.preferences.title"),
+    body: keys(t("dialogs.tour.preferences.body")) },
 ];
 
 const PAD = 8; // around the spotlight, in pixels
@@ -163,22 +164,22 @@ export function Tour({ onClose }: { onClose: () => void }) {
       )}
       <div className="tour-card" style={{ left: card.left, top: card.top, width: CARD_W }}>
         <div key={step} className="tour-text">
-          <div className="tour-count">{step + 1} of {STEPS.length}</div>
+          <div className="tour-count">{t("dialogs.tour.counter", { current: step + 1, total: STEPS.length })}</div>
           <h3>{s.title}</h3>
           <p>{s.body}</p>
         </div>
         <label className="tour-hide">
           <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
-          Don't show on startup
+          {t("dialogs.tour.dontShow")}
         </label>
         <div className="tour-foot">
           <div className="tour-dots">
             {STEPS.map((_, k) => <span key={k} className={k === step ? "on" : ""} onClick={() => setStep(k)} />)}
           </div>
-          <button className="btn small" onClick={close}>Skip</button>
-          {step > 0 && <button className="btn small" onClick={() => go(step - 1)}>Back</button>}
+          <button className="btn small" onClick={close}>{t("dialogs.tour.skip")}</button>
+          {step > 0 && <button className="btn small" onClick={() => go(step - 1)}>{t("dialogs.tour.back")}</button>}
           <button className="btn small primary" onClick={() => go(step + 1)}>
-            {step === STEPS.length - 1 ? "Done" : "Next"}</button>
+            {step === STEPS.length - 1 ? t("dialogs.common.done") : t("dialogs.tour.next")}</button>
         </div>
       </div>
     </div>

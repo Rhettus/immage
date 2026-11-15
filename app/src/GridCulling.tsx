@@ -7,6 +7,7 @@ import { commands } from "./commands";
 import { fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
 import { LABEL_COLORS, fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
+import { t } from "./i18n";
 
 export function GridCulling({ images, allImages, selection, anchor, thumbnail, prepare, onEdit, onMeta, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
@@ -268,7 +269,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
   useEffect(() => {
     if (targets.length && lists.length === targets.length)
-      document.querySelector<HTMLInputElement>('[aria-label="Grid keywords"] input')?.focus();
+      document.querySelector<HTMLInputElement>("[data-grid-keywords-dialog] input")?.focus();
   }, [targets, lists.length]);
   const change = async (add: string[], remove: string[]) => {
     if (writing) return;
@@ -279,27 +280,27 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
         onKeywords(i.imgid, list); return list;
       }));
       setLists(result.map((r, n) => r.status === "fulfilled" ? r.value : lists[n] ?? []));
-      if (result.some(r => r.status === "rejected")) setError("Some photos could not be updated. Retry the change.");
+      if (result.some(r => r.status === "rejected")) setError(t("library.culling.updateError"));
     } finally { setWriting(false); }
   };
   const shared = lists.length === targets.length ? (lists[0] ?? []).filter(k => lists.every(l => l.includes(k))) : [];
   return <>
     {current && <div className="modal-backdrop" style={{ zIndex: 1000, background: "rgba(0, 0, 0, .65)" }}
-      onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} role="dialog" aria-modal="true" aria-label="Culling preview">
+      onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} role="dialog" aria-modal="true" aria-label={t("library.culling.preview")}>
       {([-1, 1] as const).map(dir => {
         const next = images[images.indexOf(current) + dir];
         return <button key={dir} className={`culling-arrow ${dir < 0 ? "previous" : "next"}`}
           style={dir < 0 ? { left: `max(4px, calc(50% - ${fitted.width / 2 + 40}px))` }
             : { right: `max(4px, calc(50% - ${fitted.width / 2 + 40}px))` }}
-          disabled={!next} aria-label={dir < 0 ? "Previous photo (left arrow key)" : "Next photo (right arrow key)"}
-          title={dir < 0 ? "Previous photo (←)" : "Next photo (→)"}
+          disabled={!next} aria-label={t(dir < 0 ? "library.culling.previous" : "library.culling.next")}
+          title={t(dir < 0 ? "library.culling.previous" : "library.culling.next")}
           onClick={() => { if (next) { direction.current = dir; setPhoto(next.imgid); } }} />;
       })}
       <div className="culling-lightbox" style={fitted}>
         <div>{current.filename} · {images.indexOf(current) + 1}/{images.length}
-          <button onClick={() => setPhoto(null)}>Close (F / Esc)</button><button onClick={() => void keywords([current])}>Keywords (K)</button>
-          <button onClick={() => { zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); }}>{detailed ? "Fit" : "100%"}</button>
-          <button onClick={() => onEdit(current)}>Edit</button>
+          <button onClick={() => setPhoto(null)}>{t("library.culling.close")}</button><button onClick={() => void keywords([current])}>{t("library.culling.keywords")}</button>
+          <button onClick={() => { zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); }}>{detailed ? t("library.toolbar.fit") : "100%"}</button>
+          <button onClick={() => onEdit(current)}>{t("library.culling.edit")}</button>
 </div>
         <div ref={viewport} style={{ flex: 1, overflow: "auto", minHeight: 0,
           cursor: detailed && spaceHeld ? (panning ? "grabbing" : "grab") : detailed ? "zoom-out" : "zoom-in" }}
@@ -332,38 +333,38 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
           </div>
         </div>
         <div className="culling-bottom-bar">
-          <span className="tool-group" role="group" aria-label="Photo rating">
-            <button className={`tool${current.rejected ? " on" : ""}`} aria-label="Reject photo" aria-pressed={current.rejected}
-              title="Reject (X)" onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
+          <span className="tool-group" role="group" aria-label={t("library.culling.rating")}>
+            <button className={`tool${current.rejected ? " on" : ""}`} aria-label={t("library.culling.reject")} aria-pressed={current.rejected}
+              title={t("library.culling.rejectShortcut")} onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
             {[1, 2, 3, 4, 5].map(n => <button key={n} className="tool"
-              aria-label={`${n} star${n > 1 ? "s" : ""}`} aria-pressed={!current.rejected && current.rating >= n}
-              title={`${n} star${n > 1 ? "s" : ""} (${n}); click again to clear`}
+              aria-label={t("library.culling.stars", { count: n })} aria-pressed={!current.rejected && current.rating >= n}
+              title={t("library.culling.starsClear", { count: n })}
               onClick={() => onMeta(current, { rating: current.rating === n ? 0 : n, rejected: false })}>
               <StarIcon filled={!current.rejected && current.rating >= n} />
             </button>)}
           </span>
-          <span className="tool-group" role="group" aria-label="Photo color labels">
+          <span className="tool-group" role="group" aria-label={t("library.culling.labels")}>
             {LABEL_COLORS.map((color, n) => {
-              const name = ["Red", "Yellow", "Green", "Blue", "Purple"][n];
+              const name = t(["library.culling.red", "library.culling.yellow", "library.culling.green", "library.culling.blue", "library.culling.purple"][n]);
               return <button key={color} className={`swatch${current.labels & (1 << n) ? " on" : ""}`}
-                style={{ background: color }} aria-label={`${name} label`} aria-pressed={!!(current.labels & (1 << n))}
-                title={`${name} label${n < 4 ? ` (${n + 6})` : ""}`}
+                style={{ background: color }} aria-label={t("library.culling.colorLabel", { color: name })} aria-pressed={!!(current.labels & (1 << n))}
+                title={t(n < 4 ? "library.culling.colorLabelShortcut" : "library.culling.colorLabel", { color: name, key: n + 6 })}
                 onClick={() => onMeta(current, { labels: current.labels ^ (1 << n) })} />;
             })}
           </span>
-          <span className="culling-status" role="status">{busy ? "Loading preview…" : ""}</span>
+          <span className="culling-status" role="status">{busy ? t("library.culling.loading") : ""}</span>
         </div>
-        {error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>Retry</button></div>}
+        {error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>{t("library.culling.retry")}</button></div>}
       </div>
     </div>}
-    {!!targets.length && <div className="modal-backdrop" style={{ zIndex: 1001 }} role="dialog" aria-label="Grid keywords">
-      <div className="modal"><h2>Keywords · {targets.length} {targets.length === 1 ? "photo" : "photos"}</h2>
+    {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog" aria-label={t("library.culling.gridKeywords")}>
+      <div className="modal"><h2>{t("library.culling.keywordPhotos", { count: targets.length })}</h2>
         <fieldset disabled={writing} style={{ border: 0, padding: 0 }}>
         {lists.length === targets.length && <KeywordingPanel keywords={shared} known={known} open onToggle={() => {}}
           onAdd={names => { if (!writing) void change(names, []); }}
           onRemove={name => { if (!writing) void change([], [name]); }} />}
         </fieldset>
-        {error && <p role="alert">{error}</p>}<button disabled={writing} onClick={() => { ++keywordGeneration.current; setTargets([]); }}>Close</button>
+        {error && <p role="alert">{error}</p>}<button disabled={writing} onClick={() => { ++keywordGeneration.current; setTargets([]); }}>{t("library.culling.close")}</button>
       </div>
     </div>}
   </>;

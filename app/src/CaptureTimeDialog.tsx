@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ImageEntry } from "./library";
 import { captureMillis, captureShift, captureStamp, type CaptureTimeEntry } from "./captureTime";
+import { t, formatNumber } from "./i18n";
 
 export function CaptureTimeDialog({ targets, reference, undo, onApply, onClose }: {
   targets: ImageEntry[];
@@ -28,15 +29,15 @@ export function CaptureTimeDialog({ targets, reference, undo, onApply, onClose }
   let entries: CaptureTimeEntry[] = undo ?? [];
   let validation = "";
   if (!undo) {
-    if (!Number.isFinite(delta)) validation = "Enter a valid date and time, including seconds.";
-    else if (!delta) validation = "Enter the correct time to calculate an adjustment.";
+    if (!Number.isFinite(delta)) validation = t("dialogs.captureTime.invalidDate");
+    else if (!delta) validation = t("dialogs.captureTime.enterCorrectTime");
     else {
       try { entries = eligible.map((i) => ({ imgid: i.imgid, before: i.exif.datetime, after: captureStamp(captureMillis(i.exif.datetime) + delta) })); }
       catch (e) { validation = String(e); }
     }
   }
   const count = undo?.length ?? eligible.length;
-  const photos = `${count} photo${count === 1 ? "" : "s"}`;
+  const photos = t("dialogs.captureTime.photos", { count: formatNumber(count) });
   const close = () => { if (!busy) onClose(); };
   const apply = async () => {
     if (busy || validation || !count || result) return;
@@ -57,29 +58,29 @@ export function CaptureTimeDialog({ targets, reference, undo, onApply, onClose }
       }
     }}>
     <div ref={box} className="modal capture-time" role="dialog" aria-modal="true" aria-labelledby="capture-time-title">
-      <div className="modal-head"><h2 id="capture-time-title">{undo ? "Undo Capture Time Adjustment" : "Adjust Capture Time"}</h2></div>
+      <div className="modal-head"><h2 id="capture-time-title">{undo ? t("dialogs.captureTime.undoTitle") : t("dialogs.captureTime.title")}</h2></div>
       <div className="modal-body">
         {!undo && <>
-          <p>Adjust capture time for <strong>{photos}</strong>.</p>
-          <p>Reference photo: <strong>{reference.filename}</strong></p>
-          <p>Recorded time: {original.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3")}</p>
-          <label className="row">Correct time <input className="field" type="datetime-local" step="0.001"
+          <p>{t("dialogs.captureTime.adjustFor", { photos })}</p>
+          <p>{t("dialogs.captureTime.reference", { filename: reference.filename })}</p>
+          <p>{t("dialogs.captureTime.recorded", { time: original.replace(/^(\d{4}):(\d{2}):(\d{2})/, "$1-$2-$3") })}</p>
+          <label className="row">{t("dialogs.captureTime.correctTime")} <input className="field" type="datetime-local" step="0.001"
             min="0001-01-01T00:00:00" max="9999-12-31T23:59:59.999" value={corrected} disabled={busy || !!result}
             onChange={(e) => { setCorrected(e.target.value.length === 16 ? `${e.target.value}:00` : e.target.value); setError(""); }} /></label>
-          {targets.length > eligible.length && <p>{targets.length - eligible.length} photo{targets.length - eligible.length === 1 ? "" : "s"} without a valid recorded capture time will be skipped.</p>}
+          {targets.length > eligible.length && <p>{t("dialogs.captureTime.invalidSkipped", { count: formatNumber(targets.length - eligible.length) })}</p>}
         </>}
         {validation ? <p className="note-plain">{validation}</p> : <p>
-          {undo ? `Restore the previous capture times for ${photos}?` : `Move capture times ${captureShift(delta)} for ${photos}?`}
-          {!undo && " All photos keep their relative timing."}
+          {undo ? t("dialogs.captureTime.restoreConfirm", { photos }) : t("dialogs.captureTime.adjustConfirm", { shift: captureShift(delta), photos })}
+          {!undo && ` ${t("dialogs.captureTime.keepRelativeTiming")}`}
         </p>}
-        <p className="note-plain">Changes are saved to XMP sidecars. Original image files are unchanged.</p>
+        <p className="note-plain">{t("dialogs.captureTime.savedSidecars")}</p>
         {error && <p role="alert">{error}</p>}
         {result && <p role="status">{result}</p>}
       </div>
       <div className="modal-foot">
-        <button className="btn" disabled={busy} onClick={close}>{result ? "Done" : "Cancel"}</button>
+        <button className="btn" disabled={busy} onClick={close}>{result ? t("dialogs.common.done") : t("dialogs.common.cancel")}</button>
         {!result && <button className="btn primary" disabled={busy || !!validation || !count} onClick={() => void apply()}>
-          {busy ? "Saving…" : `${undo ? "Restore" : "Adjust"} ${photos}`}
+          {busy ? t("dialogs.common.saving") : t(undo ? "dialogs.captureTime.restore" : "dialogs.captureTime.adjust", { photos })}
         </button>}
       </div>
     </div>

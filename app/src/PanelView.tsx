@@ -28,6 +28,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { panelValues, peekIds } from "./panelValues";
 import { settings } from "./settings";
 import type { ImageEntry } from "./library";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // a preset's values but the photo's modules: the tone mapper, which presets
 // made when it was a slider may hold
@@ -45,7 +47,7 @@ export function WBTools({ values, asShot, picking, disabled, onPick, onAuto, onP
   return (
     <div className="wb-tools">
       <button className={`tool${picking ? " on" : ""}`} disabled={disabled} onClick={onPick}
-              title="pick a neutral spot in the image (W)"><PipetteIcon /></button>
+              title={t("fields.wb.pickHint")}><PipetteIcon /></button>
       <span className="wb-label">WB</span>
       <select value={current} disabled={disabled}
               onChange={(e) => {
@@ -54,10 +56,10 @@ export function WBTools({ values, asShot, picking, disabled, onPick, onAuto, onP
                 else if (name === "As Shot") { if (asShot) onPreset(asShot); }
                 else { const p = WB_PRESETS.find(([n]) => n === name); if (p) onPreset(p[1]); }
               }}>
-        <option>As Shot</option>
-        <option>Auto</option>
-        {WB_PRESETS.map(([n]) => <option key={n}>{n}</option>)}
-        {current === "Custom" && <option>Custom</option>}
+        <option value="As Shot">{fieldText("As Shot")}</option>
+        <option value="Auto">{fieldText("Auto")}</option>
+        {WB_PRESETS.map(([n]) => <option key={n} value={n}>{fieldText(n)}</option>)}
+        {current === "Custom" && <option value="Custom">{fieldText("Custom")}</option>}
       </select>
     </div>
   );
@@ -83,12 +85,8 @@ export function sampleSpot(px: Uint8ClampedArray, width: number, height: number,
 
 // what each Upright button does, as its tooltip
 export const UPRIGHT_TITLES = [
-  "no Upright correction: the Manual sliders alone",
-  "a balanced correction: level, plumb, and the horizontal lines when the photo has enough of them",
-  "draw two to four guides along lines that should be plumb or level",
-  "level the photo: rotation only",
-  "level the photo and make its vertical lines plumb",
-  "level, plumb and square: the vertical and horizontal lines both",
+  t("fields.upright.none"), t("fields.upright.auto"), t("fields.upright.guided"),
+  t("fields.upright.level"), t("fields.upright.vertical"), t("fields.upright.full"),
 ];
 
 // Upright's buttons as icons, in UPRIGHT_MODES' order: Level and Vertical
@@ -142,7 +140,7 @@ function PeekButton({ ids, disabled, onPeek }: { ids: string[]; disabled: boolea
   useEffect(() => { if (disabled) live(false); }, [disabled, live]);
   return (
     <button type="button" className={`advanced-toggle panel-peek${held ? " on" : ""}`} data-panel-peek aria-pressed={held}
-            disabled={disabled} title="hold to see the photo without this panel's adjustments"
+            disabled={disabled} title={t("fields.panel.peekHint")}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
@@ -190,7 +188,7 @@ export function PanelView(props: PanelProps) {
   const option = useLiveEvent((preview: OptionPreview | null) => props.onOptionPreview?.(preview));
   const onTurn = useLiveEvent((how: Turn) => props.onTurn?.(how));
   const onPeek = useLiveEvent((ids: string[] | null) => props.onPeek?.(ids));
-  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={props.panel.advancedTitle ?? props.panel.title} open={props.open} onToggle={onToggle}
+  if (advancedMode) return <AdvancedGroup id={props.panel.id} title={fieldText(props.panel.advancedTitle ?? props.panel.title)} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
                                        onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} photos={props.photos} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
@@ -285,18 +283,18 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
   return (
     <div className="panel adjust" data-panel-id={p.id}>
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
-        <span>{p.title}</span>
+        <span>{fieldText(p.title)}</span>
         {curveMark && (
-          <span className="probe-chip" title="the photo under the pointer: its color, and where it sits on the curve (0-255)">
+          <span className="probe-chip" title={t("fields.panel.probeCurveHint")}>
             {`R ${Math.round(probe!.rgb[0])} G ${Math.round(probe!.rgb[1])} B ${Math.round(probe!.rgb[2])}`}
             <b>{`${Math.round(curveMark.x * 255)} → ${Math.round(curveMark.y * 255)}`}</b>
           </span>
         )}
         {probe && (p.id === "hsl" || p.id === "bw") && (
-          <span className="probe-chip" title={p.id === "bw" ? "the color under the pointer before black and white, and its band"
-                                                             : "the color under the pointer, and its band"}>
+          <span className="probe-chip" title={p.id === "bw" ? t("fields.panel.probeBwHint")
+                                                             : t("fields.panel.probeColorHint")}>
             {bandSrc && <i style={{ background: `rgb(${bandSrc.map(Math.round).join(",")})` }} />}
-            {!bandSrc ? "…" : weights ? BANDS[weights.indexOf(Math.max(...weights))][1] : "neutral"}
+            {!bandSrc ? "…" : weights ? fieldText(BANDS[weights.indexOf(Math.max(...weights))][1]) : t("fields.panel.neutral")}
           </span>
         )}
         {/* the More controls switch, where a panel has one, then the eye that
@@ -316,9 +314,9 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
           {detailLoupe}
           {p.graph === "tonecurve" && (
             <div className="segmented tabs">
-              <button className={pointMode ? "active" : ""} onClick={() => !pointMode && toPoints()}>Point</button>
+              <button className={pointMode ? "active" : ""} onClick={() => !pointMode && toPoints()}>{t("fields.panel.point")}</button>
               <button className={!pointMode ? "active" : ""} onClick={() => pointMode && onChange(controlById.get("tc_mode")!, 0)}>
-                Parametric
+                {t("fields.panel.parametric")}
               </button>
             </div>
           )}
@@ -338,7 +336,7 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
                         draw={curveChannel === "rgb" ? undefined : channelCurve}
                         onChange={(pts) => onChangeMany(Object.entries(pointValues(pts, curveChannel)))} />
           )}
-          {foreign && <div className="note">custom curve from darktable; moving a slider replaces it</div>}
+          {foreign && <div className="note">{t("fields.panel.foreignCurve")}</div>}
           {p.graph === "colorwheels" && (
             <GradingWheels prefix="cg" mode={wheels} onMode={setWheels} values={values} disabled={disabled}
                            onChange={(es) => es.forEach(([id, v]) => onChange(controlById.get(id)!, v))}
@@ -348,7 +346,7 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
             <div className="segmented tabs">
               {p.sections.map((s, i) => (
                 <button key={s.title} className={i === tab ? "active" : ""} onClick={() => setTab(i)}>
-                  {s.title}
+                  {fieldText(s.title)}
                 </button>
               ))}
             </div>
@@ -364,7 +362,7 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
                                            onPreview={onPreview} />}
                 {s.title === "White Balance" && wbTools}
                 {s.title === "White Balance" && session?.wbInModule && (
-                  <div className="note">white balance comes from the white balance module, with color calibration off; Temp and Tint turn color calibration on, which adapts it again</div>
+                  <div className="note">{t("fields.panel.wbModuleNote")}</div>
                 )}
                 {s.title === "Tone" && toneTools}
                 {s.title === "AI Denoise" && denoiseTools}
@@ -398,8 +396,8 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
               ? run.map((g) => (
                   <div className="subcard" key={g.title}>
                     <div className="subcard-head">
-                      {g.subtitle ?? g.title}
-                      {g.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{g.tag}</span>}
+                      {fieldText(g.subtitle ?? g.title)}
+                      {g.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{fieldText(g.tag)}</span>}
                     </div>
                     {content(g)}
                   </div>
@@ -409,8 +407,8 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
             return (
               <section key={title} data-section-id={title}>
                 <h3 className="fold" onClick={() => toggleSection(title)}>
-                  {title}
-                  {!s.group && s.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{s.tag}</span>}
+                  {fieldText(title)}
+                  {!s.group && s.tag && <span className="tag"><Sparkles size={11} strokeWidth={2} />{fieldText(s.tag)}</span>}
                   <Chevron open={!shut} />
                 </h3>
                 <Collapse open={!shut}><div className="section-body">{s.title === "Presence" && presenceLoupe}{body}</div></Collapse>
@@ -419,8 +417,8 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
           })}
           {advancedEdits > 0 && (
             <button type="button" className="advanced-edits" data-advanced-edits={advancedEdits} onClick={onAdvancedEdits}
-                    title="Edits made in Advanced mode that these sliders cannot show">
-              <span className="advanced-dot" /><span><b>{advancedEdits} advanced edit{advancedEdits === 1 ? "" : "s"}</b> here keep rendering. Editing mode…</span>
+                    title={t("fields.panel.advancedEditsHint")}>
+              <span className="advanced-dot" /><span>{t(advancedEdits === 1 ? "fields.panel.advancedEdit" : "fields.panel.advancedEdits", { count: advancedEdits })}</span>
             </button>
           )}
         </div>
@@ -449,9 +447,9 @@ export function PresetRow({ presets, disabled, onApply, onPreview, before }: {
           onClick: () => { onPreview(null); onApply(Object.entries(pr.values)); },
         };
         return pr.swatch
-          ? <button key={pr.label} className="swatch" title={pr.label} aria-label={pr.label}
+          ? <button key={pr.label} className="swatch" title={fieldText(pr.label)} aria-label={fieldText(pr.label)}
                     style={{ background: pr.swatch }} {...props} />
-          : <button key={pr.label} className="btn small" {...props}>{pr.label}</button>;
+          : <button key={pr.label} className="btn small" {...props}>{fieldText(pr.label)}</button>;
       })}
     </div>
   );

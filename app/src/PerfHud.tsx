@@ -1,3 +1,5 @@
+import { fieldText } from "./fieldText";
+import { t as tr, formatDate } from "./i18n";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -18,6 +20,22 @@ export const STAGE_COLORS: Record<Stage, string> = {
   handoff: PAGE, draw: PAGE, histogram: HIST, paint: PAGE,
 };
 
+const STAGE_LABELS: Record<Stage, string> = {
+  queue: tr("interface.perf.stage.queue"),
+  set: tr("interface.perf.stage.set"),
+  lock: tr("interface.perf.stage.lock"),
+  pipeline: tr("interface.perf.stage.pipeline"),
+  write: tr("interface.perf.stage.write"),
+  read: tr("interface.perf.stage.read"),
+  probe: tr("interface.perf.stage.probe"),
+  ipc: tr("interface.perf.stage.ipc"),
+  handoff: tr("interface.perf.stage.handoff"),
+  draw: tr("interface.perf.stage.draw"),
+  histogram: tr("interface.perf.stage.histogram"),
+  paint: tr("interface.perf.stage.paint"),
+};
+const kindLabel = (kind: string) => ({ edit: tr("interface.perf.kind.edit"), view: tr("interface.perf.kind.view"), base: tr("interface.perf.kind.base") } as Record<string, string>)[kind] ?? kind;
+
 const ms = (v: number) => (v >= 100 ? v.toFixed(0) : v.toFixed(1));
 // a session's cumulative time, which outgrows milliseconds
 const long = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}s` : ms(v));
@@ -31,7 +49,7 @@ function loadTab(): Tab {
 // from how long ago, in ms
 function ago(elapsed: number) {
   const s = Math.round(elapsed / 1000);
-  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+  return s < 60 ? tr("interface.perf.secondsAgo", { n: s }) : tr("interface.perf.minutesAgo", { n: Math.round(s / 60) });
 }
 
 function Stages({ s }: { s: Sample }) {
@@ -40,12 +58,12 @@ function Stages({ s }: { s: Sample }) {
       <div className="perf-bar">
         {STAGES.map((k) => s.stages[k] > 0.05 && (
           <i key={k} style={{ flexGrow: s.stages[k], background: STAGE_COLORS[k] }}
-             title={`${k} ${ms(s.stages[k])} ms`} />
+             title={`${STAGE_LABELS[k]} ${ms(s.stages[k])} ms`} />
         ))}
       </div>
       <div className="perf-legend">
         {STAGES.filter((k) => s.stages[k] >= 1).map((k) => (
-          <span key={k}><i style={{ background: STAGE_COLORS[k] }} />{k} {ms(s.stages[k])}</span>
+          <span key={k}><i style={{ background: STAGE_COLORS[k] }} />{STAGE_LABELS[k]} {ms(s.stages[k])}</span>
         ))}
       </div>
     </>
@@ -53,14 +71,14 @@ function Stages({ s }: { s: Sample }) {
 }
 
 const Pipe = ({ pipe }: { pipe: string }) => (pipe && pipe !== "full" ? <em className="perf-pipe">{pipe}</em> : null);
-const flags = (m: { gpu: boolean; tiled: boolean }) => `${m.gpu ? " (GPU)" : ""}${m.tiled ? " tiled" : ""}`;
+const flags = (m: { gpu: boolean; tiled: boolean }) => `${m.gpu ? " (GPU)" : ""}${m.tiled ? tr("interface.perf.tiled") : ""}`;
 
 function Modules({ list }: { list: Timing[] }) {
   return (
     <>
       {list.map((m, i) => (
         <div key={i} className="perf-row">
-          <span>{m.label}<Pipe pipe={m.pipe} />{flags(m)}</span><b>{ms(m.ms)} ms</b>
+          <span>{fieldText(m.label)}<Pipe pipe={m.pipe} />{flags(m)}</span><b>{ms(m.ms)} ms</b>
         </div>
       ))}
     </>
@@ -77,22 +95,22 @@ function Now() {
   const recomputed = last?.modules.filter((m) => m.kind === "module").length ?? 0;
   return (
     <>
-      <div className="perf-row"><span>display</span><b>{perf.fps.toFixed(0)} fps</b><span>{perf.longFrames} long</span></div>
-      <div className="perf-row"><span>renders</span><b>{lastSecond}/s</b></div>
-      <div className="perf-row"><span>edit → pixels</span><b>{ms(p50)} ms</b><span>p95 {ms(p95)}</span></div>
+      <div className="perf-row"><span>{tr("interface.perf.display")}</span><b>{perf.fps.toFixed(0)} fps</b><span>{tr("interface.perf.longFrames", { n: perf.longFrames })}</span></div>
+      <div className="perf-row"><span>{tr("interface.perf.renders")}</span><b>{lastSecond}/s</b></div>
+      <div className="perf-row"><span>{tr("interface.perf.editPixels")}</span><b>{ms(p50)} ms</b><span>p95 {ms(p95)}</span></div>
       {last && (
         <>
           <div className="perf-row">
-            <span>last {last.kind}{last.draft ? " (draft)" : ""}</span><b>{ms(last.total)} ms</b>
-            <span>{last.width}×{last.height}{last.edits > 1 ? `, ${last.edits} moves` : ""}</span>
+            <span>{tr("interface.perf.lastKind", { kind: kindLabel(last.kind) })}{last.draft ? tr("interface.perf.draft") : ""}</span><b>{ms(last.total)} ms</b>
+            <span>{last.width}×{last.height}{last.edits > 1 ? tr("interface.perf.moves", { n: last.edits }) : ""}</span>
           </div>
           <Stages s={last} />
           {modules.length > 0 && (
             <div className="perf-modules">
-              <span className="perf-sub">{recomputed} modules recomputed</span>
+              <span className="perf-sub">{tr("interface.perf.recomputed", { n: recomputed })}</span>
               <div className="perf-scroll"><Modules list={modules} /></div>
               <div className="perf-row perf-total">
-                <span>total</span><b>{ms(modules.reduce((t, m) => t + m.ms, 0))} ms</b>
+                <span>{tr("interface.perf.total")}</span><b>{ms(modules.reduce((t, m) => t + m.ms, 0))} ms</b>
               </div>
             </div>
           )}
@@ -112,18 +130,18 @@ function SessionTab() {
   return (
     <>
       <div className="perf-row">
-        <span className="perf-sub">since {new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-        <button className="perf-reset" onClick={() => { perf.resetSession(); redraw((n) => n + 1); }}>Reset</button>
+        <span className="perf-sub">{tr("interface.perf.since", { time: formatDate(since, { hour: "2-digit", minute: "2-digit" }) })}</span>
+        <button className="perf-reset" onClick={() => { perf.resetSession(); redraw((n) => n + 1); }}>{tr("interface.perf.reset")}</button>
       </div>
-      {kinds.length === 0 && <div className="perf-sub">no renders yet</div>}
+      {kinds.length === 0 && <div className="perf-sub">{tr("interface.perf.empty")}</div>}
       {kinds.map((k) => {
         const s = worst[k]!;
         const top = s.modules.filter((m) => m.kind !== "other").sort((a, b) => b.ms - a.ms).slice(0, 3);
         return (
           <div key={k} className="perf-worst">
             <div className="perf-row">
-              <span>slowest {k}{s.draft ? " (draft)" : ""}</span><b>{ms(s.total)} ms</b>
-              <span>{s.width}×{s.height}{s.edits > 1 ? `, ${s.edits} moves` : ""}, {ago(performance.now() - s.at)}</span>
+              <span>{tr("interface.perf.slowestKind", { kind: kindLabel(k) })}{s.draft ? tr("interface.perf.draft") : ""}</span><b>{ms(s.total)} ms</b>
+              <span>{s.width}×{s.height}{s.edits > 1 ? tr("interface.perf.moves", { n: s.edits }) : ""}, {ago(performance.now() - s.at)}</span>
             </div>
             <Stages s={s} />
             <Modules list={top} />
@@ -132,17 +150,17 @@ function SessionTab() {
       })}
       {stats.length > 0 && (
         <div className="perf-modules">
-          <div className="perf-row perf-thead"><span>module</span><i>runs</i><i>last</i><i>avg</i><i>max</i><b>total</b></div>
+          <div className="perf-row perf-thead"><span>{tr("interface.perf.module")}</span><i>{tr("interface.perf.runs")}</i><i>{tr("interface.perf.last")}</i><i>{tr("interface.perf.avg")}</i><i>{tr("interface.perf.max")}</i><b>{tr("interface.perf.total")}</b></div>
           <div className="perf-scroll">
             {stats.map((m) => (
-              <div key={`${m.label} ${m.pipe}`} className="perf-row" title={`max ${ago(Date.now() - m.maxAt)}`}>
-                <span>{m.label}<Pipe pipe={m.pipe} />{flags(m)}</span>
+              <div key={`${m.label} ${m.pipe}`} className="perf-row" title={tr("interface.perf.maximumAgo", { time: ago(Date.now() - m.maxAt) })}>
+                <span>{fieldText(m.label)}<Pipe pipe={m.pipe} />{flags(m)}</span>
                 <i>{m.runs}</i><i>{ms(m.last)}</i><i>{ms(m.total / m.runs)}</i><i className="perf-max">{ms(m.max)}</i><b>{long(m.total)}</b>
               </div>
             ))}
           </div>
           <div className="perf-row perf-total">
-            <span>total</span><i>{runs}</i><i /><i /><i /><b>{long(total)}</b>
+            <span>{tr("interface.perf.total")}</span><i>{runs}</i><i /><i /><i /><b>{long(total)}</b>
           </div>
         </div>
       )}
@@ -166,10 +184,10 @@ export function PerfHud({ onClose }: { onClose: () => void }) {
     <div className="perf-hud" onPointerDown={(e) => e.stopPropagation()}>
       <div className="perf-head">
         <nav className="perf-tabs">
-          <button className={tab === "now" ? "on" : ""} onClick={() => pick("now")}>Now</button>
-          <button className={tab === "session" ? "on" : ""} onClick={() => pick("session")}>Session</button>
+          <button className={tab === "now" ? "on" : ""} onClick={() => pick("now")}>{tr("interface.perf.now")}</button>
+          <button className={tab === "session" ? "on" : ""} onClick={() => pick("session")}>{tr("interface.perf.session")}</button>
         </nav>
-        <button className="perf-close" title="close (⇧⌘P)" aria-label="close" onClick={onClose}><X size={13} /></button>
+        <button className="perf-close" title={tr("interface.perf.closeShortcut")} aria-label={tr("interface.perf.close")} onClick={onClose}><X size={13} /></button>
       </div>
       {tab === "now" ? <Now /> : <SessionTab />}
     </div>

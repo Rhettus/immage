@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { ImageEntry } from "./library";
+import { t } from "./i18n";
 import { commands, type Place } from "./commands";
 
 type Location = NonNullable<ImageEntry["location"]>;
@@ -113,9 +114,9 @@ export function LocationEditor({ image, onSaved }: {
           if (!active) return;
           const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
           tile.onload = () => { URL.revokeObjectURL(url); done(undefined, tile); };
-          tile.onerror = () => { URL.revokeObjectURL(url); done(new Error("map tile unavailable"), tile); };
+          tile.onerror = () => { URL.revokeObjectURL(url); done(new Error(t("library.location.tileUnavailable")), tile); };
           tile.src = url;
-        }).catch(() => { if (!active) return; done(new Error("map tile unavailable"), tile); setError("Map unavailable. Coordinate editing still works offline."); });
+        }).catch(() => { if (!active) return; done(new Error(t("library.location.tileUnavailable")), tile); setError(t("library.location.offline")); });
         return tile;
       },
     });
@@ -177,12 +178,12 @@ export function LocationEditor({ image, onSaved }: {
       const results = await commands.mapSearch(term);
       if (request !== placeRequest.current) return;
       setPlaces(results);
-      if (!results.length) setError("No places found.");
+      if (!results.length) setError(t("library.location.noneFound"));
     } catch (e) {
       if (request !== placeRequest.current) return;
       const message = String(e);
       setError(/(?:missing|required|add).*(?:geoapify|api.?key)|(?:geoapify|api.?key).*(?:missing|required|settings)/i.test(message)
-        ? "Place search needs a Geoapify API key. Add it in Preferences → General."
+        ? t("library.location.apiKey")
         : `Place search failed: ${message}`);
     } finally { if (request === placeRequest.current) setSearching(false); }
   };
@@ -191,17 +192,17 @@ export function LocationEditor({ image, onSaved }: {
   const mapUi = showMap && createPortal(<div ref={mapRegion} className={`location-map-region${expanded ? " expanded" : ""}${dark ? " dark" : ""}`} style={mapBounds}
     onWheel={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
     <div className="location-map-toolbar">
-      <span>Click or drag the pin, then Apply</span>
+      <span>{t("library.location.pinHelp")}</span>
       <form className="location-search" onSubmit={(event) => { event.preventDefault(); void search(); }}>
-        <input aria-label="Search places" value={query} onChange={(event) => { placeRequest.current++; setSearching(false); setPlaces([]); setQuery(event.target.value); }} placeholder="Search places" />
-        <button className="btn" type="submit" disabled={!query.trim() || searching}>{searching ? "Searching…" : "Find places"}</button>
+        <input aria-label={t("library.location.searchPlaces")} value={query} onChange={(event) => { placeRequest.current++; setSearching(false); setPlaces([]); setQuery(event.target.value); }} placeholder={t("library.location.searchPlaces")} />
+        <button className="btn" type="submit" disabled={!query.trim() || searching}>{searching ? t("library.location.searching") : t("library.location.findPlaces")}</button>
       </form>
-      <label><input type="checkbox" checked={dark} onChange={(event) => setDark(event.target.checked)} /> Dark</label>
-      {!expanded && <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? "Saving…" : "Apply"}</button>}
-      <button ref={collapseButton} className="btn" aria-label={expanded ? "Collapse map" : "Expand map"}
-        onClick={() => { focusAfterCollapse.current = false; setExpanded(!expanded); }}>{expanded ? "Collapse" : "Expand"}</button>
+      <label><input type="checkbox" checked={dark} onChange={(event) => setDark(event.target.checked)} /> {t("library.location.dark")}</label>
+      {!expanded && <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? t("library.location.saving") : t("library.location.apply")}</button>}
+      <button ref={collapseButton} className="btn" aria-label={expanded ? t("library.location.collapseMap") : t("library.location.expandMap")}
+        onClick={() => { focusAfterCollapse.current = false; setExpanded(!expanded); }}>{expanded ? t("library.location.collapse") : t("library.location.expand")}</button>
     </div>
-    {places.length > 0 && <div className="location-search-results" role="group" aria-label="Place search results">
+    {places.length > 0 && <div className="location-search-results" role="group" aria-label={t("library.location.results")}>
       {places.map((place, index) => <button className="location-search-result" key={`${place.label}-${index}`}
         onClick={() => {
           if (place.bounds) map.current?.fitBounds([[place.bounds[0], place.bounds[1]], [place.bounds[2], place.bounds[3]]], { maxZoom: 14 });
@@ -211,16 +212,16 @@ export function LocationEditor({ image, onSaved }: {
     </div>}
     {expanded && error && <p className="location-map-error" role="alert">{error}</p>}
     {expanded && <div className="location-map-overlay-actions">
-      <label htmlFor={`map-coordinates-${image.imgid}`}>Latitude, longitude</label>
+      <label htmlFor={`map-coordinates-${image.imgid}`}>{t("library.location.coordinates")}</label>
       <input id={`map-coordinates-${image.imgid}`} className="field" value={draft} disabled={disabled}
         placeholder="37.7749, -122.4194" onChange={(event) => setDraft(event.target.value)} />
-      <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? "Saving…" : "Apply"}</button>
-      <button className="btn" disabled={disabled || !saved} onClick={() => void save(null)}>Remove location</button>
+      <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? t("library.location.saving") : t("library.location.apply")}</button>
+      <button className="btn" disabled={disabled || !saved} onClick={() => void save(null)}>{t("library.location.remove")}</button>
     </div>}
     <div ref={host} className="location-map" data-map-zoom={map.current?.getZoom() ?? ""}
-      aria-label="Location map" />
+      aria-label={t("library.location.map")} />
     <div className="location-attribution">© <button onClick={() => void openUrl(osmCopyright)}>OpenStreetMap contributors</button>
-      <span> · Search by <button onClick={() => void openUrl("https://www.geoapify.com/")}>Geoapify</button></span></div>
+      <span> · {t("library.location.searchBy")} <button onClick={() => void openUrl("https://www.geoapify.com/")}>Geoapify</button></span></div>
   </div>, portalRoot);
 
   useEffect(() => {
@@ -234,21 +235,21 @@ export function LocationEditor({ image, onSaved }: {
   }, [showMap]);
 
   return <section className="location-editor">
-    <div className="location-heading">Location</div>
-    <label htmlFor={`coordinates-${image.imgid}`}>Latitude, longitude</label>
+    <div className="location-heading">{t("library.location.title")}</div>
+    <label htmlFor={`coordinates-${image.imgid}`}>{t("library.location.coordinates")}</label>
     <input id={`coordinates-${image.imgid}`} className="field" value={draft} disabled={disabled}
       placeholder="37.7749, -122.4194" onChange={(event) => setDraft(event.target.value)}
       onKeyDown={(event) => { if (event.key === "Enter" && valid && !disabled) void save({ latitude, longitude }); }} />
-    {draft && !valid && <p className="location-error">Enter latitude (−90 to 90), then longitude (−180 to 180).</p>}
+    {draft && !valid && <p className="location-error">{t("library.location.invalid")}</p>}
     <div className="location-actions">
-      <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? "Saving…" : "Apply"}</button>
-      <button className="btn" disabled={disabled || !saved} onClick={() => void save(null)}>Remove location</button>
-      <button ref={expandButton} className="btn" aria-label={showMap ? "Hide map" : "Show map"} disabled={disabled}
-        onClick={() => { setShowMap(!showMap); setExpanded(false); }}>{showMap ? "Hide map" : "Show map"}</button>
+      <button className="btn" disabled={disabled || !valid} onClick={() => void save({ latitude, longitude })}>{busy ? t("library.location.saving") : t("library.location.apply")}</button>
+      <button className="btn" disabled={disabled || !saved} onClick={() => void save(null)}>{t("library.location.remove")}</button>
+      <button ref={expandButton} className="btn" aria-label={showMap ? t("library.location.hideMap") : t("library.location.showMap")} disabled={disabled}
+        onClick={() => { setShowMap(!showMap); setExpanded(false); }}>{showMap ? t("library.location.hideMap") : t("library.location.showMap")}</button>
     </div>
     {showMap && <div ref={inlineSlot} className="location-map-inline-slot" />}
     {mapUi}
-    {image.remote && <p>Open a local photo to edit its location.</p>}
+    {image.remote && <p>{t("library.location.localOnly")}</p>}
     {error && <p className="location-error" role="alert">{error}</p>}
   </section>;
 }

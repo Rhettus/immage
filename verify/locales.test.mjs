@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
+const { parseSync } = await import(require.resolve('rolldown/utils'));
 const corePath = new URL('../app/src/i18nCore.ts', import.meta.url);
 const code = transformSync(corePath.pathname, readFileSync(corePath, 'utf8')).code;
 const { canonicalLocale, resolveLanguage, createTranslator, textDirection } =
@@ -47,15 +48,37 @@ test('validator accepts extra plural categories and checks their placeholders', 
   assert.throws(() => validate({ photos_other: 3 }, reference), /expected text/);
 });
 
-test('every literal t(key) in all source directories is in en.json', () => {
-  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap(e =>
-    e.isDirectory() ? walk(new URL(`${e.name}/`, dir))
-      : /\.tsx?$/.test(e.name) && e.name !== 'i18n.ts' ? [new URL(e.name, dir)] : []);
-  for (const file of walk(new URL('../app/src/', import.meta.url))) {
-    const source = readFileSync(file, 'utf8');
-    for (const m of source.matchAll(/\bt\(\s*["']([\w.-]+)["']/g)) {
-      assert.ok(own(en, m[1]) || own(en, `${m[1]}_other`), `${file.pathname}: ${m[1]} missing from en.json`);
+test('every literal translation key, including aliased imports, exists in English', () => {
+  const walkFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap(e =>
+    e.isDirectory() ? walkFiles(new URL(`${e.name}/`, dir))
+      : /\.tsx?$/.test(e.name) ? [new URL(e.name, dir)] : []);
+  const visit = (node, callback) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { for (const child of node) visit(child, callback); return; }
+    if (typeof node.type === 'string') callback(node);
+    for (const [key, child] of Object.entries(node)) {
+      if (key !== 'parent') visit(child, callback);
     }
+  };
+  for (const file of walkFiles(new URL('../app/src/', import.meta.url))) {
+    const source = readFileSync(file, 'utf8');
+    const { program, errors } = parseSync(file.pathname, source);
+    assert.equal(errors.length, 0, `${file.pathname}: parse errors`);
+    const aliases = new Set();
+    visit(program, node => {
+      if (node.type !== 'ImportDeclaration' || !String(node.source.value).endsWith('/i18n')) return;
+      for (const spec of node.specifiers) {
+        if (spec.imported?.name === 't') aliases.add(spec.local.name);
+      }
+    });
+    // Splash must load i18n only after asynchronous settings initialization.
+    if (file.pathname.endsWith('/Splash.tsx')) aliases.add('tr');
+    visit(program, node => {
+      if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || !aliases.has(node.callee.name)) return;
+      const key = node.arguments[0];
+      if (key?.type !== 'Literal' || typeof key.value !== 'string') return;
+      assert.ok(own(en, key.value) || own(en, `${key.value}_other`), `${file.pathname}: ${key.value} missing from en.json`);
+    });
   }
 });
 

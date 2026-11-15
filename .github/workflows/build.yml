@@ -59,6 +59,8 @@ jobs:
         run: python3 -I scripts/test_release_assets.py
       - name: model pin checks
         run: python3 -I scripts/test_pin_models.py
+      - name: darktable translation import checks
+        run: python3 -I scripts/test_sync_darktable_locales.py
       - name: upstream copy checks
         run: python3 -I scripts/test_check_upstream_copies.py
       - name: gitleaks
@@ -100,6 +102,7 @@ jobs:
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/locales.test.mjs \
+            verify/field-text.test.mjs \
             verify/contrast-equalizer.test.mjs \
             verify/culling.test.mjs \
             verify/culling-zoom.test.mjs \

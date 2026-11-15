@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
@@ -37,9 +38,9 @@ function ItemTools({ index, count, onMove, onRemove }: {
 }) {
   return (
     <div className="item-tools">
-      {count > 1 && <button title="Move up" disabled={index === 0} onClick={() => onMove(index - 1)}>↑</button>}
-      {count > 1 && <button title="Move down" disabled={index === count - 1} onClick={() => onMove(index + 1)}>↓</button>}
-      <button title="Remove" onClick={onRemove}>✕</button>
+      {count > 1 && <button title={tr("interface.frame.moveUp")} disabled={index === 0} onClick={() => onMove(index - 1)}>↑</button>}
+      {count > 1 && <button title={tr("interface.frame.moveDown")} disabled={index === count - 1} onClick={() => onMove(index + 1)}>↓</button>}
+      <button title={tr("interface.frame.remove")} onClick={onRemove}>✕</button>
     </div>
   );
 }
@@ -61,7 +62,7 @@ export function ColorPick({ value, onChange }: { value: string; onChange: (v: st
     <span className="color-choice">
       {["#ffffff", "#000000"].map((c) => (
         <button key={c} className={`swatch${value === c ? " on" : ""}`} style={{ background: c }}
-                title={c === "#ffffff" ? "white" : "black"} onClick={() => onChange(c)} />
+                title={c === "#ffffff" ? tr("interface.frame.white") : tr("interface.frame.black")} onClick={() => onChange(c)} />
       ))}
       <input type="color" className="color-pick" value={value} onChange={(e) => onChange(e.target.value)} />
     </span>
@@ -71,14 +72,14 @@ export function ColorPick({ value, onChange }: { value: string; onChange: (v: st
 function Opacity({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <>
-      <input type="range" min={0} max={100} value={value} title="Opacity" onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" min={0} max={100} value={value} title={tr("interface.frame.opacity")} onChange={(e) => onChange(Number(e.target.value))} />
       <span className="num">{value}%</span>
     </>
   );
 }
 
 type Unit = "short" | "long" | "px";
-const UNIT_NAMES: Record<Unit, string> = { px: "px", short: "% of short side", long: "% of long side" };
+const UNIT_NAMES: Record<Unit, string> = { px: "px", short: tr("interface.frame.shortSide"), long: tr("interface.frame.longSide") };
 function UnitPick<U extends Unit>({ value, units, onChange }: { value: U; units: U[]; onChange: (u: U) => void }) {
   return (
     <select className="unit" value={value} onChange={(e) => onChange(e.target.value as U)}>
@@ -92,7 +93,7 @@ function SidesInput({ value, onChange }: { value: Sides; onChange: (v: Sides) =>
   const side = (k: keyof Sides, label: string) => (
     <label style={{ gridArea: k[0] }}>{label} <Num value={value[k]} onChange={(v) => onChange({ ...value, [k]: v })} /></label>
   );
-  return <div className="sides">{side("top", "Top")}{side("left", "Left")}{side("right", "Right")}{side("bottom", "Bottom")}</div>;
+  return <div className="sides">{side("top", tr("interface.frame.top"))}{side("left", tr("interface.frame.left"))}{side("right", tr("interface.frame.right"))}{side("bottom", tr("interface.frame.bottom"))}</div>;
 }
 
 // one width for all sides, or one for each
@@ -119,11 +120,11 @@ function BorderCard({ b, set }: { b: BorderItem; set: (p: Partial<BorderItem>) =
     <>
       <label className="row check">
         <input type="checkbox" checked={b.identical} onChange={(e) => set({ identical: e.target.checked })} />
-        Same width all round
+        {tr("interface.frame.sameWidth")}
       </label>
-      <Widths label="Width" same={b.identical} value={b} unit={b.unit} units={ALL_UNITS}
+      <Widths label={tr("interface.frame.width")} same={b.identical} value={b} unit={b.unit} units={ALL_UNITS}
               onValue={(v) => set(v)} onUnit={(unit) => set({ unit })} />
-      <div className="row"><span className="k">Color</span><ColorPick value={b.color} onChange={(color) => set({ color })} /></div>
+      <div className="row"><span className="k">{tr("interface.frame.color")}</span><ColorPick value={b.color} onChange={(color) => set({ color })} /></div>
     </>
   );
 }
@@ -133,14 +134,14 @@ function KeylineCard({ b, set }: { b: InnerItem; set: (p: Partial<InnerItem>) =>
     <>
       <label className="row check">
         <input type="checkbox" checked={b.identical} onChange={(e) => set({ identical: e.target.checked })} />
-        Same all round
+        {tr("interface.frame.same")}
       </label>
-      <Widths label="Thickness" same={b.identical} value={b.size} unit={b.sizeUnit} units={ALL_UNITS}
+      <Widths label={tr("interface.frame.thickness")} same={b.identical} value={b.size} unit={b.sizeUnit} units={ALL_UNITS}
               onValue={(size) => set({ size })} onUnit={(sizeUnit) => set({ sizeUnit })} />
-      <Widths label="Inset" same={b.identical} value={b.inset} unit={b.insetUnit} units={ALL_UNITS}
+      <Widths label={tr("interface.frame.inset")} same={b.identical} value={b.inset} unit={b.insetUnit} units={ALL_UNITS}
               onValue={(inset) => set({ inset })} onUnit={(insetUnit) => set({ insetUnit })} />
       <div className="row">
-        <span className="k">Color</span>
+        <span className="k">{tr("interface.frame.color")}</span>
         <ColorPick value={b.color} onChange={(color) => set({ color })} />
         <Opacity value={b.opacity} onChange={(opacity) => set({ opacity })} />
       </div>
@@ -148,7 +149,7 @@ function KeylineCard({ b, set }: { b: InnerItem; set: (p: Partial<InnerItem>) =>
   );
 }
 
-const POSITION_NAMES = ["top left", "top", "top right", "left", "center", "right", "bottom left", "bottom", "bottom right"];
+const POSITION_NAMES = [tr("interface.frame.position0"), tr("interface.frame.position1"), tr("interface.frame.position2"), tr("interface.frame.position3"), tr("interface.frame.position4"), tr("interface.frame.position5"), tr("interface.frame.position6"), tr("interface.frame.position7"), tr("interface.frame.position8")];
 
 function CaptionCard({ t, set, fonts }: { t: TextItem; set: (p: Partial<TextItem>) => void; fonts: Family[] | null }) {
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -167,7 +168,7 @@ function CaptionCard({ t, set, fonts }: { t: TextItem; set: (p: Partial<TextItem
         <textarea ref={area} className="field text-area" rows={2} value={t.text}
                   onChange={(e) => set({ text: e.target.value })}
                   onSelect={(e) => { caret.current = e.currentTarget.selectionStart; }} />
-        <div className="pos-grid" title="Position">
+        <div className="pos-grid" title={tr("interface.frame.position")}>
           {POSITION_NAMES.map((n, p) => (
             <button key={p} title={n} className={t.position === p ? "on" : ""} onClick={() => set({ position: p })} />
           ))}
@@ -175,7 +176,7 @@ function CaptionCard({ t, set, fonts }: { t: TextItem; set: (p: Partial<TextItem
       </div>
       <div className="row">
         <select className="token-menu" value="" onChange={(e) => { if (e.target.value) insert(e.target.value); }}>
-          <option value="">Insert photo info…</option>
+          <option value="">{tr("interface.frame.insert")}</option>
           {TEXT_TOKENS.map(([group, list]) => (
             <optgroup key={group} label={group}>
               {list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -183,12 +184,12 @@ function CaptionCard({ t, set, fonts }: { t: TextItem; set: (p: Partial<TextItem
           ))}
         </select>
         <div className="segmented small">
-          <button className={!t.beforeBorders ? "active" : ""} onClick={() => set({ beforeBorders: false })}>In the border</button>
-          <button className={t.beforeBorders ? "active" : ""} onClick={() => set({ beforeBorders: true })}>On the photo</button>
+          <button className={!t.beforeBorders ? "active" : ""} onClick={() => set({ beforeBorders: false })}>{tr("interface.frame.border")}</button>
+          <button className={t.beforeBorders ? "active" : ""} onClick={() => set({ beforeBorders: true })}>{tr("interface.frame.photo")}</button>
         </div>
       </div>
       <div className="row">
-        <span className="k">Font</span>
+        <span className="k">{tr("interface.frame.font")}</span>
         <select value={t.font} disabled={!fonts} onChange={(e) => {
           const f = fonts?.find((x) => x.name === e.target.value);
           // the face nearest the weight chosen before
@@ -196,46 +197,46 @@ function CaptionCard({ t, set, fonts }: { t: TextItem; set: (p: Partial<TextItem
             .sort((a, b) => Math.abs(a.weight - t.weight) - Math.abs(b.weight - t.weight))[0];
           set({ font: e.target.value, ...(face ? { weight: face.weight } : {}) });
         }}>
-          {!family && <option value={t.font}>{fonts ? `${t.font} (not installed)` : t.font}</option>}
+          {!family && <option value={t.font}>{fonts ? tr("interface.frame.notInstalled", { font: t.font }) : t.font}</option>}
           {fonts?.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
         </select>
         <select className="face" value={`${t.weight}:${t.italic}`} onChange={(e) => {
           const [w, i] = e.target.value.split(":");
           set({ weight: Number(w), italic: i === "true" });
         }}>
-          {(family?.faces.length ? family.faces : [{ name: "Regular", weight: t.weight, italic: t.italic }])
+          {(family?.faces.length ? family.faces : [{ name: tr("interface.frame.regular"), weight: t.weight, italic: t.italic }])
             .slice().sort((a, b) => a.weight - b.weight || Number(a.italic) - Number(b.italic))
             .map((f) => <option key={`${f.weight}:${f.italic}`} value={`${f.weight}:${f.italic}`}>{f.name}</option>)}
         </select>
       </div>
       <div className="row">
-        <span className="k">Size</span>
+        <span className="k">{tr("interface.frame.size")}</span>
         <Num value={t.size} onChange={(size) => set({ size })} />
         <UnitPick value={t.sizeUnit} units={["px", "short"]} onChange={(sizeUnit) => set({ sizeUnit })} />
       </div>
       <div className="row">
-        <span className="k">Color</span>
+        <span className="k">{tr("interface.frame.color")}</span>
         <ColorPick value={t.color} onChange={(color) => set({ color })} />
       </div>
       <button className="more-toggle" onClick={() => setMore(!more)}>
-        <Chevron open={more} /> More: offset, opacity, backdrop
+        <Chevron open={more} /> {tr("interface.frame.more")}
       </button>
       {more && (
         <>
           <div className="row">
-            <span className="k">Offset</span>
-            <label className="check-inline" title="across, in from the side">↔ <Num value={t.insetX} min={-10000} onChange={(insetX) => set({ insetX })} /></label>
-            <label className="check-inline" title="up or down, in from the edge">↕ <Num value={t.insetY} min={-10000} onChange={(insetY) => set({ insetY })} /></label>
+            <span className="k">{tr("interface.frame.offset")}</span>
+            <label className="check-inline" title={tr("interface.frame.horizontalHint")}>↔ <Num value={t.insetX} min={-10000} onChange={(insetX) => set({ insetX })} /></label>
+            <label className="check-inline" title={tr("interface.frame.verticalHint")}>↕ <Num value={t.insetY} min={-10000} onChange={(insetY) => set({ insetY })} /></label>
             <UnitPick value={t.insetUnit} units={["px", "short"]} onChange={(insetUnit) => set({ insetUnit })} />
           </div>
           <div className="row">
-            <span className="k">Opacity</span>
+            <span className="k">{tr("interface.frame.opacity")}</span>
             <Opacity value={t.opacity} onChange={(opacity) => set({ opacity })} />
           </div>
           <div className="row">
             <label className="check-inline k">
               <input type="checkbox" checked={t.background} onChange={(e) => set({ background: e.target.checked })} />
-              Backdrop
+              {tr("interface.frame.backdrop")}
             </label>
             {t.background && (
               <>
@@ -292,24 +293,24 @@ export function FrameEditor({ s, set }: {
   const fonts = useFonts();
   return (
     <div className="frame-editor">
-      <Part title="Frame" addLabel="Frame" items={s.borders} onChange={(l) => set("borders", l)}
-            hint="space added around the photo, wider at the bottom if you like; nothing is cropped"
+      <Part title={tr("interface.frame.frame")} addLabel={tr("interface.frame.frame")} items={s.borders} onChange={(l) => set("borders", l)}
+            hint={tr("interface.frame.frameHint")}
             make={() => ({ ...newBorder(), ...(s.borders.length ? { unit: s.borders[s.borders.length - 1].unit } : {}) })}
             summary={(b) => `${sidesText(b.identical, b, b.unit)} ${b.color}`}
             card={(b, p) => <BorderCard b={b} set={p} />} />
-      <Part title="Keyline" addLabel="Keyline" items={s.inner} onChange={(l) => set("inner", l)}
-            hint="a thin line drawn on the photo's edge, or inset from it"
+      <Part title={tr("interface.frame.keyline")} addLabel={tr("interface.frame.keyline")} items={s.inner} onChange={(l) => set("inner", l)}
+            hint={tr("interface.frame.keylineHint")}
             make={newInner}
-            summary={(b) => `${sidesText(b.identical, b.size, b.sizeUnit)} ${b.color}${b.opacity < 100 ? ` at ${b.opacity}%` : ""}`}
+            summary={(b) => `${sidesText(b.identical, b.size, b.sizeUnit)} ${b.color}${b.opacity < 100 ? tr("interface.frame.atOpacity", { opacity: b.opacity }) : ""}`}
             card={(b, p) => <KeylineCard b={b} set={p} />} />
-      <Part title="Captions" addLabel="Caption" items={s.texts} onChange={(l) => set("texts", l)}
-            hint="text from each photo's info, such as its title or camera settings, in the border or on the photo"
+      <Part title={tr("interface.frame.captions")} addLabel={tr("interface.frame.caption")} items={s.texts} onChange={(l) => set("texts", l)}
+            hint={tr("interface.frame.captionHint")}
             make={newText}
-            summary={(t) => `${POSITION_NAMES[t.position]}: ${t.text.replace(/\s+/g, " ") || "(empty)"}`}
+            summary={(t) => `${POSITION_NAMES[t.position]}: ${t.text.replace(/\s+/g, " ") || tr("interface.frame.empty")}`}
             card={(t, p) => <CaptionCard t={t} set={p} fonts={fonts} />} />
       {s.texts.length > 0 && (
-        <div className="note-plain small">if a photo lacks a piece of info, text after a comma stands in:
-          {" {lens, unknown lens}"}</div>
+        <div className="note-plain small">{tr("interface.frame.fallbackHint")}
+          {tr("interface.frame.fallbackExample")}</div>
       )}
     </div>
   );

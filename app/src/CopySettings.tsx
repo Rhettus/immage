@@ -8,6 +8,8 @@ import { NEG_CHOICES, panels, SF_CHOICES, type Values } from "./manifest";
 import type { Mask } from "./masks";
 import { settings } from "./settings";
 import type { AdvancedCopy } from "./advancedEdits";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 export type CopyGroup = { id: string; label: string; ids: string[] };
 
@@ -89,23 +91,23 @@ export function CopyDialog({ onCopy, onClose }: { onCopy: (on: Set<string>) => v
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal copy-settings">
         <div className="modal-head">
-          <h2>Copy Settings</h2>
+          <h2>{t("fields.copy.title")}</h2>
           <div className="segmented small">
-            <button onClick={() => setOn(new Set(COPY_GROUPS.map((g) => g.id)))}>Check All</button>
-            <button onClick={() => setOn(new Set())}>Check None</button>
+            <button onClick={() => setOn(new Set(COPY_GROUPS.map((g) => g.id)))}>{t("fields.copy.checkAll")}</button>
+            <button onClick={() => setOn(new Set())}>{t("fields.copy.checkNone")}</button>
           </div>
         </div>
         <div className="modal-body copy-groups">
           {COPY_GROUPS.map((g) => (
             <label key={g.id} className="row check">
               <input type="checkbox" data-copy-group={g.id} checked={on.has(g.id)} onChange={() => toggle(g.id)} />
-              {g.label}
+              {fieldText(g.label)}
             </label>
           ))}
         </div>
         <div className="modal-foot">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!on.size} onClick={copy}>Copy</button>
+          <button className="btn" onClick={onClose}>{t("fields.copy.cancel")}</button>
+          <button className="btn primary" disabled={!on.size} onClick={copy}>{t("fields.copy.copy")}</button>
         </div>
       </div>
     </div>

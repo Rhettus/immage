@@ -13,18 +13,16 @@ import { Pipette } from "lucide-react";
 import { GuidedSteps, useStepOpen, type Step } from "./GuidedSteps";
 import { FILM_BW } from "./negadoctor";
 import { colorProfiles, type ColorProfiles } from "./session";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 export type NegPick = "border" | "area" | "dmax" | "offset" | "black" | "exposure" | "shadows" | "highlights";
 
 const PICK_HINTS: Record<NegPick, string> = {
-  border: "drag a box over the unexposed film border, clear of dust and of any pre-exposed edge",
-  area: "drag a box over the photo, inside the border, clear of dust and scratches",
-  dmax: "drag over the brightest part of the scene, or the whole photo",
-  offset: "drag over the film border, or the whole photo",
-  black: "drag over what should be pure black: the film border, or a dark part of the photo",
-  exposure: "drag over the brightest part of the photo, or the whole photo",
-  shadows: "drag over the film border, or a shadow that should be neutral",
-  highlights: "drag over something white or gray, or the whole photo",
+  border: t("fields.negative.pick.border"), area: t("fields.negative.pick.area"),
+  dmax: t("fields.negative.pick.dmax"), offset: t("fields.negative.pick.offset"),
+  black: t("fields.negative.pick.black"), exposure: t("fields.negative.pick.exposure"),
+  shadows: t("fields.negative.pick.shadows"), highlights: t("fields.negative.pick.highlights"),
 };
 
 // the controls the advanced section renders, for its edited dot
@@ -56,10 +54,10 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
     return () => { live = false; };
   }, [photo, values.neg_input_profile, values.neg_working_profile]);
   const profileOptions = (role: "input" | "working") => {
-    const options = profiles?.[role] ?? [];
+    const options = (profiles?.[role] ?? []).map(([name, id]) => [fieldText(name), id] as [string, number]);
     const value = values[`neg_${role}_profile`];
     return value !== undefined && !options.some(([, id]) => id === value)
-      ? [...options, ["Current Profile", value] as [string, number]] : options;
+      ? [...options, [t("fields.negative.currentProfile"), value] as [string, number]] : options;
   };
   const off = disabled || busy;
   const pickButton = (kind: NegPick, label: string, title: string) => (
@@ -81,89 +79,87 @@ export function NegativePanel({ photo, values, disabled, converted, picking, bus
     ** (1 / 2.2))).join(", ")})`;
   const color = values.neg_film !== FILM_BW;
   const locked = !converted;
-  const lockNote = "pick the film border first";
+  const lockNote = t("fields.negative.pickBorderFirst");
   const signed = (v: number, d: number) => `${v > 0 ? "+" : ""}${v.toFixed(d)}`;
   const steps: Step[] = [
-    { id: "profiles", title: "Profiles",
-      summary: `${profileOptions("input").find(([, v]) => v === values.neg_input_profile)?.[0] ?? "Input"} → `
-        + `${profileOptions("working").find(([, v]) => v === values.neg_working_profile)?.[0] ?? "Working"}`,
+    { id: "profiles", title: t("fields.negative.profiles"),
+      summary: `${profileOptions("input").find(([, v]) => v === values.neg_input_profile)?.[0] ?? t("fields.negative.input")} → `
+        + `${profileOptions("working").find(([, v]) => v === values.neg_working_profile)?.[0] ?? t("fields.negative.working")}`,
       content: (
         <>
           {renderControl("neg_input_profile", profileOptions("input"))}
           {renderControl("neg_working_profile", profileOptions("working"))}
-          <div className="note-plain">{profileError ? `Profiles unavailable: ${profileError}`
-            : "Choose profiles before picking the film border; a photo still on its defaults gets the profiles you chose last when it converts. After changing either profile, pick the border and photo area again."}</div>
+          <div className="note-plain">{profileError ? t("fields.negative.profilesUnavailable", { error: profileError })
+            : t("fields.negative.profilesHint")}</div>
         </>
       ) },
-    { id: "border", title: "Border & Photo Area",
-      summary: `${color ? "Color" : "B&W"} · Border ${converted ? "picked" : "not picked"} · Area ${hasArea ? "set" : "not set"}`,
+    { id: "border", title: t("fields.negative.borderArea"),
+      summary: `${color ? t("fields.negative.color") : t("fields.negative.bw")} · ${t("fields.negative.border")} ${converted ? t("fields.negative.picked") : t("fields.negative.notPicked")} · ${t("fields.negative.area")} ${hasArea ? t("fields.negative.set") : t("fields.negative.notSet")}`,
       content: (
         <>
           {renderControl("neg_film")}
           <div className="neg-step">
-            {pickButton("border", "Pick Film Border",
-                        converted ? "pick the film border again" : "pick the unexposed film border: this converts the negative")}
-            {converted && <span className="neg-swatch" style={{ background: swatch }} title="Border Color" />}
+            {pickButton("border", t("fields.negative.pickFilmBorder"),
+                        converted ? t("fields.negative.pickBorderAgain") : t("fields.negative.pickBorderConvert"))}
+            {converted && <span className="neg-swatch" style={{ background: swatch }} title={t("fields.negative.borderColor")} />}
           </div>
           <div className="neg-step">
-            {pickButton("area", "Pick Photo Area",
-                        "the photo inside the border, which White Point, Black Point, Blacks and Exposure are set from")}
-            {hasArea && <span className="note-plain">set</span>}
+            {pickButton("area", t("fields.negative.pickPhotoArea"), t("fields.negative.pickAreaHint"))}
+            {hasArea && <span className="note-plain">{t("fields.negative.set")}</span>}
           </div>
           <div className="note-plain">
             {picking ? PICK_HINTS[picking]
-              : note ?? (converted ? "the whole frame shows while you pick, so the film border can be reached"
-                                   : "start with the film border: picking it converts the negative")}
+              : note ?? (converted ? t("fields.negative.pickingFrame") : t("fields.negative.startBorder"))}
           </div>
         </>
       ) },
-    { id: "base", title: "Film Base", locked, lockNote,
-      summary: `White Point ${(values.neg_dmax ?? 0).toFixed(2)} · Black Point ${signed(values.neg_offset ?? 0, 2)}`,
+    { id: "base", title: t("fields.negative.filmBase"), locked, lockNote,
+      summary: `${t("fields.negative.whitePoint")} ${(values.neg_dmax ?? 0).toFixed(2)} · ${t("fields.negative.blackPoint")} ${signed(values.neg_offset ?? 0, 2)}`,
       content: (
         <>
-          {withPick("neg_dmax", "dmax", "pick the brightest part of the scene")}
-          {withPick("neg_offset", "offset", "pick the film border, or the whole photo")}
+          {withPick("neg_dmax", "dmax", t("fields.negative.pickBrightScene"))}
+          {withPick("neg_offset", "offset", t("fields.negative.pickBorderOrWhole"))}
         </>
       ) },
-    { id: "color", title: "Color", hidden: !color, locked, lockNote, summary: "Neutral Shadows / Highlights",
+    { id: "color", title: t("fields.negative.color"), hidden: !color, locked, lockNote, summary: t("fields.negative.neutralShadowsHighlights"),
       content: (
         <>
           <div className="neg-step">
-            {pickButton("shadows", "Neutral Shadows", "pick the film border or a neutral shadow, to take a cast out of the shadows")}
-            {pickButton("highlights", "Neutral Highlights", "pick something white or gray, to set the white balance")}
+            {pickButton("shadows", t("fields.negative.neutralShadows"), t("fields.negative.pickNeutralShadow"))}
+            {pickButton("highlights", t("fields.negative.neutralHighlights"), t("fields.negative.pickNeutralHighlight"))}
           </div>
           <div className="neg-step">
-            <button className="btn small" disabled={off} onClick={onResetColor}>Reset Color</button>
+            <button className="btn small" disabled={off} onClick={onResetColor}>{t("fields.negative.resetColor")}</button>
           </div>
         </>
       ) },
-    { id: "tone", title: "Tone", locked, lockNote,
-      summary: `Exposure ${signed(values.neg_exposure ?? 0, 2)} · Contrast ${(values.neg_grade ?? 0).toFixed(1)}`,
+    { id: "tone", title: t("fields.negative.tone"), locked, lockNote,
+      summary: `${t("fields.negative.exposure")} ${signed(values.neg_exposure ?? 0, 2)} · ${t("fields.negative.contrast")} ${(values.neg_grade ?? 0).toFixed(1)}`,
       content: (
         <>
-          {withPick("neg_exposure", "exposure", "pick the brightest part of the photo, or the whole photo")}
+          {withPick("neg_exposure", "exposure", t("fields.negative.pickBrightPhoto"))}
           {renderControl("neg_grade")}
           {withPick("neg_black", "black", "pick what should be pure black")}
           {renderControl("neg_gloss")}
         </>
       ) },
-    { id: "finecolor", title: "Fine Color", hidden: !converted, locked, lockNote,
-      summary: `Border Color, Shadow Tint, White Balance${fineColorChanged ? " · changed" : ""}`,
+    { id: "finecolor", title: t("fields.negative.fineColor"), hidden: !converted, locked, lockNote,
+      summary: `${t("fields.negative.borderColor")}, ${t("fields.negative.shadowTint")}, ${t("fields.negative.whiteBalance")}${fineColorChanged ? ` · ${t("fields.negative.changed")}` : ""}`,
       content: (
         <div className="section-body">
-          <div className="neg-sub">Border Color</div>
+          <div className="neg-sub">{t("fields.negative.borderColor")}</div>
           {(color ? ["r", "g", "b"] : ["r"]).map((c) => renderControl(`neg_dmin_${c}`))}
-          {color && <div className="neg-sub">Shadow Tint</div>}
+          {color && <div className="neg-sub">{t("fields.negative.shadowTint")}</div>}
           {color && ["r", "g", "b"].map((c) => renderControl(`neg_wbl_${c}`))}
-          <div className="neg-sub">White Balance</div>
+          <div className="neg-sub">{t("fields.negative.whiteBalance")}</div>
           {["r", "g", "b"].map((c) => renderControl(`neg_wbh_${c}`))}
         </div>
       ) },
-    { id: "export", title: "Export Positive", locked, lockNote, summary: "Export to Library, Turn Off", content: footer },
+    { id: "export", title: t("fields.negative.exportPositive"), locked, lockNote, summary: t("fields.negative.exportSummary"), content: footer },
   ];
   return (
     <div className="panel negative">
-      <div className="panel-title"><span>Negative</span></div>
+      <div className="panel-title"><span>{t("fields.negative.title")}</span></div>
       <GuidedSteps steps={steps} open={stepOpen} onOpen={setStepOpen} />
     </div>
   );

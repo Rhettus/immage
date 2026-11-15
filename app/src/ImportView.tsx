@@ -6,6 +6,7 @@
 // closing returns to it as it was. loaded on first use
 import { lazy, Suspense } from "react";
 import type { ImportResult } from "@immporter/embed";
+import { t } from "./i18n";
 
 const Importer = lazy(async () => {
   const m = await import("@immporter/embed");
@@ -21,7 +22,7 @@ const CloseButton = lazy(async () => {
       const importing = m.useImporting();
       return (
         <button className="btn small" disabled={importing} onClick={onClose}
-                title={importing ? "an import is running" : "back to editing"}>Close</button>
+                title={importing ? t("library.import.running") : t("library.import.back")}>{t("library.import.close")}</button>
       );
     },
   };
@@ -36,11 +37,11 @@ export function ImportView({ onClose, onImportDone, onShowImported, onOpenSettin
   return (
     <div className="import-view">
       <div className="import-head">
-        <h1>Import</h1>
+        <h1>{t("library.import.title")}</h1>
         <Suspense fallback={null}><CloseButton onClose={onClose} /></Suspense>
       </div>
       <div className="import-body">
-        <Suspense fallback={<div className="note-plain">loading the importer…</div>}>
+        <Suspense fallback={<div className="note-plain">{t("library.import.loading")}</div>}>
           <Importer onImportDone={onImportDone} onShowImported={onShowImported} onOpenSettings={onOpenSettings} />
         </Suspense>
       </div>

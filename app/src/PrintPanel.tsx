@@ -7,6 +7,7 @@
 // profile, and Print (or Save PDF). the settings are kept between photos
 // and runs (print.ts); the page they lay out is shown in the viewer (App.tsx)
 import { useState } from "react";
+import { t } from "./i18n";
 import { cellsLayout, fromUnit, layout, PDF, PDF_DPI, PDF_PAPERS, shown, sourcePpi, toUnit, type Margins,
          type Paper, type PrintLayout, type PrintSettings, type Printer, type PrinterInfo, type Profile, type Proof, type Unit } from "./print";
 
@@ -42,7 +43,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
   if (available === false) return (
     <div className="panel print">
       <section>
-        <p className="note-plain">This copy of Immage was built without printing.</p>
+        <p className="note-plain">{t("dialogs.print.unavailable")}</p>
       </section>
     </div>
   );
@@ -50,17 +51,17 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
   return (
     <div className="panel print">
       <section>
-        <h3>Soft Proofing</h3>
+        <h3>{t("dialogs.print.softProofing")}</h3>
         <label className={`toggle${disabled || !managed ? " disabled" : ""}`}
                title={managed ? "show the photo as the printer profile can print it (S)"
                               : "choose a printer profile under Color Management to proof against"}>
-          <span>Soft Proof</span>
+          <span>{t("dialogs.print.softProof")}</span>
           <input type="checkbox" className="switch" data-action="print-softproof" checked={proof.mode !== "off"}
                  disabled={disabled || !managed} onChange={(e) => onProof(e.target.checked ? "proof" : "off")} />
         </label>
         <label className={`toggle${disabled || proof.mode === "off" ? " disabled" : ""}`}
-               title="paint the colors the printer can't reach cyan">
-          <span>Gamut Warning</span>
+               title={t("dialogs.print.gamutWarningHint")}>
+          <span>{t("dialogs.print.gamutWarning")}</span>
           <input type="checkbox" className="switch" data-action="print-gamut" checked={proof.mode === "gamut"}
                  disabled={disabled || proof.mode === "off"}
                  onChange={(e) => onProof(e.target.checked ? "gamut" : "proof")} />
@@ -72,21 +73,21 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
       </section>
 
       <section>
-        <h3>Printer</h3>
+        <h3>{t("dialogs.print.printer")}</h3>
         <div className="choice-row">
-          <span>Printer</span>
+          <span>{t("dialogs.print.printer")}</span>
           <select className="field" data-action="print-printer" value={s.printer} disabled={busy}
                   onChange={(e) => set({ printer: e.target.value })}>
             {(printers ?? []).map((p) => <option key={p.name} value={p.name}>{p.description}</option>)}
-            <option value={PDF}>Save as PDF</option>
+            <option value={PDF}>{t("dialogs.print.saveAsPdf")}</option>
           </select>
         </div>
-        {printers === null && <p className="note-plain">Looking for printers…</p>}
-        {printers && !printers.length && <p className="note-plain">No printers found; you can save a PDF.</p>}
+        {printers === null && <p className="note-plain">{t("dialogs.print.lookingForPrinters")}</p>}
+        {printers && !printers.length && <p className="note-plain">{t("dialogs.print.noPrinters")}</p>}
         {!pdf && infoError && <p className="note-plain warn">{infoError}</p>}
-        {!pdf && !info && !infoError && <p className="note-plain">Asking the printer…</p>}
+        {!pdf && !info && !infoError && <p className="note-plain">{t("dialogs.print.askingPrinter")}</p>}
         <div className="choice-row">
-          <span>Paper</span>
+          <span>{t("dialogs.print.paper")}</span>
           <select className="field" data-action="print-paper" value={paper?.name ?? ""} disabled={busy || !papers.length}
                   onChange={(e) => set({ paper: e.target.value })}>
             {papers.map((p) => (
@@ -96,24 +97,24 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
         </div>
         {!pdf && info && info.media.length > 0 && (
           <div className="choice-row">
-            <span>Media Type</span>
+            <span>{t("dialogs.print.mediaType")}</span>
             <select className="field" value={info.media.some((m) => m.name === s.medium) ? s.medium : ""}
                     disabled={busy} onChange={(e) => set({ medium: e.target.value })}>
-              <option value="">Printer default</option>
+              <option value="">{t("dialogs.print.printerDefault")}</option>
               {info.media.map((m) => <option key={m.name} value={m.name}>{m.label}</option>)}
             </select>
           </div>
         )}
         {pdf && (
           <div className="choice-row">
-            <span>Resolution</span>
+            <span>{t("dialogs.print.resolution")}</span>
             <select className="field" value={s.dpi} disabled={busy} onChange={(e) => set({ dpi: Number(e.target.value) })}>
               {PDF_DPI.map((d) => <option key={d} value={d}>{d} dpi</option>)}
             </select>
           </div>
         )}
         <div className="choice-row">
-          <span>Orientation</span>
+          <span>{t("dialogs.print.orientation")}</span>
           <div className="segmented small">
             {(["auto", "portrait", "landscape"] as const).map((o) => (
               <button key={o} className={s.orientation === o ? "active" : ""} disabled={busy}
@@ -124,7 +125,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
       </section>
 
       <section>
-        <h3>Layout</h3>
+        <h3>{t("dialogs.print.layout")}</h3>
         <div className="segmented print-layout">
           {([["single", "Single Photo"], ["cells", "Cells"]] as [PrintLayout, string][]).map(([k, label]) => (
             <button key={k} className={s.layout === k ? "active" : ""} data-action={`print-layout-${k}`} disabled={busy}
@@ -151,7 +152,7 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
           </p>
         )}
         <div className="choice-row">
-          <span>Units</span>
+          <span>{t("dialogs.print.units")}</span>
           <div className="segmented small">
             {(["mm", "in"] as Unit[]).map((u) => (
               <button key={u} className={s.unit === u ? "active" : ""} onClick={() => set({ unit: u })}>{u}</button>
@@ -170,16 +171,16 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
         {!cells && (
           <>
             <div className="choice-row">
-              <span>Photo Size</span>
+              <span>{t("dialogs.print.photoSize")}</span>
               <div className="segmented small">
-                <button className={s.size === null ? "active" : ""} disabled={busy} onClick={() => set({ size: null })}>Fill</button>
+                <button className={s.size === null ? "active" : ""} disabled={busy} onClick={() => set({ size: null })}>{t("dialogs.print.fill")}</button>
                 <button className={s.size !== null ? "active" : ""} disabled={busy || !l}
-                        onClick={() => l && set({ size: Math.round(Math.max(l.image.width, l.image.height)) })}>Custom</button>
+                        onClick={() => l && set({ size: Math.round(Math.max(l.image.width, l.image.height)) })}>{t("dialogs.print.custom")}</button>
               </div>
             </div>
             {s.size !== null && (
               <div className="choice-row">
-                <span>Long Edge</span>
+                <span>{t("dialogs.print.longEdge")}</span>
                 <Length mm={s.size} unit={s.unit} disabled={busy} data-margin="size"
                         onChange={(mm) => set({ size: Math.max(10, mm) })} />
               </div>
@@ -189,70 +190,70 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
         {cells && (
           <>
             <div className="choice-row">
-              <span>Cells per Page</span>
+              <span>{t("dialogs.print.cellsPerPage")}</span>
               <div className="segmented small">
                 <button className={s.cellCount === 0 ? "active" : ""} disabled={busy} data-action="print-cells-auto"
-                        onClick={() => set({ cellCount: 0 })}>Auto</button>
+                        onClick={() => set({ cellCount: 0 })}>{t("dialogs.print.auto")}</button>
                 <button className={s.cellCount > 0 ? "active" : ""} disabled={busy} data-action="print-cells-custom"
-                        onClick={() => set({ cellCount: cl?.perPage ?? 2 })}>Custom</button>
+                        onClick={() => set({ cellCount: cl?.perPage ?? 2 })}>{t("dialogs.print.custom")}</button>
               </div>
             </div>
             {s.cellCount > 0 && (
               <div className="choice-row print-sub">
-                <span>Cells</span>
+                <span>{t("dialogs.print.cells")}</span>
                 <Count value={s.cellCount} min={1} max={200} disabled={busy} data-cells="count"
                        onChange={(n) => set({ cellCount: n })} />
               </div>
             )}
             <div className="choice-row">
-              <span>Columns</span>
+              <span>{t("dialogs.print.columns")}</span>
               <div className="segmented small">
                 <button className={s.columns === 0 ? "active" : ""} disabled={busy}
-                        onClick={() => set({ columns: 0 })}>Auto</button>
+                        onClick={() => set({ columns: 0 })}>{t("dialogs.print.auto")}</button>
                 <button className={s.columns > 0 ? "active" : ""} disabled={busy}
-                        onClick={() => set({ columns: cl?.columns ?? 2 })}>Custom</button>
+                        onClick={() => set({ columns: cl?.columns ?? 2 })}>{t("dialogs.print.custom")}</button>
               </div>
             </div>
             {s.columns > 0 && (
               <div className="choice-row print-sub">
-                <span>Columns</span>
+                <span>{t("dialogs.print.columns")}</span>
                 <Count value={s.columns} min={1} max={50} disabled={busy} data-cells="columns"
                        onChange={(n) => set({ columns: n })} />
               </div>
             )}
             <div className="choice-row">
-              <span>Cell Size</span>
+              <span>{t("dialogs.print.cellSize")}</span>
               <div className="segmented small">
                 <button className={s.cellSize === null ? "active" : ""} disabled={busy} data-action="print-size-auto"
-                        onClick={() => set({ cellSize: null })}>Auto</button>
+                        onClick={() => set({ cellSize: null })}>{t("dialogs.print.auto")}</button>
                 <button className={s.cellSize !== null ? "active" : ""} disabled={busy || !cl?.fits}
                         data-action="print-size-custom"
-                        onClick={() => cl && set({ cellSize: { width: Math.round(cl.cell.width), height: Math.round(cl.cell.height) } })}>Custom</button>
+                        onClick={() => cl && set({ cellSize: { width: Math.round(cl.cell.width), height: Math.round(cl.cell.height) } })}>{t("dialogs.print.custom")}</button>
               </div>
             </div>
             {s.cellSize !== null ? (
               <>
                 <div className="choice-row print-sub">
-                  <span>Width</span>
+                  <span>{t("dialogs.print.width")}</span>
                   <Length mm={s.cellSize.width} unit={unit} disabled={busy} data-margin="cell-width"
                           onChange={(mm) => set({ cellSize: { width: Math.max(5, mm), height: s.cellSize!.height } })} />
                 </div>
                 <div className="choice-row print-sub">
-                  <span>Height</span>
+                  <span>{t("dialogs.print.height")}</span>
                   <Length mm={s.cellSize.height} unit={unit} disabled={busy} data-margin="cell-height"
                           onChange={(mm) => set({ cellSize: { width: s.cellSize!.width, height: Math.max(5, mm) } })} />
                 </div>
-                <p className="note-plain">The space left over is shared equally between the cells and the margins.</p>
+                <p className="note-plain">{t("dialogs.print.spaceShared")}</p>
               </>
             ) : (
               <div className="choice-row">
-                <span>Spacing</span>
+                <span>{t("dialogs.print.spacing")}</span>
                 <Length mm={s.gap} unit={unit} disabled={busy} data-margin="gap"
                         onChange={(mm) => set({ gap: mm })} />
               </div>
             )}
-            <label className="toggle" title="print each photo's file name under it">
-              <span>Filenames Under Photos</span>
+            <label className="toggle" title={t("dialogs.print.filenamesHint")}>
+              <span>{t("dialogs.print.filenamesUnderPhotos")}</span>
               <input type="checkbox" className="switch" data-action="print-names" checked={s.names} disabled={busy}
                      onChange={(e) => set({ names: e.target.checked })} />
             </label>
@@ -261,27 +262,27 @@ export function PrintPanel({ settings: s, onSettings, available, printers, info,
       </section>
 
       <section>
-        <h3>Color Management</h3>
+        <h3>{t("dialogs.print.colorManagement")}</h3>
         <div className="choice-row">
-          <span>Profile</span>
+          <span>{t("dialogs.print.profile")}</span>
           <select className="field" data-action="print-profile" value={managed ? s.profile : ""} disabled={busy}
                   onChange={(e) => (e.target.value === ADD_PROFILE ? onAddProfile() : set({ profile: e.target.value }))}>
-            <option value="">Managed by printer</option>
+            <option value="">{t("dialogs.print.managedByPrinter")}</option>
             {profiles.map((p) => <option key={p.file} value={p.file} title={p.file}>{p.name}</option>)}
-            <option value={ADD_PROFILE}>Add Profile…</option>
+            <option value={ADD_PROFILE}>{t("dialogs.print.addProfile")}</option>
           </select>
         </div>
         {managed ? (
           <>
             <div className="choice-row">
-              <span>Intent</span>
+              <span>{t("dialogs.print.intent")}</span>
               <div className="segmented small">
-                <button className={s.intent === 0 ? "active" : ""} disabled={busy} onClick={() => set({ intent: 0 })}>Perceptual</button>
-                <button className={s.intent === 1 ? "active" : ""} disabled={busy} onClick={() => set({ intent: 1 })}>Relative</button>
+                <button className={s.intent === 0 ? "active" : ""} disabled={busy} onClick={() => set({ intent: 0 })}>{t("dialogs.print.perceptual")}</button>
+                <button className={s.intent === 1 ? "active" : ""} disabled={busy} onClick={() => set({ intent: 1 })}>{t("dialogs.print.relative")}</button>
               </div>
             </div>
-            <label className="toggle" title="map the photo's black to the darkest black the paper prints">
-              <span>Black Point Compensation</span>
+            <label className="toggle" title={t("dialogs.print.blackPointHint")}>
+              <span>{t("dialogs.print.blackPointCompensation")}</span>
               <input type="checkbox" className="switch" checked={s.bpc} disabled={busy}
                      onChange={(e) => set({ bpc: e.target.checked })} />
             </label>

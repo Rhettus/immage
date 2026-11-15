@@ -7,6 +7,7 @@
 // them in the sidecar and remembers every one ever used
 import { useEffect, useMemo, useRef, useState } from "react";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 const RECENT_KEY = "immage.recentKeywords";
 const RECENT_MAX = 9;
@@ -69,7 +70,7 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 
   return (
     <div className="kw-add">
-      <input ref={input} autoFocus={autoFocus} className="field" value={draft} placeholder="add keywords, separated by commas"
+      <input ref={input} autoFocus={autoFocus} className="field" value={draft} placeholder={t("library.keywording.add")}
              onChange={(e) => setDraft(e.target.value)}
              onBlur={() => {
                if (addOnBlur && !discarding.current && draft.trim()) { onAdd(draft.split(",")); setDraft(""); }
@@ -103,11 +104,11 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 export function KeywordChips({ keywords, onRemove }: { keywords: string[]; onRemove: (name: string) => void }) {
   return (
     <div className="kw-chips">
-      {keywords.length === 0 && <span className="kw-none">no keywords</span>}
+      {keywords.length === 0 && <span className="kw-none">{t("library.keywording.none")}</span>}
       {keywords.map((k) => (
         <span key={k} className="kw-chip" title={path(k)}>
           {leaf(k)}
-          <button title={`remove ${path(k)}`} onClick={() => onRemove(k)}>×</button>
+          <button title={t("library.keywording.remove", { keyword: path(k) })} onClick={() => onRemove(k)}>×</button>
         </span>
       ))}
     </div>
@@ -138,7 +139,7 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open, onTogg
   return (
     <div className="panel keywording">
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
-        <span>Keywording</span>
+        <span>{t("library.keywording.title")}</span>
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
@@ -148,7 +149,7 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open, onTogg
           <KeywordInput attached={attached} known={known} onAdd={add} />
           {recent.length > 0 && (
             <>
-              <div className="kw-label">Recent keywords</div>
+              <div className="kw-label">{t("library.keywording.recent")}</div>
               <div className="kw-recent">
                 {recent.map((k) => (
                   <button key={k} className={attached.has(k) ? "on" : ""} title={path(k)}

@@ -137,6 +137,7 @@ import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
 import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type Value } from "./commands";
+import { t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
 const OTHER_MENUS = forPlatform(MENUS, false);
@@ -149,8 +150,8 @@ const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth:
 type BaMode = "off" | "side" | "vsplit" | "hsplit" | "overlay";
 const BA_MODES: BaMode[] = ["off", "side", "vsplit", "hsplit", "overlay"];
 const BA_NAMES: Record<BaMode, string> = {
-  off: "Before / after off", side: "Side by side", vsplit: "Split left / right",
-  hsplit: "Split top / bottom", overlay: "Hold for before",
+  off: t("app.beforeAfter.off"), side: t("app.beforeAfter.side"), vsplit: t("app.beforeAfter.vertical"),
+  hsplit: t("app.beforeAfter.horizontal"), overlay: t("app.beforeAfter.hold"),
 };
 
 // the overlay view explains its hold the first few times it opens
@@ -260,7 +261,7 @@ export default function App() {
   const setValues = (update: React.SetStateAction<Record<string, number>>) =>
     valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
   useEffect(() => () => valueUpdates.current?.dispose(), []);
-  const [status, setStatusRaw] = useState("open a folder to start");
+  const [status, setStatusRaw] = useState(t("app.status.openFolder"));
   // a command the engine's exit cut off reports it as an error; while the
   // engine restarts, and just after, that goes to the console: the restart
   // has its own words (engineEvent)
@@ -417,7 +418,7 @@ export default function App() {
   const floatingRef = useRef<Pins>({ left: false, right: false, strip: false });
   const pinButton = (side: keyof Pins) => autoHide && (
     <button className={`tool pin${pins[side] ? " on" : ""}`}
-            title={pins[side] ? "unpin: let the panel hide" : "pin: keep the panel open"}
+            title={pins[side] ? t("app.pin.unpin") : t("app.pin.pin")}
             onClick={() => setPins((p) => { const n = { ...p, [side]: !p[side] }; storePins(n); return n; })}>
       <PinIcon on={pins[side]} /></button>
   );
@@ -437,12 +438,12 @@ export default function App() {
     const reference = preferred && local.some((i) => i.imgid === preferred.imgid) && valid(preferred)
       ? preferred : local.find(valid);
     if (reference) setCaptureDialog({ targets: local, reference });
-    else setStatus("no selected photos have a recorded capture time");
+    else setStatus(t("app.status.noCaptureTime"));
   };
   const startCaptureUndo = () => {
     const reference = imagesRef.current.find((i) => i.imgid === captureUndo[0]?.imgid);
     if (reference) setCaptureDialog({ targets: [], reference, undo: captureUndo.map((e) => ({ imgid: e.imgid, before: e.after, after: e.before })) });
-    else setStatus("open the folder containing the adjusted photos to undo their capture times");
+    else setStatus(t("app.status.captureUndoFolder"));
   };
   const applyCaptureTimes = async (entries: CaptureTimeEntry[]) => {
     const reply = await commands.captureTimes(entries);
@@ -945,7 +946,7 @@ export default function App() {
     try {
       const paths = await withModel(model, () => { setStatus(working); return run(); });
       if (session.current !== s) setStatus("");
-      else if (!paths.length) setStatus("nothing found");
+      else if (!paths.length) setStatus(t("app.status.nothingFound"));
       else { done(paths); setStatus(""); }
     } catch (e) {
       setStatus(session.current === s ? `AI mask: ${e}` : "");
@@ -2207,7 +2208,7 @@ export default function App() {
   const boxZoneObject = (prompt: ObjectPrompt) => {
     setZoneBoxing(false);
     const kind = nextObjectKind(zoneObjects);
-    if (!kind) { setStatus("no more objects on this photo"); return; }
+    if (!kind) { setStatus(t("app.status.noMoreObjects")); return; }
     const invert = zonePart?.invert ?? false;
     void runAi("mask-object-sam21-small", "finding the object…",
       () => commands.aiObject(prompt.points ?? [], prompt.box ?? null, null, null).then((r) => r as ObjectShape["paths"]),
@@ -2225,7 +2226,7 @@ export default function App() {
     let name = zoneMaskOf(r)?.name;
     const want = zoneMaskName(r, zonePart);
     const paths = zonePart ? partPaths(zonePart.kind) : null;
-    if (!name && zonePart && !paths) { setStatus("choose the part of the photo again"); return; }
+    if (!name && zonePart && !paths) { setStatus(t("app.status.choosePhotoPart")); return; }
     record([`mask:${name ?? want}:${what}`]);
     if (!name) {
       name = s.masks.some((m) => m.name === want) ? nextMaskName(s.masks, want) : want;
@@ -2518,7 +2519,7 @@ export default function App() {
     tonePending.current = null;
     if (!t || t.s !== session.current) return;
     const v = autoTone(px, width, height, t.key);
-    if (!v) { setStatus("auto: nothing to measure"); return; }
+    if (!v) { setStatus(t("app.status.autoNothingToMeasure")); return; }
     // part of the step Auto began
     quietly(() => changeMany(Object.entries(v)));
   };
@@ -2736,7 +2737,7 @@ export default function App() {
     if (!next || settled || t.round >= 4) {
       wbTarget.current = null;
       if (!next && t.round === 0) {
-        setStatus(t.at ? "pick a lighter spot, not a clipped or black one" : "no usable colors for auto");
+        setStatus(t.at ? translate("app.status.pickLighterSpot") : translate("app.status.noUsableColors"));
         return;
       }
       if (t.anchor) {
@@ -3837,7 +3838,7 @@ export default function App() {
       }
       setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
-      setStatus("opening…");
+      setStatus(t("app.status.opening"));
       const opening = { path, imgid: id };
       setCurrent(opening);
       currentRef.current = opening;
@@ -4210,7 +4211,7 @@ export default function App() {
     if (session.current !== s) return;
     clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
     setHasClip(true);
-    setStatus("settings copied");
+    setStatus(t("app.status.settingsCopied"));
   };
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
@@ -4239,7 +4240,7 @@ export default function App() {
     if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
     const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
     const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
-    if (!targets.length) { setStatus("paste: no local photos selected"); return; }
+    if (!targets.length) { setStatus(t("app.status.pasteNoLocalPhotos")); return; }
     const frozen = structuredClone(c);
     const defaults = newPhotoDefaults();
     const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
@@ -4285,7 +4286,7 @@ export default function App() {
     if (!active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
     const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
     const [target] = pasteTargets(imagesRef.current, new Set<number>(), entry, isRemote).targets;
-    if (!target) { setStatus("discard history: not for a remote photo"); return; }
+    if (!target) { setStatus(t("app.status.discardRemoteHistory")); return; }
     const defaults = newPhotoDefaults();
     const before = snapshot(session.current, "Discard history");
     pastingRef.current = true;
@@ -4403,7 +4404,7 @@ export default function App() {
       undo.current = { past: [], future: [], key: "", at: 0 };
       setHistoryBase(base);
       setHistoryRev((n) => n + 1);
-      setStatus("history compressed");
+      setStatus(t("app.status.historyCompressed"));
     } catch (e) {
       setStatus(`error: ${e}`);
     }
@@ -4418,7 +4419,7 @@ export default function App() {
     u.future = [];
     u.key = "";
     setHistoryRev((n) => n + 1);
-    setStatus("steps above dropped");
+      setStatus(t("app.status.stepsDropped"));
   };
 
   // the History panel's actions on a row of the opened stack. a module with
@@ -4725,7 +4726,7 @@ export default function App() {
     if (proof.mode !== "off") { changeProof({ ...proof, mode: "off" }); return; }
     if (!printSettings.profile) {
       showRight("print");
-      setStatus("Soft proof: choose a printer profile under Color Management");
+      setStatus(t("app.status.softProofProfile"));
       return;
     }
     changeProof({ mode: "proof", profile: printSettings.profile, intent: printSettings.intent });
@@ -4969,7 +4970,7 @@ export default function App() {
     if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
       ?? list.slice(at + 1).find(local) ?? list.slice(0, at).reverse().find(local);
-    if (!pick) { setStatus("compare needs a second photo"); return; }
+    if (!pick) { setStatus(t("app.status.compareNeedsPhoto")); return; }
     setCompare(pick.imgid);
   };
   // the candidate opened some other way leaves nothing to compare; a swap
@@ -5002,7 +5003,7 @@ export default function App() {
         bitmap.close();
         setCandReady(true);
       } catch {
-        if (!gone) setStatus("no preview of that photo");
+        if (!gone) setStatus(t("app.status.noPhotoPreview"));
       }
     };
     void load();
@@ -5095,7 +5096,7 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span>100%</span>
         <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
-          aria-label={`Pick ${id} loupe point`} aria-pressed={loupePicking} title="Pick a point on the photo"
+          aria-label={t("app.loupe.pick", { area: id })} aria-pressed={loupePicking} title={t("app.loupe.pickPoint")}
           onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
       </div>
       <div style={{ width: 160, height: 160, margin: "0 auto", display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
@@ -5108,9 +5109,9 @@ export default function App() {
             display.getContext("2d")!.drawImage(source, 0, 0);
           }
         }} style={{ display: loupeShown ? "block" : "none" }} />
-        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
+        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? t("app.loupe.preparing") : t("app.loupe.openPhoto")}</span>}
       </div>
-      {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
+      {loupePicking && <div role="status">{t("app.loupe.pickHelp")}</div>}
     </div>
   ) : undefined;
 
@@ -5496,7 +5497,7 @@ export default function App() {
     if (!cropEntry) return;
     const [w, h] = cropEntry.map(Number);
     const a = customAspect(w, h);
-    if (!a) { setStatus("enter two numbers above 0"); return; }
+    if (!a) { setStatus(t("app.status.enterPositiveNumbers")); return; }
     setCropEntry(null);
     const preset = ASPECTS.find((x) => Array.isArray(x.ratio) && Array.isArray(a.ratio)
                                        && x.ratio[0] * a.ratio[1] === x.ratio[1] * a.ratio[0]);
@@ -5604,13 +5605,13 @@ export default function App() {
         const sel = selectionRef.current;
         const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
         if (list.length > 1) setHdrMerging(list);
-        else setStatus("HDR Merge: select two raw exposures or more");
+        else setStatus(t("app.status.hdrNeedsRaws"));
       },
       "pano-merge": () => {
         const sel = selectionRef.current;
         const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
         if (list.length > 1) setPanoMerging(list);
-        else setStatus("Panorama Merge: select two raw photos or more");
+        else setStatus(t("app.status.panoramaNeedsRaws"));
       },
       "preferences": () => { setPrefsOpen(true); },
       "import": () => { setImportOpen(true); },
@@ -6032,7 +6033,7 @@ export default function App() {
 
   return (
     <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
-    {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label="Pasting settings"
+    {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label={t("app.action.pasting")}
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
       <div className="modal"><div className="modal-head"><h2>{pasting}</h2></div></div>
     </div>}
@@ -6054,7 +6055,7 @@ export default function App() {
       <div className={`slot left-slot${layout.left ? "" : " closed"}${floating.left ? " floating" : ""}`
                       + `${floating.left && revealed.left ? " revealed" : ""}`}>
       <aside className="left" ref={leftAside} style={{ width: layout.leftWidth }}>
-        <div className="panel-head"><h1>Library</h1>{pinButton("left")}</div>
+        <div className="panel-head"><h1>{t("app.library.title")}</h1>{pinButton("left")}</div>
         <Navigator thumb={navThumb} zoom={zoom} placement={placement} disabled={!current}
                    onZoom={(z) => { if (z !== "fit") navZoom.current = z; setZoom(z); }}
                    onPan={(x, y, done) => {
@@ -6084,8 +6085,8 @@ export default function App() {
             kept as it was left */}
         <div className="panel folders-panel" data-tour="folders">
           <div className={`panel-title${foldersOpen ? " open" : ""}`} onClick={(e) => toggleLeft("folders", e.altKey)}>
-            <span>Folders</span>
-            <button className="refresh" title="read the folders and the open folder's photos again"
+            <span>{t("app.library.folders")}</span>
+            <button className="refresh" title={t("app.library.refreshFolders")}
                     onClick={(e) => {
                       e.stopPropagation();
                       setFolderRefresh((n) => n + 1);
@@ -6096,8 +6097,8 @@ export default function App() {
           </div>
           {foldersOpen && (
             <div className="folders-body">
-              <label className="sub-toggle" title="show the photos in a folder's subfolders too">
-                <span>Include subfolders</span>
+              <label className="sub-toggle" title={t("app.library.includeSubfoldersHint")}>
+                <span>{t("app.library.includeSubfolders")}</span>
                 <input type="checkbox" className="switch" checked={includeSub} onChange={(e) => {
                   const on = e.target.checked;
                   setIncludeSub(on);
@@ -6129,7 +6130,7 @@ export default function App() {
                             if (next.has(d)) next.delete(d); else next.add(d);
                             setExpandedTo(next);
                           }} />
-              <button className="folder add" onClick={addFolder}><span>+ Add folder…</span></button>
+              <button className="folder add" onClick={addFolder}><span>{t("app.library.addFolder")}</span></button>
             </div>
           )}
         </div>
@@ -6205,10 +6206,10 @@ export default function App() {
           )}
           {cellsPage && cellsPage.pages > 1 && (
             <div className="print-pager" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
-              <button aria-label="previous page" disabled={cellPageNo <= 0}
+              <button aria-label={t("app.print.previousPage")} disabled={cellPageNo <= 0}
                       onClick={() => setSheetPageNo(cellPageNo - 1)}>‹</button>
-              <span data-print-pager>Page {cellPageNo + 1} of {cellsPage.pages}</span>
-              <button aria-label="next page" disabled={cellPageNo >= cellsPage.pages - 1}
+              <span data-print-pager>{t("app.print.page", { page: cellPageNo + 1, total: cellsPage.pages })}</span>
+              <button aria-label={t("app.print.nextPage")} disabled={cellPageNo >= cellsPage.pages - 1}
                       onClick={() => setSheetPageNo(cellPageNo + 1)}>›</button>
             </div>
           )}
@@ -6319,7 +6320,7 @@ export default function App() {
             <div className="print-align" style={sheet.area}>
               {Array.from({ length: 9 }, (_, k) => (
                 <button key={k} className={k === printSettings.alignment ? "on" : ""}
-                        aria-label={`place the photo ${PRINT_PLACES[k]}`} title={`place the photo ${PRINT_PLACES[k]}`}
+                        aria-label={t("app.print.place", { place: t(`app.print.position.${k}`) })} title={t("app.print.place", { place: t(`app.print.position.${k}`) })}
                         onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
                         onClick={() => setPrintSettings({ ...printSettings, alignment: k })} />
               ))}
@@ -6356,8 +6357,8 @@ export default function App() {
               )}
               {baMode === "side" && <div className="side-gap" />}
               {baMode !== "overlay" && <>
-                <div className="split-label left">Before</div>
-                <div className={`split-label ${baMode === "hsplit" ? "bottom" : baMode === "side" ? "pane-left" : "right"}`}>After</div>
+                <div className="split-label left">{t("app.beforeAfter.before")}</div>
+                <div className={`split-label ${baMode === "hsplit" ? "bottom" : baMode === "side" ? "pane-left" : "right"}`}>{t("app.beforeAfter.after")}</div>
               </>}
             </>
           )}
@@ -6367,13 +6368,13 @@ export default function App() {
               <>
                 <div className="cand-pane" onPointerDown={(e) => e.stopPropagation()}>
                   <canvas ref={candCanvas} className={candReady ? "" : "loading"} />
-                  {!candReady && <span className="cand-wait">rendering…</span>}
+                  {!candReady && <span className="cand-wait">{t("app.compare.rendering")}</span>}
                 </div>
                 <div className="side-gap" />
                 <div className="split-label left">A · {fileName}{copyName(currentEntry)}</div>
                 <div className="split-label cand">
                   B · {cand?.filename ?? ""}{copyName(cand)}
-                  {cand && <button title="edit this one, and compare against the other"
+                  {cand && <button title={t("app.compare.editAndCompare")}
                                    onClick={() => {
                                      if (!currentEntry) return;
                                      swapping.current = true;
@@ -6389,56 +6390,56 @@ export default function App() {
                          onOrient={setCropPortrait}
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
-          {(before || holding) && <div className="before-badge">Before</div>}
+          {(before || holding) && <div className="before-badge">{t("app.beforeAfter.before")}</div>}
           {current && proof.mode !== "off" && !printOpen && (
             <div className="proof-badge" data-proof-badge>
-              Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
-              {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
+              {t("app.print.softProof")}: {printProfiles.find((p) => p.file === proof.profile)?.name ?? t("app.print.printerProfile")}
+              {proof.mode === "gamut" ? t("app.print.gamutWarning") : ""}</div>
           )}
           {modeFlash && <div className="mode-flash">{modeFlash}</div>}
-          {holdHint && <div className="hold-hint">Click and hold the photo to see the before</div>}
+          {holdHint && <div className="hold-hint">{t("app.beforeAfter.holdHint")}</div>}
           {line && (
             <svg className="straighten-line">
               <line x1={line.x0} y1={line.y0} x2={line.x1} y2={line.y1} />
             </svg>
           )}
-          <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
+          <div className={`working${working ? " on" : ""}`} title={t("app.status.working")} aria-hidden={!working}><span /></div>
           <div className="status">{status}{isEngineExit(status) && <button className="status-action"
             onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
-            onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button>}</div>
+            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
           <div className="activities">
-          {imageQuery && immich && <div className="activity"><span>Image query: {imageQuery} · all local library folders</span>
-            <button onClick={() => void searchImmich(immichFormRef.current)}>Clear image query</button></div>}
+          {imageQuery && immich && <div className="activity"><span>{t("app.status.imageQuery", { query: imageQuery })}</span>
+            <button onClick={() => void searchImmich(immichFormRef.current)}>{t("app.status.clearImageQuery")}</button></div>}
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
             <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
                  onPointerUp={(e) => e.stopPropagation()}>
-              <span>The engine is not answering.</span>
-              <button onClick={hideEngineNotice}>Wait</button>
-              <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
+              <span>{t("app.status.engineNotAnswering")}</span>
+              <button onClick={hideEngineNotice}>{t("app.status.wait")}</button>
+              <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatusRaw(`error: ${e}`)); }}>{t("app.status.restart")}</button>
             </div>
           )}
           {saveError && (
-            <div className="activity" data-save-error><span className="failed">Edits are not being saved. {saveError}</span></div>
+            <div className="activity" data-save-error><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
           )}
           {engineNotice?.kind === "failed" && (
-            <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span>
-              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button></div>
+            <div className="activity"><span className="failed">{t("app.status.engineKeepsStopping")}</span>
+              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></div>
           )}
           {(() => {
             // the folder's reading, then its thumbnails
-            if (immich?.busy) return <div className="activity"><span>Searching photos…</span>
-              <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus("Search stopped"); }}>Stop</button></div>;
+            if (immich?.busy) return <div className="activity"><span>{t("app.status.searching")}</span>
+              <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus(t("app.status.searchStopped")); }}>{t("app.status.stop")}</button></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
               // the viewer's own pointer handling (zoom on click) stays off it
               <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
                    onPointerUp={(e) => e.stopPropagation()}>
-                <span>Waiting for {w.name}{w.total > 1 ? ` · ${w.back} of ${w.total} back` : ""}…</span>
-                <button onClick={() => void commands.pluginCancel(w.token)}>Stop waiting</button>
+                <span>{t("app.status.waiting", { name: w.name, progress: w.total > 1 ? t("app.status.waitingProgress", { back: w.back, total: w.total }) : "" })}</span>
+                <button onClick={() => void commands.pluginCancel(w.token)}>{t("app.status.stopWaiting")}</button>
               </div>
             );
-            return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
+            return reading ? <ActivityBar what={t("app.status.readingPhotos")} done={reading.done} total={reading.total} />
               : <ThumbProgress loader={loader.current!} />;
           })()}
           </div>
@@ -6488,16 +6489,16 @@ export default function App() {
         </div>
         <Toolbar filter={filter} images={images} immich={immich && immichForm.source !== "local" && immichBase ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
-                   <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
+                   <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
-                   <button className="tool" title={keys("redo (⇧⌘Z)")} disabled={!current} onClick={() => stepHistory(false)}>
+                   <button className="tool" title={keys(t("app.action.redo"))} disabled={!current} onClick={() => stepHistory(false)}>
                      <UndoIcon redo /></button>
                    <span className="sep" />
                    <button className={`tool view${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
-                           title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}; Y cycles layouts, click cycles layouts and hold for before   full before: \\`}
+                           title={t("app.beforeAfter.tooltip", { mode: t(`app.beforeAfter.mode.${baMode}`) })}
                            onClick={cycleBaButtonMode}><BeforeAfterIcon /></button>
                    <button className={`tool view${compare !== null ? " on" : ""}`} disabled={!current || cropping}
-                           title="compare with another photo (C): click one in the filmstrip, or step with ← →"
+                           title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
                  filterBounds={() => {
@@ -6538,16 +6539,16 @@ export default function App() {
       <div className={`slot right-slot${rightOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
-        <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
+        <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
             <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
                       data-tour="advanced-mode"
-                      title={editMode === "advanced" ? "Advanced mode is on: click for Simple's sliders" : "switch to Advanced mode: darktable's modules"}>
+                      title={t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced")}>
                 <ModulesIcon /></button>
             <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
-                      title={anyOpen ? keys("collapse all panels (⌥-click a panel to open it alone)") : "expand all panels"}>
+                      title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
@@ -6649,7 +6650,7 @@ export default function App() {
           )}
           {rightMode === "zones" && !cropping && (
             <div className="panel">
-              <div className="panel-title"><span>Zone System</span>
+              <div className="panel-title"><span>{t("app.panel.zoneSystem")}</span>
                 {values.bw_mode === 1 && <AdvancedToggle on={zonesAdvanced} onToggle={toggleZonesAdvanced} />}
               </div>
               {values.bw_mode === 1 ? (
@@ -6707,10 +6708,9 @@ export default function App() {
               
               ) : (
                 <section>
-                  <p className="zone-hint">The Zone System works on black and white: it places the tones a
-                    black and white photo is made of.</p>
+                  <p className="zone-hint">{t("app.panel.zoneHint")}</p>
                   <button className="btn small" disabled={!current}
-                          onClick={() => change(controlById.get("bw_mode")!, 1)}>Convert to Black &amp; White</button>
+                          onClick={() => change(controlById.get("bw_mode")!, 1)}>{t("app.panel.convertBW")}</button>
                 </section>
               )}
             </div>
@@ -6802,9 +6802,9 @@ export default function App() {
           )}
           {cropping && (
             <div className="panel crop-card">
-              <div className="panel-title"><span>Crop</span></div>
+              <div className="panel-title"><span>{t("app.panel.crop")}</span></div>
               <section>
-                <div className="row-label">Aspect</div>
+                <div className="row-label">{t("app.panel.aspect")}</div>
                 <div className="crop-aspect">
                   <select value={cropAspect} onChange={(e) => {
                     if (e.target.value !== "enter-custom") { chooseAspect(e.target.value, cropPortrait); return; }
@@ -6817,11 +6817,11 @@ export default function App() {
                     {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                     {cropChoices.length > 0 && <option disabled>──────────</option>}
                     {cropChoices.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-                    <option value="enter-custom">Enter Custom…</option>
+                    <option value="enter-custom">{t("app.panel.enterCustom")}</option>
                   </select>
-                  <button className="btn" title="swap orientation (X)" disabled={cropAspect === "free"}
+                  <button className="btn" title={t("app.panel.swapOrientation")} disabled={cropAspect === "free"}
                           onClick={() => chooseAspect(cropAspect, !cropPortrait)}>
-                    {cropPortrait ? "Portrait" : "Landscape"}
+                    {cropPortrait ? t("app.panel.portrait") : t("app.panel.landscape")}
                   </button>
                 </div>
                 {cropEntry && (
@@ -6830,38 +6830,37 @@ export default function App() {
                          if (e.key === "Enter") setCustomAspect();
                          else if (e.key === "Escape") setCropEntry(null);
                        }}>
-                    <input type="number" min={0} step="any" aria-label="width" autoFocus value={cropEntry[0]}
+                    <input type="number" min={0} step="any" aria-label={t("app.panel.width")} autoFocus value={cropEntry[0]}
                            onChange={(e) => setCropEntry([e.target.value, cropEntry[1]])} />
                     <span>×</span>
-                    <input type="number" min={0} step="any" aria-label="height" value={cropEntry[1]}
+                    <input type="number" min={0} step="any" aria-label={t("app.panel.height")} value={cropEntry[1]}
                            onChange={(e) => setCropEntry([cropEntry[0], e.target.value])} />
-                    <button className="btn" onClick={setCustomAspect}>Set</button>
+                    <button className="btn" onClick={setCustomAspect}>{t("app.action.set")}</button>
                   </div>
                 )}
                 <div className="crop-angle">
                   <button className={`tool${straightening ? " on" : ""}`} disabled={!current}
-                          title={keys("straighten: drag along a line that should be level or upright (or hold ⇧ and drag)")}
+                          title={keys(t("app.straighten.hint"))}
                           onClick={() => setStraightening(!straighteningRef.current)}><RulerIcon /></button>
                   <Slider control={controlById.get("tf_rotate")!} value={values.tf_rotate ?? 0} neutral={0}
                           disabled={!current} values={values}
                           onChange={(v) => change(controlById.get("tf_rotate")!, v)} />
                   <button className="btn small" disabled={!current || uprightBusy || (values.tf_upright ?? 0) !== 0}
-                          title={(values.tf_upright ?? 0) !== 0 ? "Upright sets the angle: turn Upright off to level from here"
-                                                                : "level the photo from its straight lines"}
-                          onClick={() => void runAutoStraighten()}>Auto</button>
+                          title={t((values.tf_upright ?? 0) !== 0 ? "app.straighten.uprightHint" : "app.straighten.autoHint")}
+                          onClick={() => void runAutoStraighten()}>{t("app.action.auto")}</button>
                 </div>
                 {autoAngleNote && <div className="note-plain">{autoAngleNote}</div>}
-                <div className="row-label">Rotate &amp; Flip</div>
+                <div className="row-label">{t("app.panel.rotateFlip")}</div>
                 <div className="crop-turn">
-                  <button className="tool" title={keys("rotate left (⌘[)")} onClick={() => void turn("ccw")}><RotateIcon /></button>
-                  <button className="tool" title={keys("rotate right (⌘])")} onClick={() => void turn("cw")}><RotateIcon right /></button>
-                  <button className="tool" title="flip horizontal" onClick={() => void turn("h")}><FlipIcon /></button>
-                  <button className="tool" title="flip vertical" onClick={() => void turn("v")}><FlipIcon vertical /></button>
+                  <button className="tool" title={keys(t("app.action.rotateLeft"))} onClick={() => void turn("ccw")}><RotateIcon /></button>
+                  <button className="tool" title={keys(t("app.action.rotateRight"))} onClick={() => void turn("cw")}><RotateIcon right /></button>
+                  <button className="tool" title={t("app.panel.flipHorizontal")} onClick={() => void turn("h")}><FlipIcon /></button>
+                  <button className="tool" title={t("app.panel.flipVertical")} onClick={() => void turn("v")}><FlipIcon vertical /></button>
                 </div>
                 <div className="crop-buttons">
-                  <button className="btn" onClick={() => setCropRect(FULL)}>Reset</button>
-                  <button className="btn" onClick={() => leaveCrop(false)}>Cancel</button>
-                  <button className="btn primary" onClick={() => leaveCrop(true)}>Done</button>
+                  <button className="btn" onClick={() => setCropRect(FULL)}>{t("app.action.reset")}</button>
+                  <button className="btn" onClick={() => leaveCrop(false)}>{t("app.action.cancel")}</button>
+                  <button className="btn primary" onClick={() => leaveCrop(true)}>{t("app.action.done")}</button>
                 </div>
               </section>
             </div>
@@ -6879,22 +6878,19 @@ export default function App() {
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
                            <button className="btn small" disabled={!current || values.neg_on === 1}
-                                   title={values.neg_on === 1 ? "set in Negative: a converted negative has no tone mapper for Auto to set"
-                                     : values.tm_mode === 1
-                                     ? "Exposure, AgX's range as darktable's auto tune levels sets it, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"
-                                     : "Exposure, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"}
-                                   onClick={() => void runAutoTone()}>Auto</button>
+                                   title={t(values.neg_on === 1 ? "app.tone.negativeHint"
+                                     : values.tm_mode === 1 ? "app.tone.agxHint" : "app.tone.basicHint")}
+                                   onClick={() => void runAutoTone()}>{t("app.action.auto")}</button>
                          </div>
                        ) : undefined}
                        straightenTools={p.id === "transform" ? (
                          <div className="straighten-tools">
                            <button className={`btn small${straightening ? " on" : ""}`} disabled={!current}
-                                   title={keys("drag along a line that should be level or upright (or hold ⇧ and drag)")}
+                                   title={keys(t("app.straighten.hint"))}
                                    onClick={() => { setGuiding(false); setStraightening(!straighteningRef.current); }}>
-                             <RulerIcon />Straighten
+                             <RulerIcon />{t("app.straighten.action")}
                            </button>
-                           <span className="note-plain">{straightening ? "drag along a line that should be level or upright"
-                                                                       : "or hold ⇧ and drag on the photo"}</span>
+                           <span className="note-plain">{straightening ? t("app.straighten.dragHint") : t("app.straighten.shiftHint")}</span>
                          </div>
                        ) : undefined}
                        transformTools={p.id === "transform" ? (
@@ -6912,22 +6908,22 @@ export default function App() {
                            </div>
                            {guiding && (
                              <div className="upright-guided">
-                               <span className="note-plain">{`${values.tf_gn ?? 0} of ${MAX_GUIDES} guides`}</span>
-                               <button className="btn small" onClick={() => setGuiding(false)}>Done</button>
+                               <span className="note-plain">{t("app.straighten.guideCount", { count: values.tf_gn ?? 0, total: MAX_GUIDES })}</span>
+                               <button className="btn small" onClick={() => setGuiding(false)}>{t("app.action.done")}</button>
                              </div>
                            )}
                            {uprightNote && <div className="note-plain">{uprightNote}</div>}
                          </div>
                        ) : undefined}
                        denoiseTools={p.id === "detail" ? (
-                         session.current && !session.current.raw ? <div className="note-plain">raw photos only</div>
-                         : immich ? <div className="note-plain">photos in a folder on this computer only</div>
+                         session.current && !session.current.raw ? <div className="note-plain">{t("app.denoise.rawOnly")}</div>
+                         : immich ? <div className="note-plain">{t("app.denoise.localOnly")}</div>
                          : (
                            <div className="denoise-tools">
                              <button className="btn small" disabled={!current || aiBusy || denoiseRunning}
-                                     title={denoiseRunning ? "a denoise is still running" : undefined}
-                                     onClick={() => setDenoising(true)}>Denoise…</button>
-                             <span className="note-plain">writes a denoised DNG beside the raw, with this edit</span>
+                                     title={denoiseRunning ? t("app.denoise.running") : undefined}
+                                     onClick={() => setDenoising(true)}>{t("app.denoise.action")}</button>
+                             <span className="note-plain">{t("app.denoise.sidecarHint")}</span>
                            </div>
                          )
                        ) : undefined}
@@ -6948,7 +6944,7 @@ export default function App() {
                        } : undefined} /></Profiler>
           ))}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
-            <AdvancedGroup id={TECHNICAL_ID} title="Technical" photos={shown} session={session.current} revision={historyRev} record={record} pick={pick?.group === TECHNICAL_ID ? pick : null} onPicked={searchPicked} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
+            <AdvancedGroup id={TECHNICAL_ID} title={t("app.panel.technical")} photos={shown} session={session.current} revision={historyRev} record={record} pick={pick?.group === TECHNICAL_ID ? pick : null} onPicked={searchPicked} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
           )}
         </div>
         {!cropping && current && rightMode === "film" && values.sf_on === 1 && (
@@ -6956,16 +6952,16 @@ export default function App() {
                           onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
                           onExport={() => exportPositive("film")}
                           onTurnOff={sfTurnOff}
-                          turnOffLabel="Turn Off Film Simulation"
-                          turnOffTitle="the photo back on its tone mapper, with Basic's tools as they were" />
+                          turnOffLabel={t("app.film.turnOff")}
+                          turnOffTitle={t("app.film.turnOffTitle")} />
         )}
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
-                  data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
+                  data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
           <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
-                  data-action="paste-settings" title={keys("paste the copied settings onto the selected photos (⇧⌘V)")}>Paste</button>
+                  data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
-                  title={keys("the previous photo's settings, the parts ticked in Copy Settings (⌥⌘V)")}>Previous</button>
+                  title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
       </aside>
       </div>
@@ -6973,39 +6969,39 @@ export default function App() {
       <div />
       <nav className="rail" ref={rail}>
         {/* in the order of the work: bring photos in, edit them, send them out */}
-        <button className={`tool${importOpen ? " on" : ""}`} title={keys("import photos (⇧⌘I)")} data-tour="import"
+        <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
         {/* the tools work on the open photo, not its cell: one opened before
             its folder listed it, or from elsewhere, has none */}
-        <button className={`tool${rightOpen && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
+        <button className={`tool${rightOpen && !cropping && rightMode === "adjust" ? " on" : ""}`} title={t("app.rail.adjustments")}
                 data-tour="adjust" onClick={() => showRight("adjust")}>
           <SlidersIcon /></button>
-        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!current}
+        <button className={`tool${cropping ? " on" : ""}`} title={t("app.rail.crop")} data-tour="crop" disabled={!current}
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
-        <button className={`tool${rightOpen && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
+        <button className={`tool${rightOpen && !cropping && masksMode ? " on" : ""}`} title={t("app.rail.masks")} data-tour="masks"
                 disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
-        <button className={`tool${rightOpen && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
+        <button className={`tool${rightOpen && !cropping && healMode ? " on" : ""}`} title={t("app.rail.heal")}
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
-        <button className={`tool${rightOpen && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
+        <button className={`tool${rightOpen && !cropping && rightMode === "zones" ? " on" : ""}`} title={t("app.rail.zones")}
                 data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
         <button className={`tool${rightOpen && !cropping && rightMode === "film" ? " on" : ""}`}
-                title="film simulation" data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
+                title={t("app.rail.filmSimulation")} data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
         <button className={`tool${rightOpen && !cropping && rightMode === "negative" ? " on" : ""}`}
-                title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
-        <button className={`tool${rightOpen && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
+                title={t("app.rail.filmNegative")} data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
+        <button className={`tool${rightOpen && !cropping && rightMode === "presets" ? " on" : ""}`} title={t("app.rail.presets")} data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
         <div className="rail-sep" />
-        <button className="tool" title={keys("export (⇧⌘E)")} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
-        <button className={`tool${rightOpen && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
+        <button className="tool" title={keys(t("app.rail.export"))} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
+        <button className={`tool${rightOpen && !cropping && rightMode === "print" ? " on" : ""}`} title={keys(t("app.rail.print"))}
                 data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
         <div className="rail-fill" />
-        <button className="tool" title="quick start guide" onClick={() => setTouring(true)}><HelpIcon /></button>
-        <button className="tool" title={keys("keyboard shortcuts (⌘/)")} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
-        <button className="tool" title={keys("preferences (⌘,)")} data-tour="prefs" onClick={() => setPrefsOpen(true)}><GearIcon /></button>
+        <button className="tool" title={t("app.rail.guide")} onClick={() => setTouring(true)}><HelpIcon /></button>
+        <button className="tool" title={keys(t("app.rail.shortcuts"))} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
+        <button className="tool" title={keys(t("app.rail.preferences"))} data-tour="prefs" onClick={() => setPrefsOpen(true)}><GearIcon /></button>
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
@@ -7103,7 +7099,7 @@ export default function App() {
                   onOpenSettings={openImmichPrefs} />
     )}
     {touring && <Tour onClose={endTour} />}
-    {dropping && <div className="drop-target"><span>drop a photo to edit it, or a folder to add it</span></div>}
+    {dropping && <div className="drop-target"><span>{t("app.dropTarget")}</span></div>}
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
                               onClose={() => setHdrMerging(null)} />}
@@ -7115,27 +7111,22 @@ export default function App() {
     {negWarning && (
       <div className="modal-backdrop">
         <div className="modal neg-warn">
-          <div className="modal-head"><h2>Film Negative</h2></div>
+          <div className="modal-head"><h2>{t("app.negative.title")}</h2></div>
           <div className="modal-body">
-            <p>Converting a negative turns off the tools that work on the photo before it is inverted, or that
-              negadoctor's print takes the place of: Temp and Tint, Exposure, Whites, Blacks, Dehaze, Profile and
-              Auto, with the tone mapper. The Negative panel's own Exposure, White Point, Blacks and Neutral
-              Highlights stand in for them.</p>
-            <p>Contrast and Saturation move to color balance rgb, and Highlights and Shadows to shadows and
-              highlights, which work after the conversion. Turning the conversion off brings them all back as
-              they were.</p>
+            <p>{t("app.negative.warningTools")}</p>
+            <p>{t("app.negative.warningControls")}</p>
             <label className="row check">
               <input type="checkbox" checked={negNoWarn} onChange={(e) => setNegNoWarn(e.target.checked)} />
-              Don't warn me again
+              {t("app.negative.dontWarn")}
             </label>
           </div>
           <div className="modal-foot">
-            <button className="btn" onClick={() => setNegWarning(false)}>Cancel</button>
+            <button className="btn" onClick={() => setNegWarning(false)}>{t("app.action.cancel")}</button>
             <button className="btn primary" autoFocus onClick={() => {
               if (negNoWarn) storeNegWarn(false);
               setNegWarning(false);
               showRight("negative");
-            }}>Continue</button>
+            }}>{t("app.action.continue")}</button>
           </div>
         </div>
       </div>
@@ -7146,9 +7137,9 @@ export default function App() {
           <div className="modal-head"><h2>{exclusive.title}</h2></div>
           <div className="modal-body"><p>{exclusive.body}</p></div>
           <div className="modal-foot">
-            <button className="btn" onClick={() => setExclusive(null)}>Cancel</button>
+            <button className="btn" onClick={() => setExclusive(null)}>{t("app.action.cancel")}</button>
             <button className="btn primary" autoFocus onClick={() => { const go = exclusive.go; setExclusive(null); go(); }}>
-              Continue</button>
+              {t("app.action.continue")}</button>
           </div>
         </div>
       </div>
@@ -7183,7 +7174,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 // immage.<id>.open
 const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
-const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative",
-                                                  print: "Print" };
+const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
+                                                  zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),
+                                                  print: t("app.panel.print") };
 

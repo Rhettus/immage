@@ -41,14 +41,15 @@ export function PluginPrefs({ plugins, onPlugins }: {
       <p className="prefs-lead">{t("plugins.lead")}</p>
       {plugins.map((p) => {
         const kind = kindOf(p.kind)!;
+        const kindLabel = t(`plugins.kind.${kind.id}`);
         return (
-          <PrefCard key={p.id} title={kind.label}>
+          <PrefCard key={p.id} title={kindLabel}>
             <PrefRow id="Name" label={t("plugins.row.name")} hint={t("plugins.row.name.hint")}>
               <input className="field" value={p.name} spellCheck={false}
                      onChange={(e) => update(p.id, { name: e.target.value })}
                      onBlur={() => { if (!p.name.trim()) update(p.id, { name: kind.label }); }} />
             </PrefRow>
-            <PrefRow id="Application" label={t("plugins.row.app")} hint={p.app ? p.app : t("plugins.notfound", { name: kind.label })}>
+            <PrefRow id="Application" label={t("plugins.row.app")} hint={p.app ? p.app : t("plugins.notfound", { name: kindLabel })}>
               <div className="pref-inline">
                 <span className="pref-value">{p.app ? appName(p.app) : t("plugins.none")}</span>
                 <button className="btn small" onClick={() => void chooseApp(p.id)}>{t("prefs.choose")}</button>
@@ -88,8 +89,9 @@ export function PluginPrefs({ plugins, onPlugins }: {
               </div>
             </PrefRow>}
             {kind.onReturn.map((o) => (
-              <PrefRow key={o.id} label={o.label} summary={t("plugins.onreturn.summary", { hint: o.hint })}
-                       hint={t("plugins.onreturn.hint", { hint: o.hint })}>
+              <PrefRow key={o.id} label={t(`plugins.kind.${kind.id}.return.${o.id}.label`)}
+                       summary={t("plugins.onreturn.summary", { hint: t(`plugins.kind.${kind.id}.return.${o.id}.hint`) })}
+                       hint={t("plugins.onreturn.hint", { hint: t(`plugins.kind.${kind.id}.return.${o.id}.hint`) })}>
                 <PrefSwitch checked={!!p.onReturn[o.id]}
                             onChange={(on) => update(p.id, { onReturn: { ...p.onReturn, [o.id]: on } })} />
               </PrefRow>
@@ -97,7 +99,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
             <PrefRow label="" summary={kind.id === "dxo-pureraw"
               ? t("plugins.pureraw")
               : t("plugins.bracket")}
-              hint={kind.note}>
+              hint={t(`plugins.kind.${kind.id}.note`)}>
               <button className="btn small danger" onClick={() => onPlugins(plugins.filter((q) => q.id !== p.id))}>
                 {t("plugins.remove")}</button>
             </PrefRow>
@@ -109,7 +111,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
         <button className="btn small" onClick={() => setAdding(!adding)}>{t("plugins.add")} {adding ? "▴" : "▾"}</button>
         {adding && (
           <div className="context-menu plugin-kinds">
-            {KINDS.map((k) => <button key={k.id} onClick={() => void add(k)}>{k.label}</button>)}
+            {KINDS.map((k) => <button key={k.id} onClick={() => void add(k)}>{t(`plugins.kind.${k.id}`)}</button>)}
           </div>
         )}
       </div>

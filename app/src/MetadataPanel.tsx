@@ -5,6 +5,7 @@
 // text fields, rating and labels editable, its EXIF shown
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
+import { t } from "./i18n";
 import { LocationEditor } from "./LocationEditor";
 import { baseName } from "./paths";
 import { LABEL_COLORS, type Exif, type ImageEntry } from "./library";
@@ -87,33 +88,33 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, on
   return (
     <div className="panel metadata">
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
-        <span>Metadata</span>
+        <span>{t("dialogs.metadata.title")}</span>
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
       {open && (
         <>
         <div className="meta-grid">
-          <span className="k">File Name</span><span className="v" title={image.filename}>{image.filename}</span>
-          <span className="k">Folder</span><span className="v" title={folder}>{baseName(folder)}</span>
-          <span className="k">Capture Date</span><span className="v">
+          <span className="k">{t("dialogs.metadata.fileName")}</span><span className="v" title={image.filename}>{image.filename}</span>
+          <span className="k">{t("dialogs.metadata.folder")}</span><span className="v" title={folder}>{baseName(folder)}</span>
+          <span className="k">{t("dialogs.metadata.captureDate")}</span><span className="v">
             {e.datetime ? captureDate(e.datetime) : ""}{" "}
             {image.imgid > 0 ? <button className="tool" onClick={onCaptureTime}
-              title="Adjust capture time for selected photos" aria-label="Adjust Capture Time"><Pencil size={13} /></button> : null}
+              title={t("dialogs.metadata.adjustCaptureTimeHint")} aria-label={t("dialogs.metadata.adjustCaptureTime")}><Pencil size={13} /></button> : null}
           </span>
           {EDITABLE.map(([field, label]) => (
             <TextRow key={`${image.imgid}-${field}`} label={label} value={text?.[field] ?? ""}
                      disabled={!text} onCommit={(v) => onText(field, v)} />
           ))}
-          <span className="k">Rating</span>
+          <span className="k">{t("dialogs.metadata.rating")}</span>
           <span className="v stars-edit">
             {[1, 2, 3, 4, 5].map((n) => (
               <button key={n} className={!image.rejected && image.rating >= n ? "on" : ""}
-                      title={`${n} star${n > 1 ? "s" : ""}`}
+                      title={t("dialogs.metadata.ratingStars", { count: n })}
                       onClick={() => onMeta({ rating: image.rating === n ? 0 : n, rejected: false })}>★</button>
             ))}
           </span>
-          <span className="k">Label</span>
+          <span className="k">{t("dialogs.metadata.label")}</span>
           <span className="v labels-edit">
             {LABEL_COLORS.map((c, k) => (
               <button key={c} className={`swatch${image.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}

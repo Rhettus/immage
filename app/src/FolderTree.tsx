@@ -14,6 +14,7 @@ import { useMenuClose } from "./FileMenu";
 import { NameEdit } from "./MasksPanel";
 import { baseName } from "./paths";
 import { usePhotoDrag } from "./photoDrag";
+import { t } from "./i18n";
 
 // the drive a folder is on (folder_volumes, volumes.rs)
 export type { Volume };
@@ -121,7 +122,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
         <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
                         + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
              data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
-             title={offline ? `${path}\nnot connected` : path}
+             title={offline ? t("library.folders.pathOffline", { path }) : path}
              ref={path === photo ? reveal : undefined}
              style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}
              onContextMenu={(e) => {
@@ -134,8 +135,8 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
             {chevron}
           </button>
           {icon}<span className="name">{name}</span>
-          {holdsPhoto && <span className="photo-dot" title="the open photo is in this folder" />}
-          <button className="remove" title="remove from the list"
+          {holdsPhoto && <span className="photo-dot" title={t("library.folders.openPhoto")} />}
+          <button className="remove" title={t("library.folders.removeFromList")}
                   onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
         </div>
         {(creating === path || (kids && kids.length > 0)) && (
@@ -144,7 +145,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
               <li>
                 <div className="folder-row" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
                   <span className="twisty none">{chevron}</span>
-                  {icon}<NameEdit shown="New Folder" onDone={named} />
+                  {icon}<NameEdit shown={t("library.folders.newFolder")} onDone={named} />
                 </div>
               </li>
             )}
@@ -192,11 +193,11 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                     setEditingHost(null);
                     if (to !== null && to !== host) onRenameHost(v.host!, to === v.host ? "" : to);
                   }} />
-                : <span className="host" title="double-click to rename"
+                : <span className="host" title={t("library.folders.renameHost")}
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
               <span className={`drive-dot${v?.online === false ? " off" : ""}`}
-                    title={v?.online === false ? "not answering" : "connected"} />
+                    title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>
@@ -215,15 +216,15 @@ function FolderMenu({ x, y, path, offline, onNew, onRemove, onClose }: {
 }) {
   const ref = useMenuClose(onClose);
   const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - 130);
-  const why = offline ? "not connected" : undefined;
+  const why = offline ? t("library.folders.notConnected") : undefined;
   return (
     <div ref={ref} className="context-menu" style={{ left, top }}>
-      <button disabled={offline} title={why} onClick={() => { onClose(); onNew(); }}>New Folder…</button>
+      <button disabled={offline} title={why} onClick={() => { onClose(); onNew(); }}>{t("library.folders.newFolderMenu")}</button>
       <div className="menu-sep" />
       <button disabled={offline} title={why}
-              onClick={() => { onClose(); void revealItemInDir(path).catch(() => {}); }}>Show in {FILE_MANAGER}</button>
+              onClick={() => { onClose(); void revealItemInDir(path).catch(() => {}); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>
       <div className="menu-sep" />
-      <button onClick={() => { onClose(); onRemove(); }}>Remove from List</button>
+      <button onClick={() => { onClose(); onRemove(); }}>{t("library.folders.removeFromList")}</button>
     </div>
   );
 }

@@ -8,6 +8,7 @@
 import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { menuKeys, useCardMenu } from "./cardMenu";
+import { t } from "./i18n";
 
 export type FamilyOption = { op: string; title: string; applicable: boolean };
 
@@ -24,11 +25,11 @@ export function FamilySwitch({ label, current, options, onPick }: {
       {at && createPortal(
         <div ref={menu} className="context-menu module-menu" role="menu" onKeyDown={menuKeys}
              style={{ position: "fixed", left: at.x, top: at.y }}>
-          <div className="menu-label">Module for {label}</div>
+          <div className="menu-label">{t("fields.family.moduleFor", { label })}</div>
           {options.map((o) => (
             <button key={o.op} type="button" role="menuitemradio" aria-checked={o.op === current} data-family-option={o.op}
                     className={o.op === current ? "on" : ""} disabled={!o.applicable}
-                    title={o.applicable ? undefined : "darktable cannot apply this module to this photo"}
+                    title={o.applicable ? undefined : t("fields.advanced.notApplicable")}
                     onClick={(e) => { e.stopPropagation(); close(); if (o.op !== current) onPick(o.op); }}>
               <span className="check">{o.op === current ? "✓" : ""}</span><span className="name">{o.title}</span>
             </button>
