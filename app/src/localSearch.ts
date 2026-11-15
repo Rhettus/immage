@@ -19,3 +19,7 @@ export async function localSearch(q: ImmichSearch, filters: Filter, folder: stri
       localIndex: { assetId: hit.asset_id, variantId: hit.variant_id, subject: hit.subject } } satisfies ImageEntry)), next: page.next };
   } finally { signal.removeEventListener("abort", cancel); }
 }
+
+export function similarSearch(form: ImmichSearch): ImmichSearch {
+  return { ...form, source: "local", scope: "library", mode: "smart", text: "" };
+}

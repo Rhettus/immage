@@ -13,6 +13,8 @@ Improvements
   queries, with independent results, errors and pagination. Combined results
   merge exact verified local paths and weight each source equally. Filename searches
   use cached metadata; automatic local embedding creation is still pending.
+- The grid adds Show more like this for indexed local photos, searching all
+  library folders with retained filters and a visible image-query indicator.
 - Advanced mode adds searchable editing modules, presets and groups, with
   controls to customize their order and instances. Module edits support masks,
   undo and Copy Settings. Switch back to Simple mode at any time.

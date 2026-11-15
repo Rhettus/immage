@@ -116,7 +116,8 @@ Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% wind
 
 The Search photos card queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths. Automatic local embedding creation
-is still pending in this experimental branch.
+is still pending in this experimental branch. Indexed image queries use the grid
+context menu’s Show more like this action and retain active filters.
 
 Immich local path mappings keep resolved files within the configured folder,
 including when subfolders contain symbolic links.

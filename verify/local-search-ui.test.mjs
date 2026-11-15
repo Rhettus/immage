@@ -19,7 +19,7 @@ const mocks={
 };
 registerHooks({resolve(s,c,next){if(files.includes(c.parentURL)){if(mocks[s])return{url:data(mocks[s]),shortCircuit:true};if(s==='./immich')return{url:files[0],shortCircuit:true};}return next(s,c);},load(u,c,next){if(!files.includes(u))return next(u,c);return{format:'module',source:transformSync(fileURLToPath(u),readFileSync(fileURLToPath(u),'utf8'),{jsx:{runtime:'automatic'}}).code,shortCircuit:true};}});
 const {NO_SEARCH,nativeSearchArgs}=await import(files[0]);
-const {localSearch}=await import(files[1]);
+const {localSearch,similarSearch}=await import(files[1]);
 const {ImmichPanel}=await import(files[2]);
 const nodes=t=>Array.isArray(t)?t.flatMap(nodes):!t||typeof t!=='object'?[]:[t,...nodes(t.props?.children)];
 test('native Immich arguments exclude local controls',()=>{
@@ -45,4 +45,12 @@ test('abort invokes native cancellation and rejects late local replies',async()=
  let finish;const cancelled=[];globalThis.__searchUI={commands:{localSearch:()=>new Promise(r=>finish=r),async localSearchCancel(id){cancelled.push(id);}}};
  const controller=new AbortController();const pending=localSearch(NO_SEARCH,{},'',false,null,controller.signal);
  controller.abort();finish({items:[],next:null});await assert.rejects(pending,/cancelled/);assert.equal(cancelled.length,1);
+});
+
+test('similar photo query selects local all-roots while retaining filter fields',async()=>{
+ const form={...NO_SEARCH,source:'both',scope:'folder',text:'old text',mode:'filename',favorites:true,minRating:4};
+ const q=similarSearch(form);assert.equal(q.source,'local');assert.equal(q.scope,'library');assert.equal(q.text,'');assert.equal(q.mode,'smart');assert.equal(q.favorites,true);assert.equal(q.minRating,4);
+ let sent;globalThis.__searchUI={commands:{async localSearch(args){sent=args;return{items:[],next:null};}}};
+ await localSearch(q,{labels:2},'/photos',false,null,new AbortController().signal,'123');
+ assert.equal(sent.imageVariant,'123');assert.equal(sent.text,'');assert.equal(sent.scope,'library');assert.deepEqual(sent.filters,{labels:2});
 });

@@ -141,6 +141,18 @@ pub async fn local_search(
 pub fn local_search_cancel(state: State<'_, AppState>, request_id: u64) {
     state.local_search_requests.cancel(request_id);
 }
+/// Resolve the clicked file version to a cache identity, never an engine ID.
+#[tauri::command]
+#[specta::specta]
+pub async fn local_search_seed(state: State<'_, AppState>, path: String, version: u32) -> Result<Option<String>, String> {
+    let Some(cache) = state.search_cache.clone() else { return Ok(None); };
+    tauri::async_runtime::spawn_blocking(move || seed(&cache, &path, version)).await.map_err(|e| e.to_string())?
+}
+fn seed(cache: &crate::search_cache::SearchCache, path: &str, version: u32) -> Result<Option<String>, String> {
+    let key = if version == 0 { String::new() } else { format!("version:{version}") };
+    Ok(cache.path_variants(path)?.into_iter().find(|v| v.copy_key == key).map(|v| v.id.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +174,21 @@ mod tests {
         assert_eq!(next.publish(|| 42), Some(42));
         requests.cancel_all();
         assert!(next.cancelled());
+    }
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+    #[test]
+    fn clicked_version_resolves_its_own_cache_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = crate::search_cache::SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let a = cache.upsert_variant("/photos/a.jpg", "", "source", "edit", None, None, None).unwrap();
+        let b = cache.upsert_variant("/photos/a.jpg", "version:2", "source", "copy", None, None, None).unwrap();
+        assert_eq!(seed(&cache, "/photos/a.jpg", 0).unwrap(), Some(a.id.to_string()));
+        assert_eq!(seed(&cache, "/photos/a.jpg", 2).unwrap(), Some(b.id.to_string()));
+        assert_eq!(seed(&cache, "/photos/a.jpg", 1).unwrap(), None);
+        assert_eq!(seed(&cache, "/photos/missing.jpg", 0).unwrap(), None);
     }
 }

@@ -123,8 +123,14 @@ camera-body fields exclude remote results when those filters are selected.
 
 Local search uses only cached metadata and current model-versioned analysis.
 Selected filters exclude unknown values; capture-date filters do not substitute
-file modification dates. Similarity queries exclude the source photo and its
-virtual copies. A changed cache requires restarting paginated local results.
+file modification dates. In the grid, right-click a local photo and choose **Show more like this**.
+The clicked photo supplies the image query, independently of the open editor.
+The query covers all local library folders, retains selected filters and uses
+the chosen original/edited subject. An **Image query** indicator names the seed;
+**Clear image query** returns to a metadata listing. Missing or stale seed
+analysis produces an error rather than substituting another photo. Automatic
+embedding creation is still pending in this experimental build.
+Similarity queries exclude the source photo and its virtual copies. A changed cache requires restarting paginated local results.
 
 ### Thumbnail previews
 

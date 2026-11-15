@@ -8,6 +8,8 @@ export const commands = {
 	searchStatus: () => __TAURI_INVOKE<SearchStatus>("search_status"),
 	localSearch: (args: LocalSearchArgs, requestId: number) => __TAURI_INVOKE<LocalPage>("local_search", { args, requestId }),
 	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
+	/**  Resolve the clicked file version to a cache identity, never an engine ID. */
+	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),

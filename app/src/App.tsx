@@ -122,7 +122,7 @@ import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
-import { localSearch } from "./localSearch";
+import { localSearch, similarSearch } from "./localSearch";
 import { remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
@@ -344,6 +344,7 @@ export default function App() {
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
+  const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
   useEffect(() => { if (!prefsOpen) void immichUrl().then(setImmichBase); }, [prefsOpen]);
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
@@ -2952,6 +2953,7 @@ export default function App() {
                             seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
     window.clearTimeout(immichTimer.current);
     setImmich(null);
+    setImageQuery(null);
     combined.current?.cancel();
     setFolder(dir);
     saveLibrary({ current: dir });
@@ -3046,6 +3048,7 @@ export default function App() {
       await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
       return;
     }
+    if (!imageVariant) setImageQuery(null);
     thumbError.current = false;
     loader.current!.clear();
     setReading(null);
@@ -3053,6 +3056,18 @@ export default function App() {
     const enabled: ("local" | "immich")[] = !immichBase || q.source === "local" ? ["local"]
       : q.source === "immich" ? ["immich"] : ["local", "immich"];
     await combined.current!.search({ form: q, filters: filter, folder: folder ?? "", recursive: includeSub, imageVariant }, enabled);
+  };
+
+  const showSimilar = async (hit: ImageEntry) => {
+    try {
+      const variant = hit.localIndex?.variantId ?? await commands.localSearchSeed(hit.path, hit.version ?? 0);
+      if (!variant) throw new Error("This photo has not been indexed yet");
+      const q = similarSearch(immichFormRef.current);
+      immichFormRef.current = q; setImmichForm(q); storeSearch(q);
+      window.clearTimeout(immichTimer.current);
+      setImageQuery(hit.filename);
+      await searchImmich(q, false, variant);
+    } catch (e) { setStatus(`Similar photos: ${e}`); }
   };
 
   // a photo picked in the filmstrip. an Immich result opens the external
@@ -6389,6 +6404,8 @@ export default function App() {
             onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
             onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button>}</div>
           <div className="activities">
+          {imageQuery && immich && <div className="activity"><span>Image query: {imageQuery} · all local library folders</span>
+            <button onClick={() => void searchImmich(immichFormRef.current)}>Clear image query</button></div>}
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
             <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
@@ -7002,6 +7019,7 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
+                  onSimilar={grid && hit && !isRemote(hit) ? () => void showSimilar(hit) : undefined}
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
