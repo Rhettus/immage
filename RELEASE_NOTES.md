@@ -14,7 +14,8 @@ Improvements
   are always copied. A confirmation resolves name conflicts. Sidecars travel
   with each photo, and copies are verified before originals are removed.
 - In the grid, F opens a culling preview with navigation, ratings, labels and
-  rejection. Click for Fit/100%, Space-drag to pan, and double-click to edit.
+  rejection. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
+  Fit/100%, Space-drag to pan, and double-click to edit.
   K keywords the selected photos, or the hovered photo when none are selected.
 - Grid thumbnails resize with the slider, trackpad pinch, ⌘-scroll, or ⌘= / ⌘-;
   the photo under the pointer stays in place and the chosen size is remembered.

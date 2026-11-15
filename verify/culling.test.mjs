@@ -48,9 +48,11 @@ function fixture(overrides = {}) {
   const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
   const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images,
     selection: new Set([1,2]), anchor: 2, keywordTargets, direction: {current:1},
+    zoomRef: {current:null}, zoomAnchor: {current:null},
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
     setPhoto: v => calls.push(['photo', v]), keywords: v => calls.push(['keywords', v.map(i => i.imgid)]),
+    setZoom: v => calls.push(['zoom', v]),
     onMeta: (i, v) => calls.push(['meta', i.imgid, v]), ...overrides };
   const press = (key, target = {}) => createHandler(env)({key, target: {closest: () => false, ...target},
     preventDefault() {}, stopImmediatePropagation() {}});
@@ -77,11 +79,16 @@ test('Escape closes keyword dialog before closing the lightbox', () => {
   f.press('Escape', {closest: () => true});
   assert.deepEqual(f.calls, [['targets', []]]);
 });
+test('Z toggles Fit and 100% on the displayed photo', () => {
+  const f = fixture({photo:2, current:{imgid:2}});
+  f.press('z');
+  assert.deepEqual(f.calls, [['zoom',1]]);
+});
 
 test('first paint borrows the exact virtual-copy thumbnail without closing it', () => {
   const begin = component.indexOf('    const small = thumbnail(current.imgid);');
   const end = component.indexOf('    const key = (entry:', begin);
-  const paint = new Function('thumbnail', 'current', 'zoom', 'canvas', 'setPaintSize', 'viewport', component.slice(begin, end));
+  const paint = new Function('thumbnail', 'current', 'detailed', 'canvas', 'setPaintSize', 'viewport', component.slice(begin, end));
   const calls = [];
   const bitmaps = new Map([[1, {width: 240, height: 160}], [2, {width: 160, height: 240}]]);
   const canvas = {current: {width: 0, height: 0, style: {}, getContext: () => ({drawImage: b => calls.push(b)})}};
@@ -160,15 +167,17 @@ const clickStart = component.indexOf('onClick={', viewportStart) + 'onClick={'.l
 const clickEnd = component.indexOf('\n          onDoubleClick=', clickStart);
 const clickSource = component.slice(clickStart, clickEnd).trim().slice(0,-1);
 const createClick = new Function('env', `with(env) { return (${clickSource}); }`);
-test('single click toggles zoom, second click of double-click does not toggle again', () => {
-  let zoom=false, count=0;
+test('single click toggles Fit and 100%, second click of double-click does not toggle again', () => {
+  let zoom=null, count=0;
+  const zoomRef={current:null};
   const env = {panClick:{current:false},space:{current:false},zoomAnchor:{current:null},
+    zoomRef,
     canvas:{current:{getBoundingClientRect:()=>({left:0,top:0,width:400,height:300})}},
-    setZoom(fn) { zoom=fn(zoom); count++; }};
+    setZoom(value) { zoom=zoomRef.current=value; count++; }};
   const click=createClick(env);
   const e={detail:1, clientX:100,clientY:150,currentTarget:{getBoundingClientRect:()=>({left:0,top:0})}};
   click(e);
-  assert.equal(zoom,true);
+  assert.equal(zoom,1);
   assert.deepEqual(env.zoomAnchor.current,{ix:.25,iy:.5,sx:100,sy:150});
   click({...e,detail:2});
   assert.equal(count,1);
@@ -223,7 +232,7 @@ test('cached foreground draws immediately even while native speculative work is 
   const source=transformSync('show.ts',component.slice(start,end)).code;
   const pixels={}; const calls=[];
   const env={current:{imgid:2},size:800,key:()=> 'second',
-    previews:{current:new Map([['second',pixels]])},stale:false,zoom:false,
+    previews:{current:new Map([['second',pixels]])},stale:false,detailed:false,
     q:{enqueue(){throw Error('cached foreground must bypass native queue');}},
     draw:b=>calls.push(b),setDetail(){},setBusy(){},
     setTimeout:()=>123,timer:undefined};

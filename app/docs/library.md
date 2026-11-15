@@ -561,11 +561,13 @@ clears rejection, as it does elsewhere in the app. Purple is available by click.
 
 Unedited RAW previews use the embedded camera preview; edited photos use the
 processed thumbnail pipeline. An uncached edited preview can take time to
-render. Single-click the photo to toggle Fit and **100%** detail, with the same zoom
-animation as the editor. Zoom centers on the clicked point. Hold **Space** and
-drag to pan at 100%; releasing a Space-drag does not toggle zoom. The **100% /
-Fit** button also switches views. Embedded detail is limited to the camera preview's
-native resolution. Double-click opens the displayed photo in the editor.
+render. Scroll over the photo to zoom smoothly toward **4:1**, anchored under
+the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
+**100%** when crossing it and returns to Fit when zoomed out. Single-click the
+photo or press **Z** to toggle Fit and **100%** detail; the button does the same.
+Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
+toggle zoom. Embedded detail is limited to the camera preview's native
+resolution. Double-click opens the displayed photo in the editor.
 The existing grid thumbnail appears immediately at Fit size while a larger preview loads,
 so sharper pixels do not make the photo grow. Nearby screen previews stay in memory
 while the lightbox is open and appear immediately when revisited.

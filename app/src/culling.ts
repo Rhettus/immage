@@ -39,6 +39,16 @@ export function fitLightbox(windowWidth: number, windowHeight: number) {
   };
 }
 
+// Keep the lightbox's relative zoom multiplier in step with the editor. Null
+// means the wheel returned to Fit; 1 is 100% and 4 is the maximum detail.
+export function wheelZoom(from: number, deltaY: number, ctrlKey: boolean, fitScale: number): number | null {
+  const delta = Math.max(-50, Math.min(50, deltaY));
+  let to = Math.min(4, from * Math.exp(-delta * (ctrlKey ? .006 : .0008)));
+  // Stop at native resolution so one detent cannot skip across 100%.
+  if ((from < 1 && to > 1) || (from > 1 && to < 1)) to = 1;
+  return to <= fitScale * 1.001 ? null : to;
+}
+
 // Match editor read-ahead: nearest first in the last navigation direction,
 // then the same count behind when enabled. The caller supplies visible order.
 export function previewNeighbors<T extends { imgid: number; remote?: unknown }>(

@@ -104,4 +104,4 @@ another photo from the grid.
 Immage is GPL-3.0-or-later. Bundled third-party content keeps its own license.
 See [license details and source availability](app/docs/credits.md#license).
 
-Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
+Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
