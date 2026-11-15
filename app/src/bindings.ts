@@ -5,6 +5,18 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
+	searchStatus: () => __TAURI_INVOKE<SearchStatus>("search_status"),
+	localSearch: (args: LocalSearchArgs, requestId: number) => __TAURI_INVOKE<LocalPage>("local_search", { args, requestId }),
+	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
+	/**  Resolve the clicked file version to a cache identity, never an engine ID. */
+	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
+	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
+	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
+	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
+	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
+	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
+	searchModelDownload: (consent: boolean) => __TAURI_INVOKE<null>("search_model_download", { consent }),
+	searchModelCancel: () => __TAURI_INVOKE<void>("search_model_cancel"),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -341,6 +353,13 @@ export type CombineMember = {
 	invert: boolean,
 };
 
+export type Counts = {
+	assets: number,
+	variants: number,
+	metadata: number,
+	analyses: number,
+};
+
 export type DepthMap = {
 	width: number,
 	height: number,
@@ -475,6 +494,25 @@ export type GpuEditState = {
 	next: boolean,
 };
 
+export type GridFilter = {
+	minRating?: number,
+	rejected?: string,
+	edited?: string,
+	labels?: number,
+	unlabeled?: boolean,
+	kinds?: string[],
+	cameras?: string[],
+	bodies?: string[],
+	lenses?: string[],
+	keywords?: string[],
+	takenFrom?: string,
+	takenTo?: string,
+	iso?: string[],
+	aperture?: string[],
+	focal?: string[],
+	shutter?: string[],
+};
+
 export type HdrReply = {
 	path: string,
 	image: LibraryImage,
@@ -556,6 +594,34 @@ export type Limits = {
 	immichOriginals: number,
 };
 
+export type LocalHit = {
+	asset_id: string,
+	variant_id: string,
+	subject: string,
+	score: number | null,
+	image: LibraryImage,
+};
+
+export type LocalPage = {
+	items: LocalHit[],
+	next: string | null,
+	revision: string,
+};
+
+export type LocalSearchArgs = {
+	text?: string,
+	mode?: string,
+	imageVariant?: string | null,
+	subject?: string,
+	scope?: string,
+	folder?: string | null,
+	recursive?: boolean,
+	filters?: GridFilter,
+	remote?: SearchArgs,
+	next?: string | null,
+	size?: number,
+};
+
 export type Location = {
 	latitude: number,
 	longitude: number,
@@ -628,6 +694,8 @@ export type MetaExif = {
 	sensor_width?: number,
 	sensor_height?: number,
 	datetime: string,
+	capture_time_raw?: string,
+	capture_offset?: string,
 	file_datetime?: string,
 };
 
@@ -660,6 +728,15 @@ export type MetaText = {
 	publisher: string,
 	rights: string,
 	notes: string,
+};
+
+export type ModelStatus = {
+	revision: string,
+	bytes: number,
+	downloading: boolean,
+	/**  Installation verified in this process; not an inference availability claim. */
+	verified: boolean,
+	error: string | null,
 };
 
 export type ModuleEdit = {
@@ -972,6 +1049,12 @@ export type PrintersReply = {
 	printers: Printer[],
 };
 
+export type ProbeReply = {
+	dimensions: number,
+	image_dimensions: number,
+	elapsed_ms: number | null,
+};
+
 export type Refine = {
 	feather: number,
 	blur: number,
@@ -1006,6 +1089,13 @@ export type ResourceLevels = {
 };
 
 export type Restore = string | ModuleState;
+
+export type RootStatus = {
+	path: string,
+	mount: string | null,
+	state: string,
+	error: string | null,
+};
 
 export type SampleReply = {
 	luminance: number,
@@ -1079,6 +1169,13 @@ export type SearchPage = {
 	next: string | null,
 };
 
+export type SearchStatus = {
+	counts: Counts | null,
+	roots: RootStatus[],
+	queue: Status,
+	model: ModelStatus,
+};
+
 export type SharedImport = {
 	presets: Value[],
 	looks: number,
@@ -1092,6 +1189,14 @@ export type SpotMode = "heal" | "clone";
 export type SpotSource = {
 	sx: number,
 	sy: number,
+};
+
+export type Status = {
+	queued: number,
+	active: number,
+	paused: boolean,
+	finished: number,
+	failed: number,
 };
 
 export type SubFolder = {

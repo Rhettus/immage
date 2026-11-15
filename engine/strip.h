@@ -67,5 +67,6 @@ int location_sidecar_missing(const char *path);
 
 // Camera body serial from standard EXIF/DNG or recognized maker notes; caller frees.
 char *camera_body_serial(const char *path);
+char *camera_source_metadata(const char *path, char **capture, char **offset);
 
 G_END_DECLS

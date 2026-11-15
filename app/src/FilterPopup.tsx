@@ -435,6 +435,6 @@ function ImmichCategories({ form, update, onSearch }: ImmichFilters & { onSearch
   return (
     <Categories title="Immich search" value={form} apply={(v) => update(v, true)} cats={cats}
                 onSearch={onSearch}
-                none={{ ...NO_SEARCH, mode: form.mode, text: form.text, library: form.library, minRating: form.minRating }} />
+                none={{ ...NO_SEARCH, mode: form.mode, text: form.text, library: form.library, minRating: form.minRating, source: form.source, scope: form.scope, subject: form.subject }} />
   );
 }

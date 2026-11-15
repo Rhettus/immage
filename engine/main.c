@@ -393,6 +393,13 @@ static gboolean _cmd_import(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_analysis_preview(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  return dest && library_analysis_preview(json_object_get_int_member_with_default(req, "imgid", 0),
+    json_object_get_string_member_with_default(req, "subject", ""), dest, err);
+}
+
 static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
 {
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
@@ -1290,6 +1297,7 @@ static const eng_cmd_t _commands[] =
   { "folder", _cmd_folder, 0 },
   { "import", _cmd_import, 0 },
   { "thumb", _cmd_thumb, 0 },
+  { "analysis_preview", _cmd_analysis_preview, 0 },
   { "prefetch", _cmd_prefetch, 0 },
   { "meta", _cmd_meta, 0 },
   { "keywords", _cmd_keywords, 0 },
@@ -1555,7 +1563,7 @@ static void _trim(const gboolean pressure)
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
-// tagged `thumb` goes to the thumbnail threads (library_thumb_run), a tagged
+// tagged `thumb` and `meta` go to the thumbnail threads (library_thumb_run), a tagged
 // `export`, `export_release`, `hdr_merge`, `pano_merge` or `pano_preview` to the export
 // thread (export_run), a tagged `import` to the import thread (library_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
@@ -1590,9 +1598,14 @@ static gpointer _read_requests(gpointer data)
           export_merge_cancel(json_object_get_int_member_with_default(req, "job", 0));
           taken = TRUE;
         }
-        else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
+        else if(!g_strcmp0(cmd, "clip_embed") && json_object_has_member(req, "tag"))
         {
-          fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          clip_queue(parser); parser = NULL; taken = TRUE;
+        }
+        else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")
+                 || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] %s %.*s\n", cmd, (int)strcspn(line->str, "\r\n"), line->str);
           // the pool frees the parser
           if(library_thumb_queue(parser)) parser = NULL;
           taken = TRUE;
@@ -1729,6 +1742,7 @@ int main(int argc, char **argv)
   ai_pool = g_thread_pool_new(ai_run, out, 1, FALSE, NULL);
   g_thread_unref(g_thread_new("ai idle", ai_idle_watch, NULL));
 #endif
+  clip_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -1794,6 +1808,7 @@ int main(int argc, char **argv)
   // the client gone without a quit: its edits are kept all the same
   if(!quit) session_save_pending();
 
+  clip_wait();
   library_thumb_wait();
   library_import_wait();
   export_wait();

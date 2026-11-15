@@ -59,6 +59,13 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         Some(false) => return Err(format!("folder not found: {path}")),
         Some(true) => {}
     }
+    if let Some(index) = state.search_cache.clone() {
+        let observed = path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let volume = volumes::volume(&observed);
+            if volume.online { let _ = index.root_state(&observed, Some(&volume.mount), "online", None); }
+        }).await.map_err(|e| e.to_string())?;
+    }
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
         let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
@@ -70,7 +77,8 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     if state.folder_token.load(Ordering::SeqCst) != token {
         return Err("superseded".into());
     }
-    *app.state::<Caches>().listed.lock().unwrap() = listed;
+    *app.state::<Caches>().listed.lock().unwrap() = listed.clone();
+    let listed_cache = std::sync::Arc::new(Mutex::new(listed));
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
@@ -87,7 +95,32 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             return Err("superseded".into());
         }
         let batch = &files[done..total.min(done + size)];
-        let list: Vec<String> = batch.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        let cached_index = state.search_cache.clone();
+        let cached_listing = listed_cache.clone();
+        let candidates = batch.to_vec();
+        let (mut cached, list, batch_len) = tauri::async_runtime::spawn_blocking(move || {
+            let mut cached = Vec::new(); let mut missing = Vec::new();
+            let mut cached_mode = None;
+            let mut count = 0;
+            for path in candidates {
+                let found = cached_folder_metadata(cached_index.as_deref(), &cached_listing, &path);
+                let hit = found.is_some();
+                if cached_mode.is_some_and(|mode| mode != hit) { break; }
+                cached_mode = Some(hit); count += 1;
+                if let Some(mut metadata) = found { cached.append(&mut metadata); }
+                else { missing.push(path.to_string_lossy().into_owned()); }
+            }
+            (cached, missing, count)
+        }).await.map_err(|e| e.to_string())?;
+        if state.folder_token.load(Ordering::SeqCst) != token { return Err("superseded".into()); }
+        for image in &mut cached {
+            if let (Some(path), Some(version)) = (image["path"].as_str(), image["version"].as_i64()) {
+                image["imgid"] = json!(state.tagged.cached_photo(path, version));
+            }
+        }
+        // Each group is a contiguous hit/miss prefix. The engine's budgeted
+        // processed count therefore cannot skip an unprocessed cache miss.
+        let cached_files = if list.is_empty() { batch_len } else { 0 };
         let t = state.tagged.clone();
         let tag = t.tag();
         let start = Instant::now();
@@ -97,19 +130,27 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         // files hold neither the next folder nor an open photo for long
         // (main.c, _import_files)
         let budget = (IMPORT_TARGET * 2).as_millis() as u64;
-        let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
+        let requested = list.len();
+        let reply = if requested == 0 { json!({"images":[],"done":0}) } else { tauri::async_runtime::spawn_blocking(move || t.request_until(
             tag, json!({ "cmd": "import", "files": list, "job": token, "budget": budget }), Duration::from_secs(30),
             || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| e.to_string())?? };
         let took = start.elapsed();
-        let got = reply["images"].as_array().cloned().unwrap_or_default();
+        let mut got = reply["images"].as_array().cloned().unwrap_or_default();
+        if let Some(index) = state.search_cache.clone() {
+            let listed = listed_cache.clone();
+            let metadata = got.clone();
+            tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &listed, &metadata))
+                .await.map_err(|e| e.to_string())?;
+        }
         // the files the batch went through; the rest go in the next. none
         // when another read's batch came in first, which the token check
         // above then finds, or which is resent
-        let through = reply["done"].as_u64().map_or(batch.len(), |n| (n as usize).min(batch.len()));
+        let through = cached_files + reply["done"].as_u64().map_or(requested, |n| (n as usize).min(requested));
+        got.append(&mut cached);
         // a batch of about IMPORT_TARGET, however long a file takes to read
-        if through > 0 && through < batch.len() {
+        if through > 0 && through < batch_len {
             size = through.max(IMPORT_BATCH.1);
         } else if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
@@ -133,6 +174,245 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
     serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
+}
+
+// A complete, validated group only: one unknown/new/deleted sidecar forces
+// ordinary engine import, including all current virtual copies. No engine IDs
+// or negative (unsupported-file) results are persisted here.
+fn cached_folder_metadata(
+    index: Option<&crate::search_cache::SearchCache>, listed: &Mutex<cache::Listed>, path: &Path,
+) -> Option<Vec<Value>> {
+    let index = index?;
+    let versions = listed.lock().ok()?.versions(path)?;
+    let rows = index.path_metadata(path.to_str()?).ok()?;
+    if rows.len() != versions.len() { return None; }
+    let mut result = Vec::new();
+    for version in versions {
+        let key = if version == 0 { String::new() } else { format!("version:{version}") };
+        let (_, original, edited, metadata) = rows.iter().find(|(k,_,_,_)| *k == key)?;
+        let stamps = cache::listed_metadata_fingerprints(listed, path, version)?;
+        if stamps.0 != *original || stamps.1 != *edited { return None; }
+        let image: Value = serde_json::from_str(metadata).ok()?;
+        // Reject malformed disposable rows rather than breaking folder replies.
+        let mut typed = image.clone(); typed["imgid"] = json!(1);
+        let parsed: LibraryImage = serde_json::from_value(typed).ok()?;
+        if parsed.path != path.to_str()? || i64::from(parsed.version) != version { return None; }
+        result.push(image);
+    }
+    Some(result)
+}
+
+// Keep the already-extracted EXIF/library metadata in the disposable local
+// index. The engine's imgid is deliberately omitted: it exists only for this
+// process and must never become the persistent search identity.
+fn index_imported_metadata(
+    index: Option<&crate::search_cache::SearchCache>,
+    listed: &std::sync::Mutex<cache::Listed>,
+    images: &[Value],
+) {
+    let Some(index) = index else { return };
+    for image in images {
+        let Some(path) = image.get("path").and_then(Value::as_str) else { continue };
+        let version = image.get("version").and_then(Value::as_i64).unwrap_or(0);
+        let Some((original_fingerprint, edited_fingerprint)) =
+            cache::listed_metadata_fingerprints(listed, Path::new(path), version)
+        else { continue };
+        let (capture_ns, raw_capture, offset) = precise_capture(image);
+        let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
+        let Ok(record) = index.upsert_variant(path, &copy_key, &original_fingerprint,
+            &edited_fingerprint, capture_ns, raw_capture.as_deref(), offset) else { continue };
+        let mut metadata = image.clone();
+        if let Some(fields) = metadata.as_object_mut() { fields.remove("imgid"); }
+        match serde_json::to_string(&metadata) {
+            Ok(json) => if let Err(e) = index.store_metadata_if_current(record.id, &original_fingerprint, &edited_fingerprint, &json) {
+                eprintln!("search metadata cache: {e}");
+            },
+            Err(e) => eprintln!("search metadata serialization: {e}"),
+        }
+    }
+}
+
+fn mutation_metadata_snapshot(
+    index: &crate::search_cache::SearchCache,
+    path: &str,
+    copy_key: &str,
+) -> Result<Option<crate::search_cache::PendingAnalysis>, String> {
+    let Some(variant) = index.variant(path, copy_key)? else { return Ok(None) };
+    let Some(asset) = index.asset(variant.asset_id)? else { return Ok(None) };
+    if asset.path != path { return Ok(None) }
+    Ok(Some(crate::search_cache::PendingAnalysis {
+        variant_id: variant.id,
+        asset_id: asset.id,
+        path: asset.path,
+        copy_key: variant.copy_key,
+        original: asset.original_fingerprint,
+        edited: variant.edited_fingerprint,
+        needs_metadata: true,
+        needs_original: false,
+        needs_edited: false,
+    }))
+}
+
+fn metadata_refresh_key(row: &crate::search_cache::PendingAnalysis) -> String {
+    // after_success assigns a fresh random edited fingerprint on each
+    // invalidation; save/open refreshes for the same photo therefore don't
+    // deduplicate one another across invalidation generations.
+    format!("search-metadata:{}:{}", row.variant_id, row.edited)
+}
+
+struct PreparedMetadata {
+    edited: String,
+    metadata: String,
+    capture: (Option<i64>, Option<String>, Option<i32>),
+}
+
+// File stats and serialization can block on a NAS; prepare them before taking
+// Job::commit's queue lock. The publication step below is only the CAS query.
+fn prepare_mutation_metadata(
+    row: &crate::search_cache::PendingAnalysis,
+    image: &Value,
+) -> Result<Option<PreparedMetadata>, String> {
+    let Some(path) = image.get("path").and_then(Value::as_str) else { return Ok(None) };
+    let Some(version) = image.get("version").and_then(Value::as_i64) else { return Ok(None) };
+    if version < 0 { return Ok(None) }
+    let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
+    if path != row.path || copy_key != row.copy_key { return Ok(None) }
+    let Some((original, edited)) = cache::listed_metadata_fingerprints(
+        &Mutex::new(cache::Listed::default()), Path::new(path), version,
+    ) else { return Ok(None) };
+    if original != row.original { return Ok(None) }
+    let capture = precise_capture(image);
+    let mut stored = image.clone();
+    if let Some(fields) = stored.as_object_mut() { fields.remove("imgid"); }
+    let metadata = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
+    Ok(Some(PreparedMetadata { edited, metadata, capture }))
+}
+
+fn publish_mutation_metadata(
+    index: &crate::search_cache::SearchCache,
+    row: &crate::search_cache::PendingAnalysis,
+    prepared: PreparedMetadata,
+) -> Result<bool, String> {
+    index.finish_analysis_metadata(
+        row,
+        &prepared.edited,
+        &prepared.metadata,
+        (prepared.capture.0, prepared.capture.1.as_deref(), prepared.capture.2),
+    )
+}
+
+fn cache_mutation_metadata(
+    index: &crate::search_cache::SearchCache,
+    row: &crate::search_cache::PendingAnalysis,
+    image: &Value,
+) -> Result<bool, String> {
+    let Some(prepared) = prepare_mutation_metadata(row, image)? else { return Ok(false) };
+    publish_mutation_metadata(index, row, prepared)
+}
+
+// A successful metadata edit invalidates the cached JSON in the engine link.
+// Re-read the engine's authoritative metadata and repopulate the disposable
+// search index without making a successful edit depend on cache availability.
+async fn refresh_search_metadata(state: &AppState, imgid: i64) {
+    let Some(index) = state.search_cache.clone() else { return };
+    let Some(photo) = state.tagged.known_photo(imgid) else { return };
+    let copy_key = if photo.version == 0 { String::new() } else { format!("version:{}", photo.version) };
+    let row = match mutation_metadata_snapshot(&index, &photo.path, &copy_key) {
+        Ok(Some(row)) => row,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("search metadata refresh for {imgid}: {error}");
+            return;
+        }
+    };
+    let reply = match state.engine("search_metadata_refresh").request(
+        json!({ "cmd": "meta", "imgid": imgid }),
+    ) {
+        Ok(reply) => reply,
+        Err(error) => {
+            eprintln!("search metadata refresh for {imgid}: {error}");
+            return;
+        }
+    };
+    let Some(image) = reply.get("image").cloned() else { return };
+    match tauri::async_runtime::spawn_blocking(move || cache_mutation_metadata(&index, &row, &image)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("search metadata refresh for {imgid}: {error}"),
+        Err(error) => eprintln!("search metadata refresh for {imgid}: {error}"),
+    }
+}
+
+// Lifecycle refreshes run on the bounded shared queue so opening the next
+// photo never waits on metadata I/O for the one just left.
+pub(crate) fn queue_search_metadata_refresh(state: &AppState, photo: crate::library_ids::Photo) {
+    let Some(index) = state.search_cache.clone() else { return };
+    let copy_key = if photo.version == 0 { String::new() } else { format!("version:{}", photo.version) };
+    let row = match mutation_metadata_snapshot(&index, &photo.path, &copy_key) {
+        Ok(Some(row)) => row,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("search metadata refresh for {}: {error}", photo.path);
+            return;
+        }
+    };
+    let key = metadata_refresh_key(&row);
+    let tagged = state.tagged.clone();
+    let path = photo.path.clone();
+    let version = photo.version;
+    if !state.analysis_queue.submit(key, move |job| {
+        if job.cancelled() { return }
+        let handle = tagged.cached_photo(&path, version);
+        let reply = match tagged.request(tagged.tag(), json!({ "cmd": "meta", "imgid": handle })) {
+            Ok(reply) => reply,
+            Err(error) => {
+                eprintln!("search metadata refresh for {}: {error}", path);
+                return;
+            }
+        };
+        let Some(image) = reply.get("image").cloned() else { return };
+        let prepared = match prepare_mutation_metadata(&row, &image) {
+            Ok(Some(prepared)) => prepared,
+            Ok(None) => return,
+            Err(error) => {
+                eprintln!("search metadata refresh for {}: {error}", path);
+                return;
+            }
+        };
+        if let Some(result) = job.commit(|| publish_mutation_metadata(&index, &row, prepared)) {
+            match result {
+                Ok(_) => {}
+                Err(error) => eprintln!("search metadata refresh for {}: {error}", path),
+            }
+        }
+    }) {
+        eprintln!("search metadata refresh for {}: analysis queue is full or stopping", photo.path);
+    }
+}
+
+// Preserve camera fractional digits and only assign an instant when its UTC
+// offset is known. A changed sidecar capture date takes precedence over EXIF.
+pub(crate) fn precise_capture(image: &Value) -> (Option<i64>, Option<String>, Option<i32>) {
+    let exif = &image["exif"];
+    let datetime = exif["datetime"].as_str().unwrap_or("");
+    let source = exif["capture_time_raw"].as_str().unwrap_or("");
+    let source_matches = datetime.len() >= 19 && source.get(..19) == datetime.get(..19);
+    let raw = if source_matches { source } else { datetime };
+    if raw.is_empty() { return (None,None,None); }
+    let zone = if source_matches { exif["capture_offset"].as_str().unwrap_or("") } else { "" };
+    let offset = (|| {
+        let b = zone.as_bytes();
+        if b.len()!=6 || !matches!(b[0], b'+'|b'-') || b[3]!=b':'
+            || ![b[1],b[2],b[4],b[5]].iter().all(u8::is_ascii_digit) { return None; }
+        let hours=i32::from(b[1]-b'0')*10+i32::from(b[2]-b'0');
+        let minutes=i32::from(b[4]-b'0')*10+i32::from(b[5]-b'0');
+        if hours>23 || minutes>59 { return None; }
+        Some((hours*3600+minutes*60)*if b[0]==b'-' {-1} else {1})
+    })();
+    let instant = chrono::NaiveDateTime::parse_from_str(raw,"%Y:%m:%d %H:%M:%S%.f").ok()
+        .zip(offset.and_then(chrono::FixedOffset::east_opt))
+        .and_then(|(dt,zone)|dt.and_local_timezone(zone).single())
+        .and_then(|dt|dt.timestamp_nanos_opt());
+    (instant,Some(raw.to_owned()),offset)
 }
 
 // the folder's images as its last whole read found them, for open_folder()
@@ -208,7 +488,7 @@ impl Progress {
 // optional readers in darktable/src/CMakeLists.txt. Keep the optional formats
 // here too: the engine still decides whether this build can decode a photo.
 // Checking the name needs no file reads or extra network round trips.
-fn photo_candidate(path: &Path) -> bool {
+pub(crate) fn photo_candidate(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
         "3fr", "ari", "arw", "bay", "bmq", "cap", "cine", "cr2", "cr3", "crw", "cs1", "dc2",
         "dcr", "dng", "erf", "fff", "gpr", "hdr", "ia", "iiq", "jfif", "jpeg", "jpg", "k25",
@@ -267,13 +547,13 @@ fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut 
 // a folder macOS shows as a file (Photos Library, a Lightroom catalog's
 // .lrlibrary, an app): not one to browse or import from
 #[cfg(target_os = "macos")]
-fn is_package(path: &Path) -> bool {
+pub(crate) fn is_package(path: &Path) -> bool {
     let p = objc2_foundation::NSString::from_str(&path.to_string_lossy());
     objc2_app_kit::NSWorkspace::sharedWorkspace().isFilePackageAtPath(&p)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn is_package(_path: &Path) -> bool {
+pub(crate) fn is_package(_path: &Path) -> bool {
     false
 }
 
@@ -330,6 +610,9 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
         items.extend(reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from));
     }
     trash_existing(items).await?;
+    if let Some(index)=&state.search_cache {
+        for path in &gone { if let Err(e)=index.remove_path(path) { eprintln!("search cache trash: {e}"); } }
+    }
     // only once the files are gone: a new file at the same path then
     // imports fresh, not as the deleted one, rejected
     for id in forget {
@@ -369,6 +652,9 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
 #[specta::specta]
 pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<LibraryImage, String> {
     let reply = state.engine("create_virtual_copy").request(json!({ "cmd": "copy", "imgid": imgid }))?;
+    if let Some(image)=reply.get("image") {
+        index_imported_metadata(state.search_cache.as_deref(), &Mutex::new(cache::Listed::default()), std::slice::from_ref(image));
+    }
     serde_json::from_value::<CopyReply>(reply).map(|r| r.image).map_err(|e| format!("copy: unexpected reply: {e}"))
 }
 
@@ -607,6 +893,10 @@ pub(crate) async fn cache_clear(caches: State<'_, Caches>, which: String) -> Res
 #[specta::specta]
 pub(crate) async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindings::MetaReply, String> {
     let reply = state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))?;
+    if let (Some(index), Some(image)) = (state.search_cache.clone(), reply.get("image").cloned()) {
+        tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), &[image]))
+            .await.map_err(|e| e.to_string())?;
+    }
     serde_json::from_value(reply).map_err(|e| format!("meta: unexpected reply: {e}"))
 }
 
@@ -633,6 +923,7 @@ pub(crate) async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Ve
     -> Result<Vec<String>, String> {
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
     let reply = state.engine("keywords_set").request(req)?;
+    refresh_search_metadata(&state, imgid).await;
     serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords_set: unexpected reply: {e}"))
 }
 
@@ -644,14 +935,22 @@ pub(crate) async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map
     for (k, v) in fields {
         req[k] = v;
     }
-    state.engine("meta_set").request(req).map(|_| ())
+    state.engine("meta_set").request(req)?;
+    refresh_search_metadata(&state, imgid).await;
+    Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<CaptureTimesReply, String> {
     let reply = state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))?;
-    serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))
+    let result: CaptureTimesReply = serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))?;
+    for update in &result.updates {
+        if update.error.is_none() {
+            refresh_search_metadata(&state, update.imgid).await;
+        }
+    }
+    Ok(result)
 }
 
 // a photo or folder handed to the app from outside, waiting for the window
@@ -766,6 +1065,119 @@ mod tests {
         }
     }
 
+    /// Cache lookup/listing costs only; no engine extraction or GUI timing.
+    #[test]
+    #[ignore = "manual metadata cache benchmark"]
+    fn benchmark_warm_folder_metadata() {
+        let dir=tempfile::tempdir().unwrap();let photos=dir.path().join("photos");std::fs::create_dir(&photos).unwrap();
+        let index=crate::search_cache::SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let fixture:Value=serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut metadata=Vec::new();
+        for n in 0..1000 { let path=photos.join(format!("photo-{n:04}.jpg"));std::fs::write(&path,b"synthetic source").unwrap();
+            let mut image=fixture[2]["reply"]["images"][0].clone();image["path"]=json!(path);image["filename"]=json!(path.file_name().unwrap().to_str().unwrap());image["version"]=json!(0);image["copy"]=json!(false);metadata.push(image); }
+        let listing=|| {let mut listed=cache::Listed::default();let mut paths=Vec::new();folder_files(&photos,false,&HashSet::new(),&mut paths,&mut listed);(paths,Mutex::new(listed))};
+        let (paths,listed)=listing();let start=Instant::now();
+        assert!(paths.iter().all(|p|cached_folder_metadata(Some(&index),&listed,p).is_none()));
+        let misses=start.elapsed().as_secs_f64()*1000.0;
+        index_imported_metadata(Some(&index),&listed,&metadata);
+        let mut times=Vec::new();
+        for _ in 0..6 {let start=Instant::now();let (paths,listed)=listing();assert!(paths.iter().all(|p|cached_folder_metadata(Some(&index),&listed,p).is_some()));times.push(start.elapsed().as_secs_f64()*1000.0);}
+        let first=times.remove(0);times.sort_by(f64::total_cmp);
+        eprintln!("FOLDER_CACHE_BENCH rows=1000 missing_lookup_ms={misses:.3} first_warm_ms={first:.3} warm_median_ms={:.3} warm_samples_ms={times:?} debug={}",times[2],cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn precise_capture_retains_fraction_and_known_offset_without_inventing_timezone() {
+        let mut image=json!({"exif":{"datetime":"2026:11:15 12:34:56.123","capture_time_raw":"2026:11:15 12:34:56.123456789","capture_offset":"-07:30"}});
+        let (ns,raw,offset)=precise_capture(&image);
+        assert_eq!(raw.as_deref(),Some("2026:11:15 12:34:56.123456789"));assert_eq!(offset,Some(-27000));
+        assert_eq!(ns,chrono::DateTime::parse_from_rfc3339("2026-11-15T12:34:56.123456789-07:30").unwrap().timestamp_nanos_opt());
+        image["exif"]["capture_offset"]=json!("");let (ns,raw,offset)=precise_capture(&image);assert!(ns.is_none()&&offset.is_none());assert!(raw.unwrap().ends_with("123456789"));
+        image["exif"]["datetime"]=json!("2026:11:16 12:34:56");image["exif"]["capture_offset"]=json!("+01:00");
+        let (ns,raw,offset)=precise_capture(&image);assert_eq!(raw.as_deref(),Some("2026:11:16 12:34:56"));assert!(ns.is_none()&&offset.is_none());
+        image["exif"]["datetime"]=json!("");assert_eq!(precise_capture(&image),(None,None,None));
+    }
+
+    #[test]
+    fn warm_metadata_requires_current_source_all_copies_and_raster_masks() {
+        let temp = tempfile::tempdir().unwrap();
+        let photo = temp.path().join("a.tif");
+        std::fs::write(&photo, b"pixels").unwrap();
+        let index = crate::search_cache::SearchCache::open(&temp.path().join("cache.sqlite")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut original = fixture[2]["reply"]["images"][0].clone();
+        original["path"] = json!(photo); original["filename"] = json!("a.tif");
+        let listing = || {
+            let mut listed = cache::Listed::default(); let mut files = Vec::new();
+            folder_files(temp.path(), false, &HashSet::new(), &mut files, &mut listed);
+            Mutex::new(listed)
+        };
+        let listed = listing();
+        assert!(cached_folder_metadata(Some(&index), &listed, &photo).is_none());
+        index_imported_metadata(Some(&index), &listed, std::slice::from_ref(&original));
+        let warm = cached_folder_metadata(Some(&index), &listed, &photo).unwrap();
+        assert_eq!(warm.len(), 1); assert!(warm[0].get("imgid").is_none());
+        assert_eq!(warm[0]["exif"], original["exif"]);
+        assert!(cached_folder_metadata(None, &listed, &photo).is_none());
+        // The listing used by the previous folder remains owned and immutable.
+        std::fs::write(temp.path().join("a_02.tif.xmp"), b"copy").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        let mut copy = original.clone(); copy["version"] = json!(2); copy["copy"] = json!(true);
+        index_imported_metadata(Some(&index), &listing(), &[original.clone(), copy.clone()]);
+        assert_eq!(cached_folder_metadata(Some(&index), &listing(), &photo).unwrap().len(), 2);
+        std::fs::write(temp.path().join("a_02.tif.dtdata"), b"new raster mask").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        index_imported_metadata(Some(&index), &listing(), &[original.clone(), copy]);
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_some());
+        std::fs::remove_file(temp.path().join("a_02.tif.xmp")).unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        std::fs::write(&photo, b"changed source bytes").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+    }
+
+    #[test]
+    fn unavailable_search_cache_does_not_block_folder_metadata_or_engine_ids() {
+        let metadata = vec![json!({"imgid": 314, "path":"/unavailable/cache/photo.jpg", "version":0,
+                                  "exif":{"datetime":"2026:01:02 03:04:05"}})];
+        index_imported_metadata(None, &std::sync::Mutex::new(cache::Listed::default()), &metadata);
+        assert_eq!(metadata[0]["imgid"], 314);
+        assert_eq!(metadata[0]["path"], "/unavailable/cache/photo.jpg");
+    }
+
+    #[test]
+    fn imported_metadata_is_cached_without_engine_ids_and_tracks_sidecar_stamp() {
+        let dir = std::env::temp_dir().join(format!("immage-index-metadata-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let photo = dir.join("a.jpg");
+        std::fs::write(&photo, b"original pixels").unwrap();
+        let cache_path = dir.join("search.sqlite");
+        let index = crate::search_cache::SearchCache::open(&cache_path).unwrap();
+        let mut listed = cache::Listed::default();
+        let mut files = Vec::new();
+        folder_files(&dir, false, &HashSet::new(), &mut files, &mut listed);
+        let listed = std::sync::Mutex::new(listed);
+        let image = json!({"imgid":987654,"path":photo,"version":0,"edited":false,
+                           "exif":{"datetime":"2025:02:03 04:05:06"},"rating":3});
+        index_imported_metadata(Some(&index), &listed, std::slice::from_ref(&image));
+        let original = index.variant(photo.to_str().unwrap(), "").unwrap().unwrap();
+        let saved: Value = serde_json::from_str(&index.metadata(original.id).unwrap().unwrap()).unwrap();
+        assert!(saved.get("imgid").is_none());
+        assert_eq!(saved["exif"]["datetime"], "2025:02:03 04:05:06");
+        assert_eq!(original.capture_time_raw.as_deref(), Some("2025:02:03 04:05:06"));
+
+        std::fs::write(photo.with_file_name("a.jpg.xmp"), b"edit sidecar").unwrap();
+        let mut listed2 = cache::Listed::default();
+        let mut files2 = Vec::new();
+        folder_files(&dir, false, &HashSet::new(), &mut files2, &mut listed2);
+        index_imported_metadata(Some(&index), &std::sync::Mutex::new(listed2), std::slice::from_ref(&image));
+        let updated = index.variant(photo.to_str().unwrap(), "").unwrap().unwrap();
+        assert_eq!(updated.asset_id, original.asset_id);
+        assert_ne!(updated.edited_fingerprint, original.edited_fingerprint);
+        drop(index);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn folder_files_order_and_skips() {
         let dir = repo_root().join(format!("build/scratch/folder-files-{}", std::process::id()));
@@ -827,5 +1239,70 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(result, Ok(()));
         assert_eq!(tauri::async_runtime::block_on(trash_existing(vec![])), Ok(()));
+    }
+
+    #[test]
+    fn refreshed_mutation_metadata_is_searchable_without_folder_reimport() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("edited.jpg");
+        std::fs::write(&photo, b"disposable photo bytes").unwrap();
+        let index = crate::search_cache::SearchCache::open(&dir.path().join("search.sqlite")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut image = fixture[2]["reply"]["images"][0].clone();
+        image["imgid"] = json!(712);
+        image["path"] = json!(photo);
+        image["filename"] = json!("edited.jpg");
+        image["version"] = json!(0);
+        image["copy"] = json!(false);
+        image["rating"] = json!(2);
+        image["keywords"] = json!(["Places|Old"]);
+        index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), std::slice::from_ref(&image));
+
+        let other = dir.path().join("other.jpg");
+        std::fs::write(&other, b"another disposable photo").unwrap();
+        let mut other_image = image.clone();
+        other_image["path"] = json!(other);
+        other_image["filename"] = json!("other.jpg");
+        other_image["rating"] = json!(1);
+        other_image["keywords"] = json!(["Places|Other"]);
+        index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), std::slice::from_ref(&other_image));
+
+        let mut args = crate::local_search::LocalSearchArgs::default();
+        args.filters.min_rating = 2;
+        args.filters.keywords = vec!["Places|Old".into()];
+        let root = dir.path().to_path_buf();
+        let page = crate::local_search::retrieve(&index, &args, &[root.clone()], &[], None, || false).unwrap();
+        assert_eq!(page.items.len(), 1);
+
+        // This mirrors Engine::Link after a successful native sidecar mutation.
+        let stale_same_photo = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        std::fs::write(dir.path().join("edited.jpg.xmp"), b"updated rating and keywords").unwrap();
+        index.invalidate_edited(photo.to_str().unwrap(), "").unwrap();
+        assert!(!cache_mutation_metadata(&index, &stale_same_photo, &image).unwrap(),
+            "a reply from before the mutation must not publish");
+        args.filters.min_rating = 5;
+        args.filters.keywords = vec!["Places|Updated".into()];
+        assert!(crate::local_search::retrieve(&index, &args, &[root.clone()], &[], None, || false)
+            .unwrap().items.is_empty());
+
+        image["rating"] = json!(5);
+        image["keywords"] = json!(["Places|Updated"]);
+        let current_snapshot = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        assert_ne!(metadata_refresh_key(&stale_same_photo), metadata_refresh_key(&current_snapshot),
+            "each save/open invalidation generation must get a distinct queue key");
+        // A concurrent metadata change in another photo must not drop this
+        // photo's independent, fingerprint-guarded refresh.
+        index.invalidate_edited(other.to_str().unwrap(), "").unwrap();
+        assert!(cache_mutation_metadata(&index, &current_snapshot, &image).unwrap());
+        let page = crate::local_search::retrieve(&index, &args, &[root], &[], None, || false).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].image.rating, 5);
+        assert_eq!(page.items[0].image.keywords, ["Places|Updated"]);
+
+        let stale_clear = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        index.clear().unwrap();
+        assert!(!cache_mutation_metadata(&index, &stale_clear, &image).unwrap(),
+            "a late response must not recreate a cleared cache row");
+        assert_eq!(index.counts().unwrap().variants, 0);
     }
 }

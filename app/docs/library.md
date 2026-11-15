@@ -68,6 +68,97 @@ If the last folder is unavailable, Immage tries your other recent folders.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
+### Cached folder metadata
+
+Immage keeps a disposable local metadata cache, separate from darktable’s
+in-memory editing library. Reopening an unchanged folder reuses its ratings,
+labels, keywords and camera metadata. Each original and virtual copy keeps
+its own editing state. Changed files, sidecars, raster-mask data or copy lists
+are read again. An unavailable drive is not treated as an empty folder.
+
+Cached photos enter the editing library when an action needs them: opening,
+rendering a missing thumbnail, changing metadata, exporting or managing files.
+Existing disk thumbnails can appear without that import. The editing engine
+still starts normally; edits and sidecars are read before the action runs.
+Verified moves keep cached identities and reusable analysis when source and
+sidecar fingerprints still match. Copies receive separate identities, including
+when Keep Both changes the filename. Metadata and saved-edit changes invalidate
+stale cached results; deleting an original removes its copies from the cache.
+At startup, a bounded background scan discovers files and checks existing
+records without importing photos into the editor. Metadata for newly discovered
+files is filled when they are read. Offline drives, disconnected nested mounts,
+excluded folders and incomplete scans keep their cached records. When a drive’s
+identity is unknown, browse the folder before missing records can be removed.
+
+A cache failure falls back to reading the folder normally. The cache contains
+no originals or authoritative edits and can be rebuilt from your photos.
+Metadata caching does not download search models or upload photos; any optional
+local analysis model requires an explicit download choice. Downloaded analysis
+packages are checked before use, and local analysis runs on the CPU.
+**Preferences > Performance > Local photo cache** shows cache and drive status,
+pauses background checks, clears or rebuilds cached records, and offers the
+optional model download and CPU model check. Clearing preserves model files;
+rebuilds wait while background work is paused.
+
+The **Search photos** card is available without an Immich connection. Choose
+**Local photos**, **Immich**, or **Local + Immich** when Immich is configured.
+Local searches cover the current folder (respecting Include subfolders) or all
+library folders. Choose original or edited analysis for local similarity. Original analysis
+renders with editing history disabled; edited analysis uses saved edits.
+**Filename** and empty-text searches can use cached metadata without a model.
+Smart text needs a downloaded model and current indexed embeddings. After you
+opt in to the model download, background CPU analysis fills original and edited
+embeddings for photos whose metadata has been cached by browsing. Analysis starts
+within a few seconds and respects Pause; existing results remain searchable.
+Browsing or reading metadata again refreshes invalidated records for analysis.
+After model opt-in, reconciled paths also receive bounded background metadata
+imports before analysis, including unvisited folders. Missing or offline files
+wait for a later pass. Background imports and analysis skip removed and excluded
+folders, including work that was queued before the folder selection changed.
+Metadata caching without the optional model still fills
+as you browse.
+
+Each source displays results as soon as it finishes. A failure in one source
+leaves the other source's results available, with the error in the status line.
+More results load independently for each source, preserving metadata changes
+and already-opened photos in the displayed results. **Stop** keeps displayed results
+and ignores late replies; blocking Immich work may finish in the background,
+with at most four active requests. Opening a folder leaves search results.
+Combined results use equal reciprocal-rank weighting of each source's order.
+A mapped Immich result merges with a primary local result only when its
+verified local path exactly matches the indexed path. Virtual copies stay
+separate. This identifies the local file path; it does not compare server and
+local file contents. Unmapped or differently spelled paths stay separate.
+Search retains active filters. Ratings, labels, keyword and capture-time changes
+refresh cached search metadata without a folder reload or optional model.
+Local queries wait for pending rating saves, while Immich queries can start
+independently. Saved editing changes and switching photos queue bounded metadata
+refreshes even without an optional model; opening the next photo does not wait
+for the previous photo’s metadata read. These queued refreshes wait while
+background work is paused. Active grid filters update immediately
+when metadata changes. Unknown local edit, reject, label, keyword and
+camera-body fields exclude remote results when those filters are selected.
+
+Local search includes cached originals and saved virtual copies, using only
+current metadata and model-versioned analysis. Temporary previews are not saved
+copy versions.
+Selected filters exclude unknown values; capture-date filters do not substitute
+file modification dates. Capture metadata retains the source’s fractional digits
+and UTC offset when recorded. Dates adjusted in Immage take precedence; an
+unknown timezone stays unknown.
+
+In the grid, right-click a local photo and choose **Show more like this**.
+The clicked photo supplies the image query, independently of the open editor.
+The query covers all local library folders, retains selected filters and uses
+the chosen original/edited subject. An **Image query** indicator names the seed;
+**Clear image query** returns to a metadata listing. Missing or stale seed
+analysis produces an error rather than substituting another photo. Background
+embeddings require the optional model and cached metadata; a photo without
+current analysis cannot supply a similarity query.
+Similarity queries exclude the source photo and its virtual copies. A changed
+cache requires restarting paginated local results. Metadata-only pages stop
+once enough matching photos are found instead of ranking the whole library.
+
 ### Thumbnail previews
 
 The grid and filmstrip support embedded JPEG and TIFF previews, including

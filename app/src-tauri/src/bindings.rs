@@ -19,6 +19,16 @@ use tauri_specta::{collect_commands, Commands};
 pub fn commands() -> Commands<tauri::Wry> {
     collect_commands![
         crate::settings::settings_all,
+        crate::search_cmds::search_status,
+        crate::local_search_cmds::local_search,
+        crate::local_search_cmds::local_search_cancel,
+        crate::local_search_cmds::local_search_seed,
+        crate::search_cmds::search_pause,
+        crate::search_cmds::search_cache_clear,
+        crate::clip_models::search_model_status,
+        crate::clip_infer::search_model_probe,
+        crate::clip_models::search_model_download,
+        crate::clip_models::search_model_cancel,
         crate::settings::settings_set,
         crate::library_cmds::meta,
         crate::library_cmds::meta_set,
@@ -314,6 +324,10 @@ pub struct MetaExif {
     #[serde(default)]
     pub sensor_height: u32,
     pub datetime: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub capture_time_raw: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub capture_offset: String,
     // the file's modified time, sent only when there is no capture time
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file_datetime: String,

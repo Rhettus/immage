@@ -1,0 +1,638 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
+//! Opt-in, immutable CLIP package provisioning. Opening the app never fetches assets.
+//! The graph hashes are LFS SHA-256; small assets use their pinned Git blob IDs
+//! (including the Git blob header), never an unverified checksum from a download.
+use crate::AppState;
+use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use tauri::State;
+
+pub const REVISION: &str = "6b7c523703ae26e39be4b03774966f8571c7f523";
+const REPOSITORY: &str = "Xenova/clip-vit-base-patch32";
+struct Asset {
+    path: &'static str,
+    size: u64,
+    digest: &'static str,
+    git_blob: bool,
+}
+const ASSETS: &[Asset] = &[
+    Asset {
+        path: "onnx/text_model.onnx",
+        size: 254058553,
+        digest: "3f6571f5bad13a97c469c1622e1cfc4d9aef78b79fdbfcff804ca357bfada8cc",
+        git_blob: false,
+    },
+    Asset {
+        path: "onnx/vision_model.onnx",
+        size: 351685709,
+        digest: "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40",
+        git_blob: false,
+    },
+    Asset {
+        path: "tokenizer.json",
+        size: 2224119,
+        digest: "bc1f77d20440541dd073ebae6f6c401087c7d34e",
+        git_blob: true,
+    },
+    Asset {
+        path: "preprocessor_config.json",
+        size: 520,
+        digest: "e0675735fd0052745f2f7b7291e4aa7859389998",
+        git_blob: true,
+    },
+    Asset {
+        path: "tokenizer_config.json",
+        size: 775,
+        digest: "c9b2a711cbdd039529fa5a66f1965e13eb14451d",
+        git_blob: true,
+    },
+    Asset {
+        path: "special_tokens_map.json",
+        size: 472,
+        digest: "2c2130b544c0c5a72d5d00da071ba130a9800fb2",
+        git_blob: true,
+    },
+    Asset {
+        path: "config.json",
+        size: 4524,
+        digest: "e79bad158b04c235740f9b2ec320b17f4030f7a5",
+        git_blob: true,
+    },
+];
+
+#[derive(Clone, serde::Serialize, specta::Type)]
+pub struct ModelStatus {
+    pub revision: String,
+    pub bytes: u64,
+    pub downloading: bool,
+    /// Installation verified in this process; not an inference availability claim.
+    pub verified: bool,
+    pub error: Option<String>,
+}
+#[derive(Default)]
+struct Progress {
+    downloading: bool,
+    verified: bool,
+    error: Option<String>,
+}
+pub struct Models {
+    root: PathBuf,
+    progress: Arc<Mutex<Progress>>,
+    cancelled: AtomicBool,
+    prepared: Mutex<Option<Prepared>>,
+}
+type FileStamps = Vec<(u64, std::time::SystemTime)>;
+struct Prepared {
+    stamps: FileStamps,
+    text: Arc<crate::clip_text::TextProcessor>,
+}
+fn package_stamps(root: &Path) -> Result<FileStamps, String> {
+    ASSETS
+        .iter()
+        .map(|asset| {
+            let m = std::fs::symlink_metadata(root.join(asset.path))
+                .map_err(|_| "Optional CLIP package is not installed".to_string())?;
+            if !m.is_file() || m.len() != asset.size {
+                return Err("CLIP package changed; verify the model download".into());
+            }
+            Ok((m.len(), m.modified().map_err(|e| e.to_string())?))
+        })
+        .collect()
+}
+impl Models {
+    pub fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            progress: Arc::new(Mutex::new(Progress::default())),
+            cancelled: AtomicBool::new(false),
+            prepared: Mutex::new(None),
+        }
+    }
+    pub fn installed(&self) -> bool { self.root.join(REVISION).is_dir() }
+    /// Lazy local verification only; never downloads. Rehash after any file stamp change.
+    fn package(&self) -> Result<(PathBuf, Arc<crate::clip_text::TextProcessor>), String> {
+        if self.progress.lock().unwrap().downloading {
+            return Err("CLIP model verification is already running".into());
+        }
+        let root = self.root.join(REVISION);
+        let stamps = package_stamps(&root)?;
+        let mut prepared = self.prepared.lock().unwrap();
+        if prepared.as_ref().is_none_or(|p| p.stamps != stamps) {
+            *prepared = None;
+            self.progress.lock().unwrap().verified = false;
+            verify_package(&root, ASSETS)?;
+            crate::clip_image::validate_config(&root)?;
+            let processor = Arc::new(crate::clip_text::TextProcessor::load(&root)?);
+            if package_stamps(&root)? != stamps {
+                return Err("CLIP package changed during verification".into());
+            }
+            write_engine_manifest(&root)?;
+            *prepared = Some(Prepared {
+                stamps,
+                text: processor,
+            });
+        }
+        self.progress.lock().unwrap().verified = true;
+        Ok((root, Arc::clone(&prepared.as_ref().unwrap().text)))
+    }
+    pub fn prepare_text(
+        &self,
+        text: &str,
+    ) -> Result<(PathBuf, crate::clip_text::TextInput), String> {
+        let (root, processor) = self.package()?;
+        Ok((root, processor.encode(text)?))
+    }
+    pub fn prepare_image(
+        &self,
+        rgb: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<(PathBuf, Vec<f32>), String> {
+        let (root, _) = self.package()?;
+        Ok((root, crate::clip_image::prepare_rgb(rgb, width, height)?))
+    }
+    pub fn status(&self) -> ModelStatus {
+        let progress = self.progress.lock().unwrap();
+        ModelStatus {
+            revision: REVISION.into(),
+            bytes: ASSETS.iter().map(|a| a.size).sum(),
+            downloading: progress.downloading,
+            verified: progress.verified,
+            error: progress.error.clone(),
+        }
+    }
+    pub fn cancel(&self) {
+        let _progress = self.progress.lock().unwrap();
+        self.cancelled.store(true, Ordering::Release);
+    }
+    fn install(&self, consent: bool) -> Result<(), String> {
+        // Check before any directory creation, client construction or network access.
+        if !consent {
+            return Err("Model download requires explicit opt-in".into());
+        }
+        {
+            let mut p = self.progress.lock().unwrap();
+            if p.downloading {
+                return Err("Model download is already running".into());
+            }
+            self.cancelled.store(false, Ordering::Release);
+            p.downloading = true;
+            p.verified = false;
+            p.error = None;
+        }
+        let result = self.install_with(ASSETS, |asset, dest| {
+            // Blocking Response::read applies this per read, bounding a stalled
+            // transfer without imposing a minute-long whole-model deadline.
+            let client = reqwest::blocking::Client::builder()
+                .https_only(true)
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let url = format!(
+                "https://huggingface.co/{REPOSITORY}/resolve/{REVISION}/{}",
+                asset.path
+            );
+            let mut response = client
+                .get(url)
+                .send()
+                .and_then(|r| r.error_for_status())
+                .map_err(|e| e.to_string())?;
+            if response
+                .content_length()
+                .is_some_and(|len| len != asset.size)
+            {
+                return Err(format!("Unexpected length for {}", asset.path));
+            }
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(dest)
+                .map_err(|e| e.to_string())?;
+            copy_verified(
+                &mut Cancellable {
+                    reader: &mut response,
+                    cancelled: &self.cancelled,
+                },
+                &mut file,
+                asset,
+            )?;
+            file.sync_all().map_err(|e| e.to_string())
+        });
+        let result = result.and_then(|()| {
+            crate::clip_image::validate_config(&self.root.join(REVISION))?;
+            crate::clip_text::TextProcessor::load(&self.root.join(REVISION)).map(|_| ())
+        });
+        let mut p = self.progress.lock().unwrap();
+        p.downloading = false;
+        p.verified = result.is_ok();
+        p.error = result.as_ref().err().cloned();
+        result
+    }
+    fn install_with(
+        &self,
+        assets: &[Asset],
+        mut fetch: impl FnMut(&Asset, &Path) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let final_dir = self.root.join(REVISION);
+        if verify_package(&final_dir, assets).is_ok() {
+            write_engine_manifest(&final_dir)?;
+            return Ok(());
+        }
+        std::fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
+        let staging = self
+            .root
+            .join(format!(".download-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&staging).map_err(|e| e.to_string())?;
+        let result = (|| {
+            for asset in assets {
+                if self.cancelled.load(Ordering::Acquire) {
+                    return Err("Model download cancelled".into());
+                }
+                let dest = staging.join(asset.path);
+                std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+                fetch(asset, &dest)?;
+            }
+            // Independently verify staged files, including their size and type, before publication.
+            verify_package(&staging, assets)?;
+            // Serialize cancellation with publication; a cancelled package cannot appear later.
+            let _publication = self.progress.lock().unwrap();
+            if self.cancelled.load(Ordering::Acquire) {
+                return Err("Model download cancelled".into());
+            }
+            write_engine_manifest(&staging)?;
+            if final_dir.exists() {
+                // Keep a damaged installation for diagnostics; never merge mixed revisions.
+                std::fs::rename(
+                    &final_dir,
+                    self.root.join(format!(".invalid-{}", uuid::Uuid::new_v4())),
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            std::fs::rename(&staging, &final_dir).map_err(|e| e.to_string())
+        })();
+        let _ = std::fs::remove_dir_all(&staging);
+        result
+    }
+}
+fn write_engine_manifest(root: &Path) -> Result<(), String> {
+    let folder = root.join("engine");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    std::fs::write(
+        folder.join("config.json"),
+        r#"{"id":"immage-clip","name":"Immage CLIP ViT-B/32","backend":"onnx","num_inputs":1}"#,
+    )
+    .map_err(|e| e.to_string())
+}
+struct Cancellable<'a, R> {
+    reader: &'a mut R,
+    cancelled: &'a AtomicBool,
+}
+impl<R: Read> Read for Cancellable<'_, R> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(std::io::Error::other("Model download cancelled"));
+        }
+        self.reader.read(output)
+    }
+}
+fn copy_verified(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    asset: &Asset,
+) -> Result<(), String> {
+    let mut sha256 = Sha256::new();
+    let mut git = <sha1::Sha1 as sha1::Digest>::new();
+    sha1::Digest::update(&mut git, format!("blob {}\0", asset.size).as_bytes());
+    let mut size = 0u64;
+    let mut buffer = [0u8; 65536];
+    loop {
+        // Consume at most one byte beyond the limit, even for a dishonest server.
+        let limit =
+            (asset.size.saturating_sub(size).saturating_add(1)).min(buffer.len() as u64) as usize;
+        let n = input
+            .read(&mut buffer[..limit])
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        size += n as u64;
+        if size > asset.size {
+            return Err(format!("{} exceeds pinned size", asset.path));
+        }
+        sha256.update(&buffer[..n]);
+        sha1::Digest::update(&mut git, &buffer[..n]);
+        output.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
+    }
+    let actual = if asset.git_blob {
+        sha1::Digest::finalize(git)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    } else {
+        format!("{:x}", sha256.finalize())
+    };
+    if size != asset.size || actual != asset.digest {
+        return Err(format!("{} failed pinned integrity check", asset.path));
+    }
+    Ok(())
+}
+fn verify_package(root: &Path, assets: &[Asset]) -> Result<(), String> {
+    for asset in assets {
+        let path = root.join(asset.path);
+        let meta = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if !meta.is_file() || meta.len() != asset.size {
+            return Err(format!("Invalid model asset {}", asset.path));
+        }
+        let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        copy_verified(&mut file, &mut std::io::sink(), asset)?;
+    }
+    Ok(())
+}
+#[tauri::command]
+#[specta::specta]
+pub fn search_model_status(state: State<'_, AppState>) -> ModelStatus {
+    state.clip_models.status()
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn search_model_download(
+    state: State<'_, AppState>,
+    consent: bool,
+) -> Result<(), String> {
+    let models = state.clip_models.clone();
+    tauri::async_runtime::spawn_blocking(move || models.install(consent))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn search_model_cancel(state: State<'_, AppState>) {
+    state.clip_models.cancel();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const SHA: Asset = Asset {
+        path: "model",
+        size: 3,
+        digest: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        git_blob: false,
+    };
+    const GIT: Asset = Asset {
+        path: "tokenizer",
+        size: 3,
+        digest: "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f",
+        git_blob: true,
+    };
+    #[test]
+    fn exact_pins_reject_truncation_corruption_and_oversize() {
+        for asset in [&SHA, &GIT] {
+            assert!(copy_verified(&mut &b"abc"[..], &mut Vec::new(), asset).is_ok());
+            for bytes in [&b"ab"[..], &b"abd"[..], &b"abcd"[..]] {
+                assert!(copy_verified(&mut &bytes[..], &mut Vec::new(), asset).is_err());
+            }
+        }
+        let mut input = &b"abcdef"[..];
+        assert!(copy_verified(&mut input, &mut Vec::new(), &SHA).is_err());
+        assert_eq!(input, b"ef");
+    }
+    #[test]
+    fn denied_consent_has_no_filesystem_or_network_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = Models::new(dir.path().join("absent"));
+        assert!(models.install(false).unwrap_err().contains("opt-in"));
+        assert!(models.prepare_text("cat").is_err());
+        assert!(!models.root.exists());
+        assert!(!models.status().downloading);
+        assert!(!models.status().verified);
+    }
+    #[test]
+    fn failed_install_removes_staging_preserves_previous_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = Models::new(dir.path().into());
+        let old = dir.path().join(REVISION);
+        std::fs::create_dir(&old).unwrap();
+        std::fs::write(old.join("keep"), "previous").unwrap();
+        let result = models.install_with(ASSETS, |_, path| {
+            std::fs::write(path, "partial").unwrap();
+            Err("interrupted".into())
+        });
+        assert_eq!(result.unwrap_err(), "interrupted");
+        assert_eq!(
+            std::fs::read_to_string(old.join("keep")).unwrap(),
+            "previous"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn publishes_complete_package_and_reuses_without_fetching() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = Models::new(dir.path().into());
+        let assets = [SHA, GIT];
+        models
+            .install_with(&assets, |_, path| {
+                std::fs::write(path, "abc").map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert!(verify_package(&dir.path().join(REVISION), &assets).is_ok());
+        models
+            .install_with(&assets, |_, _| panic!("valid install must not fetch"))
+            .unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn cancellation_blocks_streams_and_publication() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = Models::new(dir.path().into());
+        let result = models.install_with(&[SHA], |_, path| {
+            std::fs::write(path, "abc").unwrap();
+            models.cancel();
+            Ok(())
+        });
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert!(!dir.path().join(REVISION).exists());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        let mut source = &b"abc"[..];
+        assert!(copy_verified(
+            &mut Cancellable {
+                reader: &mut source,
+                cancelled: &models.cancelled
+            },
+            &mut Vec::new(),
+            &SHA
+        )
+        .is_err());
+        assert_eq!(source, b"abc");
+    }
+    #[test]
+    fn package_requires_every_matching_asset() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = [SHA, GIT];
+        std::fs::write(dir.path().join("model"), "abc").unwrap();
+        assert!(verify_package(dir.path(), &assets).is_err());
+        std::fs::write(dir.path().join("tokenizer"), "abc").unwrap();
+        assert!(verify_package(dir.path(), &assets).is_ok());
+        std::fs::write(dir.path().join("model"), "abd").unwrap();
+        assert!(verify_package(dir.path(), &assets).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "downloads pinned CLIP assets; requires explicit opt-in, engine, and CPU ONNX Runtime"]
+    fn opt_in_real_cpu_text_and_vision_inference() {
+        // Check both independent consent controls before inspecting model files,
+        // creating the install directory, or allowing Models::install to fetch.
+        let opt_in = std::env::var("IMMAGE_CLIP_MODEL_OPT_IN").unwrap_or_default();
+        assert_eq!(opt_in, "1", "set IMMAGE_CLIP_MODEL_OPT_IN=1 to authorize the pinned model install/check");
+        let model_dir = std::env::var_os("IMMAGE_CLIP_MODEL_DIR")
+            .map(PathBuf::from)
+            .expect("set IMMAGE_CLIP_MODEL_DIR to an absolute persistent model directory");
+        assert!(model_dir.is_absolute(), "IMMAGE_CLIP_MODEL_DIR must be absolute");
+
+        let engine_path = std::env::var_os("IMMAGE_TEST_ENGINE")
+            .map(PathBuf::from)
+            .expect("set IMMAGE_TEST_ENGINE to the absolute built darktable-engine executable");
+        assert!(engine_path.is_absolute(), "IMMAGE_TEST_ENGINE must be absolute");
+        assert!(engine_path.is_file(), "IMMAGE_TEST_ENGINE does not exist: {}", engine_path.display());
+        let ort_path = std::env::var_os("IMMAGE_TEST_ORT").map(PathBuf::from);
+        if let Some(path) = &ort_path {
+            assert!(path.is_absolute(), "IMMAGE_TEST_ORT must be absolute when set");
+            assert!(path.is_file(), "IMMAGE_TEST_ORT does not exist: {}", path.display());
+        }
+
+        let models = Models::new(model_dir);
+        models.install(true).expect("verify or install pinned CLIP package");
+        let known = models.prepare_text("a photo of a cat").unwrap().1;
+        assert_eq!(known.ids[..7], [49406, 320, 1125, 539, 320, 2368, 49407]);
+        assert_eq!(known.attention.iter().sum::<i64>(), 7);
+
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        std::fs::create_dir_all(&runtime).unwrap();
+        // The test-only wrapper passes ORT's documented darktable preference
+        // on the command line; Engine writes it only into this temporary configdir.
+        let bin = if let Some(ort) = ort_path.as_ref() {
+            use std::os::unix::fs::PermissionsExt;
+            fn quote(path: &Path) -> String {
+                format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+            }
+            let wrapper = runtime.join("engine-with-test-ort");
+            let script = format!(
+                "#!/bin/sh\nexec {} \"$@\" --conf {}\n",
+                quote(&engine_path),
+                quote(Path::new(&format!("plugins/ai/ort_library_path={}", ort.display())))
+            );
+            std::fs::write(&wrapper, script).unwrap();
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+            wrapper
+        } else {
+            engine_path
+        };
+
+        let mut engine = crate::engine::Engine::spawn(&bin, &runtime, &runtime)
+            .expect("start isolated built engine");
+        let tagged = engine.tagged();
+        let timed = |run: &mut dyn FnMut() -> Vec<f32>| {
+            let started = std::time::Instant::now();
+            let values = run();
+            (values, started.elapsed().as_secs_f64() * 1000.0)
+        };
+        let query = "a photo of a cat";
+        let (text_first, text_cold_ms) = timed(&mut || {
+            crate::clip_infer::text(&models, &tagged, &runtime, query).unwrap()
+        });
+        let (text_warm, text_warm_ms) = timed(&mut || {
+            crate::clip_infer::text(&models, &tagged, &runtime, query).unwrap()
+        });
+        let photo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../app/sample/stairs-to-mountain.jpg");
+        let rgb = image::ImageReader::open(photo)
+            .unwrap()
+            .decode()
+            .unwrap()
+            .to_rgb8();
+        let (image_first, image_cold_ms) = timed(&mut || {
+            crate::clip_infer::image(
+                &models,
+                &tagged,
+                &runtime,
+                rgb.as_raw(),
+                rgb.width() as usize,
+                rgb.height() as usize,
+            )
+            .unwrap()
+        });
+        let (image_warm, image_warm_ms) = timed(&mut || {
+            crate::clip_infer::image(
+                &models,
+                &tagged,
+                &runtime,
+                rgb.as_raw(),
+                rgb.width() as usize,
+                rgb.height() as usize,
+            )
+            .unwrap()
+        });
+        let relevant_captions = [
+            "a photo of snowy mountain peaks above a rocky hiking trail and purple wildflowers",
+            "a mountain landscape with a stone path through pink flowers",
+        ];
+        let unrelated_captions = [
+            "a close-up photo of sushi on a plate at a restaurant",
+            "a brown dog swimming in a blue pool",
+        ];
+        let mut caption_scores = Vec::new();
+        for caption in relevant_captions.iter().chain(unrelated_captions.iter()) {
+            let embedding = crate::clip_infer::text(&models, &tagged, &runtime, caption).unwrap();
+            let dot = image_first.iter().zip(&embedding)
+                .map(|(image, text)| f64::from(*image) * f64::from(*text))
+                .sum::<f64>();
+            let image_norm = image_first.iter().map(|value| f64::from(*value).powi(2)).sum::<f64>().sqrt();
+            let text_norm = embedding.iter().map(|value| f64::from(*value).powi(2)).sum::<f64>().sqrt();
+            let cosine = dot / (image_norm * text_norm);
+            caption_scores.push((caption, cosine));
+        }
+        let relevant_floor = caption_scores[..relevant_captions.len()].iter()
+            .map(|(_, score)| *score).fold(f64::INFINITY, f64::min);
+        let unrelated_ceiling = caption_scores[relevant_captions.len()..].iter()
+            .map(|(_, score)| *score).fold(f64::NEG_INFINITY, f64::max);
+        assert!(relevant_floor > unrelated_ceiling,
+            "relevant captions must rank above unrelated ones: {caption_scores:?}");
+        engine.quit();
+
+        for embedding in [&text_first, &text_warm, &image_first, &image_warm] {
+            assert_eq!(embedding.len(), 512);
+            assert!(embedding.iter().all(|v| v.is_finite()));
+            let norm = embedding.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>();
+            assert!((norm - 1.0).abs() <= 1e-4, "projection is not normalized: {norm}");
+        }
+        println!(
+            "REAL_CLIP_CPU_SMOKE {}",
+            serde_json::json!({
+                "text": "a photo of a cat",
+                "textDimensions": text_first.len(),
+                "imageDimensions": image_first.len(),
+                "textColdMs": text_cold_ms,
+                "textWarmMs": text_warm_ms,
+                "imageColdMs": image_cold_ms,
+                "imageWarmMs": image_warm_ms,
+                "captionScores": caption_scores.iter().map(|(caption, score)| (*caption, *score)).collect::<Vec<_>>(),
+                "relevantCaptionFloor": relevant_floor,
+                "unrelatedCaptionCeiling": unrelated_ceiling,
+                "provider": "CPU",
+                "semanticQualityValidated": "single-sample ranking smoke only",
+                "osCachesCleared": false,
+                "modelDirectory": models.root,
+                "onnxRuntimeOverride": ort_path.as_ref().map(|p| p.display().to_string()),
+            })
+        );
+    }
+}
