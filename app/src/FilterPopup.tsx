@@ -45,7 +45,8 @@ export function FilterPopup({ filter: f, images, onFilter, immich, bounds, onSea
     if (!open) return;
     const away = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (!box.current?.contains(t) && !pop.current?.contains(t)) setOpen(false);
+      const inMenu = t instanceof Element && !!t.closest(".select-menu[data-filter-menu]");
+      if (!box.current?.contains(t) && !pop.current?.contains(t) && !inMenu) setOpen(false);
     };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     const resize = () => relayout((n) => n + 1);

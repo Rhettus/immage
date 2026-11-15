@@ -172,6 +172,11 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
+  if (selectedCases.includes('filters')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('filters requires a JPEG fixture');
+    for (const name of ['filters-peer-1.jpg', 'filters-peer-2.jpg']) await copyFile(copiedFixture, join(fixtures, name));
+    report.filterFixtures = ['filters-peer-1.jpg', 'filters-peer-2.jpg'];
+  }
   if (selectedCases.includes('jpeg-preset')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('jpeg-preset requires a JPEG fixture');
     for (const name of ['preset-jpeg-1.jpg', 'preset-jpeg-2.jpg']) await copyFile(copiedFixture, join(fixtures, name));

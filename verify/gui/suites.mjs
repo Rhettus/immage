@@ -77,7 +77,7 @@ export const cases = {
   'preferences-matrix':{scope:'local checkbox/menu/segmented preference options; hardware/restart/network actions blocked',liveValidated:false},
   'slider-wheel':{scope:'wheel disabled/enabled behavior',liveValidated:false},
   'export-options':{scope:'in-app export option/preview settings without destination chooser or actual export',liveValidated:false},
-  filters:{scope:'every filter category layout',liveValidated:false},
+  filters:{scope:'Rejected Show dropdown hit targets and All/Hide/Only Search behavior on copied photos, plus every filter category layout',liveValidated:false},
   presets:{scope:'available preset application and reset',liveValidated:false},
   shortcuts:{scope:'shortcut dialog open/read/close',liveValidated:false},
   'histogram-endpoints':{scope:'visible histogram endpoint columns',fixture:'endpoints',commits:['de6adf7'],liveValidated:false},

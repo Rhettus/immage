@@ -3,6 +3,13 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Bug fixes
+
+- Dropdowns in Filters open visibly and allow choosing rejected-photo and
+  Immich search options.
+
 ## 0.45.0
 
 Improvements

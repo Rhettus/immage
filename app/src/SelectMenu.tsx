@@ -128,9 +128,13 @@ export default function SelectMenu() {
 
   if (!sel) return null;
   const items = itemsOf(sel);
-  const host = (sel.closest(HOSTS) as HTMLElement | null) ?? document.body;
+  const owner = sel.closest(HOSTS) as HTMLElement | null;
+  // The filter popup is transformed and clips overflow. Keep its menu in
+  // viewport coordinates; FilterPopup recognizes it when checking outside clicks.
+  const filterMenu = owner?.matches(".filter-pop") ?? false;
+  const host = filterMenu ? document.body : owner ?? document.body;
   return createPortal(
-    <div ref={box} className="context-menu select-menu" role="listbox"
+    <div ref={box} className="context-menu select-menu" role="listbox" data-filter-menu={filterMenu ? "" : undefined}
          style={pos ? { left: pos.left, top: pos.top, minWidth: pos.width, maxHeight: pos.maxHeight } : { visibility: "hidden" }}>
       {items.map((it, i) => it.kind === "group"
         ? <div key={i} className="menu-label">{it.label}</div>

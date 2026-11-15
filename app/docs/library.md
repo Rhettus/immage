@@ -128,7 +128,8 @@ The toolbar under the filmstrip filters the folder:
   as many as you like, then click **Search** to filter the folder and show
   it in the grid; **Clear** in the panel takes that one off, at the next
   **Search**.
-  - **Rejected**: **All photos**, **Hide rejected** or **Only rejected**.
+  - **Rejected**: open the **Show** dropdown and choose **All photos**,
+    **Hide rejected** or **Only rejected**, then click **Search**.
     This counts as an active filter and resets with **Clear all**.
   - **File type**, **Camera** and **Lens**: tick any to show photos of
     those, for example **RAW** and **JPEG**. Each lists what the folder

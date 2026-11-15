@@ -74,6 +74,50 @@ export async function exportOptions(t) {
   await textButton(t,'.export .modal-foot','Cancel');
 }
 export async function filters(t) {
+  const initial=await t.driver.observe(()=>({total:document.querySelectorAll('.thumb').length,rejected:document.querySelectorAll('.thumb.rejected').length}));
+  assert(initial.total>=3,'isolated fixture folder has at least three photos');
+  if(!initial.rejected){
+    const active=await reveal(t,'.thumb.active');
+    await t.driver.move(active.x,active.y);
+    await pause(150);
+    await click(t,'.thumb.active .thumb-reject');
+    await until(()=>t.driver.observe(()=>!!document.querySelector('.thumb.active.rejected')),'copied fixture photo rejected');
+  }
+  await click(t,'.kind-button');
+  await click(t,'.filter-cat .name');
+  await click(t,'#filter-rejected');
+  const readMenu=()=>t.driver.observe(()=>{
+    const m=document.querySelector('.select-menu[data-filter-menu]');
+    if(!m)return null;
+    const r=m.getBoundingClientRect();
+    return {viewport:{width:innerWidth,height:innerHeight},bounds:{left:r.left,top:r.top,right:r.right,bottom:r.bottom},items:[...m.querySelectorAll('[role=option]')].map(e=>{
+      const b=e.getBoundingClientRect(), hit=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);
+      return {label:e.textContent.trim(),bounds:{left:b.left,top:b.top,right:b.right,bottom:b.bottom},hit:hit?.closest('[role=option]')===e};
+    })};
+  });
+  await until(readMenu,'Rejected Show dropdown visible');
+  const labels=['All photos','Hide rejected','Only rejected'];
+  for(const [index,label] of labels.entries()){
+    const menu=await until(readMenu,'Rejected Show dropdown visible');
+    if(index===0)await t.evidence('rejected-dropdown');
+    const item=menu.items.find(x=>x.label===label);assert(item,`dropdown contains ${label}`);
+    assert(item.hit,`${label} center is the WebDriver hit target`);
+    const b=item.bounds;assert(b.left>=0&&b.top>=0&&b.right<=menu.viewport.width&&b.bottom<=menu.viewport.height,`${label} hit target is inside the webview`);
+    const m=menu.bounds;assert(m.left>=0&&m.top>=0&&m.right<=menu.viewport.width&&m.bottom<=menu.viewport.height,'dropdown is inside the webview');
+    await t.driver.point((b.left+b.right)/2,(b.top+b.bottom)/2);
+    await until(()=>t.driver.observe(expected=>document.querySelector('#filter-rejected')?.value===expected,['all','hide','only'][index]),`select ${label}`);
+    assert.equal(await t.driver.observe(()=>document.querySelector('#filter-rejected')?.value),['all','hide','only'][index]);
+    assert(await t.driver.observe(()=>!!document.querySelector('.filter-pop')),'filter popup stays open after selecting an option');
+    await textButton(t,'.filter-foot','Search');
+    await until(()=>t.driver.observe(expected=>document.querySelectorAll('.thumb').length===expected,index===0?initial.total:index===1?initial.total-1:1),`${label} Search applies`);
+    const actual=await t.driver.observe(()=>({total:document.querySelectorAll('.thumb').length,rejected:document.querySelectorAll('.thumb.rejected').length}));
+    assert.equal(actual.total,index===0?initial.total:index===1?initial.total-1:1,`${label} shows the expected photos`);
+    assert.equal(actual.rejected,index===0?1:index===1?0:1,`${label} rejected-photo count`);
+    await t.evidence(`rejected-${['all','hide','only'][index]}`);
+    if(index<2){await click(t,'.kind-button');await click(t,'.filter-cat .name');}
+    // Reopen the select for the next option; each selection is still made through its rendered menu.
+    if(index<2)await click(t,'#filter-rejected');
+  }
   await click(t,'.kind-button');
   const categories=await t.driver.observe(()=>[...document.querySelectorAll('.filter-cat .name')].map(e=>e.textContent));
   assert(categories.length>0);
