@@ -10,6 +10,7 @@ import { MASK_MODULE_CHOICES, moduleTools, type ModuleChoice } from "./manifest"
 import { loadModuleChoice, loadModuleMode, storeModuleChoice, storeModuleMode, type ModuleMode } from "./moduleChoice";
 import { Chevron, Collapse } from "./Collapse";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { t } from "./i18n";
 import { LAYOUTS, groupLayouts } from "./advancedLayout";
 import { essentialsHidden, hiddenKey, loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { panels } from "./manifest";
@@ -19,7 +20,7 @@ import { commands } from "./commands";
 const TOOLS = moduleTools().filter((group) => group.panel !== "Masks");
 // Advanced mode's groups, as Adjustments shows them
 const ADVANCED_GROUPS = [...panels.filter((p) => !p.hidden).map((p) => ({ id: p.id, title: p.advancedTitle ?? p.title })),
-                         { id: "technical", title: "Technical" }];
+                         { id: "technical", title: t("modules.technical") }];
 
 export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   const [open, setOpen] = useState(() => new Set(focusMode ? ["global"] : ["global", "masks"]));
@@ -50,7 +51,7 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
   const [, setPicked] = useState(0);
   const chooseMode = (v: ModuleMode) => { setMode(v); storeModuleMode(v); };
   const menu = (choice: ModuleChoice, scope: "global" | "masks") => {
-    const label = `${scope === "global" ? "Global" : "Masks"} ${choice.label}`;
+    const label = `${scope === "global" ? t("modules.global") : t("modules.masks")} ${choice.label}`;
     const selected = loadModuleChoice(choice.id, scope);
     if (mode === "default") {
       const name = choice.options.find((o) => o.value === selected)?.name ?? "";
@@ -60,24 +61,20 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       <select className="field" aria-label={label} value={selected}
               onChange={(e) => { storeModuleChoice(choice.id, Number(e.target.value), scope); setPicked((n) => n + 1); }}>
         {choice.options.map((o) => (
-          <option key={o.value} value={o.value}>{o.name}{o.preferred ? " (default)" : ""}</option>
+          <option key={o.value} value={o.value}>{o.name}{o.preferred ? ` ${t("modules.default")}` : ""}</option>
         ))}
       </select>
     );
   };
   return (
     <>
-      <p className="prefs-lead">
-        Choose which darktable module each tool uses; it determines the sliders shown. Existing edits keep their
-        modules, and new choices apply when Preferences closes. Global and Masks have separate choices.
-      </p>
-      <PrefCard title="Modules">
-        <PrefRow label="Modules"
-                 summary={mode === "default" ? "darktable's AgX workflow defaults" : "custom module choices below"}
-                 hint={mode === "default" ? "the module darktable's AgX workflow uses for each tool, and contrast & texture for Clarity and Texture"
-                                           : "each tool's module as set below"}>
+      <p className="prefs-lead">{t("modules.lead")}</p>
+      <PrefCard title={t("modules.title")}>
+        <PrefRow id="Modules" label={t("modules.title")}
+                 summary={mode === "default" ? t("modules.row.summary.default") : t("modules.row.summary.custom")}
+                 hint={mode === "default" ? t("modules.row.hint.default") : t("modules.row.hint.custom")}>
           <div className="segmented small">
-            {([["Default", "default"], ["Custom", "custom"]] as const).map(([label, v]) => (
+            {([[t("modules.mode.default"), "default"], [t("modules.mode.custom"), "custom"]] as const).map(([label, v]) => (
               <button key={v} className={mode === v ? "active" : ""} onClick={() => chooseMode(v)}>{label}</button>
             ))}
           </div>
@@ -85,17 +82,17 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       </PrefCard>
       <button className="module-prefs-fold" aria-expanded={globalOpen} aria-controls="module-prefs-global"
               onClick={(e) => toggle("global", e.altKey)}>
-        Global <Chevron open={globalOpen} />
+        {t("modules.global")} <Chevron open={globalOpen} />
       </button>
       <Collapse open={globalOpen}>
         <div id="module-prefs-global">
         {TOOLS.map(({ panel, tools }) => (
           <PrefCard key={panel} title={panel}>
-            {tools.map((t) => (
-              <PrefRow key={t.title} label={t.title}>
-                {t.choice ? (
-                  menu(t.choice, "global")
-                ) : <span className="pref-value" title={t.modules.join(", ")}>{t.modules.join(", ")}</span>}
+            {tools.map((tool) => (
+              <PrefRow key={tool.title} label={tool.title}>
+                {tool.choice ? (
+                  menu(tool.choice, "global")
+                ) : <span className="pref-value" title={tool.modules.join(", ")}>{tool.modules.join(", ")}</span>}
               </PrefRow>
             ))}
           </PrefCard>
@@ -104,11 +101,11 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       </Collapse>
       <button className="module-prefs-fold" aria-expanded={masksOpen} aria-controls="module-prefs-masks"
               onClick={(e) => toggle("masks", e.altKey)}>
-        Masks <Chevron open={masksOpen} />
+        {t("modules.masks")} <Chevron open={masksOpen} />
       </button>
       <Collapse open={masksOpen}>
         <div id="module-prefs-masks">
-          <PrefCard title="Mask adjustments">
+          <PrefCard title={t("modules.maskcard")}>
             {MASK_MODULE_CHOICES.map((c) => (
               <PrefRow key={c.id} label={c.label}>{menu(c, "masks")}</PrefRow>
             ))}
@@ -124,39 +121,36 @@ export function ModulePrefs({ focusMode }: { focusMode: boolean }) {
       </Collapse>
       <button className="module-prefs-fold" aria-expanded={advancedOpen} aria-controls="module-prefs-advanced"
               onClick={(e) => toggle("advanced", e.altKey)}>
-        Advanced modules <Chevron open={advancedOpen} />
+        {t("modules.advanced")} <Chevron open={advancedOpen} />
       </button>
       <Collapse open={advancedOpen}>
         <div id="module-prefs-advanced">
-          <p className="prefs-lead">
-            In Advanced mode, hidden modules leave Add module, the module search and the tone mapper switch. A photo
-            that uses a hidden module still shows its card, marked hidden, so every edit stays reachable.
-          </p>
-          <PrefCard title="3D LUT folder">
-            <PrefRow label="LUT folder" summary="Where the LUT 3D module finds its files."
-                     hint="the LUT 3D card's file button opens here and refuses files outside it; a photo keeps the file's path relative to this folder. Empty uses your home folder, as darktable does">
+          <p className="prefs-lead">{t("modules.advanced.lead")}</p>
+          <PrefCard title={t("modules.lut.card")}>
+            <PrefRow id="LUT folder" label={t("modules.lut.row")} summary={t("modules.lut.summary")}
+                     hint={t("modules.lut.hint")}>
               <div className="module-prefs-tools">
-                <input className="field" placeholder="Home folder" aria-label="3D LUT folder" spellCheck={false}
+                <input className="field" placeholder={t("modules.lut.home")} aria-label={t("modules.lut.card")} spellCheck={false}
                        value={lutFolder} onChange={(e) => chooseLutFolder(e.target.value)} />
-                <button className="btn small" onClick={browseLutFolder}>Choose…</button>
+                <button className="btn small" onClick={browseLutFolder}>{t("prefs.choose")}</button>
               </div>
             </PrefRow>
           </PrefCard>
           <div className="module-prefs-tools">
-            <input type="search" className="field" placeholder="Filter modules" aria-label="Filter modules" spellCheck={false}
+            <input type="search" className="field" placeholder={t("modules.filter")} aria-label={t("modules.filter")} spellCheck={false}
                    value={find} onChange={(e) => setFind(e.target.value)} />
             <button className="btn small" onClick={() => setHiddenKeys(essentialsHidden(LAYOUTS))}
-                    title="Hide every module without a Simple equivalent">Essentials only</button>
+                    title={t("modules.essentials.title")}>{t("modules.essentials")}</button>
           </div>
           {ADVANCED_GROUPS.map(({ id, title }) => {
             const rows = groupLayouts(id).filter((l) => !needle || l.title.toLowerCase().includes(needle));
             if (!rows.length) return null;
             return (
               <PrefCard key={id} title={title}>
-                <PrefRow label="Modules" summary={`${rows.filter((l) => !hidden.has(hiddenKey(id, l.op))).length} of ${rows.length} shown`}>
+                <PrefRow id="Modules" label={t("modules.title")} summary={t("modules.shown", { shown: rows.filter((l) => !hidden.has(hiddenKey(id, l.op))).length, total: rows.length })}>
                   <div className="module-prefs-bulk">
-                    <button className="btn small" onClick={() => setGroup(id, false)}>Show all</button>
-                    <button className="btn small" onClick={() => setGroup(id, true)}>Hide all</button>
+                    <button className="btn small" onClick={() => setGroup(id, false)}>{t("modules.showall")}</button>
+                    <button className="btn small" onClick={() => setGroup(id, true)}>{t("modules.hideall")}</button>
                   </div>
                 </PrefRow>
                 {rows.map((l) => (

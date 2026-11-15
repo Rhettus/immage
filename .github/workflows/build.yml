@@ -99,6 +99,7 @@ jobs:
             verify/ai-mask-paste.test.mjs \
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
+            verify/locales.test.mjs \
             verify/contrast-equalizer.test.mjs \
             verify/culling.test.mjs \
             verify/culling-zoom.test.mjs \

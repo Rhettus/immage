@@ -52,6 +52,9 @@ starts with default settings. To start with defaults on purpose, see
 
 **Workspace**
 
+- **Language**: the interface language, or **System default**. Immage
+  reloads to apply it. The menus and Preferences are translated so far (English, French); the rest
+  of the interface stays in English until it is translated.
 - **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
   `darktable-elegant-grey` palette) or **Light** with the swatches.
   The selected name and **Import theme…** action appear below the swatches;

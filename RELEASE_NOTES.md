@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Interface language setting in Preferences > General, with French as the first
+  translation: the menus and Preferences. Other languages can be added as a JSON file.
 - Advanced mode adds searchable editing modules, presets and groups, with
   controls to customize their order and instances. Module edits support masks,
   undo and Copy Settings. Switch back to Simple mode at any time.
