@@ -964,15 +964,108 @@ index b1e5c2d148..0b33e6982e 100644
    uint8_t *backbuf;
    size_t backbuf_size;
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
-index d7b5a79ef4..9b8340e4ff 100644
+index d7b5a79ef4..1edd5ca300 100644
 --- a/src/imageio/imageio.c
 +++ b/src/imageio/imageio.c
-@@ -650,12 +650,13 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
+@@ -88,6 +88,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <tiffio.h>
+ #include <strings.h>
+
+ #ifdef USE_LUA
+@@ -650,12 +651,98 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
    return 0;
  }
- 
+
 -// load a full-res thumbnail:
 -gboolean dt_imageio_large_thumbnail(const char *filename,
++// Exiv2 wraps DNG's JPEG-compressed TIFF strips in a TIFF preview. Decode
++// that container with the libtiff already used for photo input, without
++// requiring ImageMagick or a temporary file.
++typedef struct dt_preview_tiff_t
++{
++  const uint8_t *data;
++  size_t size, pos;
++} dt_preview_tiff_t;
++
++static tmsize_t _preview_tiff_read(thandle_t handle, void *out, tmsize_t length)
++{
++  dt_preview_tiff_t *mem = (dt_preview_tiff_t *)handle;
++  if(length < 0) return -1;
++  const size_t count = MIN((size_t)length, mem->size - mem->pos);
++  memcpy(out, mem->data + mem->pos, count);
++  mem->pos += count;
++  return count;
++}
++
++static tmsize_t _preview_tiff_write(thandle_t handle, void *data, tmsize_t length)
++{
++  return -1;
++}
++
++static toff_t _preview_tiff_seek(thandle_t handle, toff_t offset, int whence)
++{
++  dt_preview_tiff_t *mem = (dt_preview_tiff_t *)handle;
++  const size_t base = whence == SEEK_SET ? 0 : whence == SEEK_CUR ? mem->pos : mem->size;
++  // TIFF represents backwards relative seeks in the unsigned offset type.
++  const int64_t delta = (int64_t)offset;
++  if(whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) return (toff_t)-1;
++  if(delta < -(int64_t)base || delta > (int64_t)(mem->size - base)) return (toff_t)-1;
++  mem->pos = base + delta;
++  return mem->pos;
++}
++
++static int _preview_tiff_close(thandle_t handle) { return 0; }
++static toff_t _preview_tiff_size(thandle_t handle)
++{
++  return ((dt_preview_tiff_t *)handle)->size;
++}
++static int _preview_tiff_map(thandle_t handle, void **data, toff_t *size) { return 0; }
++static void _preview_tiff_unmap(thandle_t handle, void *data, toff_t size) {}
++
++static gboolean _preview_tiff_decode(const uint8_t *data, size_t size, uint8_t **buffer,
++                                     int32_t *width, int32_t *height)
++{
++  if(size > INT64_MAX) return FALSE;
++  dt_preview_tiff_t mem = { data, size, 0 };
++  TIFF *tif = TIFFClientOpen("embedded preview", "rm", (thandle_t)&mem,
++                           _preview_tiff_read, _preview_tiff_write, _preview_tiff_seek,
++                           _preview_tiff_close, _preview_tiff_size,
++                           _preview_tiff_map, _preview_tiff_unmap);
++  if(!tif) return FALSE;
++  uint32_t w = 0, h = 0;
++  gboolean ok = FALSE;
++  // Bound the decoded preview to 256 MiB, including hostile dimensions.
++  if(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h)
++     && w && h && (uint64_t)w * h <= 64 * 1024 * 1024)
++  {
++    uint32_t *pixels = (uint32_t *)dt_alloc_align_uint8((size_t)w * h * 4);
++    // The caller applies the photo's orientation, just as for JPEG previews.
++    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
++    if(pixels && TIFFReadRGBAImageOriented(tif, w, h, pixels, ORIENTATION_TOPLEFT, 1))
++    {
++      for(size_t i = 0; i < (size_t)w * h; i++)
++      {
++        const uint32_t pixel = pixels[i];
++        uint8_t *out = (uint8_t *)(pixels + i);
++        out[0] = TIFFGetR(pixel);
++        out[1] = TIFFGetG(pixel);
++        out[2] = TIFFGetB(pixel);
++        out[3] = 255;
++      }
++      *buffer = (uint8_t *)pixels;
++      *width = w;
++      *height = h;
++      ok = TRUE;
++    }
++    else dt_free_align(pixels);
++  }
++  TIFFClose(tif);
++  return ok;
++}
++
 +// load an embedded preview, using JPEG scaled decoding when a size is requested
 +gboolean dt_imageio_thumbnail(const char *filename,
                                      uint8_t **buffer,
@@ -983,22 +1076,22 @@ index d7b5a79ef4..9b8340e4ff 100644
 +                                    const int target)
  {
    int res = TRUE;
- 
-@@ -663,8 +664,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+
+@@ -663,8 +750,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
    char *mime_type = NULL;
    size_t bufsize;
- 
+
 -  // get the biggest thumb from exif
 -  if(dt_exif_get_thumbnail(filename, &buf, &bufsize, &mime_type))
 +  // get a preview large enough for the requested thumbnail
 +  if(dt_exif_get_thumbnail_sized(filename, &buf, &bufsize, &mime_type, target))
      goto error;
- 
+
    if(strcmp(mime_type, "image/jpeg") == 0)
-@@ -674,8 +675,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+@@ -674,8 +761,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
      if(dt_imageio_jpeg_decompress_header(buf, bufsize, &jpg))
        goto error;
- 
+
 +    if(target > 0)
 +    {
 +      for(unsigned int denom = 8; denom >= 2; denom /= 2)
@@ -1019,13 +1112,26 @@ index d7b5a79ef4..9b8340e4ff 100644
 +      jpeg_destroy_decompress(&jpg.dinfo);
 +      goto error;
 +    }
- 
+
      *width = jpg.width;
      *height = jpg.height;
-@@ -820,6 +838,13 @@ error:
+@@ -691,6 +795,12 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+
+     res = FALSE;
+   }
++  else if(strcmp(mime_type, "image/tiff") == 0
++          && _preview_tiff_decode(buf, bufsize, buffer, width, height))
++  {
++    *color_space = DT_COLORSPACE_SRGB;
++    res = FALSE;
++  }
+   else
+   {
+ #ifdef HAVE_GRAPHICSMAGICK
+@@ -820,6 +930,13 @@ error:
    return res;
  }
- 
+
 +gboolean dt_imageio_large_thumbnail(const char *filename, uint8_t **buffer,
 +                                    int32_t *width, int32_t *height,
 +                                    dt_colorspaces_color_profile_type_t *color_space)

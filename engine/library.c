@@ -21,6 +21,7 @@
 
 #include "engine.h"
 #include "common/exif.h"
+#include "develop/imageop_math.h"
 
 // photos likely opened next, their raws decoded ahead on threads of their
 // own, a few at once: a raw's decode mostly keeps to one core. darktable's
@@ -1704,27 +1705,62 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
   const dt_mipmap_size_t mip = dt_mipmap_cache_get_matching_size(size, size);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, mip, DT_MIPMAP_BLOCKING, 'r');
-  if(!buf.buf || buf.width <= 0 || buf.height <= 0)
+  const gboolean cached = buf.buf && buf.width > 0 && buf.height > 0;
+  uint8_t *preview = NULL;
+  int32_t width = buf.width, height = buf.height;
+  dt_colorspaces_color_profile_type_t color_space = buf.color_space;
+  if(!cached)
   {
     dt_mipmap_cache_release(&buf);
-    *err = g_strdup_printf("no thumbnail for image %d", imgid);
-    return FALSE;
+    // Some DNGs have unsupported RAW/compression data and a readable small
+    // preview. Use that if the normal mipmap/render path failed. An edited
+    // photo must never silently show a preview without its edits.
+    char path[PATH_MAX] = { 0 };
+    gboolean from_cache = TRUE;
+    dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+    const int target = CLAMP(size, 1, 256);
+    if(dt_image_altered(imgid) || !*path
+       || (dt_imageio_thumbnail(path, &preview, &width, &height, &color_space, target)
+           && (target == 1 || dt_imageio_thumbnail(path, &preview, &width, &height, &color_space, 1))))
+    {
+      *err = g_strdup_printf("no thumbnail for image %d", imgid);
+      return FALSE;
+    }
+    const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
+    const int32_t max_width = orientation & ORIENTATION_SWAP_XY ? height : width;
+    const int32_t max_height = orientation & ORIENTATION_SWAP_XY ? width : height;
+    uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * width * height);
+    if(!oriented)
+    {
+      dt_free_align(preview);
+      *err = g_strdup("could not allocate thumbnail preview");
+      return FALSE;
+    }
+    uint32_t oriented_width, oriented_height;
+    dt_iop_flip_and_zoom_8(preview, width, height, oriented, max_width, max_height,
+                           orientation, &oriented_width, &oriented_height);
+    width = oriented_width;
+    height = oriented_height;
+    dt_free_align(preview);
+    preview = oriented;
   }
+  const uint8_t *pixels = cached ? buf.buf : preview;
   // the print sheet's cells, shown as the soft proof does: a copy, as the
   // cache's buffer is shared; sRGB once proofed
-  const size_t bytes = (size_t)4 * buf.width * buf.height;
+  const size_t bytes = (size_t)4 * width * height;
   uint8_t *copy = proof ? g_try_malloc(bytes) : NULL;
-  if(copy) memcpy(copy, buf.buf, bytes);
-  const gboolean proofed = copy && print_proof_pixels(copy, buf.width, buf.height, buf.color_space);
-  const gboolean ok = engine_transient_write(out, proofed ? copy : buf.buf, bytes, NULL, 0);
+  if(copy) memcpy(copy, pixels, bytes);
+  const gboolean proofed = copy && print_proof_pixels(copy, width, height, color_space);
+  const gboolean ok = engine_transient_write(out, proofed ? copy : pixels, bytes, NULL, 0);
   g_free(copy);
   json_builder_set_member_name(b, "width");
-  json_builder_add_int_value(b, buf.width);
+  json_builder_add_int_value(b, width);
   json_builder_set_member_name(b, "height");
-  json_builder_add_int_value(b, buf.height);
+  json_builder_add_int_value(b, height);
   json_builder_set_member_name(b, "color_space");
-  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : buf.color_space);
-  dt_mipmap_cache_release(&buf);
+  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : color_space);
+  if(cached) dt_mipmap_cache_release(&buf);
+  dt_free_align(preview);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
 }

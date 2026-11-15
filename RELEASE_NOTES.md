@@ -84,6 +84,9 @@ Performance
 
 Bug fixes
 
+- DNG thumbnails can use embedded TIFF previews without ImageMagick. When
+  an unedited photo cannot be decoded, a readable smaller preview is used
+  instead of leaving its thumbnail blank.
 - Non-photo files such as `.ACR` sidecars stay out of the grid and filmstrip
   from the start of a folder scan, instead of disappearing when it finishes.
 - Rejecting, rating and labeling photos while a folder loads now keeps those

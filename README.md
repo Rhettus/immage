@@ -21,6 +21,9 @@ separate worker limits. Transfers keep each photo and its sidecars together;
 metadata and database updates remain ordered and serial. See the
 [library guide](app/docs/library.md#orf-metadata-reads-and-library-workers).
 
+Library thumbnails support embedded TIFF previews in DNG photos and can use
+a smaller preview when an unedited photo's RAW data cannot be decoded.
+
 <a href="app/docs/images/workspace.png"><img src="app/docs/images/workspace.png" width="960" alt="Immage editing a photo"></a>
 
 ## What you can do

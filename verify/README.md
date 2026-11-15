@@ -400,6 +400,17 @@ these smoke checks supplement the pipeline tests below.
 
 ## Folder metadata and embedded thumbnails
 
+Check TIFF preview fallback when a DNG's RAW encoding cannot be decoded:
+
+```bash
+python3 -I verify/dng-thumbnails.py /path/to/photo.dng
+```
+
+This headless check generates DNG fixtures with unsupported compression and
+embedded TIFF previews, verifies pixels and all eight EXIF orientations, and
+checks that edited photos cannot fall back to an unedited preview. Optional
+photos are copied into temporary state; originals and sidecars stay untouched.
+
 Build and run the focused checks with an isolated scratch directory:
 
 ```bash

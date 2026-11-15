@@ -64,6 +64,14 @@ folder and the last photo are remembered when you quit.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
+### Thumbnail previews
+
+The grid and filmstrip support embedded JPEG and TIFF previews, including
+TIFF previews inside DNG photos. If an unedited photo cannot be decoded,
+Immage tries a smaller embedded preview before leaving its thumbnail blank.
+This fallback can look softer and does not enable editing an unsupported RAW
+encoding. Edited photos require a thumbnail that includes their edits.
+
 ### ORF metadata reads and library workers
 
 Olympus and OM System ORF photos use partial metadata reads while **Reading
