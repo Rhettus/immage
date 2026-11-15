@@ -711,6 +711,10 @@ pub(crate) async fn cache_clear(caches: State<'_, Caches>, which: String) -> Res
 #[specta::specta]
 pub(crate) async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindings::MetaReply, String> {
     let reply = state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))?;
+    if let (Some(index), Some(image)) = (state.search_cache.clone(), reply.get("image").cloned()) {
+        tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), &[image]))
+            .await.map_err(|e| e.to_string())?;
+    }
     serde_json::from_value(reply).map_err(|e| format!("meta: unexpected reply: {e}"))
 }
 

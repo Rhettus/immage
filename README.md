@@ -115,9 +115,10 @@ See [license details and source availability](app/docs/credits.md#license).
 Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
 
 The Search photos card queries cached local metadata without Immich and can
-combine independent local and Immich results, merging exact verified local paths. Automatic local embedding creation
-is still pending in this experimental branch; independent original/edited
-analysis preview rendering is implemented. Indexed image queries use the grid
+combine independent local and Immich results, merging exact verified local paths.
+After the optional model download, background CPU analysis builds original and
+edited embeddings for browsed, cached photos. Unvisited folders are not yet
+imported for automatic analysis in this experimental branch. Image queries use the grid
 context menu’s Show more like this action and retain active filters.
 
 Immich local path mappings keep resolved files within the configured folder,

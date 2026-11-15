@@ -663,3 +663,10 @@ the script to export before closing the terminal.
 ## Dropdown menus
 
 Every dropdown in Immage opens in the same dark menu as the right-click menus, on every system. Click it, or focus it and press Space or Alt+Down. Arrow keys, Home and End move, Enter chooses and Escape closes. The current choice has a check mark.
+
+After downloading the optional CLIP package, background CPU analysis fills missing
+original and edited embeddings for photos whose metadata is cached by browsing.
+Pause stops new analysis jobs; active jobs can finish. Clear cancels old jobs and
+removes their cached output. Browse folders again after a clear or metadata
+invalidation to provide current metadata for analysis. Unvisited reconciled paths
+are not imported for analysis automatically yet.

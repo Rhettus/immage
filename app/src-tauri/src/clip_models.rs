@@ -113,6 +113,7 @@ impl Models {
             prepared: Mutex::new(None),
         }
     }
+    pub fn installed(&self) -> bool { self.root.join(REVISION).is_dir() }
     /// Lazy local verification only; never downloads. Rehash after any file stamp change.
     fn package(&self) -> Result<(PathBuf, Arc<crate::clip_text::TextProcessor>), String> {
         if self.progress.lock().unwrap().downloading {

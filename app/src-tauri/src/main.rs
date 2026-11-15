@@ -7,6 +7,7 @@
 
 mod cache;
 mod search_cache;
+mod search_analysis;
 mod library_ids;
 mod analysis_queue;
 mod search_reconcile;
@@ -72,7 +73,8 @@ use crate::app_cmds::supervise;
 struct AppState {
     // disposable local search metadata; darktable's catalog remains in-memory
     search_cache: Option<Arc<search_cache::SearchCache>>,
-    analysis_queue: analysis_queue::AnalysisQueue,
+    analysis_queue: Arc<analysis_queue::AnalysisQueue>,
+    search_analysis: search_analysis::Control,
     search_clear_lock: Mutex<()>,
     local_search_requests: Arc<local_search_cmds::Requests>,
     clip_models: Arc<clip_models::Models>,
@@ -269,19 +271,22 @@ fn main() {
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
             engine.set_search_cache(search_cache.clone());
-            let analysis_queue = analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256);
+            let analysis_queue = Arc::new(analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256));
             analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));
             search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue);
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             let engine_link = engine.link();
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
+            let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
+            let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
             app.manage(AppState {
+                search_analysis,
                 search_cache,
                 analysis_queue,
                 search_clear_lock: Mutex::new(()),
                 local_search_requests: Arc::new(local_search_cmds::Requests::default()),
-                clip_models: Arc::new(clip_models::Models::new(runtime.join("clip-models"))),
+                clip_models,
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
@@ -322,6 +327,7 @@ fn main() {
         .expect("error while running Immage");
     app.run(|_app, _event| {
         if matches!(_event, tauri::RunEvent::Exit) {
+            _app.state::<AppState>().search_analysis.stop();
             _app.state::<AppState>().local_search_requests.cancel_all();
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();

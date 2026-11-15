@@ -96,7 +96,7 @@ pub fn text(models: &Models, engine: &Tagged, runtime: &Path, query: &str) -> Re
         json!({"cmd":"clip_embed","tower":"text","model_root":root,"input":tensor.0}),
     )?)
 }
-fn image(
+pub fn image(
     models: &Models,
     engine: &Tagged,
     runtime: &Path,

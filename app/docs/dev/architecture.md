@@ -1331,3 +1331,14 @@ Local analysis previews use a separate develop and the thumbnail worker pool.
 Original analysis passes darktable’s `history_end=0`; edited analysis uses the
 current saved history. Neither path replaces the open editor or writes source
 sidecars. Export metadata’s history switch does not control rendered edits.
+
+`search_analysis.rs` polls locally installed model availability every five seconds
+and submits a bounded keyset scan (32 variants) to the shared background queue.
+Only rows with cached metadata are eligible; startup reconciliation does not force
+metadata imports. Original jobs deduplicate by asset, edited jobs by variant.
+The scan wraps its keyset so failed rows cannot permanently starve later rows.
+Models are verified before any photo import. Live source/edit stamps are checked
+before rendering, after rendering and after inference; database fingerprint and
+queue generation checks guard publication. Inputs and JPEG frames are removed
+on failure as well as success. There is no download in this path. Foreground
+metadata reads refresh disposable metadata, making invalidated rows eligible again.

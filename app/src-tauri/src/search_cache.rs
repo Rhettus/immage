@@ -18,6 +18,18 @@ pub struct Asset {
     pub original_fingerprint: String,
 }
 
+#[derive(Clone)]
+pub struct PendingAnalysis {
+    pub variant_id: i64,
+    pub asset_id: i64,
+    pub path: String,
+    pub copy_key: String,
+    pub original: String,
+    pub edited: String,
+    pub needs_original: bool,
+    pub needs_edited: bool,
+}
+
 /// One original or virtual-copy editing state of an asset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
@@ -351,7 +363,6 @@ impl SearchCache {
     /// Store an embedding only for the exact analysis/model version.
     /// Store only if the source/edit fingerprint still matches the analysis
     /// input. This closes the race between slow inference and a file/edit change.
-    #[cfg(test)]
     pub fn put_analysis(
         &self,
         variant_id: i64,
@@ -585,6 +596,20 @@ impl SearchCache {
     ) -> Result<Option<(i64, Vec<u8>)>, String> {
         self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row("SELECT v.asset_id,n.embedding FROM variants v JOIN analyses n ON n.subject=?2 AND n.analysis_version=?3 AND n.model_version=?4 AND ((?2='edited' AND n.variant_id=v.id) OR (?2='original' AND n.asset_id=v.asset_id)) WHERE v.id=?1",params![variant,subject,version,model],|row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(|e|e.to_string())
     }
+    pub fn pending_analyses(&self, after: i64, limit: u32) -> Result<Vec<PendingAnalysis>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut query = db.prepare("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,o.embedding IS NULL,e.embedding IS NULL
+          FROM variants v JOIN assets a ON a.id=v.asset_id
+          LEFT JOIN analyses o ON o.asset_id=a.id AND o.subject='original' AND o.analysis_version=?3 AND o.model_version=?4
+          LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
+          WHERE v.id>?1 AND v.metadata_json IS NOT NULL AND (o.embedding IS NULL OR e.embedding IS NULL)
+          ORDER BY v.id LIMIT ?2").map_err(|e| e.to_string())?;
+        let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION], |r| Ok(PendingAnalysis {
+          variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_original:r.get(6)?,needs_edited:r.get(7)?,
+        })).map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
     pub fn counts(&self) -> Result<Counts, String> {
         self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row(
             "SELECT (SELECT count(*) FROM assets),(SELECT count(*) FROM variants),(SELECT count(*) FROM variants WHERE metadata_json IS NOT NULL),(SELECT count(*) FROM analyses)",[],|row| Ok(Counts{assets:row.get(0)?,variants:row.get(1)?,metadata:row.get(2)?,analyses:row.get(3)?})).map_err(|e|e.to_string())
