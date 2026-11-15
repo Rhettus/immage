@@ -1695,6 +1695,26 @@ void library_import_wait(void)
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
+// Analysis renders in an independent develop, always sRGB. Original means
+// upstream history_end=0, not export metadata's history=false option.
+gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err)
+{
+  if(g_strcmp0(subject, "original") && g_strcmp0(subject, "edited"))
+  { *err = g_strdup("invalid analysis subject"); return FALSE; }
+  JsonObject *req = json_object_new();
+  json_object_set_string_member(req, "out", out);
+  json_object_set_string_member(req, "format", "jpeg");
+  json_object_set_string_member(req, "color_space", "srgb");
+  json_object_set_int_member(req, "quality", 85);
+  json_object_set_int_member(req, "long_edge", 1024);
+  json_object_set_boolean_member(req, "draft", TRUE);
+  json_object_set_boolean_member(req, "transient", TRUE);
+  json_object_set_boolean_member(req, "analysis_original", !g_strcmp0(subject, "original"));
+  const gboolean ok = export_export(imgid, req, err);
+  json_object_unref(req);
+  return ok;
+}
+
 // the lighttable's thumbnail for an image: the embedded preview of an
 // unedited raw, a processed render of an edited one. the buffer is 8-bit
 // RGBA (views/view.c swaps it to BGRA for cairo); its color space is
@@ -1829,9 +1849,12 @@ void library_thumb_run(gpointer data, gpointer user_data)
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "tag");
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
-  const gboolean ok = dest && library_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                                     json_object_get_int_member_with_default(req, "size", 256),
-                                     json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
+  const gboolean analysis = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "analysis_preview");
+  const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+  const gboolean ok = dest && (analysis
+    ? library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err)
+    : library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
+                    json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err));
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)

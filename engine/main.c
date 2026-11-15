@@ -393,6 +393,13 @@ static gboolean _cmd_import(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_analysis_preview(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  return dest && library_analysis_preview(json_object_get_int_member_with_default(req, "imgid", 0),
+    json_object_get_string_member_with_default(req, "subject", ""), dest, err);
+}
+
 static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
 {
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
@@ -1290,6 +1297,7 @@ static const eng_cmd_t _commands[] =
   { "folder", _cmd_folder, 0 },
   { "import", _cmd_import, 0 },
   { "thumb", _cmd_thumb, 0 },
+  { "analysis_preview", _cmd_analysis_preview, 0 },
   { "prefetch", _cmd_prefetch, 0 },
   { "meta", _cmd_meta, 0 },
   { "keywords", _cmd_keywords, 0 },
@@ -1594,7 +1602,7 @@ static gpointer _read_requests(gpointer data)
         {
           clip_queue(parser); parser = NULL; taken = TRUE;
         }
-        else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
+        else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")) && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
           // the pool frees the parser

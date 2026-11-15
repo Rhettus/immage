@@ -13,6 +13,8 @@ Improvements
   queries, with independent results, errors and pagination. Combined results
   merge exact verified local paths and weight each source equally. Filename searches
   use cached metadata; automatic local embedding creation is still pending.
+- Local analysis previews render original and edited appearances independently
+  of the open editor, without changing photo sidecars.
 - The grid adds Show more like this for indexed local photos, searching all
   library folders with retained filters and a visible image-query indicator.
 - Advanced mode adds searchable editing modules, presets and groups, with

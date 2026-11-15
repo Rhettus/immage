@@ -103,7 +103,8 @@ rebuilds wait while background work is paused.
 The **Search photos** card is available without an Immich connection. Choose
 **Local photos**, **Immich**, or **Local + Immich** when Immich is configured.
 Local searches cover the current folder (respecting Include subfolders) or all
-library folders. Choose original or edited analysis for local similarity.
+library folders. Choose original or edited analysis for local similarity. Original analysis
+renders with editing history disabled; edited analysis uses saved edits.
 **Filename** and empty-text searches can use cached metadata without a model.
 Smart text needs a downloaded model and current indexed embeddings; automatic
 embedding creation is not connected yet in this experimental build.
