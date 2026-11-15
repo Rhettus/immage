@@ -1563,7 +1563,7 @@ static void _trim(const gboolean pressure)
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
-// tagged `thumb` goes to the thumbnail threads (library_thumb_run), a tagged
+// tagged `thumb` and `meta` go to the thumbnail threads (library_thumb_run), a tagged
 // `export`, `export_release`, `hdr_merge`, `pano_merge` or `pano_preview` to the export
 // thread (export_run), a tagged `import` to the import thread (library_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
@@ -1602,9 +1602,10 @@ static gpointer _read_requests(gpointer data)
         {
           clip_queue(parser); parser = NULL; taken = TRUE;
         }
-        else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")) && json_object_has_member(req, "tag"))
+        else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")
+                 || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
         {
-          fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          fprintf(stderr, "[engine] %s %.*s\n", cmd, (int)strcspn(line->str, "\r\n"), line->str);
           // the pool frees the parser
           if(library_thumb_queue(parser)) parser = NULL;
           taken = TRUE;

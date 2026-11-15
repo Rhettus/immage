@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Precise capture metadata through actual engine JSON, no GUI/models."""
-import importlib.util, subprocess, tempfile
+import importlib.util, subprocess, tempfile, json
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("engine_checks",ROOT/"verify/engine-0460.py")
@@ -18,5 +18,9 @@ with tempfile.TemporaryDirectory(prefix="immage-capture-json-") as tmp:
   assert exif["capture_time_raw"]=="2026:11:15 12:34:56.123456789",exif
   assert exif["capture_offset"]=="-07:30",exif
   assert exif["body_serial"]=="BODY-123",exif
-  print("PASS engine JSON preserves capture fraction, UTC offset and body serial")
+  e.child.stdin.write(json.dumps({"cmd":"meta","imgid":opened["imgid"],"tag":999})+"\n");e.child.stdin.flush()
+  assert e.sel.select(120),"tagged metadata worker timed out"
+  worker=json.loads(e.child.stdout.readline());assert worker.get("ok") and worker.get("tag")==999,worker
+  assert worker["image"]["exif"]==exif,"worker metadata changed capture fields"
+  print("PASS foreground/worker engine JSON preserves capture fraction, UTC offset and body serial")
  finally:e.quit()

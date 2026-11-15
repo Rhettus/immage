@@ -238,6 +238,10 @@ impl Tagged {
         self.link.library_ids.lock().unwrap().lookup(imgid)
     }
 
+    pub fn active_photo(&self) -> Option<crate::library_ids::Photo> {
+        self.link.library_ids.lock().unwrap().active_photo()
+    }
+
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;

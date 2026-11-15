@@ -1853,12 +1853,26 @@ void library_thumb_run(gpointer data, gpointer user_data)
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "tag");
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
-  const gboolean analysis = !g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "analysis_preview");
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  const gboolean analysis = !g_strcmp0(cmd, "analysis_preview");
+  const gboolean metadata = !g_strcmp0(cmd, "meta");
   const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
-  const gboolean ok = dest && (analysis
-    ? library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err)
-    : library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
-                    json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err));
+  gboolean ok = FALSE;
+  if(metadata)
+  {
+    if(dt_is_valid_imgid(imgid) && dt_image_exists(imgid))
+    {
+      json_builder_set_member_name(b, "image");
+      library_image_json(b, imgid, TRUE);
+      ok = TRUE;
+    }
+    else err = g_strdup("no such image");
+  }
+  else if(dest && analysis)
+    ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
+  else if(dest)
+    ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
+                       json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)

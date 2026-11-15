@@ -117,7 +117,8 @@ Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% wind
 The Search photos card queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths
 and preserving metadata edits while additional results arrive. Metadata edits
-refresh search results without a folder reload or optional model.
+refresh search results without a folder reload or optional model. Saved edits
+also stay indexed as you switch photos through bounded queued refreshes.
 After the optional model download, background CPU analysis builds original and
 edited embeddings, backfilling metadata for reconciled library paths through
 bounded lazy imports, respecting removed and excluded folders. Image queries use the grid

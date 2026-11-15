@@ -132,7 +132,10 @@ local file contents. Unmapped or differently spelled paths stay separate.
 Search retains active filters. Ratings, labels, keyword and capture-time changes
 refresh cached search metadata without a folder reload or optional model.
 Local queries wait for pending rating saves, while Immich queries can start
-independently. Active grid filters update immediately when metadata changes. Unknown local edit, reject, label, keyword and
+independently. Saved editing changes and switching photos queue bounded metadata
+refreshes even without an optional model; opening the next photo does not wait
+for the previous photo’s metadata read. Active grid filters update immediately
+when metadata changes. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
 Local search includes cached originals and saved virtual copies, using only

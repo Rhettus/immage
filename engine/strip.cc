@@ -539,11 +539,13 @@ char *camera_source_metadata(const char *path, char **capture, char **offset)
 {
   if(capture) *capture = g_strdup("");
   if(offset) *offset = g_strdup("");
+  // A stale or offline NAS path can block in stat; do not hold the global
+  // Exiv2/cache lock while waiting on filesystem metadata.
+  GStatBuf st;
+  if(g_stat(path, &st)) return g_strdup("");
   _lock lock; // Protect both Exiv2 and the cache across request/import threads.
   struct Entry { std::string stamp, serial, capture, offset; };
   static std::map<std::string, Entry> cache;
-  GStatBuf st;
-  if(g_stat(path, &st)) return g_strdup("");
   std::string stamp = std::to_string(st.st_mtime) + ":" + std::to_string(st.st_ctime) + ":" + std::to_string(st.st_size);
 #if defined(__APPLE__)
   stamp += ":" + std::to_string(st.st_mtimespec.tv_nsec) + ":" + std::to_string(st.st_ctimespec.tv_nsec);

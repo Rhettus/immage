@@ -253,28 +253,61 @@ fn mutation_metadata_snapshot(
     }))
 }
 
-// A refreshed reply may arrive after another edit or a clear/rebuild. Require
-// the exact row/source/edit snapshot captured before the engine read and
-// compare it atomically before publishing metadata from that reply.
+fn metadata_refresh_key(row: &crate::search_cache::PendingAnalysis) -> String {
+    // after_success assigns a fresh random edited fingerprint on each
+    // invalidation; save/open refreshes for the same photo therefore don't
+    // deduplicate one another across invalidation generations.
+    format!("search-metadata:{}:{}", row.variant_id, row.edited)
+}
+
+struct PreparedMetadata {
+    edited: String,
+    metadata: String,
+    capture: (Option<i64>, Option<String>, Option<i32>),
+}
+
+// File stats and serialization can block on a NAS; prepare them before taking
+// Job::commit's queue lock. The publication step below is only the CAS query.
+fn prepare_mutation_metadata(
+    row: &crate::search_cache::PendingAnalysis,
+    image: &Value,
+) -> Result<Option<PreparedMetadata>, String> {
+    let Some(path) = image.get("path").and_then(Value::as_str) else { return Ok(None) };
+    let Some(version) = image.get("version").and_then(Value::as_i64) else { return Ok(None) };
+    if version < 0 { return Ok(None) }
+    let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
+    if path != row.path || copy_key != row.copy_key { return Ok(None) }
+    let Some((original, edited)) = cache::listed_metadata_fingerprints(
+        &Mutex::new(cache::Listed::default()), Path::new(path), version,
+    ) else { return Ok(None) };
+    if original != row.original { return Ok(None) }
+    let capture = precise_capture(image);
+    let mut stored = image.clone();
+    if let Some(fields) = stored.as_object_mut() { fields.remove("imgid"); }
+    let metadata = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
+    Ok(Some(PreparedMetadata { edited, metadata, capture }))
+}
+
+fn publish_mutation_metadata(
+    index: &crate::search_cache::SearchCache,
+    row: &crate::search_cache::PendingAnalysis,
+    prepared: PreparedMetadata,
+) -> Result<bool, String> {
+    index.finish_analysis_metadata(
+        row,
+        &prepared.edited,
+        &prepared.metadata,
+        (prepared.capture.0, prepared.capture.1.as_deref(), prepared.capture.2),
+    )
+}
+
 fn cache_mutation_metadata(
     index: &crate::search_cache::SearchCache,
     row: &crate::search_cache::PendingAnalysis,
     image: &Value,
 ) -> Result<bool, String> {
-    let Some(path) = image.get("path").and_then(Value::as_str) else { return Ok(false) };
-    let Some(version) = image.get("version").and_then(Value::as_i64) else { return Ok(false) };
-    if version < 0 { return Ok(false) }
-    let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
-    if path != row.path || copy_key != row.copy_key { return Ok(false) }
-    let Some((original, edited)) = cache::listed_metadata_fingerprints(
-        &Mutex::new(cache::Listed::default()), Path::new(path), version,
-    ) else { return Ok(false) };
-    if original != row.original { return Ok(false) }
-    let (ns, raw, offset) = precise_capture(image);
-    let mut stored = image.clone();
-    if let Some(fields) = stored.as_object_mut() { fields.remove("imgid"); }
-    let metadata = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
-    index.finish_analysis_metadata(row, &edited, &metadata, (ns, raw.as_deref(), offset))
+    let Some(prepared) = prepare_mutation_metadata(row, image)? else { return Ok(false) };
+    publish_mutation_metadata(index, row, prepared)
 }
 
 // A successful metadata edit invalidates the cached JSON in the engine link.
@@ -306,6 +339,53 @@ async fn refresh_search_metadata(state: &AppState, imgid: i64) {
         Ok(Ok(_)) => {}
         Ok(Err(error)) => eprintln!("search metadata refresh for {imgid}: {error}"),
         Err(error) => eprintln!("search metadata refresh for {imgid}: {error}"),
+    }
+}
+
+// Lifecycle refreshes run on the bounded shared queue so opening the next
+// photo never waits on metadata I/O for the one just left.
+pub(crate) fn queue_search_metadata_refresh(state: &AppState, photo: crate::library_ids::Photo) {
+    let Some(index) = state.search_cache.clone() else { return };
+    let copy_key = if photo.version == 0 { String::new() } else { format!("version:{}", photo.version) };
+    let row = match mutation_metadata_snapshot(&index, &photo.path, &copy_key) {
+        Ok(Some(row)) => row,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("search metadata refresh for {}: {error}", photo.path);
+            return;
+        }
+    };
+    let key = metadata_refresh_key(&row);
+    let tagged = state.tagged.clone();
+    let path = photo.path.clone();
+    let version = photo.version;
+    if !state.analysis_queue.submit_foreground(key, move |job| {
+        if job.cancelled() { return }
+        let handle = tagged.cached_photo(&path, version);
+        let reply = match tagged.request(tagged.tag(), json!({ "cmd": "meta", "imgid": handle })) {
+            Ok(reply) => reply,
+            Err(error) => {
+                eprintln!("search metadata refresh for {}: {error}", path);
+                return;
+            }
+        };
+        let Some(image) = reply.get("image").cloned() else { return };
+        let prepared = match prepare_mutation_metadata(&row, &image) {
+            Ok(Some(prepared)) => prepared,
+            Ok(None) => return,
+            Err(error) => {
+                eprintln!("search metadata refresh for {}: {error}", path);
+                return;
+            }
+        };
+        if let Some(result) = job.commit(|| publish_mutation_metadata(&index, &row, prepared)) {
+            match result {
+                Ok(_) => {}
+                Err(error) => eprintln!("search metadata refresh for {}: {error}", path),
+            }
+        }
+    }) {
+        eprintln!("search metadata refresh for {}: analysis queue is full or stopping", photo.path);
     }
 }
 
@@ -1208,6 +1288,8 @@ mod tests {
         image["rating"] = json!(5);
         image["keywords"] = json!(["Places|Updated"]);
         let current_snapshot = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        assert_ne!(metadata_refresh_key(&stale_same_photo), metadata_refresh_key(&current_snapshot),
+            "each save/open invalidation generation must get a distinct queue key");
         // A concurrent metadata change in another photo must not drop this
         // photo's independent, fingerprint-guarded refresh.
         index.invalidate_edited(other.to_str().unwrap(), "").unwrap();

@@ -71,6 +71,10 @@ impl LibraryIds {
         })
     }
 
+    pub(crate) fn active_photo(&self) -> Option<Photo> {
+        self.active.clone()
+    }
+
     /// Cache consequences of successful operations, shared by all request paths.
     pub fn changed(&mut self, req: &Value, reply: &Value) -> Vec<(Photo, bool)> {
         let command = req["cmd"].as_str().unwrap_or_default();
