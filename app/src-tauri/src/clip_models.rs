@@ -581,6 +581,31 @@ mod tests {
             )
             .unwrap()
         });
+        let relevant_captions = [
+            "a photo of snowy mountain peaks above a rocky hiking trail and purple wildflowers",
+            "a mountain landscape with a stone path through pink flowers",
+        ];
+        let unrelated_captions = [
+            "a close-up photo of sushi on a plate at a restaurant",
+            "a brown dog swimming in a blue pool",
+        ];
+        let mut caption_scores = Vec::new();
+        for caption in relevant_captions.iter().chain(unrelated_captions.iter()) {
+            let embedding = crate::clip_infer::text(&models, &tagged, &runtime, caption).unwrap();
+            let dot = image_first.iter().zip(&embedding)
+                .map(|(image, text)| f64::from(*image) * f64::from(*text))
+                .sum::<f64>();
+            let image_norm = image_first.iter().map(|value| f64::from(*value).powi(2)).sum::<f64>().sqrt();
+            let text_norm = embedding.iter().map(|value| f64::from(*value).powi(2)).sum::<f64>().sqrt();
+            let cosine = dot / (image_norm * text_norm);
+            caption_scores.push((caption, cosine));
+        }
+        let relevant_floor = caption_scores[..relevant_captions.len()].iter()
+            .map(|(_, score)| *score).fold(f64::INFINITY, f64::min);
+        let unrelated_ceiling = caption_scores[relevant_captions.len()..].iter()
+            .map(|(_, score)| *score).fold(f64::NEG_INFINITY, f64::max);
+        assert!(relevant_floor > unrelated_ceiling,
+            "relevant captions must rank above unrelated ones: {caption_scores:?}");
         engine.quit();
 
         for embedding in [&text_first, &text_warm, &image_first, &image_warm] {
@@ -599,8 +624,11 @@ mod tests {
                 "textWarmMs": text_warm_ms,
                 "imageColdMs": image_cold_ms,
                 "imageWarmMs": image_warm_ms,
+                "captionScores": caption_scores.iter().map(|(caption, score)| (*caption, *score)).collect::<Vec<_>>(),
+                "relevantCaptionFloor": relevant_floor,
+                "unrelatedCaptionCeiling": unrelated_ceiling,
                 "provider": "CPU",
-                "semanticQualityValidated": false,
+                "semanticQualityValidated": "single-sample ranking smoke only",
                 "osCachesCleared": false,
                 "modelDirectory": models.root,
                 "onnxRuntimeOverride": ort_path.as_ref().map(|p| p.display().to_string()),

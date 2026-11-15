@@ -78,8 +78,8 @@ acceptance are provided.
 Immich server or CLIP model. Use the bundled sample JPEG as the configured
 fixture; the runner copies it into isolated app state. The case waits for a
 cached local result and thumbnail, rates only that disposable copy, retains a
-rating filter, and returns to its folder. This case is prepared but has not been
-live-validated. Local per-run GUI approval rules still apply.
+rating filter, and returns to its folder. This case passed live Linux
+system-WebKitGTK validation; see `suites.mjs` for the retained run identity. Local per-run GUI approval rules still apply.
 
 ## Positive hot-pixel fixture
 

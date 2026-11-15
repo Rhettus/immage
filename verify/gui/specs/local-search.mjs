@@ -46,6 +46,11 @@ export async function localSearch(t) {
   // Set a rating on the copied fixture, then filter the search through the
   // real toolbar. The local result should survive because its saved rating is
   // at the selected threshold.
+  const hover = await t.driver.observe(s => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, cell);
+  await t.driver.move(hover.x, hover.y);
   await click(t, `${cell} .thumb-stars button:nth-child(3)`);
   await until(() => t.driver.observe(s => document.querySelector(`${s} .thumb-stars button:nth-child(3)`)?.classList.contains('on'), cell),
     'the copied result is rated three stars');
