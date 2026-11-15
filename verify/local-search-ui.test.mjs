@@ -54,3 +54,14 @@ test('similar photo query selects local all-roots while retaining filter fields'
  await localSearch(q,{labels:2},'/photos',false,null,new AbortController().signal,'123');
  assert.equal(sent.imageVariant,'123');assert.equal(sent.text,'');assert.equal(sent.scope,'library');assert.deepEqual(sent.filters,{labels:2});
 });
+
+test('local queries wait for pending metadata saves and cancellation prevents a delayed native query',async()=>{
+ let release;const saved=new Promise(r=>release=r);const calls=[];
+ globalThis.__searchUI={commands:{async localSearch(args){calls.push(args);return{items:[],next:null};}}};
+ const controller=new AbortController();
+ const pending=localSearch(NO_SEARCH,{},'/photos',false,null,controller.signal,undefined,[saved]);
+ assert.equal(calls.length,0);release();await pending;assert.equal(calls.length,1);
+ let finish;const anotherSave=new Promise(r=>finish=r);const stopped=new AbortController();
+ const cancelled=localSearch(NO_SEARCH,{},'/photos',false,null,stopped.signal,undefined,[anotherSave]);
+ stopped.abort();finish();await assert.rejects(cancelled,/cancelled/);assert.equal(calls.length,1);
+});

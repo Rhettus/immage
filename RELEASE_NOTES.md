@@ -52,6 +52,8 @@ Improvements
 
 Bug fixes
 
+- Ratings, labels, keywords and capture-time edits refresh local search without
+  reopening folders or installing a model. Active grid filters update with edits.
 - Loading more search results preserves opened photo handles and metadata edits
   already displayed in the grid.
 - Background analysis skips removed and excluded library folders, including

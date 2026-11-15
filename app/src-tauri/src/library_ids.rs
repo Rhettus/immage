@@ -62,7 +62,7 @@ impl LibraryIds {
         self.real.clear();
         self.reverse.clear();
     }
-    fn lookup(&self, id: i64) -> Option<Photo> {
+    pub(crate) fn lookup(&self, id: i64) -> Option<Photo> {
         self.handles.get(&id).cloned().or_else(|| {
             self.real
                 .iter()

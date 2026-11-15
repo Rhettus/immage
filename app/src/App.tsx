@@ -125,7 +125,7 @@ import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
-import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
+import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
@@ -344,6 +344,7 @@ export default function App() {
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
+  const pendingSearchMetadata = useRef(new Set<Promise<unknown>>());
   const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
   useEffect(() => { if (!prefsOpen) void immichUrl().then(setImmichBase); }, [prefsOpen]);
@@ -3019,7 +3020,7 @@ export default function App() {
   const combined = useRef<ReturnType<typeof createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>> | null>(null);
   if (!combined.current) combined.current = createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>({
     sources: {
-      local: (q, next, signal) => localSearch(q.form, q.filters, q.folder, q.recursive, next, signal, q.imageVariant),
+      local: (q, next, signal) => localSearch(q.form, q.filters, q.folder, q.recursive, next, signal, q.imageVariant, [...pendingSearchMetadata.current]),
       immich: async (q, next, signal) => {
         const page = await searchImmichPage(q.form, next);
         if (signal.aborted) throw new Error("Search cancelled");
@@ -3504,7 +3505,9 @@ export default function App() {
   const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
     patchImage(imgid, fields);
     try {
-      await commands.metaSet(imgid, fields as { [key in string]: Value });
+      const saved = commands.metaSet(imgid, fields as { [key in string]: Value });
+      pendingSearchMetadata.current.add(saved);
+      try { await saved; } finally { pendingSearchMetadata.current.delete(saved); }
     } catch (e) {
       setStatus(`error: ${e}`);
     }
@@ -5821,7 +5824,7 @@ export default function App() {
   // filters leave the raw out
   const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   partnersRef.current = partners;
-  const passing = immich ? images : images.filter((i) => passes(i, filter));
+  const passing = images.filter((i) => immich ? passesSearch(i, filter) : passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the

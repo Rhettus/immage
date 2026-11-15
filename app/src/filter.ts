@@ -72,6 +72,16 @@ export const passes = (i: Known, f: Filter) =>
   && (!f.takenTo || (!!takenAt(i) && day(i) <= f.takenTo))
   && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))));
 
+// Search results have capture-date metadata, but no search result should use
+// the file's modified time to satisfy a capture-date filter. Retain the more
+// precise source text only when it agrees with the EXIF timestamp it refines.
+export function passesSearch(i: ImageEntry, f: Filter): boolean {
+  const datetime = i.exif.datetime || "";
+  const raw = i.exif.capture_time_raw || "";
+  const capture = datetime && raw.slice(0, 19) === datetime.slice(0, 19) ? raw : datetime;
+  return passes({ ...i, exif: { ...i.exif, datetime: capture, file_datetime: "" } }, f);
+}
+
 // the popup's fields in use, one each, for its button and the toolbar
 export const popupCount = (f: Filter) =>
   [f.rejected !== "all", f.kinds.length, f.cameras.length, f.bodies.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]

@@ -129,7 +129,10 @@ A mapped Immich result merges with a primary local result only when its
 verified local path exactly matches the indexed path. Virtual copies stay
 separate. This identifies the local file path; it does not compare server and
 local file contents. Unmapped or differently spelled paths stay separate.
-Search retains active filters. Unknown local edit, reject, label, keyword and
+Search retains active filters. Ratings, labels, keyword and capture-time changes
+refresh cached search metadata without a folder reload or optional model.
+Local queries wait for pending rating saves, while Immich queries can start
+independently. Active grid filters update immediately when metadata changes. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
 Local search includes cached originals and saved virtual copies, using only

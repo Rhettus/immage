@@ -5,7 +5,8 @@ import type { Filter } from "./filter";
 import type { ImageEntry } from "./library";
 let requestId = 0;
 export async function localSearch(q: ImmichSearch, filters: Filter, folder: string, recursive: boolean,
-                                  next: string | null, signal: AbortSignal, imageVariant?: string) {
+                                  next: string | null, signal: AbortSignal, imageVariant?: string, pendingMetadata?: Promise<unknown>[]) {
+  if (pendingMetadata?.length) await Promise.allSettled(pendingMetadata);
   if (signal.aborted) throw new Error("Search cancelled");
   const id = ++requestId;
   const cancel = () => { void commands.localSearchCancel(id).catch(() => {}); };

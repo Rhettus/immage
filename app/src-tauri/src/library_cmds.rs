@@ -232,6 +232,83 @@ fn index_imported_metadata(
     }
 }
 
+fn mutation_metadata_snapshot(
+    index: &crate::search_cache::SearchCache,
+    path: &str,
+    copy_key: &str,
+) -> Result<Option<crate::search_cache::PendingAnalysis>, String> {
+    let Some(variant) = index.variant(path, copy_key)? else { return Ok(None) };
+    let Some(asset) = index.asset(variant.asset_id)? else { return Ok(None) };
+    if asset.path != path { return Ok(None) }
+    Ok(Some(crate::search_cache::PendingAnalysis {
+        variant_id: variant.id,
+        asset_id: asset.id,
+        path: asset.path,
+        copy_key: variant.copy_key,
+        original: asset.original_fingerprint,
+        edited: variant.edited_fingerprint,
+        needs_metadata: true,
+        needs_original: false,
+        needs_edited: false,
+    }))
+}
+
+// A refreshed reply may arrive after another edit or a clear/rebuild. Require
+// the exact row/source/edit snapshot captured before the engine read and
+// compare it atomically before publishing metadata from that reply.
+fn cache_mutation_metadata(
+    index: &crate::search_cache::SearchCache,
+    row: &crate::search_cache::PendingAnalysis,
+    image: &Value,
+) -> Result<bool, String> {
+    let Some(path) = image.get("path").and_then(Value::as_str) else { return Ok(false) };
+    let Some(version) = image.get("version").and_then(Value::as_i64) else { return Ok(false) };
+    if version < 0 { return Ok(false) }
+    let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
+    if path != row.path || copy_key != row.copy_key { return Ok(false) }
+    let Some((original, edited)) = cache::listed_metadata_fingerprints(
+        &Mutex::new(cache::Listed::default()), Path::new(path), version,
+    ) else { return Ok(false) };
+    if original != row.original { return Ok(false) }
+    let (ns, raw, offset) = precise_capture(image);
+    let mut stored = image.clone();
+    if let Some(fields) = stored.as_object_mut() { fields.remove("imgid"); }
+    let metadata = serde_json::to_string(&stored).map_err(|e| e.to_string())?;
+    index.finish_analysis_metadata(row, &edited, &metadata, (ns, raw.as_deref(), offset))
+}
+
+// A successful metadata edit invalidates the cached JSON in the engine link.
+// Re-read the engine's authoritative metadata and repopulate the disposable
+// search index without making a successful edit depend on cache availability.
+async fn refresh_search_metadata(state: &AppState, imgid: i64) {
+    let Some(index) = state.search_cache.clone() else { return };
+    let Some(photo) = state.tagged.known_photo(imgid) else { return };
+    let copy_key = if photo.version == 0 { String::new() } else { format!("version:{}", photo.version) };
+    let row = match mutation_metadata_snapshot(&index, &photo.path, &copy_key) {
+        Ok(Some(row)) => row,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("search metadata refresh for {imgid}: {error}");
+            return;
+        }
+    };
+    let reply = match state.engine("search_metadata_refresh").request(
+        json!({ "cmd": "meta", "imgid": imgid }),
+    ) {
+        Ok(reply) => reply,
+        Err(error) => {
+            eprintln!("search metadata refresh for {imgid}: {error}");
+            return;
+        }
+    };
+    let Some(image) = reply.get("image").cloned() else { return };
+    match tauri::async_runtime::spawn_blocking(move || cache_mutation_metadata(&index, &row, &image)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("search metadata refresh for {imgid}: {error}"),
+        Err(error) => eprintln!("search metadata refresh for {imgid}: {error}"),
+    }
+}
+
 // Preserve camera fractional digits and only assign an instant when its UTC
 // offset is known. A changed sidecar capture date takes precedence over EXIF.
 pub(crate) fn precise_capture(image: &Value) -> (Option<i64>, Option<String>, Option<i32>) {
@@ -766,6 +843,7 @@ pub(crate) async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Ve
     -> Result<Vec<String>, String> {
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
     let reply = state.engine("keywords_set").request(req)?;
+    refresh_search_metadata(&state, imgid).await;
     serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords_set: unexpected reply: {e}"))
 }
 
@@ -777,14 +855,22 @@ pub(crate) async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map
     for (k, v) in fields {
         req[k] = v;
     }
-    state.engine("meta_set").request(req).map(|_| ())
+    state.engine("meta_set").request(req)?;
+    refresh_search_metadata(&state, imgid).await;
+    Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<CaptureTimesReply, String> {
     let reply = state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))?;
-    serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))
+    let result: CaptureTimesReply = serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))?;
+    for update in &result.updates {
+        if update.error.is_none() {
+            refresh_search_metadata(&state, update.imgid).await;
+        }
+    }
+    Ok(result)
 }
 
 // a photo or folder handed to the app from outside, waiting for the window
@@ -1073,5 +1159,68 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(result, Ok(()));
         assert_eq!(tauri::async_runtime::block_on(trash_existing(vec![])), Ok(()));
+    }
+
+    #[test]
+    fn refreshed_mutation_metadata_is_searchable_without_folder_reimport() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("edited.jpg");
+        std::fs::write(&photo, b"disposable photo bytes").unwrap();
+        let index = crate::search_cache::SearchCache::open(&dir.path().join("search.sqlite")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut image = fixture[2]["reply"]["images"][0].clone();
+        image["imgid"] = json!(712);
+        image["path"] = json!(photo);
+        image["filename"] = json!("edited.jpg");
+        image["version"] = json!(0);
+        image["copy"] = json!(false);
+        image["rating"] = json!(2);
+        image["keywords"] = json!(["Places|Old"]);
+        index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), std::slice::from_ref(&image));
+
+        let other = dir.path().join("other.jpg");
+        std::fs::write(&other, b"another disposable photo").unwrap();
+        let mut other_image = image.clone();
+        other_image["path"] = json!(other);
+        other_image["filename"] = json!("other.jpg");
+        other_image["rating"] = json!(1);
+        other_image["keywords"] = json!(["Places|Other"]);
+        index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), std::slice::from_ref(&other_image));
+
+        let mut args = crate::local_search::LocalSearchArgs::default();
+        args.filters.min_rating = 2;
+        args.filters.keywords = vec!["Places|Old".into()];
+        let root = dir.path().to_path_buf();
+        let page = crate::local_search::retrieve(&index, &args, &[root.clone()], &[], None, || false).unwrap();
+        assert_eq!(page.items.len(), 1);
+
+        // This mirrors Engine::Link after a successful native sidecar mutation.
+        let stale_same_photo = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        std::fs::write(dir.path().join("edited.jpg.xmp"), b"updated rating and keywords").unwrap();
+        index.invalidate_edited(photo.to_str().unwrap(), "").unwrap();
+        assert!(!cache_mutation_metadata(&index, &stale_same_photo, &image).unwrap(),
+            "a reply from before the mutation must not publish");
+        args.filters.min_rating = 5;
+        args.filters.keywords = vec!["Places|Updated".into()];
+        assert!(crate::local_search::retrieve(&index, &args, &[root.clone()], &[], None, || false)
+            .unwrap().items.is_empty());
+
+        image["rating"] = json!(5);
+        image["keywords"] = json!(["Places|Updated"]);
+        let current_snapshot = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        // A concurrent metadata change in another photo must not drop this
+        // photo's independent, fingerprint-guarded refresh.
+        index.invalidate_edited(other.to_str().unwrap(), "").unwrap();
+        assert!(cache_mutation_metadata(&index, &current_snapshot, &image).unwrap());
+        let page = crate::local_search::retrieve(&index, &args, &[root], &[], None, || false).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].image.rating, 5);
+        assert_eq!(page.items[0].image.keywords, ["Places|Updated"]);
+
+        let stale_clear = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
+        index.clear().unwrap();
+        assert!(!cache_mutation_metadata(&index, &stale_clear, &image).unwrap(),
+            "a late response must not recreate a cleared cache row");
+        assert_eq!(index.counts().unwrap().variants, 0);
     }
 }

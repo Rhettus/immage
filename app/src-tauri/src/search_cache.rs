@@ -447,7 +447,6 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
-    #[cfg(test)]
     pub fn variant(&self, path: &str, copy_key: &str) -> Result<Option<Variant>, String> {
         self.db
             .lock()

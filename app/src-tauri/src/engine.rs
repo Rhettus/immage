@@ -232,6 +232,12 @@ impl Tagged {
         self.link.library_ids.lock().unwrap().advertise(path, version)
     }
 
+    // Resolve an image id known to the current engine session back to its
+    // library identity, including both cached handles and imported ids.
+    pub fn known_photo(&self, imgid: i64) -> Option<crate::library_ids::Photo> {
+        self.link.library_ids.lock().unwrap().lookup(imgid)
+    }
+
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;
