@@ -12,6 +12,8 @@ mod analysis_queue;
 mod search_reconcile;
 mod clip_models;
 mod clip_text;
+mod clip_image;
+mod clip_infer;
 mod map_tiles;
 mod map_search;
 mod engine;

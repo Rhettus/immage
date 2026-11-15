@@ -93,7 +93,8 @@ identity is unknown, browse the folder before missing records can be removed.
 A cache failure falls back to reading the folder normally. The cache contains
 no originals or authoritative edits and can be rebuilt from your photos.
 Metadata caching does not download search models or upload photos; any optional
-local analysis model requires an explicit download choice.
+local analysis model requires an explicit download choice. Downloaded analysis
+packages are checked before use, and local analysis runs on the CPU.
 
 ### Thumbnail previews
 

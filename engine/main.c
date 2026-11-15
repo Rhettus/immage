@@ -1590,6 +1590,10 @@ static gpointer _read_requests(gpointer data)
           export_merge_cancel(json_object_get_int_member_with_default(req, "job", 0));
           taken = TRUE;
         }
+        else if(!g_strcmp0(cmd, "clip_embed") && json_object_has_member(req, "tag"))
+        {
+          clip_queue(parser); parser = NULL; taken = TRUE;
+        }
         else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
@@ -1729,6 +1733,7 @@ int main(int argc, char **argv)
   ai_pool = g_thread_pool_new(ai_run, out, 1, FALSE, NULL);
   g_thread_unref(g_thread_new("ai idle", ai_idle_watch, NULL));
 #endif
+  clip_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -1794,6 +1799,7 @@ int main(int argc, char **argv)
   // the client gone without a quit: its edits are kept all the same
   if(!quit) session_save_pending();
 
+  clip_wait();
   library_thumb_wait();
   library_import_wait();
   export_wait();

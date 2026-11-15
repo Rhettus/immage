@@ -71,7 +71,8 @@ Performance
   appear without importing the photo; changed files and sidecars are reread.
   Verified moves retain reusable analysis, and copies get separate identities.
   Background checks retain records for offline drives and incomplete scans.
-  Metadata caching does not download search models or upload photos.
+  Metadata caching does not download search models or upload photos; optional
+  local analysis uses verified packages and runs on the CPU.
 - Lightbox navigation reuses nearby previews in memory and waits briefly before
   starting speculative previews, reducing repeated loading and read-ahead work
   during rapid navigation.

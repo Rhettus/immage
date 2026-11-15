@@ -6,6 +6,8 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
+	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
+	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
 	searchModelDownload: (consent: boolean) => __TAURI_INVOKE<null>("search_model_download", { consent }),
 	searchModelCancel: () => __TAURI_INVOKE<void>("search_model_cancel"),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
@@ -982,6 +984,12 @@ export type PrinterPaper = {
 export type PrintersReply = {
 	available: boolean,
 	printers: Printer[],
+};
+
+export type ProbeReply = {
+	dimensions: number,
+	image_dimensions: number,
+	elapsed_ms: number | null,
 };
 
 export type Refine = {

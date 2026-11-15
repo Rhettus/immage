@@ -20,6 +20,7 @@ pub fn commands() -> Commands<tauri::Wry> {
     collect_commands![
         crate::settings::settings_all,
         crate::clip_models::search_model_status,
+        crate::clip_infer::search_model_probe,
         crate::clip_models::search_model_download,
         crate::clip_models::search_model_cancel,
         crate::settings::settings_set,

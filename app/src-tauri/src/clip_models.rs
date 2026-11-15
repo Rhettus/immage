@@ -84,6 +84,25 @@ pub struct Models {
     root: PathBuf,
     progress: Arc<Mutex<Progress>>,
     cancelled: AtomicBool,
+    prepared: Mutex<Option<Prepared>>,
+}
+type FileStamps = Vec<(u64, std::time::SystemTime)>;
+struct Prepared {
+    stamps: FileStamps,
+    text: Arc<crate::clip_text::TextProcessor>,
+}
+fn package_stamps(root: &Path) -> Result<FileStamps, String> {
+    ASSETS
+        .iter()
+        .map(|asset| {
+            let m = std::fs::symlink_metadata(root.join(asset.path))
+                .map_err(|_| "Optional CLIP package is not installed".to_string())?;
+            if !m.is_file() || m.len() != asset.size {
+                return Err("CLIP package changed; verify the model download".into());
+            }
+            Ok((m.len(), m.modified().map_err(|e| e.to_string())?))
+        })
+        .collect()
 }
 impl Models {
     pub fn new(root: PathBuf) -> Self {
@@ -91,7 +110,50 @@ impl Models {
             root,
             progress: Arc::new(Mutex::new(Progress::default())),
             cancelled: AtomicBool::new(false),
+            prepared: Mutex::new(None),
         }
+    }
+    /// Lazy local verification only; never downloads. Rehash after any file stamp change.
+    fn package(&self) -> Result<(PathBuf, Arc<crate::clip_text::TextProcessor>), String> {
+        if self.progress.lock().unwrap().downloading {
+            return Err("CLIP model verification is already running".into());
+        }
+        let root = self.root.join(REVISION);
+        let stamps = package_stamps(&root)?;
+        let mut prepared = self.prepared.lock().unwrap();
+        if prepared.as_ref().is_none_or(|p| p.stamps != stamps) {
+            *prepared = None;
+            self.progress.lock().unwrap().verified = false;
+            verify_package(&root, ASSETS)?;
+            crate::clip_image::validate_config(&root)?;
+            let processor = Arc::new(crate::clip_text::TextProcessor::load(&root)?);
+            if package_stamps(&root)? != stamps {
+                return Err("CLIP package changed during verification".into());
+            }
+            write_engine_manifest(&root)?;
+            *prepared = Some(Prepared {
+                stamps,
+                text: processor,
+            });
+        }
+        self.progress.lock().unwrap().verified = true;
+        Ok((root, Arc::clone(&prepared.as_ref().unwrap().text)))
+    }
+    pub fn prepare_text(
+        &self,
+        text: &str,
+    ) -> Result<(PathBuf, crate::clip_text::TextInput), String> {
+        let (root, processor) = self.package()?;
+        Ok((root, processor.encode(text)?))
+    }
+    pub fn prepare_image(
+        &self,
+        rgb: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<(PathBuf, Vec<f32>), String> {
+        let (root, _) = self.package()?;
+        Ok((root, crate::clip_image::prepare_rgb(rgb, width, height)?))
     }
     pub fn status(&self) -> ModelStatus {
         let progress = self.progress.lock().unwrap();
@@ -162,6 +224,7 @@ impl Models {
             file.sync_all().map_err(|e| e.to_string())
         });
         let result = result.and_then(|()| {
+            crate::clip_image::validate_config(&self.root.join(REVISION))?;
             crate::clip_text::TextProcessor::load(&self.root.join(REVISION)).map(|_| ())
         });
         let mut p = self.progress.lock().unwrap();
@@ -177,6 +240,7 @@ impl Models {
     ) -> Result<(), String> {
         let final_dir = self.root.join(REVISION);
         if verify_package(&final_dir, assets).is_ok() {
+            write_engine_manifest(&final_dir)?;
             return Ok(());
         }
         std::fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
@@ -200,6 +264,7 @@ impl Models {
             if self.cancelled.load(Ordering::Acquire) {
                 return Err("Model download cancelled".into());
             }
+            write_engine_manifest(&staging)?;
             if final_dir.exists() {
                 // Keep a damaged installation for diagnostics; never merge mixed revisions.
                 std::fs::rename(
@@ -213,6 +278,15 @@ impl Models {
         let _ = std::fs::remove_dir_all(&staging);
         result
     }
+}
+fn write_engine_manifest(root: &Path) -> Result<(), String> {
+    let folder = root.join("engine");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    std::fs::write(
+        folder.join("config.json"),
+        r#"{"id":"immage-clip","name":"Immage CLIP ViT-B/32","backend":"onnx","num_inputs":1}"#,
+    )
+    .map_err(|e| e.to_string())
 }
 struct Cancellable<'a, R> {
     reader: &'a mut R,
@@ -334,6 +408,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let models = Models::new(dir.path().join("absent"));
         assert!(models.install(false).unwrap_err().contains("opt-in"));
+        assert!(models.prepare_text("cat").is_err());
         assert!(!models.root.exists());
         assert!(!models.status().downloading);
         assert!(!models.status().verified);
