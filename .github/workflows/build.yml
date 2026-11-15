@@ -100,6 +100,8 @@ jobs:
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/contrast-equalizer.test.mjs \
+            verify/culling.test.mjs \
+            verify/culling-zoom.test.mjs \
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
             verify/demosaic-options.test.mjs \
@@ -110,6 +112,7 @@ jobs:
             verify/export-format.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
+            verify/gui-suites.test.mjs \
             verify/gpu-check.test.mjs \
             verify/grid-size.test.mjs \
             verify/menus.test.mjs \
@@ -122,7 +125,9 @@ jobs:
             verify/pixel-worker.test.mjs \
             verify/preview-handoff.test.mjs \
             verify/saturation-curve.test.mjs \
+            verify/secondary-click.test.mjs \
             verify/settings-store.test.mjs \
+            verify/startup-restore.test.mjs \
             verify/theme.test.mjs \
             verify/typed-commands.test.mjs \
             verify/ui-updates.test.mjs \

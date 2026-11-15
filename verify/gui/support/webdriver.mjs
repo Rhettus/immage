@@ -30,7 +30,7 @@ export class AppDriver {
   command(method, path, body) { return this.request(method, `/session/${this.session}${path}`, body); }
   async open(binary, fixture) {
     const result = await this.request('POST', '/session', { capabilities: {
-      alwaysMatch: { 'tauri:options': { application: binary, args: [fixture] } },
+      alwaysMatch: { 'tauri:options': { application: binary, args: fixture ? [fixture] : [] } },
     } });
     this.session = result.sessionId;
     this.capabilities = result.capabilities;

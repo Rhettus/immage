@@ -23,10 +23,10 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const [paintSize, setPaintSize] = useState({width: 300, height: 150});
   const direction = useRef<1 | -1>(1);
   const queue = useRef(new PreviewQueue());
-  const header = useRef<HTMLDivElement>(null);
-  const [toolbarHeight, setToolbarHeight] = useState(80);
   const [windowSize, setWindowSize] = useState({width: window.innerWidth, height: window.innerHeight});
-  const [dimensions, setDimensions] = useState<{id: number; width: number; height: number} | null>(null);
+  const animation = useRef<{ frame: number; width: number; height: number } | null>(null);
+  const targetSize = useRef({ width: 300, height: 150 });
+  const zooming = useRef(false);
   const viewport = useRef<HTMLDivElement>(null);
   const keywordGeneration = useRef(0);
   const [retry, setRetry] = useState(0);
@@ -41,20 +41,14 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const canvas = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(false);
   const current = images.find(i => i.imgid === photo);
-  const actual = dimensions?.id === photo ? dimensions : current;
-  const fitted = fitLightbox((actual?.width || 1200) / devicePixelRatio,
-    (actual?.height || 800) / devicePixelRatio, windowSize.width, windowSize.height, toolbarHeight);
+  // The frame is fixed for the window size, independent of photo or preview
+  // dimensions, so swapping photos and zooming never moves the toolbar.
+  const fitted = fitLightbox(windowSize.width, windowSize.height);
   useEffect(() => {
     const resize = () => setWindowSize({width: window.innerWidth, height: window.innerHeight});
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
-  useEffect(() => {
-    if (!header.current) return;
-    const observer = new ResizeObserver(() => setToolbarHeight(header.current?.offsetHeight ?? 80));
-    observer.observe(header.current);
-    return () => observer.disconnect();
-  }, [photo]);
   const previousIndex = useRef(0);
   useEffect(() => { if (current) previousIndex.current = images.indexOf(current); else if (photo !== null) setPhoto(images[Math.min(previousIndex.current, images.length - 1)]?.imgid ?? null); }, [images, photo]);
   const keywords = async (items: ImageEntry[]) => {
@@ -115,31 +109,49 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     window.addEventListener("keyup", up); window.addEventListener("blur", release);
     return () => { window.removeEventListener("keyup", up); window.removeEventListener("blur", release); };
   }, []);
+  useEffect(() => () => {
+    const state = animation.current;
+    if (state) cancelAnimationFrame(state.frame);
+    animation.current = null;
+  }, [photo]);
+  // Retarget the active animation when better pixels arrive; do not restart it
+  // from the current rectangle. That restart made previews visibly bounce.
+  const targetWidth = zoom ? (detail ? paintSize.width : current?.width || paintSize.width) / devicePixelRatio : paintSize.width;
+  const targetHeight = zoom ? (detail ? paintSize.height : current?.height || paintSize.height) / devicePixelRatio : paintSize.height;
+  const box = viewport.current;
+  const factor = zoom ? 1 : box
+    ? Math.min(1, box.clientWidth / Math.max(1, targetWidth), box.clientHeight / Math.max(1, targetHeight)) : 1;
+  targetSize.current = { width: Math.max(1, targetWidth * factor), height: Math.max(1, targetHeight * factor) };
+  zooming.current = zoom;
   useEffect(() => {
-    const image = canvas.current, box = viewport.current;
-    if (!image || !box || !current) return;
-    // Animate the available pixels immediately; native detail replaces them
-    // without making click-to-zoom wait for the independent render.
-    const w = zoom ? (detail ? paintSize.width : current.width) / devicePixelRatio : paintSize.width;
-    const h = zoom ? (detail ? paintSize.height : current.height) / devicePixelRatio : paintSize.height;
-    const factor = zoom ? 1 : Math.min(box.clientWidth / Math.max(1,w), box.clientHeight / Math.max(1,h));
-    const targetWidth = Math.max(1, w * factor), targetHeight = Math.max(1, h * factor);
-    let width = image.getBoundingClientRect().width || targetWidth;
-    let height = image.getBoundingClientRect().height || targetHeight;
-    let frame = 0;
+    const image = canvas.current, viewportBox = viewport.current;
+    if (!image || !viewportBox || !current) return;
+    const w = zoom ? (detail ? paintSize.width : current.width || paintSize.width) / devicePixelRatio : paintSize.width;
+    const h = zoom ? (detail ? paintSize.height : current.height || paintSize.height) / devicePixelRatio : paintSize.height;
+    const scale = zoom ? 1 : Math.min(1, viewportBox.clientWidth / Math.max(1, w),
+      viewportBox.clientHeight / Math.max(1, h));
+    targetSize.current = { width: Math.max(1, w * scale), height: Math.max(1, h * scale) };
+    if (animation.current) return;
+    const rect = image.getBoundingClientRect();
+    animation.current = { frame: 0, width: rect.width || targetSize.current.width,
+      height: rect.height || targetSize.current.height };
     const step = () => {
-      width = easeZoom(width, targetWidth); height = easeZoom(height, targetHeight);
-      image.style.width = width + "px"; image.style.height = height + "px";
-      if (!zoom) { box.scrollLeft *= 1 - ZOOM_EASE; box.scrollTop *= 1 - ZOOM_EASE; }
+      const state = animation.current;
+      if (!state) return;
+      const target = targetSize.current;
+      state.width = easeZoom(state.width, target.width);
+      state.height = easeZoom(state.height, target.height);
+      image.style.width = state.width + "px"; image.style.height = state.height + "px";
+      if (!zooming.current) { viewportBox.scrollLeft *= 1 - ZOOM_EASE; viewportBox.scrollTop *= 1 - ZOOM_EASE; }
       else {
-        const anchor = zoomAnchor.current ?? {ix:.5, iy:.5, sx:box.clientWidth/2, sy:box.clientHeight/2};
-        box.scrollLeft = width * anchor.ix - anchor.sx + Math.max(0, (box.clientWidth - width) / 2);
-        box.scrollTop = height * anchor.iy - anchor.sy + Math.max(0, (box.clientHeight - height) / 2);
+        const anchor = zoomAnchor.current ?? {ix:.5, iy:.5, sx:viewportBox.clientWidth/2, sy:viewportBox.clientHeight/2};
+        viewportBox.scrollLeft = state.width * anchor.ix - anchor.sx + Math.max(0, (viewportBox.clientWidth - state.width) / 2);
+        viewportBox.scrollTop = state.height * anchor.iy - anchor.sy + Math.max(0, (viewportBox.clientHeight - state.height) / 2);
       }
-      if (width !== targetWidth || height !== targetHeight) frame = requestAnimationFrame(step);
+      if (state.width !== target.width || state.height !== target.height) state.frame = requestAnimationFrame(step);
+      else animation.current = null;
     };
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    animation.current.frame = requestAnimationFrame(step);
   }, [zoom, detail, paintSize, fitted.width, fitted.height, photo]);
   useEffect(() => {
     if (!current) return;
@@ -153,7 +165,6 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       box?.clientHeight ?? window.innerHeight * .86) * devicePixelRatio);
     const draw = (bitmap: ImageBitmap) => {
       if (!stale && canvas.current) {
-        if (!zoom) setDimensions({id: current.imgid, width: bitmap.width, height: bitmap.height});
         setPaintSize({width: bitmap.width, height: bitmap.height});
         canvas.current.width = bitmap.width; canvas.current.height = bitmap.height;
         canvas.current.getContext("2d")?.drawImage(bitmap, 0, 0);
@@ -216,7 +227,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
           onClick={() => { if (next) { direction.current = dir; setPhoto(next.imgid); } }} />;
       })}
       <div className="culling-lightbox" style={fitted}>
-        <div ref={header}>{current.filename} · {images.indexOf(current) + 1}/{images.length}
+        <div>{current.filename} · {images.indexOf(current) + 1}/{images.length}
           <button onClick={() => setPhoto(null)}>Close (F / Esc)</button><button onClick={() => void keywords([current])}>Keywords (K)</button>
           <button onClick={() => { zoomAnchor.current = null; setZoom(!zoom); }}>{zoom ? "Fit" : "100%"}</button>
           <button onClick={() => onEdit(current)}>Edit</button>
@@ -273,7 +284,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       </div>
     </div>}
     {!!targets.length && <div className="modal-backdrop" style={{ zIndex: 1001 }} role="dialog" aria-label="Grid keywords">
-      <div className="modal"><h2>Keywords · {targets.length} photos</h2>
+      <div className="modal"><h2>Keywords · {targets.length} {targets.length === 1 ? "photo" : "photos"}</h2>
         <fieldset disabled={writing} style={{ border: 0, padding: 0 }}>
         {lists.length === targets.length && <KeywordingPanel keywords={shared} known={known} open onToggle={() => {}}
           onAdd={names => { if (!writing) void change(names, []); }}

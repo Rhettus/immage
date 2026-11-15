@@ -55,12 +55,22 @@ import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
+import { gridCulling } from './specs/grid-culling.mjs';
+import { photoFilter } from './specs/photo-filter.mjs';
+import { startupRestore } from './specs/startup-restore.mjs';
+import { dngThumbnail } from './specs/dng-thumbnail.mjs';
+import { libraryWorkers } from './specs/library-workers.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'panel-peek': panelPeek,
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,
+  'grid-culling': gridCulling,
+  'photo-filter': photoFilter,
+  'startup-restore': startupRestore,
+  'dng-thumbnail': dngThumbnail,
+  'library-workers': libraryWorkers,
   'move-photos': movePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,

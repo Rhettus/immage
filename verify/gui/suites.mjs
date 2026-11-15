@@ -47,10 +47,25 @@ export const cases = {
     limitation: 'Reads the title rows\' DOM order and geometry in Simple mode; collapsed panels are measured too.' },
   'grid-zoom': { verification: 'Ctrl+- easing passed live, run 2026-11-14T11-13-29.076Z_be6a3bb_72a8b121. The Ctrl+wheel half is NOT validated: WebKitWebDriver delivers actions-API wheels with ctrlKey false (page-side probe, run 2026-11-14T11-13-05.121Z_be6a3bb_47056862), so the spec records wheel-blocked and skips those assertions.', scope: 'grid view: Ctrl+wheel resizes thumbnails in small steps, larger for wheel up and smaller for wheel down, with the photo under the pointer held in place; Ctrl+- eases through intermediate sizes', fixture: 'any (24 copies made as grid-NN)', liveValidated: false,
     limitation: 'A real trackpad pinch and macOS ⌘ are not exercised (WebDriver sends Ctrl+wheel, the events a pinch becomes); the toolbar size slider in the grid and the remembered size after a relaunch are not checked.' },
+  'grid-culling': { scope: 'grid F opens the fitted preview for the hovered photo; arrows and the outer button navigate; rating/reject/label keys update the preview and library; 100% waits for the full-resolution frame; Space-drag pans when pixels overflow; Fit returns; K and Recent keywords target the selection; F falls back to its selected photo; double-click opens editing', fixture: 'any (three copies made)', liveValidated: false,
+    verification: 'Linux ARM64 system WebKitGTK, maximized viewport 1596x840, empty workspace 9, original workspace 4 restored. Run 2026-11-15T05-07-44.864Z_f7ac19f_c5c0ca03; full frame 5184x2916, Space-pan changed scroll 80x45 CSS pixels, recent keyword and double-click passed. The run is failure because the separate context-selection subcheck failed.',
+    limitation: 'The context-menu Keywords action subcheck failed under WebKitWebDriver: two photos were selected immediately before right-click, the hit-tested tile was selected, but right-click left one active photo and the action opened one-photo keywording. Source behavior intends to keep the selection; whether the secondary-click action sequence or app event handling causes this needs manual confirmation. Do not count context-menu selection as passed. GUI fit/zoom/pan was measured on a landscape frame; portrait fit is covered headlessly, not in this GUI case. Preview latency and read-ahead order are not measured.' },
+  'photo-filter': { scope: 'a folder containing one photo and non-photo text, sidecar, partial-transfer and PDF files shows only the photo in the grid', fixture: 'any (decoy files added)', liveValidated: true,
+    verification: 'Visible Linux system WebKitGTK, maximized workspace 9. Run 2026-11-15T04-29-48.082Z_f7ac19f_256b19fa.' },
+  'startup-restore': { scope: 'an isolated profile seeded with a saved folder/photo starts in the grid, restores the photo without a launch-file argument, and switches to the editor after the first rendered frame', fixture: 'stairs-to-mountain.jpg, copied', liveValidated: true,
+    verification: 'Visible Linux system WebKitGTK, maximized viewport 1596x840, successful restored-photo startup. Run 2026-11-15T04-27-29.363Z_f7ac19f_101ddd6b.',
+    limitation: 'Checks successful restoration only; open failure, missing-file and recent-folder fallback paths remain covered by headless startup-restore tests.' },
+  'dng-thumbnail': { scope: 'a DNG with unsupported main-image compression still draws its embedded TIFF preview in the visible library thumbnail', fixture: 'generated DNG with a color-checker TIFF preview', liveValidated: true,
+    verification: 'Visible Linux system WebKitGTK, maximized viewport 1596x840; canvas 256x128 and four opaque color samples passed. Run 2026-11-15T04-29-21.815Z_f7ac19f_c297bc50.',
+    limitation: 'The unsupported main image cannot open as a full-resolution edit, and the synthetic preview covers one orientation. Headless verification covers all eight orientations and edited-photo fallback.' },
+  'library-workers': { scope: 'Preferences > Performance > Library workers lists 1, 2, 3, 4, 6 and 8; default 2 persists, 6 and 2 can be selected, and 6 persists for the following move-copy job', fixture: 'any photo', liveValidated: true,
+    verification: 'Visible Linux system WebKitGTK; default 2, changed 6→2→6, persisted 6, then the move-copy job passed. Run 2026-11-15T05-02-52.136Z_f7ac19f_e358ebb9.',
+    limitation: 'Proves a subsequent transfer runs after the worker preference changes, but does not measure simultaneous copies or exercise Stop/stall recovery.' },
   'move-photos': { scope: 'a thumbnail dragged onto a Folders row: a rest on a shut folder opens it, Esc ends the drag, the photo\'s own folder refuses the drop, Cancel moves nothing; then a move into a subfolder opened under the drag: the photo leaves the filmstrip, its bytes match the original by SHA-256, its sidecar arrives with the rating set before, no part files remain, and it opens there with its stars', fixture: 'any (run.mjs moveFixtures copies and folders)', liveValidated: true,
     limitation: 'Same drive, so the move is a rename and the checksummed copy path is exercised only by move-copy; no network share, no stall or Stop, no virtual copies or RAW+JPEG pairs, no Immich results (needs a service).' },
-  'move-copy': { scope: 'two selected photos dropped with Alt held: the confirmation is a copy with Keep the originals ticked, one already there identical and one clashing with other content; Keep both for all, then Copy: move-b_1 has the original bytes, the clashing and identical files and the sources are untouched, no part files remain', fixture: 'any (run.mjs moveFixtures)', liveValidated: true,
-    limitation: 'Runs after move-photos in the same launch or alone. The per-photo Skip / Keep both list (app-drawn select) is set only through Keep both for all; the macOS Option key is not exercised.' },
+  'move-copy': { scope: 'two Ctrl-selected photos dropped with Alt held: the confirmation is a copy with Keep the originals ticked, one already there identical and one clashing with other content; Keep both for all, then Copy: move-b_1 has the original bytes, the clashing and identical files and the sources are untouched, no part files remain', fixture: 'any (run.mjs moveFixtures)', liveValidated: true,
+    verification: 'Linux ARM64 system WebKitGTK; Ctrl-click selection contained move-b.jpg and move-c.jpg, copy and checksum assertions passed with Library workers set to 6. Run 2026-11-15T05-02-52.136Z_f7ac19f_e358ebb9.',
+    limitation: 'Runs after move-photos in the same launch or alone. The per-photo Skip / Keep both list (app-drawn select) is set only through Keep both for all; the macOS Option key is not exercised. GUI Stop/stall recovery is not exercised.' },
   'folder-menu': { scope: 'a Folders row\'s right-click menu: New Folder…, Show in the file manager and Remove from List, enabled; Esc closes it; New Folder… opens a name field with New Folder selected, Esc makes nothing, Enter makes picks on disk and lists it, the same name again is refused in the status line, a folder made inside the childless picks opens picks to show it, Remove from List takes it off the tree and leaves it on disk', fixture: 'any', liveValidated: true,
     verification: 'Linux, system WebKitGTK 2.54.2, Wayland, JPEG fixture, empty workspace 9 maximized, original workspace 4 restored. Run 2026-11-14T11-45-46.016Z_bdff11e_88720ae7. Names are lowercase because WebDriver keystrokes arrive without Shift.',
     limitation: 'Show in the file manager is checked as offered, not clicked (another application). No offline drive, so its disabled items are not exercised. Right-clicks: run after drag cases or in a launch of its own (webdriver.mjs rightClick).' },
@@ -205,14 +220,20 @@ export const suites = {
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };
 export function resolveCases(name) {
+  // These two cases seed their own launch state and deliberately validate the
+  // initial grid/thumbnail before a full-resolution editor frame exists.
+  const startupless = new Set(['startup-restore', 'dng-thumbnail']);
   // a comma list runs several cases in one launch: startup,masks,heal
   if (name.includes(',')) {
     const names = name.split(',').map(s => s.trim()).filter(Boolean);
     for (const n of names) if (!Object.hasOwn(cases, n)) throw Error(`Unknown case: ${n}`);
-    return [...new Set(['startup', ...names])];
+    const onlyStartupless = names.length === 1 && startupless.has(names[0]);
+    if (names.some(n => startupless.has(n)) && !onlyStartupless)
+      throw Error('startup-restore and dng-thumbnail must run alone without the smoke startup prerequisite');
+    return onlyStartupless ? names : [...new Set(['startup', ...names])];
   }
-  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup')];
+  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup'&&!startupless.has(c))];
   if (Object.hasOwn(suites, name)) return suites[name];
   if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);
-  return name === 'startup' ? ['startup'] : ['startup', name];
+  return name === 'startup' || startupless.has(name) ? [name] : ['startup', name];
 }

@@ -9,6 +9,7 @@ import { captureDate, known, shutter } from "./MetadataPanel";
 import { end } from "./activity";
 import { isRemote } from "./immich";
 import { settings } from "./settings";
+import { SecondaryClickGuard } from "./secondaryClick";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -192,15 +193,22 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
   entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
   types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
 }) {
+  const clickGuard = useRef(new SecondaryClickGuard());
   return (
     <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
                     + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
                     + `${candidate ? " candidate" : ""}`}
          style={cell}
-         title={i.filename} data-imgid={i.imgid} onClick={(e) => on.current!.onPick(i, e)}
-         onPointerDown={(e) => { if (!(e.target as Element).closest(".thumb-foot")) on.current!.onPress?.(i, e); }}
+         title={i.filename} data-imgid={i.imgid} onClick={(e) => {
+           if (clickGuard.current.click(e.detail)) return;
+           on.current!.onPick(i, e);
+         }}
+         onPointerDown={(e) => {
+           if (clickGuard.current.pointerDown(e.button)) return;
+           if (!(e.target as Element).closest(".thumb-foot")) on.current!.onPress?.(i, e);
+         }}
          onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
-         onContextMenu={(e) => { e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
+         onContextMenu={(e) => { clickGuard.current.contextMenu(e.button); e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
         {/* altered, as darktable counts it, so its lighttable agrees */}

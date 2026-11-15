@@ -42,9 +42,8 @@ engine, set `DT_ORT_LIBRARY` to its installed ONNX Runtime library if that libra
 is outside the engine's normal search path. The report records this selection.
 
 Exposure includes startup as its prerequisite. A comma list runs several cases
-in one launch, after startup. The runner launches a new driver
-and app, dismisses the tour through
-its Skip button, and uses the app's supported file argument to open the copy.
+in one launch, after startup. The runner launches a new driver and app, dismisses
+the tour with Escape, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its
 webview profile. A successful run also checks that `engine.log` was created in
 that profile and verifies the original fixture's checksum. Any content security
@@ -341,7 +340,8 @@ node --input-type=module -e 'import { availableMemory } from "./verify/gui/suppo
 List cases without starting an app with `node verify/gui/run.mjs --list`.
 Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, and `inventory`.
 `--suite all` selects every declaration, but mixes incompatible prerequisites;
-it is not a turnkey full-coverage run. Prefer one case and its required fixture:
+it excludes the standalone `startup-restore` and `dng-thumbnail` cases and is
+not a turnkey full-coverage run. Prefer one case and its required fixture:
 
 ```sh
 # GUI commands: obtain fresh approval for each command first.
@@ -440,6 +440,37 @@ following:
 confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
+
+## Recent library and culling workflows
+
+The focused cases added for the 0.46.0 library changes are `move-photos`,
+`move-copy`, `photo-filter`, `dng-thumbnail`, `startup-restore`, and
+`grid-culling`, and `library-workers`. They use copied fixtures and an isolated profile. The DNG case
+generates an unsupported main-image compression with an embedded TIFF preview;
+the photo-filter case adds non-photo decoys beside the copied image; the
+startup-restore case seeds only the test profile with a saved folder and photo
+and launches without a file argument. `grid-culling` creates three extra photo
+copies and drives fitted and full-resolution previews, navigation, Space-drag
+panning, rating/reject/label shortcuts, keyword selection and Recent keywords,
+the selected-photo context action, and double-click editing through actual
+WebDriver input. Its context-menu selection subcheck is recorded as a failure:
+WebKitWebDriver right-clicks a selected tile, but the app opens keywording for
+one photo. The report records the target and selection before and after the
+secondary click; manual confirmation is needed to separate app behavior from
+the system WebKit driver. `library-workers` checks the 2-worker default, saves
+6→2→6, then the following move-copy case passes with six workers selected.
+The headless DNG verifier covers all EXIF orientations and edited-photo
+behavior; the GUI DNG case verifies the visible fallback thumbnail only.
+
+For a floating Hyprland test window, maximize each newly opened ws9 app window
+only when its client is not already maximized. The maximize dispatch is a
+toggle; do not send it repeatedly to an already maximized window. Confirm the
+window geometry before interacting. The automation wrapper should restore the
+original workspace and ws9 layout on exit.
+
+`grid-zoom` remains a separate case: Ctrl+- easing is covered, while Ctrl+wheel
+is blocked by WebKitWebDriver dropping the modifier from its wheel action. Do
+not count that skipped half as GUI coverage.
 
 ## Folder menu
 

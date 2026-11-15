@@ -548,8 +548,10 @@ target; new keywords are added to every target. Close the dialog before moving
 to another selection.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
-sized to fit the preview within about three quarters of the window area, without opening it in the
-editor. Click the dimmed area to close it. Otherwise the first selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
+in a fixed frame covering 80% of the window width and height, without opening it in the
+editor. The frame and toolbar stay in place as you browse, zoom, and wait for
+more preview detail. Click the dimmed area to close it. Otherwise the first
+selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
 arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
 rating, X toggles rejection, 6–9 toggle color labels, and K keywords the displayed photo.
 The grid selection is preserved. The lightbox also has the same star icons
@@ -570,5 +572,9 @@ Preferences’ **Read ahead** count, in the last arrow-navigation direction.
 Enable **Read ahead both ways** to prepare the same count in the opposite direction.
 Setting Read ahead to zero disables both directions;
 native detail loads only when requested. Cached previews are reused until the
-photo or its sidecars change. Keywording is also available from the grid photo's
-context menu.
+photo or its sidecars change. Fit scales the image down to the available viewport
+without enlarging it; 100% uses image pixels at screen scale and can be panned
+inside the same frame. Keywording is also available from the grid photo's
+context menu. With a multi-selection, right-clicking a selected photo keeps the
+selection as the keyword target; right-clicking an unselected photo targets only
+that photo and leaves the selection intact.

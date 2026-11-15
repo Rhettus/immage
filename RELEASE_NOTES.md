@@ -7,111 +7,70 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- In grid view, K keywords selected photos (or the hovered photo), and F opens
-  a floating culling preview over the dimmed library, with arrow navigation,
-  ratings, labels and rejection, using the bottom rail’s star icons and color
-  swatches with the usual photo shortcuts (0–5, 6–9 and X). Subtle triangle
-  buttons beside the lightbox also navigate between photos.
-  Unedited RAWs use camera previews; edited photos show their processing.
-  Single-click toggles Fit and 100% with the editor's zoom animation, Space-drag
-  pans, and double-click opens the photo for editing.
-- The quick start guide points out the Advanced mode button in Adjustments.
-- Y cycles through the side-by-side and split before / after views, then turns
-  them off. The toolbar button still includes **Hold for before**; `\` still
-  toggles the full Before view.
-- In Advanced mode, each mask has its own module cards and Add module menu.
-  Edit darktable's settings inside the mask, reset a module or remove it from
-  the mask, with undo. Simple keeps its familiar local sliders and shows a
-  badge for advanced edits those sliders cannot display.
-- Drag photos onto a folder in the Folders panel to move them there, for
-  example from your computer to a NAS, or hold ⌥ (Alt) to copy them. Immich
-  results can be dragged too, and are always copied. A confirmation shows
-  what goes where, which photos are already there, and asks whether to skip
-  or keep both of any with the same name. Each photo goes with all its
-  sidecars. Each file is checksummed after copying, and an original is
-  removed only once its copy matches. Closed folders open while you hold a
-  photo over them.
-- Right-click a folder in the Folders panel for New Folder…, to make a
-  subfolder in it, Show in Finder, and Remove from List.
-- Grid view's thumbnails resize smoothly between a smallest and a largest
-  size: in the grid, the zoom slider at the bottom sets their size, a pinch
-  on a trackpad or a scroll with ⌘ held zooms them with the photo under the
-  pointer staying in place, and ⌘= and ⌘- ease larger or smaller. The size
-  is remembered.
-- Clarity's and Texture's detail sliders, globally and on masks, sit in a
-  shaded box headed by the name, without the repeated prefix on each
-  slider, so each set stands apart from the sliders around it.
-- Preferences > Performance > Memory has a Library workers setting: how many
-  library thumbnails are built at once and how many ORF metadata tasks are
-  prepared at once, plus the limit for photo moves and copies (2 by default).
-  The limits are separate; changes apply to subsequent import batches and
-  new transfer jobs.
-- Advanced mode offers a module-based editing panel, more like darktable,
-  with its available modules except deprecated ones. Each module has its own
-  card with settings, presets, on/off and reset, plus controls to add,
-  duplicate, rename, reorder or delete instances, with undo. Search for
-  modules and settings, add modules by group, and hide those you do not need
-  in Preferences. Switch between Simple and Advanced without changing your
-  photo; Simple shows a badge for edits its sliders cannot display. Copy
-  Settings, Paste and Previous carry Advanced edits between photos.
-- The sliders icon on panels is now called More controls, and appears only in
-  Simple.
-- Heal shows the area it will heal from the moment you press, not only once
-  a drag gets going, and hides it when you release.
-- While painting a heal stroke, the outer brush circle stays visible and
-  follows the pointer alongside the overlay.
-- Lens Corrections has a Demosaic method for raws, listing the methods for
-  the photo's sensor with darktable's default first, such as Markesteijn
-  3-pass for Fujifilm X-Trans photos or AMaZE and LMMSE for other raws.
-- Grid view hides the right-hand panel, whose tools work on the open photo
-  the grid covers; Print stays, for picking a sheet's photos. Choosing a tool
-  in the rail leaves the grid. The Grid button now looks pressed only while
-  the grid shows.
-- History has a start over button, also Photo > Discard History, which
-  throws away the photo's whole history, including modules added in
-  darktable, so it begins again as a new photo with your New Photos
-  defaults. It works on virtual copies too, and ⌘Z brings the history back.
-- Ctrl+click (⌘-click on a Mac) the History card's compress button to drop
-  only the steps above the one you went back to. The steps below can still
-  be undone.
-- Each Adjustments panel has an eye icon in its title row: press and hold it
-  to see the photo without that panel's adjustments, and let go to see them
-  again. The sliders stay where they are, and other panels' edits and masks
-  stay on.
-
-Performance
-
-- Grid previews show the existing thumbnail immediately while loading a larger
-  image sized for the lightbox, without waiting for an unrelated editor render.
-  Preview prefetch follows the Read ahead count and Read behind preference.
-- Photo moves and copies transfer several photos at once, up to Library
-  workers, including originals downloaded from Immich. Each photo stays with
-  its sidecars and is verified before its originals are removed.
-- ORF metadata reads try a small file prefix before reading the whole photo,
-  reducing metadata read volume when metadata is near the beginning; embedded
-  previews remain available, with full-file fallback when needed. ORF metadata
-  preparation is bounded by Library workers, with results applied in file
-  order and metadata/database updates kept serial.
+- Advanced mode adds searchable editing modules, presets and groups, with
+  controls to customize their order and instances. Module edits support masks,
+  undo and Copy Settings. Switch back to Simple mode at any time.
+- Drag photos onto folders to move them, or hold ⌥ (Alt) to copy; Immich photos
+  are always copied. A confirmation resolves name conflicts. Sidecars travel
+  with each photo, and copies are verified before originals are removed.
+- In the grid, F opens a culling preview with navigation, ratings, labels and
+  rejection. Click for Fit/100%, Space-drag to pan, and double-click to edit.
+  K keywords the selected photos, or the hovered photo when none are selected.
+- Grid thumbnails resize with the slider, trackpad pinch, ⌘-scroll, or ⌘= / ⌘-;
+  the photo under the pointer stays in place and the chosen size is remembered.
+- History can discard all edits and restart from New Photos defaults, with
+  undo. Ctrl-click (⌘-click on Mac) Compress to discard later history steps.
+  Each Adjustments panel's eye button temporarily hides its edits.
+- Y cycles through side-by-side and split before/after views, then turns them
+  off. Hold the toolbar button for before, or press `\` for the full Before
+  view.
+- Right-click a folder for New Folder…, Show in Finder, or Remove from List.
+  Grid view hides tools for the covered photo while keeping Print available;
+  choosing another tool leaves the grid.
+- Lens Corrections offers sensor-specific raw demosaic methods, with
+  darktable's default selected. Clarity and Texture detail sliders are grouped
+  in labeled boxes, and Heal shows its source as soon as you press and keeps
+  the outer brush circle visible while painting.
+- Preferences > Performance > Memory adds a Library workers setting for
+  thumbnail creation, ORF metadata preparation, and photo transfers. The
+  separate limits apply to later import batches and new transfer jobs.
+- The quick start guide points to the Advanced mode button. The Simple mode
+  sliders icon is now labeled More controls.
 
 Bug fixes
 
+- Grid context-menu keywording now keeps a selected group together, targets only
+  the clicked photo when it is outside that group, and preserves the selection.
+- The culling preview keeps a fixed 80% window frame while photos and detail
+  load or while switching between Fit and 100%.
 - Startup shows the grid until the last photo's first preview is ready. If
   the photo is missing or cannot load, the grid stays available instead of
   leaving a grey viewer.
-- DNG thumbnails can use embedded TIFF previews without ImageMagick. When
-  an unedited photo cannot be decoded, a readable smaller preview is used
-  instead of leaving its thumbnail blank.
+- DNG thumbnails can use embedded TIFF previews without ImageMagick. When an
+  unedited photo cannot be decoded, a readable smaller preview is used instead
+  of leaving its thumbnail blank.
 - Non-photo files such as `.ACR` sidecars stay out of the grid and filmstrip
   from the start of a folder scan, instead of disappearing when it finishes.
 - Rejecting, rating and labeling photos while a folder loads now keeps those
   changes visible as more photos arrive and loading finishes.
-- Basic's Auto works on a photo with Film Simulation or a converted
-  negative, which turn the AgX tone mapper off; it no longer stops with
-  "auto tune needs the AgX tone mapper".
-- Linux: pinching on a touchpad zooms the photo around the pointer, as on
-  the Mac, instead of zooming the whole window.
+- Basic's Auto works on a photo with Film Simulation or a converted negative,
+  which turn the AgX tone mapper off; it no longer stops with "auto tune needs
+  the AgX tone mapper".
+- Linux: pinching on a touchpad zooms the photo around the pointer, as on the
+  Mac, instead of zooming the whole window.
 - AI Denoise no longer fails with "No such file or directory" when you press
   Run while its model is still downloading for the dialog's preview.
+
+Performance
+
+- Grid previews show thumbnails immediately while loading larger images.
+  Prefetch follows the Read ahead count and Read ahead both ways preference.
+- Photo moves and copies transfer several photos at once, up to Library
+  workers, including originals downloaded from Immich; each photo and its
+  sidecars are verified before originals are removed.
+- ORF metadata reads try a small file prefix first and fall back to the full
+  file when needed. Preparation is bounded by Library workers, while results
+  are applied in file order and metadata/database updates remain serial.
 
 ## 0.45.0
 

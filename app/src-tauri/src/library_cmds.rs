@@ -532,8 +532,8 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                if thumbs.write(&name, &jpeg).is_ok() {
-                    if size > 0 { thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name); }
+                if thumbs.write(&name, &jpeg).is_ok() && size > 0 {
+                    thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
                 }
             }
         });

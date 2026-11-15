@@ -188,6 +188,8 @@ export async function moveCopy(t) {
   const other = await sha(join(clash, b));
   await foldersCard(t);
   if ((await t.driver.observe(folderState)).active !== fixtures) await click(t, row(fixtures));
+  await t.driver.keys('g');
+  await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view for copy selection');
   await until(() => t.driver.observe((x, y) => !!document.querySelector(x) && !!document.querySelector(y), cell(b), cell(c)),
               'move-b and move-c listed', 60000);
   if (!await t.driver.observe(s => !!document.querySelector(s), row(clash))) {
@@ -198,9 +200,15 @@ export async function moveCopy(t) {
 
   // both selected: a click, then ⌘/Ctrl-click
   await click(t, `${cell(b)} .thumb-image`);
+  await until(() => t.driver.observe(s => !!document.querySelector(`${s}.active`), cell(b)),
+    `${b} active before the modifier click`);
+  const firstSelection = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip .thumb.active')].map(e => e.title));
+  t.measure({ name: 'first-selection', selected: firstSelection });
   const second = await grip(t, c);
   const modifier = await t.driver.observe(() => /Mac/.test(navigator.userAgent) ? '' : '');
   await t.driver.modifiedPoint(modifier, second.x, second.y);
+  const selection = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip .thumb.selected')].map(e => e.title));
+  t.measure({ name: 'modifier-selection', modifier, userAgent: await t.driver.observe(() => navigator.userAgent), selection });
   await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb.selected').length === 2), 'two selected');
 
   // Alt held through the drop: a copy

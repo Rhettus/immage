@@ -30,13 +30,13 @@ export class PreviewQueue {
   }
 }
 
-// Fit the actual preview, keeping its aspect ratio and never enlarging it.
-// The toolbar and padding belong outside the image rectangle.
-export function fitLightbox(width: number, height: number, windowWidth: number, windowHeight: number, toolbar: number) {
-  width = Math.max(1, width); height = Math.max(1, height);
-  const scale = Math.min(1, Math.max(1, windowWidth * .86 - 24) / width,
-    Math.max(1, windowHeight * .86 - toolbar - 24) / height);
-  return { width: Math.ceil(width * scale + 24), height: Math.ceil(height * scale + toolbar + 24) };
+// A stable responsive frame keeps the toolbar and image viewport in place as
+// photos, preview resolutions, and zoom modes change.
+export function fitLightbox(windowWidth: number, windowHeight: number) {
+  return {
+    width: Math.max(1, Math.min(windowWidth * .8, windowWidth - 32)),
+    height: Math.max(1, Math.min(windowHeight * .8, windowHeight - 32)),
+  };
 }
 
 // Match editor read-ahead: nearest first in the last navigation direction,

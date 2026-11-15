@@ -118,7 +118,6 @@ import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
 import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
-import { keywordTargets as keywordTargetsForGrid } from "./culling";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
@@ -3444,6 +3443,9 @@ export default function App() {
   // follows once its open finishes and a quick second click would find it stale
   const pickAnchor = useRef<number | null>(null);
   const pickPhoto = (i: ImageEntry, e: React.MouseEvent) => {
+    // Secondary-button clicks belong to the context menu and must not change
+    // selection before showFileMenu captures its targets.
+    if (e.button !== 0) return;
     const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
     if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
@@ -6982,7 +6984,7 @@ export default function App() {
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
-                    detail: keywordTargetsForGrid(images, selection, hit?.imgid).map(i => i.imgid),
+                    detail: local.map(i => i.imgid),
                   })) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
