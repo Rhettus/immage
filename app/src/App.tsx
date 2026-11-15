@@ -123,7 +123,7 @@ import { KeywordingPanel } from "./Keywording";
 import { ImmichPanel } from "./ImmichPanel";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { localSearch, similarSearch } from "./localSearch";
-import { remoteFieldsKnown, searchIdentity } from "./searchIdentity";
+import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
@@ -3034,7 +3034,7 @@ export default function App() {
       const sources = Object.entries(state.sources);
       const busy = sources.some(([, v]) => v.status === "searching");
       const next = sources.some(([, v]) => v.next) ? "more" : null;
-      const list = state.results.map(r => r.item);
+      const list = preserveSearchEntries(state.results.map(r => r.item), imagesRef.current);
       updateImages(list);
       loader.current?.request(list.map(i => i.imgid));
       setImmich({ search: q.form, next, busy });

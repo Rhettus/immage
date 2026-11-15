@@ -120,7 +120,8 @@ as you browse.
 
 Each source displays results as soon as it finishes. A failure in one source
 leaves the other source's results available, with the error in the status line.
-More results load independently for each source. **Stop** keeps displayed results
+More results load independently for each source, preserving metadata changes
+and already-opened photos in the displayed results. **Stop** keeps displayed results
 and ignores late replies; blocking Immich work may finish in the background,
 with at most four active requests. Opening a folder leaves search results.
 Combined results use equal reciprocal-rank weighting of each source's order.

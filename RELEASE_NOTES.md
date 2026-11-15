@@ -52,6 +52,8 @@ Improvements
 
 Bug fixes
 
+- Loading more search results preserves opened photo handles and metadata edits
+  already displayed in the grid.
 - Background analysis skips removed and excluded library folders, including
   previously queued work. Temporary previews stay out of cached copy versions.
 - Local retrieval recognizes the cache’s original and virtual-copy identities,

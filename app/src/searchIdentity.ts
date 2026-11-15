@@ -14,3 +14,12 @@ export function remoteFieldsKnown(f: Filter): boolean {
   return f.rejected === "all" && f.edited === "all" && f.labels === 0 && !f.unlabeled
     && f.bodies.length === 0 && f.keywords.length === 0;
 }
+
+// Source pagination must preserve a cell already opened/resolved or edited in
+// this query. Starting a new query publishes an empty list first, clearing it.
+export function preserveSearchEntries(incoming: ImageEntry[], current: ImageEntry[]): ImageEntry[] {
+  const key=(i:ImageEntry)=>i.localIndex ? `local:${i.localIndex.variantId}`
+    : i.remote ? `immich:${i.remote.assetId}` : `session:${i.imgid}`;
+  const known=new Map(current.map(i=>[key(i),i]));
+  return incoming.map(i=>known.get(key(i)) ?? i);
+}
