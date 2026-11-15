@@ -527,3 +527,28 @@ git fetch origin
 git switch release-0.46.0
 cmake --build build --target darktable-engine -j2
 ```
+
+## Local cache and search
+
+The following headless microbenchmarks use disposable synthetic fixtures and do
+not require CLIP model downloads or a GUI:
+
+```sh
+python3 -I verify/clip-folder-bench.py --count 100
+cargo test --manifest-path app/src-tauri/Cargo.toml --offline --locked --bin immage benchmark_ -- --ignored --nocapture --test-threads=1
+```
+
+Run from the repository root. Build `darktable-engine` first for the Python
+benchmark. It reports startup, first import in a fresh engine session, and a
+same-session repeat separately. OS caches are not cleared; these are repeated
+copies of the sample JPEG, not a representative RAW/NAS corpus. It excludes
+Tauri and frontend folder loading.
+
+The Rust benchmarks measure a 1,000-photo warm metadata-cache lookup plus fresh
+directory listing, and first-page metadata/vector retrieval over 10,007 indexed
+variants. They print the first query and median of five later queries, with the
+build's debug-assertion status. Vectors are synthetic normalized fixtures, so
+these measurements exclude tokenizer/model loading, inference, semantic quality,
+thumbnail rendering and physical disk-cold I/O. Keep compiler mode, library size,
+filters and machine conditions identical when comparing changes. A missing-cache
+lookup is not a cold photo import and must not be reported as one.

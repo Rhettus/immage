@@ -177,8 +177,10 @@ pub fn retrieve(
             .image_query(id, &args.subject, ANALYSIS_VERSION, MODEL_VERSION)?
             .ok_or("This photo has no current local embedding")?;
         (Some(decode(&bytes)?), Some(asset))
-    } else {
+    } else if args.mode == "smart" && !args.text.trim().is_empty() {
         (text_vector, None)
+    } else {
+        (None, None)
     };
     if let Some(v) = &vector {
         validate_vector(v)?;
@@ -214,8 +216,10 @@ pub fn retrieve(
     }
     let mut heap = BinaryHeap::new();
     let needed = args.size as usize + 1;
-    let mut after = 0;
-    loop {
+    // Metadata ranks tie at zero and SQL returns stable ascending IDs. Resume
+    // after the last ID and stop once one complete page plus lookahead matches.
+    let mut after = if vector.is_none() { cursor.as_ref().map_or(0, |c|c.variant_id) } else { 0 };
+    'scan: loop {
         if cancelled() {
             return Err("Search cancelled".into());
         }
@@ -306,6 +310,7 @@ pub fn retrieve(
                     image,
                 },
             });
+            if vector.is_none() && heap.len() == needed { break 'scan; }
             if heap.len() > needed {
                 heap.pop();
             }
@@ -466,6 +471,26 @@ mod tests {
             let first=samples.remove(0);samples.sort_by(f64::total_cmp);
             eprintln!("SEARCH_BENCH rows={} mode={} first_ms={:.3} warm_median_ms={:.3} warm_samples_ms={:?} debug={}",count+7,label,first,samples[2],samples,cfg!(debug_assertions));
         }
+    }
+
+    #[test]
+    fn metadata_pages_scan_only_until_filtered_page_and_lookahead_are_full() {
+        let f=fixture();
+        for n in 0..300 {
+            let name=if n%3==0 {format!("match-{n:03}.jpg")} else {format!("other-{n:03}.jpg")};
+            seed(&f.cache,&f.roots[0].join(name),0,&unit(1.0,0.0));
+        }
+        let mut args=LocalSearchArgs{mode:"filename".into(),text:"match".into(),size:20,..Default::default()};
+        let mut seen=std::collections::HashSet::new();
+        for _ in 0..5 {
+            let checks=std::cell::Cell::new(0);
+            let page=retrieve(&f.cache,&args,&f.roots,&f.hidden,None,||{checks.set(checks.get()+1);false}).unwrap();
+            assert_eq!(page.items.len(),20);
+            assert!(checks.get()<100,"metadata page scanned unrelated tail: {}",checks.get());
+            for hit in page.items {assert!(seen.insert(hit.variant_id),"duplicate across metadata pages");}
+            args.next=page.next;
+        }
+        assert_eq!(seen.len(),100);assert!(args.next.is_none());
     }
 
     #[test]

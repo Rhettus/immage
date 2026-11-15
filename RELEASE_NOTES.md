@@ -83,6 +83,8 @@ Bug fixes
 
 Performance
 
+- Metadata-only local search pages stop after enough filtered matches are found,
+  avoiding a full-library scan for each page.
 - Reopening unchanged folders reuses local metadata and imports photos into
   the editing library only when an action needs them. Cached thumbnails can
   appear without importing the photo; changed files and sidecars are reread.

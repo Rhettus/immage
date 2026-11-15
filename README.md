@@ -122,6 +122,8 @@ bounded lazy imports. Image queries use the grid
 context menu’s Show more like this action and retain active filters. Cached
 capture metadata preserves source fractions and known UTC offsets. Search keeps
 original and virtual-copy identities consistent with the metadata cache.
+Metadata-only pages stop after enough filtered matches; repeatable headless
+measurements are described in [benchmarks](benchmarking/README.md#local-cache-and-search).
 
 Immich local path mappings keep resolved files within the configured folder,
 including when subfolders contain symbolic links.

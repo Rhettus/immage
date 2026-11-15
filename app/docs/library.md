@@ -145,7 +145,8 @@ analysis produces an error rather than substituting another photo. Background
 embeddings require the optional model and cached metadata; a photo without
 current analysis cannot supply a similarity query.
 Similarity queries exclude the source photo and its virtual copies. A changed
-cache requires restarting paginated local results.
+cache requires restarting paginated local results. Metadata-only pages stop
+once enough matching photos are found instead of ranking the whole library.
 
 ### Thumbnail previews
 
