@@ -60,7 +60,7 @@
   "menu.title.window": "Fenêtre",
   "menu.title.help": "Aide",
   "prefs.language": "Langue",
-  "prefs.language.hint": "langue de l’interface ; l’application se recharge pour l’appliquer",
+  "prefs.language.hint": "langue de l’interface ; appliquée au prochain démarrage. Relancer enregistre d’abord la photo en cours",
   "prefs.language.system": "Langue du système",
   "prefs.card.profile": "Profil",
   "prefs.card.exposure": "Exposition",

@@ -36,6 +36,9 @@ a smaller preview when an unedited photo's RAW data cannot be decoded.
   are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
+- Use the system language or choose English or French in Preferences. Menus
+  and Preferences have the initial translations; other screens still use English.
+  Contributors can [add a language](app/docs/dev/i18n.md) with one JSON catalog.
 - Choose the Dark, Darktable Grey or Light interface theme, or import a custom
   color theme.
 - Back up your settings, presets, looks, Edit In plugins and keywords to one

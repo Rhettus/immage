@@ -60,7 +60,7 @@
   "menu.title.window": "Window",
   "menu.title.help": "Help",
   "prefs.language": "Language",
-  "prefs.language.hint": "interface language; the app reloads to apply it",
+  "prefs.language.hint": "interface language; takes effect when Immage next starts. Relaunch saves the current photo first",
   "prefs.language.system": "System default",
   "prefs.card.profile": "Profile",
   "prefs.card.exposure": "Exposure",

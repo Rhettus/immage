@@ -31,7 +31,7 @@ import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
 import { settings } from "./settings";
 import { loadThumbThreads, storeThumbThreads, THUMB_THREADS } from "./library";
 export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
-import { LOCALES, SYSTEM, loadLanguage, storeLanguage, t } from "./i18n";
+import { LOCALES, SYSTEM, startupLanguage, loadLanguage, storeLanguage, t } from "./i18n";
 import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile } from "./profileDefault";
 
@@ -536,6 +536,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
 }) {
   useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
+  const [chosenLanguage, setChosenLanguage] = useState(loadLanguage);
+  const [languageBusy, setLanguageBusy] = useState(false);
+  const [languageError, setLanguageError] = useState("");
+  const restartForLanguage = async () => {
+    setLanguageBusy(true);
+    setLanguageError("");
+    try { await settings.flush(); await onRelaunch(); }
+    catch (error) { setLanguageError(String(error)); }
+    finally { setLanguageBusy(false); }
+  };
   // the guide's own "don't show" box sets the same thing
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
@@ -773,11 +783,17 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <PrefCard title={t("prefs.card.workspace")}>
                 <ThemePrefs />
                 <PrefRow id="Language" label={t("prefs.language")} hint={t("prefs.language.hint")}>
-                  <select className="field" aria-label={t("prefs.language")} value={loadLanguage()}
-                          onChange={(e) => { storeLanguage(e.target.value); void settings.flush().finally(() => location.reload()); }}>
+                  <select className="field" aria-label={t("prefs.language")} value={chosenLanguage} disabled={languageBusy}
+                          onChange={(e) => { storeLanguage(e.target.value); setChosenLanguage(e.target.value); }}>
                     <option value={SYSTEM}>{t("prefs.language.system")}</option>
                     {Object.entries(LOCALES).map(([code, l]) => <option key={code} value={code}>{l.name}</option>)}
                   </select>
+                  {chosenLanguage !== startupLanguage && (
+                    <button className="btn small" disabled={languageBusy} onClick={() => void restartForLanguage()}>
+                      {t("prefs.relaunchButton")}
+                    </button>
+                  )}
+                  {languageError && <span role="alert">{languageError}</span>}
                 </PrefRow>
                 <PrefRow id="Canvas" label={t("prefs.row.canvas")} summary={t("prefs.row.canvas.summary")} hint={t("prefs.row.canvas.hint")}>
                   <div className="pref-swatches">
