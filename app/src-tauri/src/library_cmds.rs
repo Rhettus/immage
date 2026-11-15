@@ -27,7 +27,7 @@ use crate::repo_root;
 // the photo is edited and rendered while they are read.
 // a first event, before the folder is even listed, has its images as the
 // last read found them (`known`, without imgids): from the app's own disk,
-// so a folder on a network share shows at once. the next lists every file,
+// so a folder on a network share shows at once. the next lists photo candidates,
 // so the client can lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
 // `skip` names subfolders taken off the folder tree, which `recursive`
@@ -204,8 +204,26 @@ impl Progress {
     }
 }
 
+// Candidate formats from darktable/data/supported_extensions.cmake and the
+// optional readers in darktable/src/CMakeLists.txt. Keep the optional formats
+// here too: the engine still decides whether this build can decode a photo.
+// Checking the name needs no file reads or extra network round trips.
+fn photo_candidate(path: &Path) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        "3fr", "ari", "arw", "bay", "bmq", "cap", "cine", "cr2", "cr3", "crw", "cs1", "dc2",
+        "dcr", "dng", "erf", "fff", "gpr", "hdr", "ia", "iiq", "jfif", "jpeg", "jpg", "k25",
+        "kc2", "kdc", "mdc", "mef", "mos", "mrw", "nef", "nrw", "orf", "ori", "pbm", "pef",
+        "pfm", "pgm", "png", "pnm", "ppm", "pxn", "qoi", "qtk", "raf", "raw", "rdc", "rw2",
+        "rwl", "sr2", "srf", "srw", "sti", "tif", "tiff", "x3f", "exr", "jxl", "webp", "avif",
+        "heif", "heic", "hif", "hej2", "avci", "j2c", "j2k", "jp2", "jpc", "jpf", "jpx",
+        "bmp", "cin", "dcm", "dpx", "fit", "fits", "fts", "gif", "jng", "miff", "mng", "pam",
+    ];
+    path.extension().and_then(|e| e.to_str())
+        .is_some_and(|e| EXTENSIONS.iter().any(|known| e.eq_ignore_ascii_case(known)))
+}
+
 // the files of `dir` by name, then with `recursive` each subfolder's in
-// turn, as darktable's own folder import orders them. dot files, sidecars
+// turn, as darktable's own folder import orders them. dot files, non-photos
 // and packages are left out, and so are the subfolders in `skip`
 // each file's stamp, sidecars' too, goes in `listed`, so its thumbnail is
 // checked without asking the disk again (cache::listed_thumb_name)
@@ -233,7 +251,7 @@ fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut 
             continue;
         }
         stamps.push((p.clone(), e.stamp));
-        if !name.ends_with(".xmp") {
+        if photo_candidate(&p) {
             files.push((name, p));
         }
     }
@@ -730,10 +748,22 @@ mod tests {
     }
 
     #[test]
+    fn photo_candidates_include_raw_and_optional_formats() {
+        for name in ["photo.ORF", "photo.cr3", "photo.JpEg", "photo.gpr", "photo.HEIC",
+                     "photo.avif", "photo.jxl", "photo.exr", "photo.pfm", "photo.jp2"] {
+            assert!(photo_candidate(Path::new(name)), "{name}");
+        }
+        for name in ["photo.ACR", "photo.orf.xmp", "photo.jpg.txt", "notes", "movie.MOV", "data.json"] {
+            assert!(!photo_candidate(Path::new(name)), "{name}");
+        }
+    }
+
+    #[test]
     fn folder_files_order_and_skips() {
         let dir = repo_root().join(format!("build/scratch/folder-files-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        for f in ["b.jpg", "A.CR3", "a.cr3.xmp", ".hidden/x.jpg", "sub/c.jpg", "Photos Library.photoslibrary/d.jpg"] {
+        for f in ["b.jpg", "A.CR3", "a.cr3.xmp", "a.ACR", "notes.txt", "movie.mp4", "no-extension",
+                  "sub/settings.acr", "sub/readme.pdf", ".hidden/x.jpg", "sub/c.jpg", "Photos Library.photoslibrary/d.jpg"] {
             let p = dir.join(f);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, "").unwrap();

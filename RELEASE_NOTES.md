@@ -84,6 +84,8 @@ Performance
 
 Bug fixes
 
+- Non-photo files such as `.ACR` sidecars stay out of the grid and filmstrip
+  from the start of a folder scan, instead of disappearing when it finishes.
 - Rejecting, rating and labeling photos while a folder loads now keeps those
   changes visible as more photos arrive and loading finishes.
 - Basic's Auto works on a photo with Film Simulation or a converted

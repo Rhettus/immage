@@ -38,7 +38,8 @@ metadata and database updates remain ordered and serial. See the
   file, and restore the parts you choose from it.
 - Add optional Geoapify place-name search to the location map; map tiles and
   manual pin placement work without a search key.
-- Browse folders directly, import from a card with the built-in Immporter,
+- Browse folders with non-photo files hidden even while scanning, import
+  from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Drag photos onto a folder to move or copy them, for example to a NAS, with
   their sidecars and a checksum check of every copied file.

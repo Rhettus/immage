@@ -9,6 +9,10 @@ darktable sees it too.
 the import step. Adding a folder never copies or moves anything. Collections
 and smart collections don't exist; [Immich](immich.md) can do that job.
 
+The grid and filmstrip list photo formats only, including while a folder is
+loading. Non-photo files such as `.ACR` and XMP sidecars, documents and videos
+do not get placeholder cells. The scan checks whether each photo can be read.
+
 ## Folders
 
 Open the **Folders** card in the **Library** panel.
