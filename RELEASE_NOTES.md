@@ -84,6 +84,9 @@ Performance
 
 Bug fixes
 
+- Startup shows the grid until the last photo's first preview is ready. If
+  the photo is missing or cannot load, the grid stays available instead of
+  leaving a grey viewer.
 - DNG thumbnails can use embedded TIFF previews without ImageMagick. When
   an unedited photo cannot be decoded, a readable smaller preview is used
   instead of leaving its thumbnail blank.

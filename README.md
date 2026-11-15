@@ -86,6 +86,10 @@ you can install them through **Preferences › About › Updates**.
 
 For Linux launch options, see [Linux setup and troubleshooting](app/docs/preferences.md#performance).
 
+At startup, Immage shows the grid while restoring your last photo and switches
+to the photo when its first preview is ready. If it cannot load, you can choose
+another photo from the grid.
+
 ## Learn more
 
 - [User guide](app/docs/README.md): getting started, editing tools and settings.

@@ -60,6 +60,10 @@ Open the **Folders** card in the **Library** panel.
 
 Folders you import into join the list by themselves. The list, the open
 folder and the last photo are remembered when you quit.
+On startup, the grid appears while the folder is read. If you left a photo
+open, Immage switches to it when its first preview is ready. If the photo is
+missing or cannot load, the grid stays available so you can choose another.
+If the last folder is unavailable, Immage tries your other recent folders.
 
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->

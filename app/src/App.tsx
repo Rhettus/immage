@@ -3376,6 +3376,10 @@ export default function App() {
   // leaves its folder's grid, and a folder that cannot be read the grid of
   // the last one read that can, rather than an empty viewer
   const restoreLast = async (lib: Library) => {
+    // Browse immediately; only a rendered photo can replace this startup
+    // grid. An open can fail after setting current, or before its first frame.
+    autoGrid.current = true;
+    setGrid(true);
     const dirs = [...new Set([lib.current, ...(lib.recent ?? []), ...lib.folders])].filter((d): d is string => !!d);
     for (const dir of dirs) {
       const want = dir === lib.current && !lib.grid ? lib.image : null;
@@ -3385,7 +3389,11 @@ export default function App() {
       const tryOpen = (list: ImageEntry[]) => {
         // not over a photo picked while the folder is read
         const last = want && !opened.p && !currentRef.current ? pick(list) : undefined;
-        if (last) opened.p = openFile(last.path, last.imgid);
+        if (last) opened.p = openFile(last.path, last.imgid, false, () => {
+          if (shownGen.current !== gen || !isOpen(last, currentRef.current)) return;
+          autoGrid.current = true;
+          setGrid(false);
+        });
       };
       const shown = showFolder(dir, false, tryOpen);
       const gen = shownGen.current;
@@ -3396,10 +3404,6 @@ export default function App() {
       tryOpen(list);
       if (opened.p && await opened.p) return;
       if (lib.current && dir !== lib.current) setStatus(`could not read ${lib.current}; showing ${dir}`);
-      if (!currentRef.current && !gridRef.current) {
-        autoGrid.current = true;
-        setGrid(true);
-      }
       return;
     }
   };
@@ -3775,7 +3779,8 @@ export default function App() {
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original. false when it did not open
-  const openFile = async (path: string, imgid: number | null = null, reload = false): Promise<boolean> => {
+  const openFile = async (path: string, imgid: number | null = null, reload = false,
+                          onFirstFrame?: () => void): Promise<boolean> => {
     if (pastingRef.current && !reload) return false;
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
@@ -3832,7 +3837,12 @@ export default function App() {
         placeCanvas(sc, thumb.width, thumb.height,
           { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
       }
-      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`))));
+      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
+        drawFrame(f);
+        const ready = onFirstFrame;
+        onFirstFrame = undefined;
+        ready?.();
+      }, (e) => setStatus(`error: ${e}`))));
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
