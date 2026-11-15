@@ -68,6 +68,33 @@ If the last folder is unavailable, Immage tries your other recent folders.
 ![The Folders card with one folder added and Include subfolders off](images/library-folders.png)
 <!-- screenshot: Library panel, Folders card open, Include subfolders off, one folder added -->
 
+### Cached folder metadata
+
+Immage keeps a disposable local metadata cache, separate from darktable’s
+in-memory editing library. Reopening an unchanged folder reuses its ratings,
+labels, keywords and camera metadata. Each original and virtual copy keeps
+its own editing state. Changed files, sidecars, raster-mask data or copy lists
+are read again. An unavailable drive is not treated as an empty folder.
+
+Cached photos enter the editing library when an action needs them: opening,
+rendering a missing thumbnail, changing metadata, exporting or managing files.
+Existing disk thumbnails can appear without that import. The editing engine
+still starts normally; edits and sidecars are read before the action runs.
+Verified moves keep cached identities and reusable analysis when source and
+sidecar fingerprints still match. Copies receive separate identities, including
+when Keep Both changes the filename. Metadata and saved-edit changes invalidate
+stale cached results; deleting an original removes its copies from the cache.
+At startup, a bounded background scan discovers files and checks existing
+records without importing photos into the editor. Metadata for newly discovered
+files is filled when they are read. Offline drives, disconnected nested mounts,
+excluded folders and incomplete scans keep their cached records. When a drive’s
+identity is unknown, browse the folder before missing records can be removed.
+
+A cache failure falls back to reading the folder normally. The cache contains
+no originals or authoritative edits and can be rebuilt from your photos.
+Metadata caching does not download search models or upload photos; any optional
+local analysis model requires an explicit download choice.
+
 ### Thumbnail previews
 
 The grid and filmstrip support embedded JPEG and TIFF previews, including

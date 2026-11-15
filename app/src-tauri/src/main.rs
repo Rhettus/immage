@@ -6,6 +6,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cache;
+mod search_cache;
+mod library_ids;
+mod analysis_queue;
+mod search_reconcile;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -58,6 +62,9 @@ use crate::library_cmds::Launch;
 use crate::app_cmds::supervise;
 
 struct AppState {
+    // disposable local search metadata; darktable's catalog remains in-memory
+    search_cache: Option<Arc<search_cache::SearchCache>>,
+    analysis_queue: analysis_queue::AnalysisQueue,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
@@ -242,15 +249,24 @@ fn main() {
                 eprintln!("settings: cannot move the old preference files: {e}");
             }
             app.manage(settings);
+            let search_cache = match search_cache::SearchCache::open(&runtime.join("search-cache.sqlite")) {
+                Ok(cache) => Some(Arc::new(cache)),
+                Err(e) => { eprintln!("local search disabled for this session: {e}"); None }
+            };
             let resource_level = engine::resource_level(&runtime);
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            engine.set_search_cache(search_cache.clone());
+            let analysis_queue = analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256);
+            search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue);
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             let engine_link = engine.link();
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             app.manage(AppState {
+                search_cache,
+                analysis_queue,
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
@@ -290,6 +306,10 @@ fn main() {
         .build(context)
         .expect("error while running Immage");
     app.run(|_app, _event| {
+        if matches!(_event, tauri::RunEvent::Exit) {
+            _app.state::<AppState>().analysis_queue.pause(true);
+            _app.state::<AppState>().analysis_queue.cancel();
+        }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &_event {
             if let Some(p) = urls.iter().filter_map(|u| u.to_file_path().ok()).find_map(|p| launch_path(&p)) {

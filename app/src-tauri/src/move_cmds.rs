@@ -803,7 +803,14 @@ type TransferResult = Result<Option<(bool, Option<String>)>, String>;
 
 // Reservation precedes checksum comparison: a positive "already there" result
 // must remain valid until a move removes its sources.
+#[cfg(test)]
 fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener) -> TransferResult {
+    transfer_photo_indexed(u, dest, copy, keep, ctx, open, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener,
+    index: Option<&crate::search_cache::SearchCache>) -> TransferResult {
     let original = file_names(u);
     let mut reservation = DestinationReservation::try_new(dest, &original, u);
     let mut selected = original;
@@ -840,7 +847,41 @@ fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open
     if ctx.cancelled() { return Err(CANCELLED.into()); }
     let rename = u.files[0].from.as_ref()
         .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), dest));
-    transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open).map(Some)
+    let snapshot = index.and_then(|index| {
+        let source = u.files.first()?.from.as_ref()?;
+        let variants = index.path_variants(source.to_str()?).ok()?;
+        let asset = index.asset(variants.first()?.asset_id).ok()??;
+        let listed = Mutex::new(crate::cache::Listed::default());
+        for v in &variants {
+            let version = if v.copy_key.is_empty() { 0 } else { v.copy_key.strip_prefix("version:")?.parse().ok()? };
+            let (original, edited) = crate::cache::listed_metadata_fingerprints(&listed, source, version)?;
+            if original != asset.original_fingerprint || edited != v.edited_fingerprint {
+                // A recent rating/save may have invalidated only edited results.
+                // Refresh stamps before moving so unchanged original analysis
+                // can still travel with the verified file.
+                index.upsert_variant(source.to_str()?, &v.copy_key, &original, &edited, None, None, None).ok()?;
+            }
+        }
+        let variants = index.path_variants(source.to_str()?).ok()?;
+        let asset = index.asset(variants.first()?.asset_id).ok()??;
+        Some((asset, variants))
+    });
+    let result = transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open)?;
+    if let (Some(index), Some((asset, variants))) = (index, snapshot) {
+        let target = dest.join(&selected[0]);
+        let listed = Mutex::new(crate::cache::Listed::default());
+        let matches = variants.iter().all(|v| {
+            let version = if v.copy_key.is_empty() { Some(0) } else { v.copy_key.strip_prefix("version:").and_then(|s| s.parse().ok()) };
+            version.and_then(|version| crate::cache::listed_metadata_fingerprints(&listed, &target, version))
+                .is_some_and(|(original, edited)| original == asset.original_fingerprint && edited == v.edited_fingerprint)
+        });
+        if matches {
+            if let Err(e) = index.transferred(&asset.path, &text(&target), &asset.original_fingerprint, &variants, result.0) {
+                eprintln!("search cache transfer: {e}");
+            }
+        }
+    }
+    Ok(Some(result))
 }
 
 struct Batch {
@@ -1007,6 +1048,7 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
         tauri::async_runtime::spawn_blocking(move || check_dest(&d)).await.map_err(|e| e.to_string())??;
     }
     let units = units(&app, &state, &req).await?;
+    let index = state.search_cache.clone();
     let conn = tauri_plugin_immporter::immich_connection(&app).map(Arc::new);
     tauri::async_runtime::spawn_blocking(move || {
         let d = dest.clone();
@@ -1020,7 +1062,7 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
                 let c = c.as_ref().map_err(|e| e.clone())?;
                 Ok(Box::new(c.original_stream(id)?))
             };
-            transfer_photo(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open)
+            transfer_photo_indexed(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open, index.as_deref())
         }, |p| {
             let _ = app.emit("move-progress", json!({ "job": job, "done": p.done, "total": p.total,
                 "bytes": p.bytes, "bytesTotal": p.bytes_total, "file": p.file }));
@@ -1103,6 +1145,49 @@ mod tests {
 
     fn ctx() -> Ctx {
         Ctx::new(Arc::new(AtomicBool::new(false)))
+    }
+
+    #[test]
+    fn verified_transfers_preserve_analysis_rebase_metadata_and_separate_copy_ids() {
+        for copy in [false,true] {
+            let temp=tempfile::tempdir().unwrap();
+            let src=temp.path().join("src"); let dest=temp.path().join("dest");
+            std::fs::create_dir_all(&src).unwrap(); std::fs::create_dir_all(&dest).unwrap();
+            let unit=photo(&src,"A.CR3");
+            let path=src.join("A.CR3");
+            let index=crate::search_cache::SearchCache::open(&temp.path().join("cache.sqlite")).unwrap();
+            let listed=Mutex::new(crate::cache::Listed::default());
+            let mut originals=Vec::new();
+            for version in [0,1] {
+                let (original,edited)=crate::cache::listed_metadata_fingerprints(&listed,&path,version).unwrap();
+                let key=if version==0 {String::new()} else {format!("version:{version}")};
+                let row=index.upsert_variant(path.to_str().unwrap(),&key,&original,&edited,None,None,None).unwrap();
+                index.store_metadata(row.id,&json!({"path":path,"filename":"A.CR3","version":version}).to_string()).unwrap();
+                index.put_analysis(row.id,"edited",&edited,1,"test-model",&[version as u8,9]).unwrap();
+                index.put_analysis(row.id,"original",&original,1,"test-model",&[7,8]).unwrap();
+                originals.push(row);
+            }
+            // Exercise the actual Keep Both destination selection as well.
+            if copy { std::fs::write(dest.join("A.CR3"),b"another photo").unwrap(); }
+            let target=if copy {dest.join(&renamed(&unit,1)[0])} else {dest.join("A.CR3")};
+            assert!(transfer_photo_indexed(&unit,&dest,copy,copy,&ctx(),&no_open,Some(&index)).unwrap().is_some());
+            let moved=index.path_variants(target.to_str().unwrap()).unwrap();
+            assert_eq!(moved.len(),2);
+            for (old,new) in originals.iter().zip(&moved) {
+                assert_eq!(old.id==new.id,!copy);
+                assert_eq!(old.asset_id==new.asset_id,!copy);
+                assert_eq!(index.analysis(new.id,"edited",1,"test-model").unwrap(),Some(vec![if old.copy_key.is_empty(){0}else{1},9]));
+                assert_eq!(index.analysis(new.id,"original",1,"test-model").unwrap(),Some(vec![7,8]));
+                let metadata:serde_json::Value=serde_json::from_str(&index.metadata(new.id).unwrap().unwrap()).unwrap();
+                assert_eq!(metadata["path"],text(&target));
+                assert_eq!(metadata["filename"],target.file_name().unwrap().to_str().unwrap());
+            }
+            assert_eq!(index.path_variants(path.to_str().unwrap()).unwrap().is_empty(),!copy);
+            if copy {
+                index.remove_path(target.to_str().unwrap()).unwrap();
+                assert_eq!(index.analysis(originals[0].id,"original",1,"test-model").unwrap(),Some(vec![7,8]));
+            }
+        }
     }
 
     #[test]

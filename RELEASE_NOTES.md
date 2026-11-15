@@ -66,6 +66,12 @@ Bug fixes
 
 Performance
 
+- Reopening unchanged folders reuses local metadata and imports photos into
+  the editing library only when an action needs them. Cached thumbnails can
+  appear without importing the photo; changed files and sidecars are reread.
+  Verified moves retain reusable analysis, and copies get separate identities.
+  Background checks retain records for offline drives and incomplete scans.
+  Metadata caching does not download search models or upload photos.
 - Lightbox navigation reuses nearby previews in memory and waits briefly before
   starting speculative previews, reducing repeated loading and read-ahead work
   during rapid navigation.

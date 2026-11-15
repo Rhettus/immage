@@ -63,6 +63,8 @@ pub struct Link {
     manual: AtomicBool,
     exited: String,
     events: Mutex<Arc<dyn Fn(Value) + Send + Sync>>,
+    library_ids: Mutex<crate::library_ids::LibraryIds>,
+    search_cache: Mutex<Option<Arc<crate::search_cache::SearchCache>>>,
 }
 
 impl Link {
@@ -76,6 +78,8 @@ impl Link {
             manual: AtomicBool::new(false),
             exited: format!("the engine exited; see {}", runtime.join("engine.log").display()),
             events: Mutex::new(Arc::new(|_| {})),
+            library_ids: Mutex::new(Default::default()),
+            search_cache: Mutex::new(None),
         })
     }
 
@@ -84,8 +88,22 @@ impl Link {
     }
 
     fn install(&self, conn: Arc<Conn>) {
-        *self.current.lock().unwrap() = conn;
+        let mut current = self.current.lock().unwrap();
+        self.library_ids.lock().unwrap().restart();
+        *current = conn;
         self.changed.notify_all();
+    }
+
+    fn after_success(&self, req: &Value, reply: &Value) {
+        let affected=self.library_ids.lock().unwrap().changed(req, reply);
+        let cache=self.search_cache.lock().unwrap().clone();
+        if let Some(cache)=cache {
+            for (photo,removed) in affected {
+                let key=if photo.version==0 { String::new() } else { format!("version:{}",photo.version) };
+                let result=if removed { cache.remove_variant(&photo.path,&key) } else { cache.invalidate_edited(&photo.path,&key) };
+                if let Err(e)=result { eprintln!("search cache metadata update: {e}"); }
+            }
+        }
     }
 
     pub fn set_events(&self, f: impl Fn(Value) + Send + Sync + 'static) {
@@ -210,19 +228,57 @@ impl Tagged {
     }
 
     // blocks until the engine replies
+    pub fn cached_photo(&self, path: &str, version: i64) -> i64 {
+        self.link.library_ids.lock().unwrap().advertise(path, version)
+    }
+
+    fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
+        crate::library_ids::request_ids(req, &mut |id| {
+            let photo = self.link.library_ids.lock().unwrap().photo(id)?;
+            let Some(photo) = photo else { return Ok(id) };
+            let gate = self.link.library_ids.lock().unwrap().gate(&photo.path);
+            let _importing = gate.lock().map_err(|_| "cached photo import lock poisoned")?;
+            if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
+            if let Some(real) = self.link.library_ids.lock().unwrap().resolved(&photo) { return Ok(real); }
+            // Use the existing import worker and deadlines. The engine still
+            // reads the real sidecar before any rendering or metadata mutation.
+            let tag = self.tag();
+            let mut import = json!({"cmd":"import","files":[photo.path],"tag":tag});
+            import["budget"] = json!(30000);
+            let answer = self.expect_on(conn, tag)?;
+            let result = (|| {
+                { let mut stdin = conn.stdin.lock().unwrap();
+                  writeln!(stdin, "{import}").and_then(|_| stdin.flush()).map_err(|e| format!("engine write: {e}"))?; }
+                answer.wait_until(Duration::from_secs(30), || conn.dead.load(Ordering::SeqCst))
+            })();
+            Self::forget_on(conn, tag);
+            result?;
+            if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
+            self.link.library_ids.lock().unwrap().resolved(&photo)
+                .ok_or_else(|| format!("photo version {} is no longer available: {}", photo.version, photo.path))
+        })
+    }
+
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
-        req["tag"] = json!(tag);
         let conn = self.link.current();
-        let answer = self.expect_on(&conn, tag)?;
+        self.prepare(&mut req, &conn)?;
+        self.request_on(&conn, tag, req)
+    }
+
+    fn request_on(&self, conn: &Arc<Conn>, tag: u64, mut req: Value) -> Result<Value, String> {
+        req["tag"] = json!(tag);
+        let answer = self.expect_on(conn, tag)?;
         let sent = {
             let mut stdin = conn.stdin.lock().unwrap();
             writeln!(stdin, "{req}").and_then(|_| stdin.flush())
         };
         if let Err(e) = sent {
-            Self::forget_on(&conn, tag);
+            Self::forget_on(conn, tag);
             return Err(format!("engine write: {e}"));
         }
-        answer.wait()
+        let reply = answer.wait()?;
+        self.link.after_success(&req, &reply);
+        Ok(reply)
     }
 
     // Folder reads must release their caller even if an import worker stalls.
@@ -337,8 +393,10 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, conn: Arc<Conn>, lin
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
-        let reply: Value = serde_json::from_str(&line)
+        let mut reply: Value = serde_json::from_str(&line)
             .unwrap_or_else(|e| json!({ "ok": false, "error": format!("engine reply: {e}") }));
+        { let current = link.current.lock().unwrap();
+          if conn.epoch == current.epoch { link.library_ids.lock().unwrap().reply(&mut reply); } }
         match reply["tag"].as_u64() {
             Some(tag) if reply["progress"].as_bool() == Some(true) => {
                 if let Some(f) = progress.lock().unwrap().get(&tag) {
@@ -798,6 +856,10 @@ impl Engine {
         Ok(())
     }
 
+    pub fn set_search_cache(&self, cache: Option<Arc<crate::search_cache::SearchCache>>) {
+        *self.link.search_cache.lock().unwrap() = cache;
+    }
+
     pub fn epoch(&self) -> u64 {
         self.conn.epoch
     }
@@ -860,6 +922,7 @@ impl Engine {
     }
 
     pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
+        self.tagged().prepare(&mut req, &self.conn)?;
         if self.cache_trace { req["cache_trace"] = json!(true); }
         self.last_id += 1;
         let id = self.last_id;
@@ -909,6 +972,7 @@ impl Engine {
             if slow {
                 self.link.emit(json!({ "state": "ready", "epoch": self.conn.epoch }));
             }
+            if let Ok(reply) = &result { self.link.after_success(&req, reply); }
             return result;
         }
     }
@@ -1039,6 +1103,59 @@ mod tests {
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
         let engine = super::Engine::spawn_once(&bin, &root, &root, 1, None).unwrap();
         (root, engine)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cached_photos_import_only_on_use_share_sibling_import_and_preserve_handles() {
+        use serde_json::json;
+        let script = r#"exec python3 -u -c '
+import json, sys
+from pathlib import Path
+log = Path(sys.argv[1]).with_name("requests")
+for line in sys.stdin:
+    req = json.loads(line)
+    with log.open("a") as f: f.write(json.dumps(req) + "\n")
+    cmd = req.get("cmd")
+    if cmd == "quit": break
+    out = {"ok": True}
+    for key in ["rid", "tag"]:
+        if key in req: out[key] = req[key]
+    if cmd == "import":
+        out["images"] = [{"imgid": 7, "path": req["files"][0], "version": 0}, {"imgid": 8, "path": req["files"][0], "version": 2}]
+    else:
+        out["imgid"] = req.get("imgid", 7)
+        out["imgids"] = req.get("imgids", [])
+    print(json.dumps(out), flush=True)
+' "$0""#;
+        let (root, mut engine) = fake_engine("lazy-library", script);
+        let tagged = engine.tagged();
+        let a = tagged.cached_photo("/photo.raw", 0);
+        let b = tagged.cached_photo("/photo.raw", 2);
+        assert!(!root.join("requests").exists(), "listing must not contact the engine");
+        // Concurrent rendering/metadata callers for sibling versions import once.
+        let threads: Vec<_> = (0..4).map(|n| {
+            let tagged = tagged.clone();
+            std::thread::spawn(move || {
+                let id = if n % 2 == 0 { a } else { b };
+                assert_eq!(tagged.request(tagged.tag(), json!({"cmd":"thumb","imgid":id})).unwrap()["imgid"], id);
+            })
+        }).collect();
+        for thread in threads { thread.join().unwrap(); }
+        assert_eq!(engine.request(json!({"cmd":"open","imgid":b,"path":"/photo.raw"})).unwrap()["imgid"], b);
+        assert_eq!(engine.request(json!({"cmd":"export_hold","imgids":[a,b],"job":b})).unwrap()["imgids"], json!([a,b]));
+        let requests: Vec<serde_json::Value> = std::fs::read_to_string(root.join("requests")).unwrap()
+            .lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(requests.iter().filter(|r| r["cmd"] == "import").count(), 1);
+        assert_eq!(requests.iter().find(|r| r["cmd"] == "open").unwrap()["imgid"], 8);
+        let held = requests.iter().find(|r| r["cmd"] == "export_hold").unwrap();
+        assert_eq!(held["imgids"], json!([7,8]));
+        assert_eq!(held["job"], b);
+        // Missing copy cannot silently open the original.
+        let missing = tagged.cached_photo("/photo.raw", 9);
+        assert!(engine.request(json!({"cmd":"open","imgid":missing})).unwrap_err().contains("version 9"));
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]

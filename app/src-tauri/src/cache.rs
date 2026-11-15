@@ -308,11 +308,12 @@ fn thumb_name(photo: &Path, version: i64, size: u32) -> Option<String> {
 // thumbnails are checked without a stat each, which on a network share is
 // a round trip per file. a file of a listed folder that is not here was
 // not there
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Listed {
     dirs: HashSet<PathBuf>,
     // None: a file the listing could not say of (a link), stat'ed instead
     stamps: HashMap<PathBuf, Option<String>>,
+    sidecar_versions: HashMap<PathBuf, Vec<i64>>,
 }
 
 enum Seen {
@@ -325,8 +326,31 @@ impl Listed {
     // a folder's files, as listing.rs found them: all of them, so one not
     // among them was not there
     pub fn add(&mut self, dir: &Path, files: impl IntoIterator<Item = (PathBuf, Option<String>)>) {
-        self.stamps.extend(files);
+        for (path, stamp) in files {
+            if let Some(base) = path.to_str().and_then(|s| s.strip_suffix(".xmp")).map(Path::new) {
+                if let (Some(stem), Some(ext)) = (base.file_stem().and_then(|s| s.to_str()), base.extension().and_then(|s| s.to_str())) {
+                    if let Some((original, number)) = stem.rsplit_once('_') {
+                        if number.len() >= 2 && number.bytes().all(|c| c.is_ascii_digit()) {
+                            if let Ok(version) = number.parse::<i64>() {
+                                let photo = base.with_file_name(format!("{original}.{ext}"));
+                                if version > 0 && sidecar(&photo, version) == path {
+                                    self.sidecar_versions.entry(photo).or_default().push(version);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            self.stamps.insert(path, stamp);
+        }
         self.dirs.insert(dir.to_path_buf());
+    }
+
+    pub fn versions(&self, photo: &Path) -> Option<Vec<i64>> {
+        if !self.dirs.contains(photo.parent()?) { return None; }
+        let mut versions = self.sidecar_versions.get(photo).cloned().unwrap_or_default();
+        versions.push(0); versions.sort_unstable(); versions.dedup();
+        Some(versions)
     }
 
     fn seen(&self, path: &Path) -> Seen {
@@ -346,6 +370,13 @@ impl Listed {
 // stamps are as the folder was listed: refresh() a photo whose edit this
 // app has just saved
 pub fn listed_thumb_name(listed: &Mutex<Listed>, photo: &Path, version: i64, size: u32) -> Option<String> {
+    Some(named(photo, version, size, listed_fingerprints(listed, photo, version)?))
+}
+
+// The photo and version sidecar fingerprints from the same batched listing
+// used by thumbnail lookup, with individual stats only when the listing
+// could not provide a stamp.
+pub fn listed_fingerprints(listed: &Mutex<Listed>, photo: &Path, version: i64) -> Option<(String, String)> {
     let side = sidecar(photo, version);
     let (file, side_seen) = {
         let l = listed.lock().unwrap();
@@ -361,7 +392,31 @@ pub fn listed_thumb_name(listed: &Mutex<Listed>, photo: &Path, version: i64, siz
         Seen::Unknown => std::fs::metadata(&side).map_or_else(|_| "-".into(), |m| stamp(&m)),
         Seen::Stamp(s) => s,
     };
-    Some(named(photo, version, size, (file, side)))
+    Some((file, side))
+}
+
+pub fn listed_metadata_fingerprints(listed: &Mutex<Listed>, photo: &Path, version: i64) -> Option<(String, String)> {
+    fn known_stamp(listed: &Mutex<Listed>, path: &Path) -> Option<String> {
+        let seen = listed.lock().ok()?.seen(path);
+        match seen {
+            Seen::Gone => Some("-".into()),
+            Seen::Stamp(s) => Some(s),
+            Seen::Unknown => match std::fs::metadata(path) {
+                Ok(m) => Some(stamp(&m)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some("-".into()),
+                Err(_) => None,
+            }
+        }
+    }
+    let original = known_stamp(listed, photo)?;
+    if original == "-" { return None; }
+    let xmp = sidecar(photo, version);
+    let side = known_stamp(listed, &xmp)?;
+    let data = known_stamp(listed, &xmp.with_extension("dtdata"))?;
+    let mut h = Sha256::new();
+    h.update(format!("{original}\0{side}\0{data}"));
+    let edited = format!("{:x}", h.finalize());
+    Some((original, edited))
 }
 
 // the photo's thumbnail name as it is now, kept for the next

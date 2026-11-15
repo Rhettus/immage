@@ -59,6 +59,13 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         Some(false) => return Err(format!("folder not found: {path}")),
         Some(true) => {}
     }
+    if let Some(index) = state.search_cache.clone() {
+        let observed = path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let volume = volumes::volume(&observed);
+            if volume.online { let _ = index.root_state(&observed, Some(&volume.mount), "online", None); }
+        }).await.map_err(|e| e.to_string())?;
+    }
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
         let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
@@ -70,7 +77,8 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     if state.folder_token.load(Ordering::SeqCst) != token {
         return Err("superseded".into());
     }
-    *app.state::<Caches>().listed.lock().unwrap() = listed;
+    *app.state::<Caches>().listed.lock().unwrap() = listed.clone();
+    let listed_cache = std::sync::Arc::new(Mutex::new(listed));
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
@@ -87,7 +95,32 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             return Err("superseded".into());
         }
         let batch = &files[done..total.min(done + size)];
-        let list: Vec<String> = batch.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        let cached_index = state.search_cache.clone();
+        let cached_listing = listed_cache.clone();
+        let candidates = batch.to_vec();
+        let (mut cached, list, batch_len) = tauri::async_runtime::spawn_blocking(move || {
+            let mut cached = Vec::new(); let mut missing = Vec::new();
+            let mut cached_mode = None;
+            let mut count = 0;
+            for path in candidates {
+                let found = cached_folder_metadata(cached_index.as_deref(), &cached_listing, &path);
+                let hit = found.is_some();
+                if cached_mode.is_some_and(|mode| mode != hit) { break; }
+                cached_mode = Some(hit); count += 1;
+                if let Some(mut metadata) = found { cached.append(&mut metadata); }
+                else { missing.push(path.to_string_lossy().into_owned()); }
+            }
+            (cached, missing, count)
+        }).await.map_err(|e| e.to_string())?;
+        if state.folder_token.load(Ordering::SeqCst) != token { return Err("superseded".into()); }
+        for image in &mut cached {
+            if let (Some(path), Some(version)) = (image["path"].as_str(), image["version"].as_i64()) {
+                image["imgid"] = json!(state.tagged.cached_photo(path, version));
+            }
+        }
+        // Each group is a contiguous hit/miss prefix. The engine's budgeted
+        // processed count therefore cannot skip an unprocessed cache miss.
+        let cached_files = if list.is_empty() { batch_len } else { 0 };
         let t = state.tagged.clone();
         let tag = t.tag();
         let start = Instant::now();
@@ -97,19 +130,27 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         // files hold neither the next folder nor an open photo for long
         // (main.c, _import_files)
         let budget = (IMPORT_TARGET * 2).as_millis() as u64;
-        let reply = tauri::async_runtime::spawn_blocking(move || t.request_until(
+        let requested = list.len();
+        let reply = if requested == 0 { json!({"images":[],"done":0}) } else { tauri::async_runtime::spawn_blocking(move || t.request_until(
             tag, json!({ "cmd": "import", "files": list, "job": token, "budget": budget }), Duration::from_secs(30),
             || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) != token))
             .await
-            .map_err(|e| e.to_string())??;
+            .map_err(|e| e.to_string())?? };
         let took = start.elapsed();
-        let got = reply["images"].as_array().cloned().unwrap_or_default();
+        let mut got = reply["images"].as_array().cloned().unwrap_or_default();
+        if let Some(index) = state.search_cache.clone() {
+            let listed = listed_cache.clone();
+            let metadata = got.clone();
+            tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &listed, &metadata))
+                .await.map_err(|e| e.to_string())?;
+        }
         // the files the batch went through; the rest go in the next. none
         // when another read's batch came in first, which the token check
         // above then finds, or which is resent
-        let through = reply["done"].as_u64().map_or(batch.len(), |n| (n as usize).min(batch.len()));
+        let through = cached_files + reply["done"].as_u64().map_or(requested, |n| (n as usize).min(requested));
+        got.append(&mut cached);
         // a batch of about IMPORT_TARGET, however long a file takes to read
-        if through > 0 && through < batch.len() {
+        if through > 0 && through < batch_len {
             size = through.max(IMPORT_BATCH.1);
         } else if took < IMPORT_TARGET / 2 {
             size = (size * 2).min(IMPORT_BATCH.2);
@@ -133,6 +174,63 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
     serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
+}
+
+// A complete, validated group only: one unknown/new/deleted sidecar forces
+// ordinary engine import, including all current virtual copies. No engine IDs
+// or negative (unsupported-file) results are persisted here.
+fn cached_folder_metadata(
+    index: Option<&crate::search_cache::SearchCache>, listed: &Mutex<cache::Listed>, path: &Path,
+) -> Option<Vec<Value>> {
+    let index = index?;
+    let versions = listed.lock().ok()?.versions(path)?;
+    let rows = index.path_metadata(path.to_str()?).ok()?;
+    if rows.len() != versions.len() { return None; }
+    let mut result = Vec::new();
+    for version in versions {
+        let key = if version == 0 { String::new() } else { format!("version:{version}") };
+        let (_, original, edited, metadata) = rows.iter().find(|(k,_,_,_)| *k == key)?;
+        let stamps = cache::listed_metadata_fingerprints(listed, path, version)?;
+        if stamps.0 != *original || stamps.1 != *edited { return None; }
+        let image: Value = serde_json::from_str(metadata).ok()?;
+        // Reject malformed disposable rows rather than breaking folder replies.
+        let mut typed = image.clone(); typed["imgid"] = json!(1);
+        let parsed: LibraryImage = serde_json::from_value(typed).ok()?;
+        if parsed.path != path.to_str()? || i64::from(parsed.version) != version { return None; }
+        result.push(image);
+    }
+    Some(result)
+}
+
+// Keep the already-extracted EXIF/library metadata in the disposable local
+// index. The engine's imgid is deliberately omitted: it exists only for this
+// process and must never become the persistent search identity.
+fn index_imported_metadata(
+    index: Option<&crate::search_cache::SearchCache>,
+    listed: &std::sync::Mutex<cache::Listed>,
+    images: &[Value],
+) {
+    let Some(index) = index else { return };
+    for image in images {
+        let Some(path) = image.get("path").and_then(Value::as_str) else { continue };
+        let version = image.get("version").and_then(Value::as_i64).unwrap_or(0);
+        let Some((original_fingerprint, edited_fingerprint)) =
+            cache::listed_metadata_fingerprints(listed, Path::new(path), version)
+        else { continue };
+        let raw_capture = image.get("exif").and_then(|e| e.get("datetime"))
+            .and_then(Value::as_str).filter(|s| !s.is_empty());
+        let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
+        let Ok(record) = index.upsert_variant(path, &copy_key, &original_fingerprint,
+            &edited_fingerprint, None, raw_capture, None) else { continue };
+        let mut metadata = image.clone();
+        if let Some(fields) = metadata.as_object_mut() { fields.remove("imgid"); }
+        match serde_json::to_string(&metadata) {
+            Ok(json) => if let Err(e) = index.store_metadata_if_current(record.id, &original_fingerprint, &edited_fingerprint, &json) {
+                eprintln!("search metadata cache: {e}");
+            },
+            Err(e) => eprintln!("search metadata serialization: {e}"),
+        }
+    }
 }
 
 // the folder's images as its last whole read found them, for open_folder()
@@ -208,7 +306,7 @@ impl Progress {
 // optional readers in darktable/src/CMakeLists.txt. Keep the optional formats
 // here too: the engine still decides whether this build can decode a photo.
 // Checking the name needs no file reads or extra network round trips.
-fn photo_candidate(path: &Path) -> bool {
+pub(crate) fn photo_candidate(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
         "3fr", "ari", "arw", "bay", "bmq", "cap", "cine", "cr2", "cr3", "crw", "cs1", "dc2",
         "dcr", "dng", "erf", "fff", "gpr", "hdr", "ia", "iiq", "jfif", "jpeg", "jpg", "k25",
@@ -267,13 +365,13 @@ fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut 
 // a folder macOS shows as a file (Photos Library, a Lightroom catalog's
 // .lrlibrary, an app): not one to browse or import from
 #[cfg(target_os = "macos")]
-fn is_package(path: &Path) -> bool {
+pub(crate) fn is_package(path: &Path) -> bool {
     let p = objc2_foundation::NSString::from_str(&path.to_string_lossy());
     objc2_app_kit::NSWorkspace::sharedWorkspace().isFilePackageAtPath(&p)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn is_package(_path: &Path) -> bool {
+pub(crate) fn is_package(_path: &Path) -> bool {
     false
 }
 
@@ -330,6 +428,9 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
         items.extend(reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from));
     }
     trash_existing(items).await?;
+    if let Some(index)=&state.search_cache {
+        for path in &gone { if let Err(e)=index.remove_path(path) { eprintln!("search cache trash: {e}"); } }
+    }
     // only once the files are gone: a new file at the same path then
     // imports fresh, not as the deleted one, rejected
     for id in forget {
@@ -369,6 +470,9 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
 #[specta::specta]
 pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<LibraryImage, String> {
     let reply = state.engine("create_virtual_copy").request(json!({ "cmd": "copy", "imgid": imgid }))?;
+    if let Some(image)=reply.get("image") {
+        index_imported_metadata(state.search_cache.as_deref(), &Mutex::new(cache::Listed::default()), std::slice::from_ref(image));
+    }
     serde_json::from_value::<CopyReply>(reply).map(|r| r.image).map_err(|e| format!("copy: unexpected reply: {e}"))
 }
 
@@ -764,6 +868,86 @@ mod tests {
         for name in ["photo.ACR", "photo.orf.xmp", "photo.jpg.txt", "notes", "movie.MOV", "data.json"] {
             assert!(!photo_candidate(Path::new(name)), "{name}");
         }
+    }
+
+    #[test]
+    fn warm_metadata_requires_current_source_all_copies_and_raster_masks() {
+        let temp = tempfile::tempdir().unwrap();
+        let photo = temp.path().join("a.tif");
+        std::fs::write(&photo, b"pixels").unwrap();
+        let index = crate::search_cache::SearchCache::open(&temp.path().join("cache.sqlite")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let mut original = fixture[2]["reply"]["images"][0].clone();
+        original["path"] = json!(photo); original["filename"] = json!("a.tif");
+        let listing = || {
+            let mut listed = cache::Listed::default(); let mut files = Vec::new();
+            folder_files(temp.path(), false, &HashSet::new(), &mut files, &mut listed);
+            Mutex::new(listed)
+        };
+        let listed = listing();
+        assert!(cached_folder_metadata(Some(&index), &listed, &photo).is_none());
+        index_imported_metadata(Some(&index), &listed, std::slice::from_ref(&original));
+        let warm = cached_folder_metadata(Some(&index), &listed, &photo).unwrap();
+        assert_eq!(warm.len(), 1); assert!(warm[0].get("imgid").is_none());
+        assert_eq!(warm[0]["exif"], original["exif"]);
+        assert!(cached_folder_metadata(None, &listed, &photo).is_none());
+        // The listing used by the previous folder remains owned and immutable.
+        std::fs::write(temp.path().join("a_02.tif.xmp"), b"copy").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        let mut copy = original.clone(); copy["version"] = json!(2); copy["copy"] = json!(true);
+        index_imported_metadata(Some(&index), &listing(), &[original.clone(), copy.clone()]);
+        assert_eq!(cached_folder_metadata(Some(&index), &listing(), &photo).unwrap().len(), 2);
+        std::fs::write(temp.path().join("a_02.tif.dtdata"), b"new raster mask").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        index_imported_metadata(Some(&index), &listing(), &[original.clone(), copy]);
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_some());
+        std::fs::remove_file(temp.path().join("a_02.tif.xmp")).unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+        std::fs::write(&photo, b"changed source bytes").unwrap();
+        assert!(cached_folder_metadata(Some(&index), &listing(), &photo).is_none());
+    }
+
+    #[test]
+    fn unavailable_search_cache_does_not_block_folder_metadata_or_engine_ids() {
+        let metadata = vec![json!({"imgid": 314, "path":"/unavailable/cache/photo.jpg", "version":0,
+                                  "exif":{"datetime":"2026:01:02 03:04:05"}})];
+        index_imported_metadata(None, &std::sync::Mutex::new(cache::Listed::default()), &metadata);
+        assert_eq!(metadata[0]["imgid"], 314);
+        assert_eq!(metadata[0]["path"], "/unavailable/cache/photo.jpg");
+    }
+
+    #[test]
+    fn imported_metadata_is_cached_without_engine_ids_and_tracks_sidecar_stamp() {
+        let dir = std::env::temp_dir().join(format!("immage-index-metadata-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let photo = dir.join("a.jpg");
+        std::fs::write(&photo, b"original pixels").unwrap();
+        let cache_path = dir.join("search.sqlite");
+        let index = crate::search_cache::SearchCache::open(&cache_path).unwrap();
+        let mut listed = cache::Listed::default();
+        let mut files = Vec::new();
+        folder_files(&dir, false, &HashSet::new(), &mut files, &mut listed);
+        let listed = std::sync::Mutex::new(listed);
+        let image = json!({"imgid":987654,"path":photo,"version":0,"edited":false,
+                           "exif":{"datetime":"2025:02:03 04:05:06"},"rating":3});
+        index_imported_metadata(Some(&index), &listed, std::slice::from_ref(&image));
+        let original = index.variant(photo.to_str().unwrap(), "").unwrap().unwrap();
+        let saved: Value = serde_json::from_str(&index.metadata(original.id).unwrap().unwrap()).unwrap();
+        assert!(saved.get("imgid").is_none());
+        assert_eq!(saved["exif"]["datetime"], "2025:02:03 04:05:06");
+        assert_eq!(original.capture_time_raw.as_deref(), Some("2025:02:03 04:05:06"));
+
+        std::fs::write(photo.with_file_name("a.jpg.xmp"), b"edit sidecar").unwrap();
+        let mut listed2 = cache::Listed::default();
+        let mut files2 = Vec::new();
+        folder_files(&dir, false, &HashSet::new(), &mut files2, &mut listed2);
+        index_imported_metadata(Some(&index), &std::sync::Mutex::new(listed2), std::slice::from_ref(&image));
+        let updated = index.variant(photo.to_str().unwrap(), "").unwrap().unwrap();
+        assert_eq!(updated.asset_id, original.asset_id);
+        assert_ne!(updated.edited_fingerprint, original.edited_fingerprint);
+        drop(index);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
