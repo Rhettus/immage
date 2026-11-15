@@ -113,7 +113,9 @@ within a few seconds and respects Pause; existing results remain searchable.
 Browsing or reading metadata again refreshes invalidated records for analysis.
 After model opt-in, reconciled paths also receive bounded background metadata
 imports before analysis, including unvisited folders. Missing or offline files
-wait for a later pass. Metadata caching without the optional model still fills
+wait for a later pass. Background imports and analysis skip removed and excluded
+folders, including work that was queued before the folder selection changed.
+Metadata caching without the optional model still fills
 as you browse.
 
 Each source displays results as soon as it finishes. A failure in one source
@@ -129,8 +131,9 @@ local file contents. Unmapped or differently spelled paths stay separate.
 Search retains active filters. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
-Local search includes cached originals and virtual copies, using only current
-metadata and model-versioned analysis.
+Local search includes cached originals and saved virtual copies, using only
+current metadata and model-versioned analysis. Temporary previews are not saved
+copy versions.
 Selected filters exclude unknown values; capture-date filters do not substitute
 file modification dates. Capture metadata retains the source’s fractional digits
 and UTC offset when recorded. Dates adjusted in Immage take precedence; an

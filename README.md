@@ -118,7 +118,7 @@ The Search photos card queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths.
 After the optional model download, background CPU analysis builds original and
 edited embeddings, backfilling metadata for reconciled library paths through
-bounded lazy imports. Image queries use the grid
+bounded lazy imports, respecting removed and excluded folders. Image queries use the grid
 context menu’s Show more like this action and retain active filters. Cached
 capture metadata preserves source fractions and known UTC offsets. Search keeps
 original and virtual-copy identities consistent with the metadata cache.

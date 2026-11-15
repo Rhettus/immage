@@ -333,7 +333,7 @@ impl Listed {
                         if number.len() >= 2 && number.bytes().all(|c| c.is_ascii_digit()) {
                             if let Ok(version) = number.parse::<i64>() {
                                 let photo = base.with_file_name(format!("{original}.{ext}"));
-                                if version > 0 && sidecar(&photo, version) == path {
+                                if (1..1_000_000).contains(&version) && sidecar(&photo, version) == path {
                                     self.sidecar_versions.entry(photo).or_default().push(version);
                                 }
                             }
@@ -631,6 +631,19 @@ mod tests {
         assert_eq!(sidecar(&photo, 2), dir.join("IMG_1_02.CR3.xmp"));
         assert!(thumb_name(&dir.join("gone.CR3"), 0, 240).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn listed_versions_exclude_transient_snapshot_versions() {
+        let dir = test_dir("cache-listed-versions");
+        let photo = dir.join("IMG_1.CR3");
+        let mut listed = Listed::default();
+        listed.add(&dir, [
+            (sidecar(&photo, 0), Some("original".into())),
+            (sidecar(&photo, 2), Some("copy".into())),
+            (sidecar(&photo, 1_000_000), Some("snapshot".into())),
+        ]);
+        assert_eq!(listed.versions(&photo), Some(vec![0, 2]));
     }
 
     // a name from the folder's listing is the one a stat gives, so the

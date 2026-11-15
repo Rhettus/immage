@@ -52,6 +52,8 @@ Improvements
 
 Bug fixes
 
+- Background analysis skips removed and excluded library folders, including
+  previously queued work. Temporary previews stay out of cached copy versions.
 - Local retrieval recognizes the cache’s original and virtual-copy identities,
   so indexed photos are included in search results.
 - Immich path mappings reject traversal and symlinks that lead outside the
