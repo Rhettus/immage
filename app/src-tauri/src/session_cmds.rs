@@ -5,22 +5,36 @@ use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 use crate::typed_session::{AgxAutoReply, ColorProfiles, GetReply, PasteBatchReply, PreviewReply, RenderReply, RenderRequest, SampleReply, SaveReply, ToneKeyReply, HistoryItem, HistoryReply, ModuleEdit, ModuleStateReply, OpenReply, Restore};
-use tauri::{ipc::Response, State};
+use tauri::{ipc::Response, AppHandle, Manager, State};
 use crate::AppState;
 use crate::bindings;
 use crate::frame_output;
 
 // commands are async so a render runs off the main thread
 
+// The refresh reads the search cache (its connection mutex) and takes the
+// queue's mutex, which a reconcile or analysis publication can hold, so the
+// reply never waits for it: it runs unawaited on the blocking pool, after the
+// engine has answered, holding no lock of the caller. The snapshot is taken
+// when this task runs, so its state is equal to or newer than the engine's
+// call. If the task runs late, after a save, it sees post-save state and the
+// same key as the save's own refresh, so the queue's dedupe stays right either
+// way; finish_analysis_metadata's compare-and-set still guards publication.
+fn queue_refresh_off_thread(app: AppHandle, photo: crate::library_ids::Photo) {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::library_cmds::queue_search_metadata_refresh(&app.state::<AppState>(), photo);
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
+pub(crate) async fn open_image(app: AppHandle, state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
     // Engine::Link invalidates the previous active photo as part of open.
     // Keep its identity now and refresh it asynchronously after that succeeds.
     let previous = state.tagged.active_photo();
     let reply = state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
     if let Some(photo) = previous {
-        crate::library_cmds::queue_search_metadata_refresh(&state, photo);
+        queue_refresh_off_thread(app, photo);
     }
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
@@ -417,11 +431,11 @@ pub(crate) async fn cancel_base(state: State<'_, AppState>) -> Result<(), String
 // the reply says whether the photo now reads as edited (darktable's history hash)
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn save(state: State<'_, AppState>) -> Result<SaveReply, String> {
+pub(crate) async fn save(app: AppHandle, state: State<'_, AppState>) -> Result<SaveReply, String> {
     let active = state.tagged.active_photo();
     let reply = state.engine("save").request(json!({ "cmd": "save" }))?;
     if let Some(photo) = active {
-        crate::library_cmds::queue_search_metadata_refresh(&state, photo);
+        queue_refresh_off_thread(app, photo);
     }
     serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))
 }
