@@ -231,7 +231,10 @@ and one undo after Done.
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
 | [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
 | [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (reduced-resolution preview above projection and Auto Crop; `pano_preview`, `merge_cancel`, `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
-| [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
+| [findModel.ts](../../src/findModel.ts) | The Find state, `FindState`: the folder `Filter` plus the `ImmichSearch` (words, mode, `searchIn`, library, server filters). `reach` says which sources a search covers; `needsSearch` whether it runs a search or just filters the folder; `effectiveFilter` the `Filter` actually applied (local-only fields dropped when Immich is unavailable); `CATEGORIES` and `visibleCategories` the grouped filters; `chips` the filters on, each marked when it excludes a source in a Both search; `SavedFilter`, `sameFind`, `normalizeFind`. |
+| [FindPanel.tsx](../../src/FindPanel.tsx) | The toolbar's Find popup in its three sizes (minimize, dock, fill): search row, Search in, chips, category panels and footer. Everything applies live; typed words on Enter or after a short debounce. Edits the one `FindState` App holds, which the toolbar's stars, reject, edited and label buttons also edit. |
+| [findLayout.ts](../../src/findLayout.ts) | Find's size and per-size placement (`immage.findLayout` in the settings store): default rectangles, clamping to the window, drag offsets. |
+| [savedFilters.ts](../../src/savedFilters.ts), [SavedFilterMenus.tsx](../../src/SavedFilterMenus.tsx) | Saved filters (`immage.savedFilters`, part of the Preferences & library backup): store, `savedForDigit` for Alt+1 to Alt+9, and the Saved menu, save dialog and Manage dialog. |
 
 ### Export
 
@@ -254,7 +257,7 @@ and one undo after Done.
 | [localSearch.ts](../../src/localSearch.ts) | The local search source: queries over the metadata cache and, once the CLIP model is installed, text and image similarity; paging and the "Show more like this" image query. |
 | [combinedSearch.ts](../../src/combinedSearch.ts) | Frontend-only coordinator over independent sources (local, Immich): each keeps its own results, errors and pagination; it knows neither backend, callers pass adapters. |
 | [searchIdentity.ts](../../src/searchIdentity.ts) | Merging a local and an Immich result only on an exact indexed local path (Immich mapping canonicalizes the file); virtual copies stay separate. It is path identity, not proof the bytes are equal. |
-| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
+| [immich.ts](../../src/immich.ts), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the search itself is driven from Find; connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
 [canvasLayers.ts](../../src/canvasLayers.ts) preserves canvas allocations when dimensions
@@ -687,7 +690,7 @@ darktable is, and it has AI features when darktable is configured with
    2. Rust polls the output folder and emits `plugin-returned` for each finished file, saved in `plugin-returns.json`.
    3. Opening a returned file applies the plugin's return values, for example lens corrections off after PureRAW.
 9. **Immich browse.**
-   1. `ImmichPanel` searches through `immich_search`.
+   1. App runs Find's Immich search through `immich_search` when `needsSearch` is true.
       The result's FileMenu shows Import Parent Folder only while `immichBase`
       confirms a configured server URL and stored API key. The action is enabled
       when `remote.localPath` is available (disabled otherwise).
@@ -1150,9 +1153,10 @@ folder progress replaces snapshots with current engine metadata.
 `filter.ts::bodyOf` uses a JSON tuple of make, model and complete serial as
 the identity, or the empty string for **Serial not recorded**. `passes`,
 `facets`, `popupCount` and `needsRead` include `bodies`; selections use OR
-within the category and AND with other categories. `FilterPopup.tsx` places
-Camera body below Camera, uses existing draft/Search/Clear semantics and
-faceted counts, and wraps long serial labels. Immich server search is unchanged.
+within the category and AND with other categories. `FindPanel.tsx` places
+Camera body below Camera, applies it live like the other filters with faceted
+counts, and wraps long serial labels. Immich server search is unchanged; Camera body is a local-only category, so a
+Both search marks its chip as hiding Immich results.
 
 Verify with `node --test verify/camera-body.test.mjs` after building the engine.
 The checks cover standard and DNG serial extraction, leading zeros, lens-only

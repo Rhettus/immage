@@ -10,8 +10,6 @@ Improvements
 - Preferences shows the number of photos analysed by CLIP below Background work,
   followed by model controls. Directory status uses compact rows with connection
   dots in a fixed-height scrollable list.
-- Folder filters show All photos, Hide rejected and Rejected as selectable rows
-  with photo counts, matching the File type list and avoiding a dropdown.
 - Interface language setting in Preferences > General defaults to the system’s
   preferred supported language, with English fallback. French adds the initial
   menu and Preferences translations. Changes apply at the next launch or with
@@ -22,11 +20,23 @@ Improvements
   from the pinned darktable version. Untranslated text falls back to English.
 - Preferences > Performance adds Local photo cache status, pause/resume, clear
   and rebuild, plus explicit optional CLIP model download and CPU checks.
-- Search photos adds local folder/library scopes and optional combined Immich
-  queries, with independent results, errors and pagination. Combined results
-  merge verified local paths and weight each source equally. Filename searches
-  use cached metadata; optional CPU analysis enables local similarity search.
-  Saved edits and metadata changes stay searchable without reopening folders.
+- Find replaces the Search photos card and the Filters popup. The toolbar's
+  Find button opens one place for search words (Smart or Filename), where to
+  search (This folder, All folders and, with Immich set up, Immich or Both),
+  and every filter, grouped as Photo, Camera, When & where and Immich. Filters
+  on show as removable chips, with a warning when a filter can match only one
+  source in a Both search. Everything applies live, and Find can be minimized
+  to a strip, docked beside the grid or filled over it, with each size
+  remembering its place. Local searches cover cached metadata and optional CPU
+  similarity analysis; combined results merge verified local paths and weight
+  each source equally. Saved edits and metadata changes stay searchable
+  without reopening folders. Rejected photos can be shown, hidden or isolated.
+- Saved filters keep a whole Find setup under a name: open one from Find, from
+  the toolbar's Find menu, or with Alt+1 to Alt+9 (Option on Mac) for the first
+  nine. Saved filters can be updated, renamed, reordered and deleted, and are
+  included in the Preferences & library backup. If a saved filter searches
+  Immich and Immich is unavailable, Find searches this computer only and says
+  so.
 - Cached capture metadata preserves fractional seconds and recorded UTC offsets;
   dates adjusted in Immage take precedence over the source capture date.
 - The grid adds Show more like this for indexed local photos, searching all

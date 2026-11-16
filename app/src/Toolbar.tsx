@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { BanIcon, CullingIcon, FilterIcon, GridIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
-import { type Filter, NO_FILTER, popupCount } from "./filter";
-import { type Bounds as FilterBounds, FilterPopup, type ImmichFilters } from "./FilterPopup";
-import { type ImageEntry, LABEL_COLORS } from "./library";
+import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
+import { LABEL_COLORS } from "./library";
 import { Layout } from "./layoutPrefs";
-import { NO_SEARCH, immichFilterCount } from "./immich";
+import { ChevronDown } from "lucide-react";
 import { invert } from "./probe";
 import { keys } from "./keys";
 import { useEffect, useRef, useState } from "react";
@@ -96,27 +95,31 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilter, onLayout, ref, pin, immich, grid, onGrid,
-                   filterBounds, onFiltered }: {
+export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, findButtonRef, onFindMenu, savedMenu,
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onGrid }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;
   onGrid?: () => void;                      // none while there are no photos to show
-  filterBounds: () => FilterBounds | undefined; // where the Filters popup may go
-  onFiltered: () => void;                   // the Filters popup's Search, which shows the grid
   pin: React.ReactNode;
-  // with Immich results, which carry no reject flag or labels, the stars and
-  // the Filters popup set the server's search
-  immich: ImmichFilters | null;
-  filter: Filter; layout: Layout; zoomBar: React.ReactNode;
-  images: ImageEntry[];                     // the folder's photos, whose cameras, lenses and so on the Filters popup lists
-  onFilter: (f: Filter) => void;
+  find: FindState;                          // what is searched and filtered: the stars, flags and labels set it
+  immichAvailable: boolean;
+  onFind: (next: FindState, now?: boolean) => void;
+  findOpen: boolean;
+  onToggleFind: () => void;                 // the Find button opens and closes the popup
+  findButtonRef: React.RefObject<HTMLButtonElement | null>;  // the popup's anchor
+  onFindMenu?: (e: React.MouseEvent) => void; // right-click on Find while search results show
+  savedMenu: (button: React.ReactNode) => React.ReactNode;   // the Saved menu, with its button drawn here
+  layout: Layout; zoomBar: React.ReactNode;
   onLayout: (k: "left" | "strip" | "right") => void;
 }) {
-  const remote = !!immich;
-  const stars = immich ? immich.form.minRating : f.minRating;
-  const filtering = f.minRating > 0 || f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled
-    || popupCount(f) > 0 || (!!immich && (stars > 0 || immichFilterCount(immich.form) > 0));
+  const f = find.filter;
+  // an Immich-only search has no reject flag or labels, and the stars set the server's
+  const remote = serverPickers(find.search, immichAvailable);
+  const stars = f.minRating || find.search.minRating;
+  const count = findCount(find, immichAvailable);
+  const ef = effectiveFilter(find, immichAvailable);
+  const filtering = count > 0 || ef.minRating > 0 || ef.rejected !== "all" || ef.edited !== "all" || ef.labels !== 0 || ef.unlabeled;
   // what the reject filter now shows, said for a moment above it
   // (fixed to the window: the toolbar scrolls, and would clip it)
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -129,21 +132,17 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
     noteTimer.current = window.setTimeout(() => setNote(null), 1600);
   };
   const clearFilters = (e: React.MouseEvent<HTMLButtonElement>) => {
-    onFilter(NO_FILTER);
-    if (immich) {
-      const s = immich.form;
-      immich.update({ ...NO_SEARCH, mode: s.mode, text: s.text, library: s.library, source: s.source, scope: s.scope, subject: s.subject });
-    }
+    onFind(clearAll(find), true);
     say(t("library.toolbar.filtersCleared"), e);
   };
   const cycleRejected = (e: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.rejected === "all" ? "hide" : f.rejected === "hide" ? "only" : "all";
-    onFilter({ ...f, rejected: next });
+    onFind(withFilter(find, { ...f, rejected: next }), true);
     say(t(next === "all" ? "library.toolbar.showAll" : next === "hide" ? "library.toolbar.hideRejected" : "library.toolbar.onlyRejected"), e);
   };
   const cycleEdited = (e: React.MouseEvent<HTMLButtonElement>) => {
     const next = f.edited === "all" ? "edited" : f.edited === "edited" ? "unedited" : "all";
-    onFilter({ ...f, edited: next });
+    onFind(withFilter(find, { ...f, edited: next }), true);
     say(t(next === "all" ? "library.toolbar.showAll" : next === "edited" ? "library.toolbar.onlyEdited" : "library.toolbar.onlyUnedited"), e);
   };
   return (
@@ -153,8 +152,7 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
                 onClick={clearFilters}><FilterIcon /></button>
         {[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="tool" title={t("library.toolbar.starsAndUp", { count: n })}
-                  onClick={() => immich ? immich.update({ minRating: stars === n ? 0 : n })
-                                        : onFilter({ ...f, minRating: f.minRating === n ? 0 : n })}>
+                  onClick={() => onFind(setStars(find, stars === n ? 0 : n), true)}>
             <StarIcon filled={stars >= n} />
           </button>
         ))}
@@ -176,13 +174,20 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
         <span className="sep" />
         {LABEL_COLORS.map((c, k) => (
           <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
-                  title={t("library.toolbar.withLabel")} onClick={() => onFilter({ ...f, labels: f.labels ^ (1 << k) })} />
+                  title={t("library.toolbar.withLabel")} onClick={() => onFind(withFilter(find, { ...f, labels: f.labels ^ (1 << k) }), true)} />
         ))}
         <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
-                title={t("library.toolbar.withoutLabel")} onClick={() => onFilter({ ...f, unlabeled: !f.unlabeled })} />
+                title={t("library.toolbar.withoutLabel")} onClick={() => onFind(withFilter(find, { ...f, unlabeled: !f.unlabeled }), true)} />
         </>}
         <span className="sep" />
-        <FilterPopup filter={f} images={images} onFilter={onFilter} immich={immich} bounds={filterBounds} onSearch={onFiltered} />
+        {/* Find and its saved filters, as a split button */}
+        <div className="find-split">
+          <button ref={findButtonRef} className={`tool find-button${count > 0 ? " on" : ""}${findOpen ? " open" : ""}`} data-tour="find"
+                  aria-expanded={findOpen} title={t("library.find.title")} onClick={onToggleFind} onContextMenu={onFindMenu}>
+            {count > 0 ? t("library.find.titleCount", { count }) : t("library.find.title")}
+          </button>
+          <span className="find-saved">{savedMenu(<ChevronDown size={12} strokeWidth={1.8} />)}</span>
+        </div>
         {filtering && (
           <button className="tool clear-filters" title={t("library.toolbar.showEveryPhoto")} onClick={clearFilters}>{t("library.filters.clear")}</button>
         )}

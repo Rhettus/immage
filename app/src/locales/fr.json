@@ -5036,5 +5036,8 @@
   "library.find.saved.immichSkipped": "Immich n’est pas disponible : recherche limitée à cet ordinateur",
   "library.find.size.minimize": "Réduire en bandeau",
   "library.find.size.dock": "Ancrer à côté de la grille",
-  "library.find.size.fill": "Remplir la grille"
+  "library.find.size.fill": "Remplir la grille",
+  "library.find.titleCount": "Rechercher ({count})",
+  "dialogs.tour.find.title": "Rechercher",
+  "dialogs.tour.find.body": "Recherchez dans ce dossier, dans tous les dossiers ou dans votre photothèque Immich par mots, puis affinez les photos par note, appareil, date et plus encore. Enregistrez un filtre pour le rouvrir depuis la flèche à côté de Rechercher."
 }

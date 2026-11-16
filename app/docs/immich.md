@@ -5,7 +5,7 @@ in three ways:
 
 - **Importing** checks new photos against your Immich library and marks
   the ones it already has.
-- **Searching**, from the **Search photos** card in the Library panel, finds
+- **Searching**, from **Find** in the toolbar, finds
   photos by what is in them, by people, places, tags or albums. You then
   edit them as if they were local.
 - **Exporting** can upload straight into an Immich album.
@@ -95,24 +95,32 @@ Photos outside that folder are downloaded before they open.
 
 ## Searching
 
-The **Search photos** card sits below **Folders**. After configuring an Immich
-server and key, choose **Immich** or **Local + Immich** as the source. Local
-search remains available without a server; see [Library](library.md).
+Immich search is part of **Find**, the toolbar's search and filter popup. After
+configuring an Immich server and key, **Search in** offers **Immich** and
+**Both** (this computer's photos and Immich together) besides **This folder**
+and **All folders**. Local search remains available without a server; see
+[Library](library.md#find).
 
-![Immich search with the Filters popup open](images/immich-search.png)
-<!-- screenshot: Library panel, Search photos card, Smart search "sunset on a beach", the toolbar's Filters popup open with People's panel beside it, one person ticked -->
+![Immich search in Find](images/immich-search.png)
+<!-- screenshot: Find popup docked beside the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, one person ticked under People as a chip -->
 
-- The library menu chooses what to search: **External libraries** (the
-  default), **All photos**, or one library.
-- Type in the search box and press Enter. **Smart** searches by what is in
-  the photo, using Immich's machine learning, for example
-  `dog on a beach`. **Filename** searches file names and descriptions.
-- The toolbar's stars and its **Filters** button narrow the search: the
-  date taken, rating, favorites, **RAW only**, camera and lens, keywords
-  (Immich's tags), people, albums, country and city. Immich applies them
-  to the whole search, not just the results loaded so far. Choose a
-  filter's options in the panel beside the list, then click **Search** to
-  search again and show the results in the grid.
+- The **Immich library** picker chooses what to search: **External libraries**
+  (the default), **All photos**, or one library.
+- Type in the search box; it searches as you pause or press Enter. **Smart**
+  searches by what is in the photo, using Immich's machine learning, for
+  example `dog on a beach`. **Filename** searches file names and descriptions.
+- Find's filters narrow the search: the date taken, rating, **Favorites**,
+  **RAW only**, camera and lens, keywords (Immich's tags), **People**,
+  **Albums**, and **Place** (country and city). Immich applies them to the
+  whole search, not just the results loaded so far, and they take effect as
+  you set them. In an Immich-only search, **Camera**, **Lens** and
+  **Keywords** list the server's values.
+- Filters that exist only on this computer, such as **Camera body**,
+  **Exposure** or flags, hide Immich results in a **Both** search; the chip
+  says so.
+- A [saved filter](library.md#saved-filters) can search Immich. When Immich
+  is not available, it searches this computer only and says Immich was
+  skipped.
 
 Results fill the grid, up to 250 per source page, with more as you scroll.
 Combined queries display successful sources independently and retain the other

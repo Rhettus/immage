@@ -7,7 +7,9 @@ darktable sees it too.
 
 **If you've used another editor:** think of it as a folders panel without
 the import step. Adding a folder never copies or moves anything. Collections
-and smart collections don't exist; [Immich](immich.md) can do that job.
+don't exist; [Immich](immich.md) can do that job, and
+[saved filters](#saved-filters) in Find remember a search and its filters, so
+a folder's "smart collection" is one click away.
 
 The grid and filmstrip list photo formats only, including while a folder is
 loading. Non-photo files such as `.ACR` and XMP sidecars, documents and videos
@@ -104,10 +106,9 @@ pauses background checks, clears or rebuilds cached records, and offers the
 optional model download and CPU model check. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
-The **Search photos** card is available without an Immich connection. Choose
-**Local photos**, **Immich**, or **Local + Immich** when Immich is configured.
-Local searches cover the current folder (respecting Include subfolders) or all
-library folders. Choose original or edited analysis for local similarity. Original analysis
+[Find](#find) searches this cache without an Immich connection. Choose
+**This folder** (respecting Include subfolders) or **All folders** under
+**Search in**, and original or edited analysis for local similarity. Original analysis
 renders with editing history disabled; edited analysis uses saved edits.
 **Filename** and empty-text searches can use cached metadata without a model.
 Smart text needs a downloaded model and current indexed embeddings. After you
@@ -313,60 +314,103 @@ You can rate, reject and label photos as soon as their controls appear, while
 the folder and thumbnails continue loading. Your changes stay in place as
 more photos arrive and loading finishes.
 
-## Filtering
+## Find
 
-The toolbar under the filmstrip filters the folder:
+**Find** is where you search and filter. The toolbar's **Find** button, under
+the filmstrip, opens it; the number on the button is how many filters are on.
+Searching the library and narrowing a folder both happen here.
 
-- **Stars**: show photos with that rating and up. Click it again to turn it
-  off.
-- **Reject**: click once to hide rejected photos, again to show only them,
-  and again to show everything.
-- **Edited** (the sliders button): click once to show only edited photos,
-  again to show only unedited ones, and again to show everything.
-- **Color labels**: show photos with any of the chosen labels; the gray
-  swatch shows photos without a label.
-- **Filters**: opens a list of what else the folder can be narrowed by,
-  with a panel beside it showing the options of the one chosen. Choose
-  as many as you like, then click **Search** to filter the folder and show
-  it in the grid; **Clear** in the panel takes that one off, at the next
-  **Search**.
-  - **Rejected**: choose **All photos**, **Hide rejected** or **Rejected**
-    from rows with photo counts, like the File type list. Counts reflect the
-    other selected filters. **Hide rejected** shows only photos that are not
-    rejected and **Rejected** shows only rejected ones, after **Search**;
-    **All photos**, **Clear** or **Clear all** removes the restriction. The
-    toolbar’s **Reject** button cycles through the same three states.
-  - **File type**, **Camera** and **Lens**: tick any to show photos of
-    those, for example **RAW** and **JPEG**. Each lists what the folder
-    holds, with how many photos of each.
-  - **Camera body**: distinguish physical bodies of the same model by their
-    full serial numbers, even when you swap lenses. Entries show the camera
-    model, serial and photo count. Tick multiple bodies to include any of them;
-    combine with Camera, Lens or other filters to narrow the results. Long
-    lists can be searched by model or serial. **Serial not recorded** selects
-    photos without a usable body serial; those cannot be assigned reliably to
-    a particular body. Serials come from the original file's supported metadata,
-    including recognized camera maker notes; lens serials are never used.
-    Changes apply with **Search**, and reset with **Clear** or **Clear all**.
-    This filter is available for folders, not Immich server searches.
-  - **Keywords**: tick one or more to show photos with all of them. A
-    keyword includes those under it, so **Places** shows photos tagged
-    **Places › Norway** too.
-  - **Captured**: photos taken between two dates. Type them, or pick a
-    recent span (**Last 30 days**, **This month**, **Last year** and
-    others), a year, or a month of the year picked. A photo with no
-    capture time goes by its file's date here too.
-  - **Exposure**: ISO, aperture, focal length and shutter speed. Choose
-    one to list the values the folder holds, and tick any, for example
-    ISO 100 and 200.
+- **Search words**: type what to look for. **Smart** searches by what is in
+  the photo (it needs the optional model described above for photos on this
+  computer, and Immich's own machine learning for Immich); **Filename**
+  searches file names.
+- **Search in**: **This folder** or **All folders**. With Immich set up in
+  Preferences, **Immich** and **Both** are also offered. **This folder** means
+  whichever folder is open.
+- **Original** or **Edited**: for photos on this computer, whether a Smart
+  search looks at the photo as shot or with its saved edits.
+- **Immich library**: a picker that appears when Immich is in the search.
+  See [Immich](immich.md).
 
-  Each list counts only the photos your other choices leave: tick a
-  camera, and **Lens** lists just the lenses used on it. The list shows
-  what each is set to, and the button how many are on. **Clear all**, at
-  the bottom of the panel, takes them all off when you click **Search**.
-- **Clear**: show every photo again.
+Filters that are on appear as chips under the search row; click a chip's
+**✕** to remove that filter. In a **Both** search, a chip warns when it can
+match only one source: Immich-only fields such as **People** hide the photos on
+this computer, and fields that exist only on this computer, such as keywords,
+flags or **Camera body**, hide Immich results.
 
-Opening another folder clears the filters.
+The filters are grouped:
+
+- **Photo**: **Rating & flags**, **File type**, **Keywords**.
+- **Camera**: **Camera**, **Camera body**, **Lens**, **Exposure**.
+- **When & where**: **Captured**, **Place**.
+- **Immich**: **People**, **Albums**, **Favorites**.
+
+**Camera body** and **Exposure** apply only to photos on this computer.
+**Place**, **People**, **Albums** and **Favorites** appear only when Immich is
+in the search. In an Immich-only search, **Camera**, **Lens** and **Keywords**
+list the server's values.
+
+- **Rating & flags**: a minimum star rating, **Rejected** (**All photos**,
+  **Hide rejected** or **Rejected**, with photo counts), **Edited** or
+  **Unedited**, color labels, and **RAW only**.
+- **File type**, **Camera** and **Lens**: tick any to show photos of those,
+  for example **RAW** and **JPEG**. Each lists what the search holds, with how
+  many photos of each.
+- **Camera body**: distinguish physical bodies of the same model by their
+  full serial numbers, even when you swap lenses. Entries show the camera
+  model, serial and photo count; tick several to include any of them. Long
+  lists can be searched by model or serial. **Serial not recorded** selects
+  photos without a usable body serial, which cannot be assigned reliably to a
+  particular body. Serials come from the original file's supported metadata,
+  including recognized camera maker notes; lens serials are never used.
+- **Keywords**: tick one or more to show photos with all of them. A keyword
+  includes those under it, so **Places** shows photos tagged **Places › Norway**
+  too.
+- **Captured**: photos taken between two dates. Type them, or pick a recent
+  span (**Last 30 days**, **This month**, **Last year** and others), a year,
+  or a month of the year. A photo with no capture time goes by its file's date
+  here too.
+- **Exposure**: ISO, aperture, focal length and shutter speed. Tick any
+  values, for example ISO 100 and 200.
+
+Each list counts only the photos your other choices leave: tick a camera, and
+**Lens** lists just the lenses used on it.
+
+Everything applies live. A tick works at once; typed words apply when you
+press Enter or after a short pause. At the bottom, the footer shows how many
+photos match, **Clear all**, **Save filter…**, and **Show N**, which closes
+Find and shows the matches in the grid. Esc or a click away closes Find; the
+filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
+buttons still work and are the same filters: changing one changes the other.
+
+### Sizes
+
+Find has three sizes, chosen with the buttons at its top:
+
+- **Minimize**: a strip with just the search row and chips.
+- **Dock**: beside the grid, full height, with the categories in a list.
+- **Fill**: covers the grid and shows every category at once, in columns.
+
+Drag the grip to move Find in **Minimize** or **Dock**. Each size remembers
+its own place, and the last size you used is remembered. Double-click the
+grip to put the current size back in its default place.
+
+### Saved filters
+
+**Save filter…** names the whole Find state: the words, the mode, where it
+searches and every filter. A saved filter that says **This folder** follows
+whatever folder is open, so one filter can serve any folder.
+
+Open a saved filter from **Saved** ⌄ in Find, from the ⌄ beside the toolbar's
+**Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
+nine in the list. While a saved filter is open, Find shows its name, with
+**changed** beside it after you edit, and **Update** (overwrite it) and
+**Save as new…**. **Manage saved filters…** renames, reorders and deletes
+them. Saved filters are included in the **Preferences & library** backup
+component ([Preferences](preferences.md)).
+
+If a saved filter searches Immich and Immich is not available, Find searches
+this computer only and says that Immich was skipped.
 
 ## RAW+JPEG pairs
 

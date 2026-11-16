@@ -5036,5 +5036,8 @@
   "library.find.saved.immichSkipped": "Immich is not available: searched this computer only",
   "library.find.size.minimize": "Minimize to a strip",
   "library.find.size.dock": "Dock beside the grid",
-  "library.find.size.fill": "Fill the grid"
+  "library.find.size.fill": "Fill the grid",
+  "library.find.titleCount": "Find ({count})",
+  "dialogs.tour.find.title": "Find",
+  "dialogs.tour.find.body": "Search this folder, every folder or your Immich library by words, and narrow the photos by rating, camera, date and more. Save a filter to open it again from the arrow beside Find."
 }

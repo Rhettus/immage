@@ -2105,7 +2105,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .find-all .find-pane { background: var(--window); border-radius: 9px; padding-bottom: 6px; }
 .find-all .find-pane-body { overflow: visible; }
 
-/* saved filters (SavedFilters.tsx) */
+/* saved filters (SavedFilterMenus.tsx) */
 .saved-menu { display: inline-flex; }
 .saved-menu-button { display: inline-flex; align-items: center; gap: 4px; }
 .saved-list { min-width: 200px; max-width: 320px; }

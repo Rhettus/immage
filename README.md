@@ -30,7 +30,7 @@ photo cache provides status, pause, clear/rebuild and optional model controls,
 with a distinct CLIP photo count and a scrollable directory connection list.
 Local retrieval keeps selected unknown metadata out of filtered results.
 
-The Search photos card queries cached local metadata without Immich and can
+Find (the toolbar's search and filters popup) queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths
 and preserving metadata edits while additional results arrive. Metadata edits
 refresh search results without a folder reload or optional model. Saved edits

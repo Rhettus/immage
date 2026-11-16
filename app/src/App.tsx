@@ -121,7 +121,10 @@ import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
-import { ImmichPanel } from "./ImmichPanel";
+import { FindPanel } from "./FindPanel";
+import { effectiveFilter, needsSearch, normalizeFind, reach, type FindState } from "./findModel";
+import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
+import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
@@ -354,21 +357,59 @@ export default function App() {
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
   const setImmich = (v: typeof immich) => { immichRef.current = v; setImmichState(v); };
-  // the Immich search as the card, the Filters popup and the stars set it.
-  // a change searches again a moment later while its results show
+  // the Find popup's search half; `filter` is the other. a change searches
+  // again a moment later while its results show (changeFind)
   const [immichForm, setImmichForm] = useState<ImmichSearch>(loadSearch);
   const immichFormRef = useRef(immichForm);
   const immichTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(immichTimer.current), []);
-  const updateImmich = (patch: Partial<ImmichSearch>, now = false) => {
-    const next = { ...immichFormRef.current, ...patch };
-    immichFormRef.current = next;
-    setImmichForm(next);
-    storeSearch(next);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+  const immichBaseRef = useRef(immichBase);
+  immichBaseRef.current = immichBase;
+  const find: FindState = { search: immichForm, filter };
+  const [findOpen, setFindOpen] = useState(false);
+  const findButton = useRef<HTMLButtonElement>(null);
+  // the saved filter the Find state came from, and its dialogs
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saveDialog, setSaveDialog] = useState(false);
+  const [manageSaved, setManageSaved] = useState(false);
+  const savedList = useSaved();
+  const savedNow = savedList.find((f) => f.id === savedId) ?? null;
+  // every change of what is searched or filtered, from the popup, the
+  // toolbar and the saved filters. `now` runs the search at once, else after
+  // a 400 ms pause (typing)
+  const changeFind = (next: FindState, now = false) => {
+    const avail = !!immichBaseRef.current;
+    const prevSearch = immichFormRef.current;
     window.clearTimeout(immichTimer.current);
-    if (now) void searchImmich(next);
-    else if (immichRef.current) immichTimer.current = window.setTimeout(() => void searchImmich(next), 400);
+    const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
+    // back to the open folder, as choosing it does, with the filter on at once
+    // (showFolder starts a new folder unfiltered, so the filter is set after it)
+    if (leaving) void showFolder(folderRef.current!);
+    immichFormRef.current = next.search; setImmichForm(next.search);
+    filterRef.current = next.filter; setFilter(next.filter);
+    storeSearch(next.search);
+    if (!needsSearch(next, avail)) return;
+    const sameSearch = JSON.stringify(prevSearch) === JSON.stringify(next.search);
+    const run = () => {
+      // only the filters changed: the same search again, so a similar-photos query stays
+      const q = combined.current?.getState().query as SearchQuery | null;
+      if (sameSearch && immichRef.current && q) {
+        const active = Object.entries(combined.current!.getState().sources).filter(([, v]) => v.status !== "idle").map(([k]) => k as "local" | "immich");
+        void combined.current!.search({ ...q, filters: effectiveFilter(next, avail) }, active);
+      } else void searchImmich(next.search, false, undefined, next.filter);
+    };
+    if (now) run();
+    else immichTimer.current = window.setTimeout(run, 400);
   };
+  // a saved filter sets the whole state; "This folder" is the open folder
+  const applySaved = (f: { id: string; state: FindState }) => {
+    setSavedId(f.id);
+    changeFind(normalizeFind(f.state), true);
+  };
+  const applySavedRef = useRef(applySaved);
+  applySavedRef.current = applySaved;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // the filmstrip's selection, by image: ratings, labels and rejects apply
   // to all of it, as in Lightroom; the open photo is the active one
@@ -2940,8 +2981,8 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
     try {
       const v = settings.get(`immage.${id}.open`);
-      return id === "folders" || id === "immich" ? v !== "0" : v === "1";
-    } catch { return id === "folders" || id === "immich"; }
+      return id === "folders" ? v !== "0" : v === "1";
+    } catch { return id === "folders"; }
   })));
   // focus mode and ⌥ as for the right panel's panels (togglePanel)
   const toggleLeft = (id: LeftCard, alt = false) => setLeftOpen((old) => {
@@ -3053,11 +3094,12 @@ export default function App() {
       loader.current?.request(list.map(i => i.imgid));
       setImmich({ search: q.form, next, busy });
       const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${String(v.error)}`);
-      setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" }));
+      setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" })
+        + (skippedNote(reach(q.form, !!immichBaseRef.current)) ? ` ${t(skippedNote(reach(q.form, !!immichBaseRef.current))!)}` : ""));
     },
   });
   useEffect(() => () => combined.current?.cancel(), []);
-  const searchImmich = async (q: ImmichSearch, more = false, imageVariant?: string) => {
+  const searchImmich = async (q: ImmichSearch, more = false, imageVariant?: string, filters?: Filter) => {
     if (more) {
       await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
       return;
@@ -3067,9 +3109,12 @@ export default function App() {
     loader.current!.clear();
     setReading(null);
     setGrid(true);
-    const enabled: ("local" | "immich")[] = !immichBase || q.source === "local" ? ["local"]
+    // Immich not available: the local part only (reach.skipped)
+    const avail = !!immichBaseRef.current;
+    const enabled: ("local" | "immich")[] = !avail || q.source === "local" ? ["local"]
       : q.source === "immich" ? ["immich"] : ["local", "immich"];
-    await combined.current!.search({ form: q, filters: filter, folder: folder ?? "", recursive: includeSub, imageVariant }, enabled);
+    const f = filters ?? filterRef.current;
+    await combined.current!.search({ form: q, filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
   };
 
   const showSimilar = async (hit: ImageEntry) => {
@@ -5722,6 +5767,12 @@ export default function App() {
       if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
+      // Alt+1 to Alt+9 open the saved Find filters, by code as Option types characters on macOS
+      // (a text field or a dialog having the keyboard is handled above)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const saved = savedForDigit(e.code);
+        if (saved) { e.preventDefault(); applySavedRef.current(saved); return; }
+      }
       const chord = chordAction(e);
       if (chord) {
         if (!chord.keep) e.preventDefault();
@@ -5857,7 +5908,8 @@ export default function App() {
   // filters leave the raw out
   const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   partnersRef.current = partners;
-  const passing = images.filter((i) => immich ? passesSearch(i, filter) : passes(i, filter));
+  // results show through the filter their search used: an Immich-only search hides the folder lists
+  const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
@@ -6166,12 +6218,6 @@ export default function App() {
             </div>
           )}
         </div>
-        {
-          <ImmichPanel immichAvailable={!!immichBase} open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
-                       active={!!immich} searching={!!immich?.busy} form={immichForm} onChange={updateImmich}
-                       onSearch={() => { window.clearTimeout(immichTimer.current); void searchImmich(immichFormRef.current); }}
-                       onMenu={showResultsMenu} />
-        }
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
                              .map((h) => {
                                const st = session.current?.moduleStates.get(instanceKey(h));
@@ -6519,7 +6565,12 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar filter={filter} images={images} immich={immich && immichForm.source !== "local" && immichBase ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findOpen}
+                 onToggleFind={() => setFindOpen((o) => !o)} findButtonRef={findButton}
+                 onFindMenu={immich ? showResultsMenu : undefined}
+                 savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                                    onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} button={button} />}
+                 layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
@@ -6533,19 +6584,6 @@ export default function App() {
                            title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 filterBounds={() => {
-                   // across the filmstrip, below the top of the photo area, and
-                   // clear of a side panel shown over it (auto-hide)
-                   const s = stripSlot.current?.getBoundingClientRect();
-                   if (!s) return undefined;
-                   const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
-                   return {
-                     left: l && l.width && l.right > 0 ? Math.max(s.left, l.right) : s.left,
-                     right: r && r.width && r.left < window.innerWidth ? Math.min(s.right, r.left) : s.right,
-                     top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
-                   };
-                 }}
-                 onFiltered={() => setGrid(true)}
                  grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
                  // in the grid the zoom bar sizes the thumbnails; the photo's
                  // stays mounted, hidden, so it still shows the photo's zoom after
@@ -6559,11 +6597,34 @@ export default function App() {
                               fit={() => fitScale()} />
                    </div>
                  </>}
-                 onFilter={(f) => { setFilter(f); if (immichRef.current) { window.clearTimeout(immichTimer.current); immichTimer.current = window.setTimeout(() => {
-                   const q = combined.current?.getState().query as SearchQuery | null;
-                   if (q) void combined.current!.search({ ...q, filters: f }, Object.entries(combined.current!.getState().sources).filter(([, v]) => v.status !== "idle").map(([k]) => k as "local" | "immich"));
-                 }, 400); } }}
                  onLayout={toggleSide} />
+        {findOpen && <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
+                    count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
+                    notes={[skippedNote(reach(immichForm, !!immichBase))].filter((k): k is string => !!k).map((k) => t(k))}
+                    onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
+                    saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                      onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} />}
+                    savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
+                                                     onUpdate={() => updateSaved(savedNow.id, find)}
+                                                     onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
+                    onSaveNew={() => setSaveDialog(true)}
+                    anchor={() => findButton.current?.getBoundingClientRect()}
+                    bounds={() => {
+                      // the photo area: across the filmstrip, clear of a side panel shown over
+                      // it (auto-hide), from the top of the viewer to the toolbar
+                      const sr = stripSlot.current?.getBoundingClientRect();
+                      if (!sr) return undefined;
+                      const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
+                      return {
+                        left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
+                        right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
+                        top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
+                        bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
+                      };
+                    }} />}
+        {saveDialog && <SaveDialog initial="" onCancel={() => setSaveDialog(false)}
+                                   onSave={(name) => { setSavedId(addSaved(name, find).id); setSaveDialog(false); }} />}
+        {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
       </section>
 
       <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
@@ -7204,7 +7265,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 };
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
-const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
+const LEFT_CARDS = ["metadata", "keywording", "folders", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
                                                   zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),

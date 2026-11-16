@@ -56,8 +56,10 @@ Down the left side, under the **Navigator**:
 - **Metadata**: title, caption, rating, label and the camera's settings
 - **Keywording**: the photo's keywords
 - **Folders**: the folders you have added, as a tree
-- **Immich**: search your Immich server, once it is set up
 - **History**: every step of the edit
+
+The toolbar's **Find** button opens search and filters, including Immich
+search once it is set up, and its ⌄ opens your saved filters.
 
 Click a card's title to fold or unfold it. See [Library](library.md) and
 [History, undo and copying settings](history-and-sync.md).

@@ -63,6 +63,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | X | Reject |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |
+| ⌥1 - ⌥9 | Open saved filter 1 to 9 (Find's saved filters, in list order) |
 | G | Grid view of the folder (G or Esc goes back) |
 | ⌘= ⌘- | In grid view: larger or smaller thumbnails |
 | Pinch, ⌘-scroll | In grid view: resize the thumbnails smoothly |

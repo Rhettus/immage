@@ -172,7 +172,7 @@ file that you choose.
 parts that exist are offered:
 
 - **Preferences & library**: all of your settings, the same as in
-  `settings.json`.
+  `settings.json`, and your Find saved filters.
 - **Edit presets** and **Export presets**: your Develop and export presets.
 - **Looks**: the looks in your looks folder, counted with their size.
 - **Edit In plugins**: your plugin list.

@@ -117,6 +117,6 @@ See [Preferences](preferences.md).
 
 - [The workspace](workspace.md): the parts of the window, zooming, before
   and after
-- [Library](library.md): folders, rating, filtering
+- [Library](library.md): folders, rating, Find and saved filters
 - [Adjustments](adjustments.md): every panel and slider
 - [Immich](immich.md): connect your server
