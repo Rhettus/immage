@@ -53,9 +53,10 @@ export async function localSearch(t) {
   `indexed local result and cached thumbnail for ${filename}`, 60000);
   assert.equal(found.stars, 5, 'the local result exposes editable rating controls');
   await t.evidence('local-search-result');
-  // Show closes the popup over the grid; the search and its words stay
+  // Show closes the popup and shows the grid, where Find is the locked right-hand
+  // column; the search and its words stay
   await click(t, `${pop} .find-show`);
-  await until(() => t.driver.observe(s => !document.querySelector(s), pop), 'Find popup closes with Show');
+  await until(() => t.driver.observe(s => !document.querySelector(s), `${pop}:not(.locked)`), 'Find popup closes with Show');
 
   // Set a rating on the copied fixture, then filter the search through the
   // real toolbar. The local result should survive because its saved rating is
@@ -71,7 +72,7 @@ export async function localSearch(t) {
   await click(t, '.toolbar .filter button[title="3 stars and up"]');
   await until(() => t.driver.observe(() => !!document.querySelector('.toolbar .filter button[title="clear filters"]')),
     'the toolbar shows filters on');
-  // the search and its Filename mode live in the Find popup, reopened to read them
+  // the search and its Filename mode live in the Find popup, reopened to read them (in the grid, the locked column)
   await openFind(t);
   const filtered = await until(() => t.driver.observe((s, value, name, modeSel) => {
     const result = document.querySelector(s);

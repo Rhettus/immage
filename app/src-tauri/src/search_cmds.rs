@@ -9,6 +9,9 @@ pub struct SearchStatus {
     pub roots: Vec<search_cache::RootStatus>,
     pub queue: analysis_queue::Status,
     pub model: clip_models::ModelStatus,
+    /// The CLIP package is on disk (checked off the event loop): photo-content
+    /// search works without the Preferences check, which only sets `model.verified`.
+    pub model_installed: bool,
 }
 #[tauri::command]
 #[specta::specta]
@@ -16,8 +19,10 @@ pub async fn search_status(state: State<'_, AppState>) -> Result<SearchStatus, S
     let cache = state.search_cache.clone();
     let queue = state.analysis_queue.status();
     let model = state.clip_models.status();
+    let models = state.clip_models.clone();
     tauri::async_runtime::spawn_blocking(move || {
         Ok(SearchStatus {
+            model_installed: models.installed(),
             counts: cache.as_ref().map(|c| c.counts()).transpose()?,
             roots: cache
                 .as_ref()

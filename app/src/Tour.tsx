@@ -22,6 +22,8 @@ const STEPS: Step[] = [
     body: keys(t("dialogs.tour.import.body")) },
   { target: "folders", title: t("dialogs.tour.folders.title"),
     body: t("dialogs.tour.folders.body") },
+  { target: "library", title: t("dialogs.tour.library.title"),
+    body: t("dialogs.tour.library.body") },
   { target: "find", title: t("dialogs.tour.find.title"),
     body: t("dialogs.tour.find.body") },
   { target: "filmstrip", title: t("dialogs.tour.pickPhoto.title"),

@@ -188,3 +188,34 @@ test('normalizeFind', () => {
   const n = normalizeFind({ search: { text: 'x' } });
   assert.deepEqual(n, { search: { ...NO_SEARCH, text: 'x' }, filter: NO_FILTER });
 });
+
+test('smartAvailable needs the CLIP model or Immich', () => {
+  assert.equal(M.smartAvailable(false, false), false);
+  assert.equal(M.smartAvailable(true, false), true);
+  assert.equal(M.smartAvailable(false, true), true);
+  assert.equal(M.smartAvailable(true, true), true);
+});
+
+test('effectiveSearch searches file names only while Smart is unavailable, without rewriting the stored mode', () => {
+  const smart = { ...NO_SEARCH, mode: 'smart', text: 'cat' };
+  const stored = JSON.stringify(smart);
+  assert.equal(M.effectiveSearch(smart, false).mode, 'filename');
+  assert.equal(M.effectiveSearch(smart, false).text, 'cat');
+  assert.equal(JSON.stringify(smart), stored, 'the input is not changed');
+  assert.equal(M.effectiveSearch(smart, true), smart, 'Smart runs as chosen once it is available');
+  const name = { ...smart, mode: 'filename' };
+  assert.equal(M.effectiveSearch(name, false), name);
+  assert.equal(M.effectiveSearch(name, true), name);
+  // a saved filter that asks for Smart degrades the same way, and the mode does not change whether a search runs
+  const saved = normalizeFind(JSON.parse(JSON.stringify({ search: smart, filter: NO_FILTER })));
+  assert.equal(M.effectiveSearch(saved.search, false).mode, 'filename');
+  assert.equal(needsSearch({ ...saved, search: M.effectiveSearch(saved.search, false) }, false), needsSearch(saved, false));
+  assert.deepEqual(chips({ ...saved, search: M.effectiveSearch(saved.search, false) }, false), chips(saved, false));
+});
+
+test('clipTipVisible: only once known, missing and not dismissed', () => {
+  assert.equal(M.clipTipVisible(false, false, false), false, 'not before the first status answer');
+  assert.equal(M.clipTipVisible(true, false, false), true);
+  assert.equal(M.clipTipVisible(true, true, false), false, 'gone once the model is installed');
+  assert.equal(M.clipTipVisible(true, false, true), false, 'never again after dismissing');
+});

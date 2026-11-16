@@ -6,7 +6,7 @@ right, and the rail down the right edge.
 
 **If you've used another editor:** there are no separate library and
 develop modes. The filmstrip and grid browse a folder, and the right side
-always edits the open photo. The rail stands in for a module picker.
+edits the open photo (in the grid it holds Find). The rail stands in for a module picker.
 
 <a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a RAW photo, with Library on the left, the viewer and filmstrip in the middle, and Adjustments and the tool rail on the right"></a>
 
@@ -18,6 +18,7 @@ in, edit them, send them out.
 | Button | What it opens |
 | --- | --- |
 | **Import** | the importer (⇧⌘I). See [Import](import.md). |
+| **Library** | the grid view of the folder (G); click again to return to the filmstrip. In the grid, Find fills the right-hand panel. See [Library](library.md). |
 | **Adjustments** | the develop panels. See [Adjustments](adjustments.md). |
 | **Crop** | the crop tool (R); a second click applies it. See [Crop](crop.md). |
 | **Masks** | local adjustments. See [Masks](masks.md). |
@@ -59,7 +60,8 @@ Down the left side, under the **Navigator**:
 - **History**: every step of the edit
 
 The toolbar's **Find** button opens search and filters, including Immich
-search once it is set up, and its ⌄ opens your saved filters.
+search once it is set up, and its ⌄ opens your saved filters. It is a popup
+over the photo; in the grid view Find is instead the right-hand panel.
 
 Click a card's title to fold or unfold it. See [Library](library.md) and
 [History, undo and copying settings](history-and-sync.md).

@@ -53,6 +53,20 @@ export function reach(s: ImmichSearch, immichAvailable: boolean): Reach {
   return { local: wantsLocal, immich: wantsImmich, skipped: false };
 }
 
+// photo-content (Smart) search needs the local CLIP model or an Immich server.
+// Without either, Find searches file names only: the search that runs has mode
+// "filename" whatever the stored mode says, which is left alone so Smart comes
+// back by itself once one of them is ready. Everything that runs a search, or
+// compares the running one with the form, goes through this
+export const smartAvailable = (clipReady: boolean, immichAvailable: boolean) => clipReady || immichAvailable;
+export const effectiveSearch = (s: ImmichSearch, smart: boolean): ImmichSearch =>
+  smart || s.mode === "filename" ? s : { ...s, mode: "filename" };
+
+// Find's tip about the optional CLIP model: shown only once the status is
+// known (not before its first answer) to say the model is missing, and never
+// after the user dismissed it
+export const clipTipVisible = (known: boolean, installed: boolean, dismissed: boolean) => known && !installed && !dismissed;
+
 // whether the grid needs a search rather than the open folder filtered in
 // place: words to match, a place other than the open folder, or a server
 // field (which no folder photo can satisfy). Rows that map to the Filter

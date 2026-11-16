@@ -83,8 +83,18 @@ cached local result and thumbnail, closes the popup with Show, rates only that
 disposable copy, retains a rating filter, and returns to its folder. It passed
 live through Find on 2026-11-16 (run `2026-11-16T11-10-07.333Z_565a37b_8773884c`). Local per-run GUI approval rules still apply.
 
+`--case find-no-clip` (the `find` suite also runs it) checks the grid's locked Find
+column in the isolated profile, which has no CLIP model: no Smart/Filename
+switch, the file-name placeholder, narrowing by a file-name fragment, the CLIP tip
+(its Set up button opens Preferences > General at the local photo cache card;
+dismissing hides it, also after re-entering the grid), the head row's controls on
+one centre line, and no Show more like this in the photo menu. `find-live` also
+covers the rail Library button and the toolbar magnifier. Neither has run live yet.
+
 `--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
-Show N, Escape), `find-sizes` (Minimize, Dock and Fill, dragging the grip,
+the locked right-hand column Find becomes in the grid: no Show N, grip or close,
+Escape only leaves its box), `find-sizes` (in the filmstrip view, where Find is
+the popup: Minimize, Dock and Fill, dragging the grip,
 remembered places, double-click reset) and `find-saved` (Save filter…, changed
 and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
 `find-01` to `find-03`. All three, and the `filters` and `camera-body` cases that now

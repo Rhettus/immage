@@ -159,6 +159,48 @@ starts with default settings. To start with defaults on purpose, see
   System .ORI of the same name show as one, and a rating, reject or delete
   takes them all.
 
+**Local photo cache** (below Library)
+
+The cache of what Immage knows about your photos, background analysis, and the optional
+CLIP model that lets Find search by what is in a photo.
+
+- **Metadata** shows cached photos, versions, metadata records and analyses.
+  **Clear** removes these disposable records; browsing and later startup checks
+  refill the cache. **Rebuild** also queues a fresh check of your saved folders.
+  Neither action changes your photos or sidecars. Model files are retained.
+- **Pause / Resume** controls new background file checks and analysis. Active
+  work finishes, and browsing remains available. The pause setting is remembered
+  after relaunch. A rebuild remains queued while paused.
+- Each saved drive shows its last check state, including offline or incomplete
+  checks. An offline drive is never treated as evidence that photos were deleted.
+- **CLIP model (optional)** downloads about 608 MB of matched model and tokenizer
+  files from Hugging Face only when you press **Download or repair**. Valid local
+  files are checked and reused. **Cancel** stops further download work after the
+  current network read returns; a stalled read times out after a minute.
+  Until the model is downloaded (and without an Immich connection), Find searches
+  file names only and **Show more like this** is not offered; both appear when the
+  download finishes or Preferences is closed.
+- **Model check** tests both CPU inference towers using a test prompt and a
+  synthetic image, with the time including model loading. It requires verified
+  model files and resumed background work. It does not upload photos or test
+  the relevance of search results. Model downloads have their own Cancel button
+  and are independent of Pause.
+
+**CLIP analysis**, directly below **Background work**, shows the number of distinct
+photos analysed and the total original and edited analyses. A photo counts once
+even when both its original and edited versions have been analysed. Model download
+and check controls follow. Directory status appears below in a fixed-height
+scrollable box, with one row per path and a right-aligned green (connected) or
+red (offline) dot. Hover a truncated path to see it in full; hover its dot for
+connection details or an error. The list can also be focused and scrolled with
+the keyboard.
+
+After downloading the optional CLIP package, background CPU analysis fills
+original and edited embeddings. Reconciled paths receive bounded metadata imports
+before analysis, including folders you have not browsed. Pause stops new jobs;
+active jobs can finish. Clear cancels old jobs and removes their cached output.
+Rebuild checks your saved folders again before backfilling metadata and analysis.
+
 **Startup**
 
 - **Quick start guide**: the short tour when Immage opens.
@@ -435,42 +477,6 @@ empties one.
   kept whatever the limit, as its edit is beside it. 10 GB by default.
 
 The thumbnail caches keep nothing while the disk has under 5 GB free.
-
-**Local photo cache**
-
-- **Metadata** shows cached photos, versions, metadata records and analyses.
-  **Clear** removes these disposable records; browsing and later startup checks
-  refill the cache. **Rebuild** also queues a fresh check of your saved folders.
-  Neither action changes your photos or sidecars. Model files are retained.
-- **Pause / Resume** controls new background file checks and analysis. Active
-  work finishes, and browsing remains available. The pause setting is remembered
-  after relaunch. A rebuild remains queued while paused.
-- Each saved drive shows its last check state, including offline or incomplete
-  checks. An offline drive is never treated as evidence that photos were deleted.
-- **CLIP model (optional)** downloads about 608 MB of matched model and tokenizer
-  files from Hugging Face only when you press **Download or repair**. Valid local
-  files are checked and reused. **Cancel** stops further download work after the
-  current network read returns; a stalled read times out after a minute.
-- **Model check** tests both CPU inference towers using a test prompt and a
-  synthetic image, with the time including model loading. It requires verified
-  model files and resumed background work. It does not upload photos or test
-  the relevance of search results. Model downloads have their own Cancel button
-  and are independent of Pause.
-
-**CLIP analysis**, directly below **Background work**, shows the number of distinct
-photos analysed and the total original and edited analyses. A photo counts once
-even when both its original and edited versions have been analysed. Model download
-and check controls follow. Directory status appears below in a fixed-height
-scrollable box, with one row per path and a right-aligned green (connected) or
-red (offline) dot. Hover a truncated path to see it in full; hover its dot for
-connection details or an error. The list can also be focused and scrolled with
-the keyboard.
-
-After downloading the optional CLIP package, background CPU analysis fills
-original and edited embeddings. Reconciled paths receive bounded metadata imports
-before analysis, including folders you have not browsed. Pause stops new jobs;
-active jobs can finish. Clear cancels old jobs and removes their cached output.
-Rebuild checks your saved folders again before backfilling metadata and analysis.
 
 **Measuring**
 

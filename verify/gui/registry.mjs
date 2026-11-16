@@ -62,7 +62,7 @@ import { startupRestore } from './specs/startup-restore.mjs';
 import { dngThumbnail } from './specs/dng-thumbnail.mjs';
 import { libraryWorkers } from './specs/library-workers.mjs';
 import { localSearch } from './specs/local-search.mjs';
-import { findLive, findSizes, findSaved } from './specs/find.mjs';
+import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -79,6 +79,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'library-workers': libraryWorkers,
   'local-search': localSearch,
   'find-live': findLive,
+  'find-no-clip': findNoClip,
   'find-sizes': findSizes,
   'find-saved': findSaved,
   'move-photos': movePhotos,

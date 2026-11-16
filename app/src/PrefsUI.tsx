@@ -8,9 +8,9 @@ import { t } from "./i18n";
 // Preferences' building blocks: a titled card of settings, and a row with
 // the setting's name and a short explanation on the left, its control on
 // the right
-export function PrefCard({ title, children }: { title: string; children: React.ReactNode }) {
+export function PrefCard({ title, card, children }: { title: string; card?: string; children: React.ReactNode }) {
   return (
-    <section className="pref-card">
+    <section className="pref-card" data-pref-card={card}>
       <h4>{title}</h4>
       {children}
     </section>

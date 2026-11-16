@@ -15,7 +15,7 @@ minutes.
 | --- | --- |
 | Catalog | No catalog: you open folders directly, and edits live in an XMP sidecar beside each photo. Immich can be your library. |
 | Import dialog | **Import** (⇧⌘I), the same idea: copy off a card, skip duplicates, verify every copy. See [Import](import.md). |
-| Library module | The **Library** panel on the left, the filmstrip and **Grid** view (G). See [Library](library.md). |
+| Library module | The **Library** panel on the left, the filmstrip and the grid, opened with **Library** on the rail (G). See [Library](library.md). |
 | Develop module | **Adjustments** on the right: Basic, Tone Curve, HSL / Color, Color Grading, Detail, Lens Corrections, Transform and Effects. See [Adjustments](adjustments.md). |
 | Masking | **Masks**, including AI Subject, Sky, Background, People and Select Object. See [Masks](masks.md). |
 | Spot Removal | **Heal** (Q). See [Heal and clone](heal.md). |
@@ -53,7 +53,7 @@ Immage also:
 
 - adds a **Sample Photos** folder with one photo in it, and opens that
   photo, so there is something to try the tools on
-- starts the **quick start guide**, a twelve-step tour of the window. It
+- starts the **quick start guide**, a thirteen-step tour of the window. It
   points out the stacked-cards button for [Advanced mode](advanced-mode.md).
   Press → to step through it, or Esc to skip. Tick **Don't show on startup** to
   keep it from coming back; the **?** button at the bottom of the rail

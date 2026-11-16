@@ -18,7 +18,7 @@ Improvements
 - French translations extend across editing fields, library controls, status
   messages, dialogs, and export and print settings. Advanced module wording reuses translations
   from the pinned darktable version. Untranslated text falls back to English.
-- Preferences > Performance adds Local photo cache status, pause/resume, clear
+- Preferences > General adds Local photo cache status, pause/resume, clear
   and rebuild, plus explicit optional CLIP model download and CPU checks.
 - Find replaces the Search photos card and the Filters popup. The toolbar's
   Find button opens one place for search words (Smart or Filename), where to
@@ -27,10 +27,17 @@ Improvements
   on show as removable chips, with a warning when a filter can match only one
   source in a Both search. Everything applies live, and Find can be minimized
   to a strip, docked beside the grid or filled over it, with each size
-  remembering its place. Local searches cover cached metadata and optional CPU
+  remembering its place. In the grid view, Find is instead locked into the
+  right-hand panel, which the grid makes room for. Local searches cover
+  cached metadata and optional CPU
   similarity analysis; combined results merge verified local paths and weight
   each source equally. Saved edits and metadata changes stay searchable
   without reopening folders. Rejected photos can be shown, hidden or isolated.
+  Without the optional CLIP model and an Immich connection, Find searches file
+  names only: it hides the Smart/Filename switch and says so in its box, and
+  Smart returns by itself once either is ready. Until the model is downloaded a
+  dismissible tip links to its setting, which is now in Preferences > General
+  (the local photo cache card moved there from Performance).
 - Saved filters keep a whole Find setup under a name: open one from Find, from
   the toolbar's Find menu, or with Alt+1 to Alt+9 (Option on Mac) for the first
   nine. Saved filters can be updated, renamed, reordered and deleted, and are
@@ -39,7 +46,7 @@ Improvements
   so.
 - Cached capture metadata preserves fractional seconds and recorded UTC offsets;
   dates adjusted in Immage take precedence over the source capture date.
-- The grid adds Show more like this for indexed local photos, searching all
+- The grid adds Show more like this for indexed local photos once the CLIP model is downloaded, searching all
   library folders with retained filters and a visible image-query indicator.
   Local similarity can use the original photo or its saved edited appearance.
 - Advanced mode adds searchable editing modules, presets and groups, with
@@ -50,7 +57,7 @@ Improvements
   are always copied. A confirmation resolves name conflicts. Sidecars travel
   with each photo, and copies are verified before originals are removed.
 - In the grid, F opens a culling preview with navigation, ratings, labels and
-  rejection. It also opens from the Culling preview toolbar button, each
+  rejection. It also opens from the toolbar's magnifier button, each
   thumbnail's hover bar, or View > Culling Preview. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
   Fit/100%, Space-drag to pan, and double-click to edit.
   K keywords the selected photos, or the hovered photo when none are selected.
@@ -64,14 +71,18 @@ Improvements
   off. The toolbar button also offers Hold for before: press and hold on the
   photo to see the original. Press `\` for the full Before view.
 - Right-click a folder for New Folder…, Show in Finder, or Remove from List.
-  Grid view hides tools for the covered photo while keeping Print available;
-  choosing another tool leaves the grid.
+  In the grid view the right-hand panel shows Find instead of the editing
+  tools, keeping Print available; choosing an editing tool leaves the grid.
+- A Library button on the rail, below Import, switches between the filmstrip
+  and the grid (G still works). It replaces the toolbar's Grid button, and the
+  toolbar's culling button becomes a magnifier shown in the grid.
 - Lens Corrections offers sensor-specific raw demosaic methods, with
   darktable's default selected.
 - Clarity and Texture detail sliders are grouped in labeled boxes.
 - Heal shows its source as soon as you press and keeps the outer brush circle
   visible while painting.
-- The quick start guide points to the Advanced mode button. The Simple mode
+- The quick start guide points to the Advanced mode button and the Library
+  button. The Simple mode
   sliders icon is now labeled More controls.
 
 Bug fixes

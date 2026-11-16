@@ -3,7 +3,8 @@
 
 // the Find popup: the words to search for, where to look, every filter as a
 // removable chip, and the grouped list of what can be filtered by beside the
-// options of the one chosen. Every change applies at once (the state is
+// options of the one chosen. In the grid view it is drawn `locked`, in place of
+// the right-hand panel's contents, as the Dock body alone. Every change applies at once (the state is
 // findModel.ts's; App.tsx runs it). The bodies of the categories (Ticks,
 // Captured, Exposure, the Immich pickers) are those of the old Filters popup
 import { useEffect, useRef, useState } from "react";
@@ -224,7 +225,7 @@ const ids = (all: Named[], chosen: string[], onChange: (ids: string[]) => void, 
          show={(id) => all.find((x) => x.id === id)?.name ?? "…"} find={t("library.filters.find")} counts={false} />
 );
 
-// ---- the popup -------------------------------------------------------
+// ---- the popup (or, locked, the grid's side panel) -------------------------------------------------------
 
 type Bounds = { left: number; right: number; top: number; bottom: number };
 
@@ -241,12 +242,13 @@ const GROUP_TITLE: Record<(typeof GROUPS)[number], () => string> = {
 };
 
 export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, onShow, onClose, saved, savedLine,
-                            onSaveNew, anchor, bounds }: {
+                            onSaveNew, anchor, bounds, locked, focusToken, pin, smart, clipTip }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
   images: ImageEntry[];         // photos to list facets from (folder, or local results)
   immichAvailable: boolean;     // Immich configured
+  smart: boolean;               // photo-content search can run (CLIP model or Immich); else file names only
   count: number | null;         // live result count, null while unknown
   busy: boolean;                // a search is running
   notes: string[];              // extra notes from App (e.g. Immich skipped)
@@ -257,17 +259,24 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   onSaveNew?: () => void;       // footer Save filter…
   anchor: () => DOMRect | undefined;   // the toolbar Find button, to place the popup above
   bounds: () => Bounds | undefined;    // the grid area
+  // the grid's right-hand panel: drawn in place, filling its container, at the dock's
+  // full body, with no size buttons, grip or Escape/click-away closing
+  locked?: boolean;
+  clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
+  pin?: React.ReactNode;        // locked: the right panel's pin button (auto-hide), in the head row
+  focusToken?: number;          // a change focuses the search box (the toolbar's Find button in the grid)
 }) {
   const pop = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
+  const text = useRef<HTMLInputElement>(null);
   const [, relayout] = useState(0);
   const [shown, setShown] = useState<CategoryKey>("rating");
   // the size last used, and where each size was dragged to
   const [layout, setLayout] = useState<FindLayout>(loadLayout);
-  const size = layout.size;
+  const size: FindSize = locked ? "dock" : layout.size;
   const rtl = document.dir === "rtl";
   const move = (next: FindLayout) => { setLayout(next); storeLayout(next); };
   const { search: s, filter: f } = state;
@@ -281,6 +290,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   // lists the selects open (portaled out of the popup) and on the toolbar's
   // button (which toggles it) are not outside
   useEffect(() => {
+    if (locked) return;
     const away = (e: PointerEvent) => {
       const el = e.target as Element;
       // the save and manage dialogs App draws over it are not outside either
@@ -306,6 +316,12 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
       window.removeEventListener("resize", resize);
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusToken) return;
+    text.current?.focus();
+    text.current?.select();
+  }, [focusToken]);
 
   // the server's names and libraries, once Immich is in the search; a key
   // without the permission for one just leaves it empty
@@ -539,33 +555,47 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     {count === null ? "…" : t("library.find.count", { n: count, count: formatNumber(count) })}
     {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
   </>;
-  return createPortal(
-    <div className="find-pop" ref={pop} role="dialog" aria-label={t("library.find.title")}
+  const popup = (
+    <div className={`find-pop${locked ? " locked" : ""}`} ref={pop} role="dialog" aria-label={t("library.find.title")}
          data-size={size}
-         style={{ left: at.left, top: at.top, width: at.width, ...(size === "minimize" ? {} : { height: at.height }) }}>
+         style={locked ? undefined : { left: at.left, top: at.top, width: at.width, ...(size === "minimize" ? {} : { height: at.height }) }}>
       <div className="find-head">
         <div className="find-row">
-          <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>
-          <input className="field find-text" type="search" spellCheck={false} autoFocus value={s.text}
-                 aria-label={t("library.search.title")} placeholder={t("library.search.example")}
+          {!locked && <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>}
+          <input className="field find-text" type="search" spellCheck={false} autoFocus={!locked} ref={text} value={s.text}
+                 aria-label={t("library.search.title")}
+                 placeholder={smart ? t("library.search.example") : t("library.search.filenameExample")}
                  onChange={(e) => send({ ...state, search: { ...s, text: e.target.value } }, false)}
-                 onKeyDown={(e) => { if (e.key === "Enter") send(state, true); }} />
-          <div className="segmented small" title={t("library.search.matchAgainst")}>
+                 onKeyDown={(e) => {
+                   if (e.key === "Enter") send(state, true);
+                   // locked, Escape only leaves the box: the next one leaves the grid, as it does elsewhere
+                   else if (e.key === "Escape" && locked) e.currentTarget.blur();
+                 }} />
+          {smart && <div className="segmented small" title={t("library.search.matchAgainst")}>
             <button className={s.mode === "smart" ? "active" : ""} title={t("library.search.photoContent")}
                     onClick={() => send({ ...state, search: { ...s, mode: "smart" } }, s.text.trim() !== "")}>{t("library.search.smart")}</button>
             <button className={s.mode === "filename" ? "active" : ""}
                     onClick={() => send({ ...state, search: { ...s, mode: "filename" } }, s.text.trim() !== "")}>{t("library.search.filename")}</button>
-          </div>
+          </div>}
           {saved}
+          {locked && pin}
           {size === "minimize" && <span className="find-count find-mincount">{countText}</span>}
-          <div className="find-sizes">
+          {!locked && <div className="find-sizes">
             {SIZES.map((z) => (
               <button key={z} className={`find-size find-size-${z}${size === z ? " on" : ""}`} aria-pressed={size === z}
                       title={t(`library.find.size.${z}`)} aria-label={t(`library.find.size.${z}`)}
                       onClick={() => move({ ...layout, size: z })}>{SIZE_ICON[z]}</button>
             ))}
-          </div>
+          </div>}
         </div>
+        {size !== "minimize" && clipTip && (
+          <div className="find-tip" role="note">
+            <span className="find-tip-text">{t("library.find.clipTip")}</span>
+            <button className="btn small find-tip-setup" onClick={clipTip.onSetUp}>{t("library.find.clipTipSetUp")}</button>
+            <button className="find-tip-close" aria-label={t("library.find.clipTipDismiss")} title={t("library.find.clipTipDismiss")}
+                    onClick={clipTip.onDismiss}>×</button>
+          </div>
+        )}
         {size !== "minimize" && <div className="find-row find-where">
           <span className="find-where-label">{t("library.find.searchIn")}</span>
           <select className="field" aria-label={t("library.find.searchIn")} value={where}
@@ -657,11 +687,11 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
         <button className="btn small find-clear-all" disabled={!active.length}
                 onClick={() => send(clearAll(state))}>{t("library.filters.clearAll")}</button>
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
-        <button className="btn small primary find-show" onClick={onShow}>
+        {!locked && <button className="btn small primary find-show" onClick={onShow}>
           {count === null ? t("library.find.show") : t("library.find.showCount", { n: count, count: formatNumber(count) })}
-        </button>
+        </button>}
       </div>}
-    </div>,
-    document.body,
+    </div>
   );
+  return locked ? popup : createPortal(popup, document.body);
 }

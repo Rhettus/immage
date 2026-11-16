@@ -222,7 +222,7 @@ try {
     report.cullingFixtures = 3;
   }
   // find-live: copies of the fixture, one of which the case rates
-  if (selectedCases.includes('find-live')) {
+  if (selectedCases.includes('find-live') || selectedCases.includes('find-no-clip')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `find-${String(i).padStart(2, '0')}${ext}`));
   }

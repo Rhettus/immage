@@ -498,11 +498,12 @@ function rendererName(active: string): string {
   return ({ mesa: "Mesa", nvidia: "NVIDIA", system: t("prefs.renderer.system"), environment: t("prefs.renderer.environment") } as Record<string, string>)[active] ?? active;
 }
 
-export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
+export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, card, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
                                     openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
+  card?: string;                         // a card (data-pref-card) to scroll to once it is open
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
   newPhotos: string | null;              // the preset new photos get, by id
   onNewPhotos: (id: string | null) => void;
@@ -537,6 +538,11 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
 }) {
   useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
+  useEffect(() => {
+    if (!card) return;
+    const frame = requestAnimationFrame(() => document.querySelector(`[data-pref-card="${card}"]`)?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const [chosenLanguage, setChosenLanguage] = useState(loadLanguage);
   const [languageBusy, setLanguageBusy] = useState(false);
   const [languageError, setLanguageError] = useState("");
@@ -885,6 +891,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
                 </PrefRow>
               </PrefCard>
+              <SearchPrefs />
               <PrefCard title={t("prefs.card.startup")}>
                 <PrefRow id="Quick start guide" label={t("prefs.row.tour")} hint={t("prefs.row.tour.hint")}>
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
@@ -1068,7 +1075,6 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
               </PrefCard>
               <CachePrefs />
-              <SearchPrefs />
               <PrefCard title={t("prefs.card.measuring")}>
                 <PrefRow id="Performance overlay" label={t("prefs.row.perfhud")} summary={t("prefs.row.perfhud.summary")}
                          hint={t("prefs.row.perfhud.hint")}>

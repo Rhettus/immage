@@ -148,16 +148,15 @@ export async function siteShots(t) {
     await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'loupe view');
   });
 
-  // The Find popup over the grid with a rating and a file type chip on
-  // (selectors as in specs/find.mjs). Filters are cleared and the loupe
-  // restored afterwards for the steps that follow.
+  // Find in the grid, locked in the right-hand column in the sidebar's place,
+  // with a rating and a file type chip on (selectors as in specs/find.mjs).
+  // Filters are cleared and the loupe restored afterwards for the steps that follow.
   await attempt(t, 'find', async () => {
     const pop = '.find-pop', grid = '.filmstrip.grid';
     const present = s => t.driver.observe(q => !!document.querySelector(q), s);
     const photos = () => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length);
     const cleanUp = async () => {
       try {
-        if (await present(pop)) { await t.driver.keys('\uE00C'); await until(async () => !await present(pop), 'Find closes'); }
         if (await present('.toolbar .clear-filters')) await click(t, '.toolbar .clear-filters');
         if (await present(grid)) { await t.driver.keys('g'); await until(async () => !await present(grid), 'loupe view'); }
       } catch {}
@@ -168,8 +167,7 @@ export async function siteShots(t) {
       await pause(1500); // thumbnails
       const all = await photos();
       await click(t, '.find-button');
-      await until(() => present(pop), 'Find popup');
-      await click(t, `${pop} .find-size-dock`);
+      await until(() => present(`${pop}.locked`), 'Find in the right-hand column');
       await pause(400);
       await click(t, `${pop} .find-stars button[title="3 stars and up"]`);
       await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-chip').length) >= 1, 'rating chip');

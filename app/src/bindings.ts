@@ -1175,6 +1175,11 @@ export type SearchStatus = {
 	roots: RootStatus[],
 	queue: Status,
 	model: ModelStatus,
+	/**
+	 *  The CLIP package is on disk (checked off the event loop): photo-content
+	 *  search works without the Preferences check, which only sets `model.verified`.
+	 */
+	model_installed: boolean,
 };
 
 export type SharedImport = {

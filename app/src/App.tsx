@@ -122,7 +122,8 @@ import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
-import { effectiveFilter, folderSearch, needsSearch, normalizeFind, reach, type FindState } from "./findModel";
+import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, smartAvailable, type FindState } from "./findModel";
+import { loadClipState } from "./clipStatus";
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
 import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
@@ -135,7 +136,7 @@ import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
 import { ActivityBar, JobActivity } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
-import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
+import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
@@ -347,6 +348,8 @@ export default function App() {
   const [tunerOpen, setTunerOpen] = useState(false);
   useEffect(() => { if (current && hasPendingTuner()) setTunerOpen(true); }, [current]);
   const [prefsOpen, setPrefsOpen] = useState<false | true | PrefsTab>(false);
+  // a card to scroll Preferences to (Find's CLIP tip: the local photo cache card on General)
+  const [prefsCard, setPrefsCard] = useState<string | undefined>();
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
@@ -367,6 +370,24 @@ export default function App() {
         immichFormRef.current = next; setImmichForm(next); storeSearch(next);
       }
     });
+  }, [prefsOpen]);
+  // the local CLIP package, for Smart search and similar photos: asked after the
+  // first paint and again as Preferences closes, then while a download runs
+  const [clipReady, setClipReady] = useState(false);
+  // not shown before the first status answer, so the tip never flashes for an installed model
+  const [clipKnown, setClipKnown] = useState(false);
+  const [clipTipGone, setClipTipGone] = useState(() => { try { return settings.get("immage.findClipTipDismissed") === "1"; } catch { return false; } });
+  const clipReadyRef = useRef(false);
+  useEffect(() => {
+    if (prefsOpen) return;
+    let alive = true, timer = 0;
+    const ask = () => void loadClipState().then((c) => {
+      if (!alive) return;
+      if (c.known) { clipReadyRef.current = c.installed; setClipReady(c.installed); setClipKnown(true); }
+      if (c.downloading) timer = window.setTimeout(ask, 2000);
+    });
+    timer = window.setTimeout(ask, 0);
+    return () => { alive = false; clearTimeout(timer); };
   }, [prefsOpen]);
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
@@ -401,7 +422,8 @@ export default function App() {
     const avail = !!immichBaseRef.current;
     // the query now running, not the form: keystrokes have already changed the form
     const running = combined.current?.getState().query as SearchQuery | null;
-    const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(next.search);
+    const smart = smartAvailable(clipReadyRef.current, avail);
+    const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(effectiveSearch(next.search, smart));
     showSkip(restored && reach(next.search, avail).skipped);
     window.clearTimeout(immichTimer.current);
     const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
@@ -621,6 +643,9 @@ export default function App() {
   // the grid hides the right-hand panel: its tools work on the open photo,
   // which the grid covers. Print stays, as the grid picks its sheet's photos
   const rightOpen = layout.right && (!grid || rightMode === "print");
+  // in the grid the right-hand column holds Find, locked in place, in the tools' stead
+  const findLocked = grid && rightMode !== "print";
+  const [findFocus, setFindFocus] = useState(0);
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
@@ -3141,7 +3166,7 @@ export default function App() {
     const enabled: ("local" | "immich")[] = !avail || q.source === "local" ? ["local"]
       : q.source === "immich" ? ["immich"] : ["local", "immich"];
     const f = filters ?? filterRef.current;
-    await combined.current!.search({ form: q, filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
+    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
   };
 
   const showSimilar = async (hit: ImageEntry) => {
@@ -6110,11 +6135,51 @@ export default function App() {
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
     left: autoHide && !touring && !preview && layout.left && !pins.left,
-    right: autoHide && !touring && !preview && rightOpen && !pins.right,
+    right: autoHide && !touring && !preview && layout.right && !pins.right,
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
-  const docked = { left: layout.left && !floating.left, right: rightOpen && !floating.right };
+  // the toolbar's Find button: the popup, or in the grid the column, shown if hidden, with the box focused
+  const toggleFind = () => {
+    if (!findLocked) { setFindOpen((o) => !o); return; }
+    if (!layout.right) toggleSide("right");
+    revealedRef.current = { ...revealedRef.current, right: true };
+    setRevealed(revealedRef.current);
+    setFindFocus((n) => n + 1);
+  };
+  useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
+  const renderFind = (locked: boolean) => (
+    <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
+              smart={smartAvailable(clipReady, !!immichBase)}
+              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
+                onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
+                onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
+              } : undefined}
+              count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
+              notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
+              onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
+              saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} />}
+              savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
+                                               onUpdate={() => updateSaved(savedNow.id, find)}
+                                               onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
+              onSaveNew={() => setSaveDialog(true)}
+              anchor={() => findButton.current?.getBoundingClientRect()}
+              bounds={() => {
+                // the photo area: across the filmstrip, clear of a side panel shown over
+                // it (auto-hide), from the top of the viewer to the toolbar
+                const sr = stripSlot.current?.getBoundingClientRect();
+                if (!sr) return undefined;
+                const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
+                return {
+                  left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
+                  right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
+                  top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
+                  bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
+                };
+              }} locked={locked} focusToken={findFocus} pin={locked ? pinButton("right") : undefined} />
+  );
+  const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
   // arrow keys), and keeps to the photos still listed
@@ -6602,8 +6667,8 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findOpen}
-                 onToggleFind={() => setFindOpen((o) => !o)} findButtonRef={findButton}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked ? layout.right : findOpen}
+                 onToggleFind={toggleFind} findButtonRef={findButton}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} button={button} />}
@@ -6621,7 +6686,7 @@ export default function App() {
                            title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
+                 grid={grid}
                  // in the grid the zoom bar sizes the thumbnails; the photo's
                  // stays mounted, hidden, so it still shows the photo's zoom after
                  zoomBar={<>
@@ -6635,30 +6700,7 @@ export default function App() {
                    </div>
                  </>}
                  onLayout={toggleSide} />
-        {findOpen && <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-                    count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
-                    notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
-                    onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
-                    saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
-                                      onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} />}
-                    savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
-                                                     onUpdate={() => updateSaved(savedNow.id, find)}
-                                                     onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
-                    onSaveNew={() => setSaveDialog(true)}
-                    anchor={() => findButton.current?.getBoundingClientRect()}
-                    bounds={() => {
-                      // the photo area: across the filmstrip, clear of a side panel shown over
-                      // it (auto-hide), from the top of the viewer to the toolbar
-                      const sr = stripSlot.current?.getBoundingClientRect();
-                      if (!sr) return undefined;
-                      const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
-                      return {
-                        left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
-                        right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
-                        top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
-                        bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
-                      };
-                    }} />}
+        {findOpen && !findLocked && renderFind(false)}
         {saveDialog && <SaveDialog initial="" onCancel={() => setSaveDialog(false)}
                                    onSave={(name) => { setSavedId(addSaved(name, find).id); setSaveDialog(false); }} />}
         {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
@@ -6666,9 +6708,12 @@ export default function App() {
 
       <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
                 onChange={(v) => setLayout((l) => ({ ...l, rightWidth: v }))} />
-      <div className={`slot right-slot${rightOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
+      <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
+        {findLocked && renderFind(true)}
+        {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
+        <div style={{ display: findLocked ? "none" : "contents" }}>
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
@@ -7093,6 +7138,7 @@ export default function App() {
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
                   title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
+        </div>
       </aside>
       </div>
       {/* the gap before the rail's column */}
@@ -7101,6 +7147,11 @@ export default function App() {
         {/* in the order of the work: bring photos in, edit them, send them out */}
         <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
+        {/* the library: the grid of the folder's photos, and back to the filmstrip */}
+        <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
+                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
+                onClick={() => { if (!croppingRef.current) setGrid(!grid); }}>
+          <LibraryIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
         {/* the tools work on the open photo, not its cell: one opened before
@@ -7148,7 +7199,7 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
-                  onSimilar={grid && hit && !isRemote(hit) ? () => void showSimilar(hit) : undefined}
+                  onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
@@ -7175,7 +7226,7 @@ export default function App() {
       <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
-                         focus={prefsOpen === true ? undefined : prefsOpen}
+                         focus={prefsOpen === true ? undefined : prefsOpen} card={prefsCard}
                          plugins={plugins} onPlugins={setPlugins}
                          canvas={canvasColor} onCanvas={(v) => { setCanvasColor(v); storeCanvas(v); }}
                          overlayColor={overlayColor} onOverlayColor={(v) => { setOverlayColor(v); storeOverlayColor(v); }}
@@ -7202,7 +7253,7 @@ export default function App() {
                            await commands.engineQuit();
                            await relaunch();
                          }}
-                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); }} />
+                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); setPrefsCard(undefined); }} />
     )}
     {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
       onOverlay={setPerfHud}

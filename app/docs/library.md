@@ -101,7 +101,7 @@ no originals or authoritative edits and can be rebuilt from your photos.
 Metadata caching does not download search models or upload photos; any optional
 local analysis model requires an explicit download choice. Downloaded analysis
 packages are checked before use, and local analysis runs on the CPU.
-**Preferences > Performance > Local photo cache** shows cache and drive status,
+**Preferences > General > Local photo cache** shows cache and drive status,
 pauses background checks, clears or rebuilds cached records, and offers the
 optional model download and CPU model check. Clearing preserves model files;
 rebuilds wait while background work is paused.
@@ -154,7 +154,8 @@ file modification dates. Capture metadata retains the source’s fractional digi
 and UTC offset when recorded. Dates adjusted in Immage take precedence; an
 unknown timezone stays unknown.
 
-In the grid, right-click a local photo and choose **Show more like this**.
+In the grid, right-click a local photo and choose **Show more like this**
+(offered once the optional model is downloaded).
 The clicked photo supplies the image query, independently of the open editor.
 The query covers all local library folders, retains selected filters and uses
 the chosen original/edited subject. An **Image query** indicator names the seed;
@@ -272,15 +273,19 @@ carries it, so its lighttable shows the same photos as altered. Photos
 opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
-Press G, or **Grid** in the toolbar under the filmstrip, for **Grid** view:
-the whole folder at once.
-Double-click a photo to open it and go back to the filmstrip. G or Esc also
-goes back. The **Grid** button is highlighted while the grid shows.
+Press G, or click **Library** on the rail at the right edge, below
+**Import**, for **Grid** view: the whole folder at once.
+Double-click a photo to open it and go back to the filmstrip. G, Esc or the
+**Library** button also goes back. The **Library** button is highlighted while
+the grid shows.
 
-The grid hides the right-hand panel, as its tools work on the open photo,
-which the grid covers. Choosing a tool in the rail on the right, such as
-Adjustments or Masks, leaves the grid for the open photo. Print stays beside
-the grid, so you can pick the photos for a sheet.
+In the grid the right-hand panel is **Find** (see below), locked in place: it
+has the same width, resize handle, show and hide button, pin and auto-hide
+behaviour as the editing panel, and the grid narrows to make room for it
+rather than sitting under it. The editing tools work on the open photo, which
+the grid covers, so choosing one in the rail, such as Adjustments or Masks,
+leaves the grid for the open photo and brings the editing panel back. Print
+stays beside the grid, as its panel, so you can pick the photos for a sheet.
 
 In the grid, the zoom slider at the bottom sets the thumbnails' size, from
 smallest at the left to largest at the right; its label is the size against
@@ -331,7 +336,15 @@ Searching the library and narrowing a folder both happen here.
 - **Search words**: type what to look for. **Smart** searches by what is in
   the photo (it needs the optional model described above for photos on this
   computer, and Immich's own machine learning for Immich); **Filename**
-  searches file names.
+  searches file names. Until the model is downloaded and Immich is not
+  connected, Smart cannot run: Find then shows no Smart/Filename switch, its box
+  says it searches file names, and it matches file names only. Your choice is
+  kept, so Smart returns by itself once the model is on this computer or Immich
+  is connected, even for a saved filter that asks for it. While the model is not
+  downloaded, a small tip under the search row says so, with **Set up in
+  Preferences**, which opens Preferences > General at the local photo cache card,
+  and a close button that dismisses the tip for good. The tip also goes away by
+  itself once the model is installed.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.
@@ -386,17 +399,30 @@ Each list counts only the photos your other choices leave: tick a camera, and
 
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. At the bottom, the footer shows how many
-photos match, **Clear all**, **Save filter…**, and **Show N**, which closes
-Find and shows the matches in the grid. Esc or a click away closes Find; the
-filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
+photos match, **Clear all**, **Save filter…**, and, in the popup, **Show N**,
+which closes Find and shows the matches in the grid. In the popup, Esc or a
+click away closes Find; the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder clears the filters, sets Search in back to This folder
 and clears the search words, so a folder left on Rejected only never looks
 empty and the stars and ticks filter the folder you open.
 
+### Find in the grid
+
+In the grid, Find is not a popup. It fills the right-hand panel with the
+**Dock** layout (search, every filter, chips and saved filters), locked in
+place: it has no size buttons, cannot be dragged and has no close button, and
+Esc does not close it. Esc in its search box leaves the box; Esc again leaves
+the grid, as it does anywhere else. The toolbar's **Find** button shows the
+panel if it was hidden (or slid away by auto-hide) and puts the cursor in the
+search box. Leaving the grid brings back the editing panel, and the popup
+below is used again. In the grid's Print panel, the **Find** button opens the
+popup.
+
 ### Sizes
 
-Find has three sizes, chosen with the buttons at its top:
+Outside the grid, Find is a popup with three sizes, chosen with the buttons at
+its top:
 
 - **Minimize**: a strip with just the search row and chips.
 - **Dock**: beside the grid, full height, with the categories in a list.
@@ -634,10 +660,10 @@ pointer when nothing is selected. Shared keywords can be removed from every
 target; new keywords are added to every target. Close the dialog before moving
 to another selection.
 
-Click **Culling preview** in the toolbar beside **Grid**, the small icon at
-the right of a thumbnail's hover footer (grid view only), or choose
+Click the magnifier in the toolbar under the grid (shown in the grid only), the
+small icon at the right of a thumbnail's hover footer, or choose
 **View > Culling Preview**, to open the same preview without the keyboard.
-The toolbar button and the menu use the photo under the pointer, else the
+The toolbar magnifier and the menu use the photo under the pointer, else the
 selected photo; the thumbnail icon opens that thumbnail's photo.
 
 Press **F** over a photo to show a floating preview over the dimmed library,

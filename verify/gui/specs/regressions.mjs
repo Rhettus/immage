@@ -37,12 +37,12 @@ export async function loupeGrid(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if(!(await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');await panel(t,'detail');await requireLoupe(t);
- await click(t,'.grid-toggle');
+ await click(t,'.library-toggle');
  const count=()=>t.driver.observe(()=>Number(document.documentElement.dataset.loupeFrames??0));
  // Observe an idle interval so a pending preview can drain before comparing.
  await pause(1000);const before=await count();assert(before>0,'loupe must render before grid assertion');await pause(1500);const after=await count();
  assert.equal(after,before,'grid must not deliver more loupe frames after draining');await t.evidence('loupe-grid-paused');
- await click(t,'.grid-toggle');
+ await click(t,'.library-toggle');
 }
 export async function maskLoupe(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
@@ -153,14 +153,14 @@ export async function folderRace(t){
 export async function grainHover(t){
  // collapse the library panel and the filmstrip with their toolbar buttons, so the photo is large
  // the toolbar slides while a panel closes: wait until it stops before the next click,
- // or the click lands on its neighbour (Grid)
+ // or the click lands on its neighbour (Library)
  const still=async sel=>{let last;await until(async()=>{const b=await t.driver.observe(x=>JSON.stringify(document.querySelector(x)?.getBoundingClientRect()),sel);const ok=b===last;last=b;return ok&&b;},`${sel} stopped moving`);};
  for(const title of ['library panel','filmstrip']){
   const sel=`button.tool[title="${title}"]`;await still(sel);
   if(await t.driver.observe(x=>document.querySelector(x)?.classList.contains('on'),sel)){await click(t,sel);await until(()=>t.driver.observe(x=>!document.querySelector(x)?.classList.contains('on'),sel),`${title} collapsed`);}
  }
- await still('button.tool.grid-toggle');
- assert(!await t.driver.observe(()=>document.querySelector('button.tool.grid-toggle')?.classList.contains('on')),'grid view must be off');
+ await still('button.tool.library-toggle');
+ assert(!await t.driver.observe(()=>document.querySelector('button.tool.library-toggle')?.classList.contains('on')),'grid view must be off');
  assert(await t.driver.observe(()=>document.querySelector('.strip-slot')?.classList.contains('closed')),'filmstrip must be collapsed');
  await settledPhoto(t);
  await panel(t,'effects');

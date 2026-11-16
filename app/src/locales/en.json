@@ -562,6 +562,10 @@
   "library.search.externalLibraries": "External libraries",
   "library.search.allPhotos": "All photos",
   "library.search.example": "sunset on a beach",
+  "library.search.filenameExample": "file name, such as IMG_2041",
+  "library.find.clipTip": "Photos can be searched by what is in them once the CLIP model is downloaded to this computer.",
+  "library.find.clipTipSetUp": "Set up in Preferences",
+  "library.find.clipTipDismiss": "Dismiss this tip",
   "library.search.matchAgainst": "what the words are matched against",
   "library.search.photoContent": "what is in the photo",
   "library.search.smart": "Smart",
@@ -3402,7 +3406,6 @@
   "library.toolbar.showEveryPhoto": "show every photo again",
   "library.toolbar.filmstrip": "back to the filmstrip (G, Esc)",
   "library.toolbar.grid": "grid view (G)",
-  "library.toolbar.gridLabel": "Grid",
   "library.toolbar.culling": "Culling preview (F)",
   "library.toolbar.libraryPanel": "library panel",
   "library.toolbar.filmstripLabel": "filmstrip",
@@ -3913,6 +3916,8 @@
   "dialogs.tour.import.body": "Copy photos off a card or a folder. Ones already in the destination, or in Immich, are marked, and the new ones open here when it is done. ⇧⌘I.",
   "dialogs.tour.folders.title": "Your folders",
   "dialogs.tour.folders.body": "Folders you add, or import into, stay listed; open one to see its subfolders. Edits are saved next to each photo as an XMP sidecar.",
+  "dialogs.tour.library.title": "Library",
+  "dialogs.tour.library.body": "Switch between the filmstrip and a grid of the folder's photos. In the grid, Find takes the right-hand panel and the magnifier in the toolbar opens the culling preview. G toggles it.",
   "dialogs.tour.pickPhoto.title": "Pick a photo",
   "dialogs.tour.pickPhoto.body": "The filmstrip shows the folder. Click a photo, or use the arrow keys; 1 to 5 rate it and X rejects it.",
   "dialogs.tour.viewer.title": "Look closely",
@@ -5023,5 +5028,5 @@
   "library.find.size.fill": "Fill the grid",
   "library.find.titleCount": "Find ({count})",
   "dialogs.tour.find.title": "Find",
-  "dialogs.tour.find.body": "Search this folder, every folder or your Immich library by words, and narrow the photos by rating, camera, date and more. Save a filter to open it again from the arrow beside Find."
+  "dialogs.tour.find.body": "Search this folder, every folder or your Immich library by words, and narrow the photos by rating, camera, date and more. Save a filter to open it again from the arrow beside Find. In the grid it stays open in the right-hand panel."
 }

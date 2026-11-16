@@ -47,10 +47,21 @@ test('Find with Immich unavailable works without server calls and carries exact 
  const listeners=[];
  globalThis.document={dir:'ltr',querySelector:()=>null};
  globalThis.window={innerWidth:1200,innerHeight:800,addEventListener:(...a)=>listeners.push(a),removeEventListener(){}};
- const tree=FindPanel({state:{...NO_FIND,search:{...NO_FIND.search,source:'immich'}},onChange(){},images:[],immichAvailable:false,count:0,busy:false,notes:[],
+ const tree=FindPanel({state:{...NO_FIND,search:{...NO_FIND.search,source:'immich'}},onChange(){},images:[],immichAvailable:false,smart:true,count:0,busy:false,notes:[],
   onShow(){},onClose(){},anchor:()=>undefined,bounds:()=>({left:0,right:1200,top:0,bottom:700})});
  for(const effect of effects)effect();assert.deepEqual(calls.filter(k=>/^immich/.test(k)),[]);
  assert.ok(nodes(tree).some(n=>n.type==='input'&&String(n.props.className).includes('find-text')&&n.props.placeholder==='sunset on a beach'));
+});
+test('Find without the CLIP model or Immich offers file names only',()=>{
+ const effects=[];globalThis.__searchUI={commands:new Proxy({}, {get:()=>()=>Promise.resolve([])}),effects};
+ globalThis.document={dir:'ltr',querySelector:()=>null};
+ globalThis.window={innerWidth:1200,innerHeight:800,addEventListener(){},removeEventListener(){}};
+ const tree=FindPanel({state:NO_FIND,onChange(){},images:[],immichAvailable:false,smart:false,count:0,busy:false,notes:[],
+  onShow(){},onClose(){},anchor:()=>undefined,bounds:()=>({left:0,right:1200,top:0,bottom:700})});
+ const all=nodes(tree);
+ assert.ok(!all.some(n=>n.type==='button'&&['Smart','Filename'].includes(n.props?.children)),'no Smart/Filename switch');
+ const box=all.find(n=>n.type==='input'&&String(n.props.className).includes('find-text'));
+ assert.ok(box&&box.props.placeholder!=='sunset on a beach','the box says it searches file names');
 });
 test('local adapter carries filters, scope and cache identities',async()=>{
  const calls=[];globalThis.__searchUI={commands:{async localSearch(...args){calls.push(args);return{items:[{asset_id:'12',variant_id:'23',subject:'original',image:{imgid:42,path:'/photos/a.jpg'}}],next:'more'};}}};

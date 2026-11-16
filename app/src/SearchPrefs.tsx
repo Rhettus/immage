@@ -35,7 +35,7 @@ export function SearchPrefs() {
   const count = status?.counts;
   const downloading = !!model?.downloading;
   const size = model ? `${Math.ceil(model.bytes / 1_000_000)} MB` : "608 MB";
-  return <PrefCard title={t("library.cache.title")}>
+  return <PrefCard title={t("library.cache.title")} card="local-search">
     <PrefRow label={t("library.cache.metadata")} summary={count ? t("library.cache.count", { photos: count.assets.toLocaleString(), versions: count.variants.toLocaleString(), records: count.metadata.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")}
       hint={t("library.cache.hint")}>
       <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(false))}>{t("library.cache.clear")}</button>

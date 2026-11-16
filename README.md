@@ -25,12 +25,12 @@ Unchanged folders reuse a disposable [local metadata cache](app/docs/library.md#
 Photos enter the in-memory editing library when an action needs them; cached
 thumbnails can appear without importing the photo. Metadata caching does not
 download search models or upload your photos. Optional local analysis uses
-verified model packages and runs on the CPU. Preferences > Performance > Local
+verified model packages and runs on the CPU. Preferences > General > Local
 photo cache provides status, pause, clear/rebuild and optional model controls,
 with a distinct CLIP photo count and a scrollable directory connection list.
 Local retrieval keeps selected unknown metadata out of filtered results.
 
-Find (the toolbar's search and filters popup) queries cached local metadata without Immich and can
+Find (the toolbar's search and filters popup, and in the grid view the right-hand panel) queries cached local metadata without Immich and can
 combine independent local and Immich results, merging exact verified local paths
 and preserving metadata edits while additional results arrive. Metadata edits
 refresh search results without a folder reload or optional model. Saved edits
@@ -50,7 +50,7 @@ including when subfolders contain symbolic links.
 Folder filters offer **All photos** and **Rejected** as selectable rows with
 counts that reflect the other selected filters. See the [library guide](app/docs/library.md).
 
-Grid culling: **K** keywords selected photos; **F**, the toolbar's Culling preview button, a thumbnail's preview icon or View > Culling Preview opens a preview in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
+Grid culling: **K** keywords selected photos; **F**, the toolbar's magnifier button, a thumbnail's preview icon or View > Culling Preview opens a preview in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
 
 Library thumbnails support embedded TIFF previews in DNG photos and can use
 a smaller preview when an unedited photo's RAW data cannot be decoded.

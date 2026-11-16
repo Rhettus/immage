@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { BanIcon, CullingIcon, FilterIcon, GridIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
+import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
 import { Layout } from "./layoutPrefs";
@@ -96,17 +96,16 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, findButtonRef, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, onGrid }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
-  grid: boolean;
-  onGrid?: () => void;                      // none while there are no photos to show
+  grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
   pin: React.ReactNode;
   find: FindState;                          // what is searched and filtered: the stars, flags and labels set it
   immichAvailable: boolean;
   onFind: (next: FindState, now?: boolean) => void;
   findOpen: boolean;
-  onToggleFind: () => void;                 // the Find button opens and closes the popup
+  onToggleFind: () => void;                 // the Find button opens and closes the popup; in the grid it shows the column
   findButtonRef: React.RefObject<HTMLButtonElement | null>;  // the popup's anchor
   onFindMenu?: (e: React.MouseEvent) => void; // right-click on Find while search results show
   savedMenu: (button: React.ReactNode) => React.ReactNode;   // the Saved menu, with its button drawn here
@@ -198,15 +197,13 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
           handles and whatever was being edited in that corner */}
       <div className="tool-group view-tools">
         {viewTools}
-        <span className="sep" />
-        {/* named, not an icon alone: new users missed the arrow it replaces, and G with it */}
-        <button className={`tool grid-toggle${grid ? " on" : ""}`} disabled={!onGrid}
-                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")} onClick={onGrid}>
-          <GridIcon />{t("library.toolbar.gridLabel")}
-        </button>
-        {grid && <button className="tool culling-open" title={t("library.toolbar.culling")}
-                aria-label={t("library.toolbar.culling")}
-                onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}><CullingIcon /></button>}
+        {/* the lightbox over the grid's photos; the Library button on the rail switches the view */}
+        {grid && <>
+          <span className="sep" />
+          <button className="tool culling-open" title={t("library.toolbar.culling")}
+                  aria-label={t("library.toolbar.culling")}
+                  onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}><MagnifierIcon /></button>
+        </>}
         <span className="sep" />
         <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")}
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
