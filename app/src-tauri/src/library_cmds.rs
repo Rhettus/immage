@@ -153,11 +153,19 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             .map_err(|e| e.to_string())?? };
         let took = start.elapsed();
         let mut got = reply["images"].as_array().cloned().unwrap_or_default();
+        // The grid gets the batch first; the cache write follows on the
+        // blocking pool. It yields to the folder read (no lock is held while
+        // the engine works) and is skipped once another folder supersedes this
+        // read. Not awaited: a slow cache write never delays folder-progress.
         if let Some(index) = state.search_cache.clone() {
             let listed = listed_cache.clone();
             let metadata = got.clone();
-            tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &listed, &metadata))
-                .await.map_err(|e| e.to_string())?;
+            let handle = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if handle.state::<AppState>().folder_token.load(Ordering::SeqCst) == token {
+                    index_imported_metadata(Some(&index), &listed, &metadata);
+                }
+            });
         }
         // the files the batch went through; the rest go in the next. none
         // when another read's batch came in first, which the token check
@@ -237,24 +245,35 @@ fn index_imported_metadata(
     images: &[Value],
 ) {
     let Some(index) = index else { return };
+    // Gather every input first (fingerprints, serialization), then write the
+    // whole batch in one transaction so the cache lock and one WAL sync cover
+    // the batch, not each photo.
+    struct Row { path: String, key: String, original: String, edited: String,
+        ns: Option<i64>, raw: Option<String>, offset: Option<i32>, json: Option<String> }
+    let mut rows = Vec::new();
     for image in images {
         let Some(path) = image.get("path").and_then(Value::as_str) else { continue };
         let version = image.get("version").and_then(Value::as_i64).unwrap_or(0);
-        let Some((original_fingerprint, edited_fingerprint)) =
+        let Some((original, edited)) =
             cache::listed_metadata_fingerprints(listed, Path::new(path), version)
         else { continue };
-        let (capture_ns, raw_capture, offset) = precise_capture(image);
-        let copy_key = if version == 0 { String::new() } else { format!("version:{version}") };
-        let Ok(record) = index.upsert_variant(path, &copy_key, &original_fingerprint,
-            &edited_fingerprint, capture_ns, raw_capture.as_deref(), offset) else { continue };
+        let (ns, raw, offset) = precise_capture(image);
+        let key = if version == 0 { String::new() } else { format!("version:{version}") };
         let mut metadata = image.clone();
         if let Some(fields) = metadata.as_object_mut() { fields.remove("imgid"); }
-        match serde_json::to_string(&metadata) {
-            Ok(json) => if let Err(e) = index.store_metadata_if_current(record.id, &original_fingerprint, &edited_fingerprint, &json) {
-                eprintln!("search metadata cache: {e}");
-            },
-            Err(e) => eprintln!("search metadata serialization: {e}"),
-        }
+        let json = match serde_json::to_string(&metadata) {
+            Ok(json) => Some(json),
+            Err(e) => { eprintln!("search metadata serialization: {e}"); None }
+        };
+        rows.push(Row { path: path.into(), key, original, edited, ns, raw, offset, json });
+    }
+    let items: Vec<_> = rows.iter().map(|r| crate::search_cache::BatchItem {
+        path: &r.path, copy_key: &r.key, original: &r.original, edited: &r.edited,
+        capture_time_ns: r.ns, capture_time_raw: r.raw.as_deref(),
+        timezone_offset_seconds: r.offset, metadata: r.json.as_deref(),
+    }).collect();
+    if let Err(e) = index.upsert_metadata_batch(&items) {
+        eprintln!("search metadata cache: {e}");
     }
 }
 

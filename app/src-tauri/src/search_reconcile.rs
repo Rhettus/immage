@@ -182,9 +182,48 @@ fn reconcile(
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
         .collect();
+    // Upserts go in one transaction per directory (one cache lock and WAL
+    // sync, not one per photo). Inputs are gathered before the write.
+    struct Pending {
+        path: String,
+        key: String,
+        original: String,
+        edited: String,
+        ns: Option<i64>,
+        raw: Option<String>,
+        offset: Option<i32>,
+    }
+    fn flush(index: &SearchCache, job: &Job, pending: &mut Vec<Pending>) -> Result<(), String> {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let items: Vec<_> = pending
+            .iter()
+            .map(|p| crate::search_cache::BatchItem {
+                path: &p.path,
+                copy_key: &p.key,
+                original: &p.original,
+                edited: &p.edited,
+                capture_time_ns: p.ns,
+                capture_time_raw: p.raw.as_deref(),
+                timezone_offset_seconds: p.offset,
+                metadata: None,
+            })
+            .collect();
+        job.commit(|| index.upsert_metadata_batch(&items))
+            .transpose()?;
+        pending.clear();
+        Ok(())
+    }
+    let mut pending: Vec<Pending> = Vec::new();
+    let mut pending_dir: Option<PathBuf> = None;
     for photo in scan.files {
         if job.cancelled() {
             return Ok(());
+        }
+        if pending_dir.as_deref() != photo.parent() {
+            flush(index, job, &mut pending)?;
+            pending_dir = photo.parent().map(Path::to_path_buf);
         }
         let Some(path) = photo.to_str() else { continue };
         let Some(versions) = listed.lock().unwrap().versions(&photo) else {
@@ -210,8 +249,15 @@ fn reconcile(
             let ns = prior.and_then(|v| v.capture_time_ns);
             let raw = prior.and_then(|v| v.capture_time_raw.as_deref());
             let offset = prior.and_then(|v| v.timezone_offset_seconds);
-            job.commit(|| index.upsert_variant(path, &key, &original, &edited, ns, raw, offset))
-                .transpose()?;
+            pending.push(Pending {
+                path: path.to_string(),
+                key,
+                original,
+                edited,
+                ns,
+                raw: raw.map(str::to_string),
+                offset,
+            });
         }
         for v in old {
             if let Some(version) = v
@@ -226,6 +272,7 @@ fn reconcile(
             }
         }
     }
+    flush(index, job, &mut pending)?;
     // Pruning needs a previously observed mount identity, a complete scan and
     // continued drive availability. A newly mounted/unknown empty directory is
     // never sufficient evidence to discard offline photos.

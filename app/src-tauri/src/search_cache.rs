@@ -31,6 +31,19 @@ pub struct PendingAnalysis {
     pub needs_edited: bool,
 }
 
+/// One photo version for `SearchCache::upsert_metadata_batch`.
+pub struct BatchItem<'a> {
+    pub path: &'a str,
+    pub copy_key: &'a str,
+    pub original: &'a str,
+    pub edited: &'a str,
+    pub capture_time_ns: Option<i64>,
+    pub capture_time_raw: Option<&'a str>,
+    pub timezone_offset_seconds: Option<i32>,
+    /// Stored only if the fingerprints are still current.
+    pub metadata: Option<&'a str>,
+}
+
 /// One original or virtual-copy editing state of an asset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
@@ -166,6 +179,11 @@ impl SearchCache {
             .map_err(|e| e.to_string())?;
         db.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| e.to_string())?;
+        // The cache is disposable and rebuilt from the library, so a power
+        // loss may cost the last commits but never corrupts the WAL database.
+        // FULL would fsync every commit, once per photo on the folder read.
+        db.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(|e| e.to_string())?;
         let schema = db.unchecked_transaction().map_err(|e| e.to_string())?;
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS search_cache_meta (
@@ -280,6 +298,84 @@ impl SearchCache {
     ) -> Result<Variant, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+        let variant = Self::upsert_in(
+            &tx,
+            path,
+            copy_key,
+            original_fingerprint,
+            edited_fingerprint,
+            capture_time_ns,
+            capture_time_raw,
+            timezone_offset_seconds,
+        )?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(variant)
+    }
+
+    /// Register many variants, and store their metadata where still current,
+    /// in one transaction (one WAL sync) holding the connection lock once.
+    /// Each item keeps `upsert_variant` and `store_metadata_if_current`
+    /// semantics. Callers gather every input (stat, parsing) beforehand: the
+    /// lock is held for database work only. A failing item is skipped.
+    pub fn upsert_metadata_batch(&self, items: &[BatchItem<'_>]) -> Result<Vec<Option<Variant>>, String> {
+        if items.is_empty() {
+            return Ok(Vec::new());
+        }
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            // a savepoint keeps one failing item from leaving half its rows
+            tx.execute_batch("SAVEPOINT item").map_err(|e| e.to_string())?;
+            let done = Self::upsert_in(
+                &tx,
+                item.path,
+                item.copy_key,
+                item.original,
+                item.edited,
+                item.capture_time_ns,
+                item.capture_time_raw,
+                item.timezone_offset_seconds,
+            )
+            .and_then(|variant| {
+                if let Some(json) = item.metadata {
+                    tx.execute(
+                        "UPDATE variants SET metadata_json=?4 WHERE id=?1 AND edited_fingerprint=?3
+                         AND metadata_json IS NOT ?4
+                         AND asset_id IN (SELECT id FROM assets WHERE original_fingerprint=?2)",
+                        params![variant.id, item.original, item.edited, json],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                Ok(variant)
+            });
+            match done {
+                Ok(variant) => {
+                    tx.execute_batch("RELEASE item").map_err(|e| e.to_string())?;
+                    out.push(Some(variant));
+                }
+                Err(_) => {
+                    tx.execute_batch("ROLLBACK TO item; RELEASE item")
+                        .map_err(|e| e.to_string())?;
+                    out.push(None);
+                }
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn upsert_in(
+        tx: &Connection,
+        path: &str,
+        copy_key: &str,
+        original_fingerprint: &str,
+        edited_fingerprint: &str,
+        capture_time_ns: Option<i64>,
+        capture_time_raw: Option<&str>,
+        timezone_offset_seconds: Option<i32>,
+    ) -> Result<Variant, String> {
         let old_original: Option<String> = tx
             .query_row(
                 "SELECT original_fingerprint FROM assets WHERE path=?1",
@@ -288,10 +384,44 @@ impl SearchCache {
             )
             .optional()
             .map_err(|e| e.to_string())?;
+        // An unchanged photo writes nothing: a launch-time reconcile of an
+        // unchanged library must not rewrite every row. Nothing reads
+        // assets.updated_at, so it is only bumped when a row changes.
+        if old_original.as_deref() == Some(original_fingerprint) {
+            #[allow(clippy::type_complexity)]
+            let row: Option<(i64, i64, String, Option<i64>, Option<String>, Option<i32>)> = tx
+                .query_row(
+                    "SELECT v.id,v.asset_id,v.edited_fingerprint,v.capture_time_ns,v.capture_time_raw,v.timezone_offset_seconds
+                     FROM variants v JOIN assets a ON a.id=v.asset_id WHERE a.path=?1 AND v.copy_key=?2",
+                    params![path, copy_key],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if let Some((id, asset_id, edited, ns, raw, offset)) = row {
+                // new capture fields that are absent keep the old ones, and a
+                // present one equal to the old changes nothing
+                if edited == edited_fingerprint
+                    && capture_time_ns.is_none_or(|n| Some(n) == ns)
+                    && capture_time_raw.is_none_or(|r| Some(r) == raw.as_deref())
+                    && timezone_offset_seconds.is_none_or(|o| Some(o) == offset)
+                {
+                    return Ok(Variant {
+                        id,
+                        asset_id,
+                        copy_key: copy_key.into(),
+                        edited_fingerprint: edited,
+                        capture_time_ns: ns,
+                        capture_time_raw: raw,
+                        timezone_offset_seconds: offset,
+                    });
+                }
+            }
+        }
         tx.execute(
             "INSERT INTO assets(path,original_fingerprint) VALUES(?1,?2)
              ON CONFLICT(path) DO UPDATE SET original_fingerprint=excluded.original_fingerprint,
-             updated_at=unixepoch()",
+             updated_at=unixepoch() WHERE assets.original_fingerprint IS NOT excluded.original_fingerprint",
             params![path, original_fingerprint],
         )
         .map_err(|e| e.to_string())?;
@@ -354,7 +484,6 @@ impl SearchCache {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .map_err(|e| e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
         Ok(Variant {
             id,
             asset_id,
@@ -500,6 +629,7 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
+    #[cfg(test)] // the app writes metadata through upsert_metadata_batch
     pub fn store_metadata_if_current(
         &self,
         variant_id: i64,
@@ -883,6 +1013,51 @@ mod tests {
 
     fn cache() -> SearchCache {
         SearchCache::from_connection(Connection::open_in_memory().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn unchanged_upsert_writes_nothing() {
+        let cache = cache();
+        let first = cache.upsert_variant("/p/a.jpg", "", "raw", "edit", Some(5), Some("t"), Some(60)).unwrap();
+        let before = cache.db.lock().unwrap().total_changes();
+        let again = cache.upsert_variant("/p/a.jpg", "", "raw", "edit", Some(5), Some("t"), Some(60)).unwrap();
+        let absent = cache.upsert_variant("/p/a.jpg", "", "raw", "edit", None, None, None).unwrap();
+        assert_eq!(cache.db.lock().unwrap().total_changes(), before);
+        assert_eq!(first, again);
+        assert_eq!(first, absent);
+        cache.upsert_variant("/p/a.jpg", "", "raw", "edit2", None, None, None).unwrap();
+        assert!(cache.db.lock().unwrap().total_changes() > before);
+    }
+
+    #[test]
+    fn batch_matches_per_row_calls() {
+        let rows = [
+            ("/p/a.jpg", "", "raw1", "e1", Some(7), Some("x"), Some(0), Some("{\"a\":1}")),
+            ("/p/a.jpg", "version:2", "raw1", "c1", None, None, None, Some("{}")),
+            ("/p/b.jpg", "", "raw2", "e2", None, None, None, None),
+        ];
+        let single = cache();
+        for (p, k, o, e, ns, raw, off, json) in rows {
+            let v = single.upsert_variant(p, k, o, e, ns, raw, off).unwrap();
+            if let Some(j) = json {
+                single.store_metadata_if_current(v.id, o, e, j).unwrap();
+            }
+        }
+        let batch = cache();
+        let items: Vec<_> = rows.iter().map(|(p, k, o, e, ns, raw, off, json)| BatchItem {
+            path: p, copy_key: k, original: o, edited: e, capture_time_ns: *ns,
+            capture_time_raw: *raw, timezone_offset_seconds: *off, metadata: *json,
+        }).collect();
+        let out = batch.upsert_metadata_batch(&items).unwrap();
+        assert!(out.iter().all(Option::is_some));
+        for p in ["/p/a.jpg", "/p/b.jpg"] {
+            assert_eq!(single.path_variants(p).unwrap(), batch.path_variants(p).unwrap());
+            assert_eq!(single.path_metadata(p).unwrap(), batch.path_metadata(p).unwrap());
+        }
+        // a stale second pass changes nothing
+        let before = batch.db.lock().unwrap().total_changes();
+        batch.upsert_metadata_batch(&items).unwrap();
+        assert_eq!(batch.db.lock().unwrap().total_changes(), before);
     }
 
     #[test]
