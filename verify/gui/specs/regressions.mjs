@@ -121,7 +121,7 @@ export async function cameraBody(t){
  await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
  // the category list is in the Dock size
  if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
- const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
+ const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
  await t.driver.point(category.x,category.y);
  const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.find-pop .filter-ticks .name')].map(e=>e.textContent)),'body options');
  assert(names.some(s=>s.includes('BODY-A'))&&names.some(s=>s.includes('BODY-B')),'same model serials independently listed');

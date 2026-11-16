@@ -84,7 +84,7 @@ export async function filters(t) {
   const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-cat .name')].map(e=>e.textContent));
   assert(categories.length>0);
   for(const name of categories){
-    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
+    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
     await t.driver.point(point.x,point.y);
     const shown=await t.driver.observe(()=>document.querySelector('.find-pane h3')?.textContent);assert.equal(shown,name);
     await t.evidence(`filter-${categories.indexOf(name)}`);

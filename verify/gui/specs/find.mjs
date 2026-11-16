@@ -56,6 +56,7 @@ async function category(t, name) {
   const point = await until(() => t.driver.observe(n => {
     const e = [...document.querySelectorAll('.find-cat')].find(c => c.querySelector('.name')?.textContent === n);
     if (!e) return null;
+    e.scrollIntoView({ block: 'nearest' });
     const r = e.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, name), `${name} row`);
@@ -227,7 +228,7 @@ export async function findSaved(t) {
   await until(async () => (await chips(t)).some(c => c.category === 'Rating & flags'), 'rating chip');
   assert(!await present(t, `${pop} .saved-line`), 'no saved filter is in use yet');
   await click(t, `${pop} .find-save`);
-  await dialogName(t, 'Find test');
+  await dialogName('Find test');
   await t.evidence('find-saved-dialog');
   await t.driver.keys(ENTER);
   await until(() => present(t, `${pop} .saved-line`), 'the saved filter line');
