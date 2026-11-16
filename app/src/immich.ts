@@ -28,16 +28,10 @@ export type ImmichSearch = {
 };
 
 export const NO_SEARCH: ImmichSearch = {
-  source: "local", scope: "library", subject: "original",
+  source: "local", scope: "folder", subject: "original",
   mode: "smart", text: "", library: "external", takenFrom: "", takenTo: "", minRating: 0, favorites: false,
   rawOnly: false, make: "", model: "", lens: "", country: "", city: "", personIds: [], tagIds: [], albumIds: [],
 };
-
-// the Filters popup's fields in use; the stars, words and library are
-// shown where they are set
-export const immichFilterCount = (s: ImmichSearch) =>
-  [s.takenFrom || s.takenTo, s.favorites, s.rawOnly, s.make, s.model, s.lens, s.country, s.city,
-   s.personIds.length, s.tagIds.length, s.albumIds.length].filter(Boolean).length;
 
 const SEARCH_KEY = "immage.immichSearch";
 export function loadSearch(): ImmichSearch {

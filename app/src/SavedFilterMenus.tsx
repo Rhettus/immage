@@ -83,7 +83,8 @@ export function SaveDialog({ initial, onSave, onCancel }: {
     onKeyDown={(e) => {
       e.stopPropagation();
       if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-      if (e.key === "Enter") { e.preventDefault(); save(); }
+      // Enter on a focused button (Cancel) presses that button
+      if (e.key === "Enter" && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); }
     }}>
     <div className="modal save-filter" role="dialog" aria-modal="true" aria-labelledby="save-filter-title">
       <div className="modal-head"><h2 id="save-filter-title">{t("library.find.saved.saveTitle")}</h2></div>
@@ -105,16 +106,21 @@ export function ManageSavedDialog({ onClose }: { onClose: () => void }) {
   const saved = useSaved();
   const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  // set when the rename is over (committed or discarded), so the blur that follows the input's removal does nothing
+  const done = useRef(false);
   const commit = () => {
+    if (done.current) return;
+    done.current = true;
     if (renaming) renameSaved(renaming.id, renaming.text);
     setRenaming(null);
   };
+  const discard = () => { done.current = true; setRenaming(null); };
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
       e.stopPropagation();
       if (e.key === "Escape") {
         e.preventDefault();
-        if (renaming) setRenaming(null); else if (confirm) setConfirm(null); else onClose();
+        if (renaming) discard(); else if (confirm) setConfirm(null); else onClose();
       }
     }}>
     <div className="modal saved-manage" role="dialog" aria-modal="true" aria-labelledby="saved-manage-title">
@@ -136,7 +142,7 @@ export function ManageSavedDialog({ onClose }: { onClose: () => void }) {
                 <button type="button" className="btn small" onClick={() => setConfirm(null)}>{t("dialogs.common.cancel")}</button>
               </> : <>
                 <button type="button" className="btn small" onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => setRenaming({ id: f.id, text: f.name })}>{t("library.find.saved.rename")}</button>
+                        onClick={() => { done.current = false; setRenaming({ id: f.id, text: f.name }); }}>{t("library.find.saved.rename")}</button>
                 <button type="button" className="btn small icon" aria-label={t("library.find.saved.moveUp")} title={t("library.find.saved.moveUp")}
                         disabled={i === 0} onClick={() => moveSaved(f.id, i - 1)}><ChevronUp size={12} strokeWidth={1.8} /></button>
                 <button type="button" className="btn small icon" aria-label={t("library.find.saved.moveDown")} title={t("library.find.saved.moveDown")}

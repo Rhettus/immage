@@ -78,7 +78,7 @@ const stars = n => `${pop} .find-stars button[title="${n} stars and up"]`;
 // which the case rates
 export async function findLive(t) {
   await until(() => t.driver.observe(s => document.querySelectorAll(s).length >= 3, cells), 'three photos in the folder', 120000);
-  await t.driver.keys('g');
+  if (!await present(t, '.filmstrip.grid')) await t.driver.keys('g');
   await until(() => present(t, '.filmstrip.grid'), 'grid view');
   const all = await count(t, cells);
 
@@ -144,7 +144,7 @@ export async function findLive(t) {
 // click on the grip puts it back
 export async function findSizes(t) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
-  await t.driver.keys('g');
+  if (!await present(t, '.filmstrip.grid')) await t.driver.keys('g');
   await until(() => present(t, '.filmstrip.grid'), 'grid view');
   await openFind(t);
 

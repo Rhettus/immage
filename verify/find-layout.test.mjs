@@ -43,15 +43,15 @@ const inside = (r, b) => r.left >= b.left && r.top >= b.top && r.left + r.width 
 test('missing or corrupt storage gives the defaults, first size Dock', () => {
   mem.clear();
   assert.deepEqual(L.loadLayout(), { size: 'dock', pos: {} });
-  for (const bad of ['{nope', 'null', '"x"', '[]', '{"size":"huge","pos":{"dock":{"dx":"a","dy":1}}}'])
+  for (const bad of ['{nope', 'null', '"x"', '[]', '{"size":"huge","pos":{"dock":{"x":"a","y":1}}}'])
     { mem.set(KEY, bad); assert.deepEqual(L.loadLayout(), { size: 'dock', pos: {} }, bad); }
 });
 
 test('store and load round-trip; Fill has no position', () => {
   mem.clear();
-  L.storeLayout({ size: 'minimize', pos: { minimize: { dx: 5, dy: -7 }, dock: { dx: -30, dy: 0 } } });
-  assert.deepEqual(L.loadLayout(), { size: 'minimize', pos: { minimize: { dx: 5, dy: -7 }, dock: { dx: -30, dy: 0 } } });
-  mem.set(KEY, JSON.stringify({ size: 'fill', pos: { fill: { dx: 9, dy: 9 } } }));
+  L.storeLayout({ size: 'minimize', pos: { minimize: { x: 5, y: -7 }, dock: { x: -30, y: 0 } } });
+  assert.deepEqual(L.loadLayout(), { size: 'minimize', pos: { minimize: { x: 5, y: -7 }, dock: { x: -30, y: 0 } } });
+  mem.set(KEY, JSON.stringify({ size: 'fill', pos: { fill: { x: 9, y: 9 } } }));
   assert.deepEqual(L.loadLayout(), { size: 'fill', pos: {} });
 });
 
@@ -79,22 +79,32 @@ test('clampRect keeps a rectangle inside, or at the start when larger', () => {
   assert.equal(big.left, 100); assert.equal(big.top, 50);
 });
 
-test('placeRect applies the offset, clamps it, and Fill never moves', () => {
-  const base = L.defaultRect('minimize', B, 600, false);
-  const moved = L.placeRect('minimize', B, 600, false, { dx: -50, dy: -100 });
-  assert.equal(moved.left, base.left - 50); assert.equal(moved.top, base.top - 100);
-  const far = L.placeRect('minimize', B, 600, false, { dx: 9999, dy: 9999 });
-  assert.ok(inside(far, B));
-  assert.deepEqual(L.placeRect('fill', B, 600, false, { dx: 40, dy: 40 }), L.defaultRect('fill', B, 600, false));
-  // a stored offset is clamped again when the area shrinks
+test('placeRect puts a size where it was left, clamps it, and Fill never moves', () => {
+  const moved = L.placeRect('minimize', B, 600, false, { x: 300, y: 200 });
+  assert.equal(moved.left, 300); assert.equal(moved.top, 200);
+  assert.ok(inside(L.placeRect('minimize', B, 600, false, { x: 9999, y: 9999 }), B));
+  assert.deepEqual(L.placeRect('fill', B, 600, false, { x: 40, y: 40 }), L.defaultRect('fill', B, 600, false));
+  // a stored place is clamped again when the area shrinks, and found again when it grows
   const small = { left: 100, right: 700, top: 50, bottom: 400 };
-  assert.ok(inside(L.placeRect('dock', small, 380, false, { dx: -900, dy: 900 }), small));
+  assert.ok(inside(L.placeRect('dock', small, 380, false, { x: 50, y: 900 }), small));
+  assert.equal(L.placeRect('dock', B, 600, false, { x: 700, y: 58 }).left, 700);
 });
 
-test('offsetFor gives the offset of a dragged place, clamped', () => {
-  const d = L.defaultRect('dock', B, 600, false);
-  assert.deepEqual(L.offsetFor('dock', B, 600, false, { left: d.left - 120, top: d.top }), { dx: -120, dy: 0 });
-  const o = L.offsetFor('dock', B, 600, false, { left: 5000, top: -5000 });
+test('posFor keeps the place a size was dragged to, clamped, whatever the default', () => {
+  assert.deepEqual(L.posFor('dock', B, 600, false, { left: 700, top: 58 }), { x: 700, y: 58 });
+  const o = L.posFor('dock', B, 600, false, { left: 5000, top: -5000 });
   assert.ok(inside(L.placeRect('dock', B, 600, false, o), B));
-  assert.deepEqual(L.offsetFor('minimize', B, 600, false, { left: -1e6, top: 0 }).dx, B.left - L.defaultRect('minimize', B, 600, false).left);
+  assert.equal(L.posFor('minimize', B, 600, false, { left: -1e6, top: 0 }).x, B.left);
+  // the same stored place reopens where it was when the area's right edge moves in
+  // far enough to leave room for it, and the default would have moved
+  const narrow = { ...B, right: 900 };
+  assert.notEqual(L.defaultRect('dock', B, 600, false).left, L.defaultRect('dock', narrow, 600, false).left);
+  assert.equal(L.placeRect('dock', narrow, 600, false, { x: 400, y: 58 }).left, 400);
+});
+
+test('the strip is placed by its measured height', () => {
+  const r = L.defaultRect('minimize', B, 600, false, 100);
+  assert.equal(r.height, 100); assert.equal(r.top + r.height, 594);
+  const p = L.placeRect('minimize', B, 600, false, { x: 300, y: 640 }, 100);
+  assert.equal(p.top, 550);
 });

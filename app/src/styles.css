@@ -1946,14 +1946,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* the toolbar's Filters button and its popup, opening upward */
 /* one panel, as Preferences: the things to filter by down the left, the
    chosen one's options beside them, taking the width they need */
-.filter-pop {
-  position: fixed; z-index: 60; transform: translateX(-50%); width: max-content; display: flex; overflow: hidden;
-  background: var(--panel); border-radius: var(--radius-panel); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  font-size: var(--fs-small);
-}
-.filter-pop .link {
-  padding: 0 4px; background: none; border: none; color: var(--accent); font: inherit; cursor: pointer;
-}
 /* a row per thing to filter by, with what it is set to */
 .filter-cat {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: none; border: none;
@@ -1967,12 +1959,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   color: var(--text-3); font-size: var(--fs-small);
 }
 .filter-cat.on .summary { color: var(--accent); }
-.filter-pop .field {
-  width: 100%; min-width: 0; padding: 6px 9px; background: var(--inset); border: 1px solid transparent;
-  border-radius: 7px; color: var(--text); font: inherit; user-select: text; outline: none;
-}
-.filter-pop .field:focus { border-color: var(--focus, #555); }
-.filter-pop .field.find { display: block; width: calc(100% - 20px); margin: 0 10px 6px; }
 /* Exposure: its settings, and the values of the one chosen to their right */
 .filter-split { display: flex; height: 100%; }
 .filter-sub { flex: none; width: 210px; overflow-y: auto; padding-right: 8px; border-right: 1px solid var(--inset, #262626); }

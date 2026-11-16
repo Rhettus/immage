@@ -122,7 +122,7 @@ import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
-import { effectiveFilter, needsSearch, normalizeFind, reach, type FindState } from "./findModel";
+import { effectiveFilter, folderSearch, needsSearch, normalizeFind, reach, type FindState } from "./findModel";
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
 import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
@@ -353,7 +353,21 @@ export default function App() {
   const pendingSearchMetadata = useRef(new Set<Promise<unknown>>());
   const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
-  useEffect(() => { if (!prefsOpen) void immichUrl().then(setImmichBase); }, [prefsOpen]);
+  // without Immich configured, a stored search that asks for it is turned to this computer's, once,
+  // as the Search in choices hold no Immich then
+  const immichChecked = useRef(false);
+  useEffect(() => {
+    if (prefsOpen) return;
+    void immichUrl().then((u) => {
+      setImmichBase(u);
+      if (immichChecked.current) return;
+      immichChecked.current = true;
+      if (!u && immichFormRef.current.source !== "local") {
+        const next = { ...immichFormRef.current, source: "local" as const };
+        immichFormRef.current = next; setImmichForm(next); storeSearch(next);
+      }
+    });
+  }, [prefsOpen]);
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
   const setImmich = (v: typeof immich) => { immichRef.current = v; setImmichState(v); };
@@ -379,9 +393,16 @@ export default function App() {
   // every change of what is searched or filtered, from the popup, the
   // toolbar and the saved filters. `now` runs the search at once, else after
   // a 400 ms pause (typing)
-  const changeFind = (next: FindState, now = false) => {
+  // the "Immich was skipped" note: only right after a saved or restored search asked for Immich without it
+  const [skipShown, setSkipShown] = useState(false);
+  const skipRef = useRef(false);
+  const showSkip = (v: boolean) => { skipRef.current = v; setSkipShown(v); };
+  const changeFind = (next: FindState, now = false, restored = false) => {
     const avail = !!immichBaseRef.current;
-    const prevSearch = immichFormRef.current;
+    // the query now running, not the form: keystrokes have already changed the form
+    const running = combined.current?.getState().query as SearchQuery | null;
+    const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(next.search);
+    showSkip(restored && reach(next.search, avail).skipped);
     window.clearTimeout(immichTimer.current);
     const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
     // back to the open folder, as choosing it does, with the filter on at once
@@ -391,7 +412,6 @@ export default function App() {
     filterRef.current = next.filter; setFilter(next.filter);
     storeSearch(next.search);
     if (!needsSearch(next, avail)) return;
-    const sameSearch = JSON.stringify(prevSearch) === JSON.stringify(next.search);
     const run = () => {
       // only the filters changed: the same search again, so a similar-photos query stays
       const q = combined.current?.getState().query as SearchQuery | null;
@@ -406,7 +426,7 @@ export default function App() {
   // a saved filter sets the whole state; "This folder" is the open folder
   const applySaved = (f: { id: string; state: FindState }) => {
     setSavedId(f.id);
-    changeFind(normalizeFind(f.state), true);
+    changeFind(normalizeFind(f.state), true, true);
   };
   const applySavedRef = useRef(applySaved);
   applySavedRef.current = applySaved;
@@ -3017,6 +3037,10 @@ export default function App() {
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
+      // and the search half back to this folder, so the stars and ticks filter it live
+      const fs = folderSearch(immichFormRef.current);
+      immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
+      showSkip(false);
       // the last folder's photos go at once: listing a folder on a network
       // share can take seconds before its first batch
       updateImages([]);
@@ -3095,7 +3119,7 @@ export default function App() {
       setImmich({ search: q.form, next, busy });
       const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${String(v.error)}`);
       setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" })
-        + (skippedNote(reach(q.form, !!immichBaseRef.current)) ? ` ${t(skippedNote(reach(q.form, !!immichBaseRef.current))!)}` : ""));
+        + (skipRef.current && skippedNote(reach(q.form, !!immichBaseRef.current)) ? ` ${t(skippedNote(reach(q.form, !!immichBaseRef.current))!)}` : ""));
     },
   });
   useEffect(() => () => combined.current?.cancel(), []);
@@ -3368,7 +3392,10 @@ export default function App() {
     setSelection(new Set());
     setCompare(null);
     try {
-      if (l.search) await searchImmich(l.search);
+      if (l.search) {
+        showSkip(reach(l.search, !!immichBaseRef.current).skipped);
+        await searchImmich(l.search);
+      }
       else if (l.folder) {
         await showFolder(l.folder);
         // a new folder starts unfiltered; this is the same one, read again
@@ -5769,7 +5796,7 @@ export default function App() {
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
       // Alt+1 to Alt+9 open the saved Find filters, by code as Option types characters on macOS
       // (a text field or a dialog having the keyboard is handled above)
-      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
         const saved = savedForDigit(e.code);
         if (saved) { e.preventDefault(); applySavedRef.current(saved); return; }
       }
@@ -6600,7 +6627,7 @@ export default function App() {
                  onLayout={toggleSide} />
         {findOpen && <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
                     count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
-                    notes={[skippedNote(reach(immichForm, !!immichBase))].filter((k): k is string => !!k).map((k) => t(k))}
+                    notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
                     onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
                     saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                       onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} />}

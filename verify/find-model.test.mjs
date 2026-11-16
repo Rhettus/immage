@@ -36,7 +36,7 @@ const M = await import('../app/src/findModel.ts');
 const { NO_SEARCH } = await import('../app/src/immich.ts');
 const { NO_FILTER } = await import('../app/src/filter.ts');
 const { searchIn, withSearchIn, reach, needsSearch, visibleCategories, serverPickers, effectiveFilter, setStars, setTaken,
-  setKinds, setRawOnly, withFilter, settingOf, clearCategory, clearAll, chips, findCount, sameFind, normalizeFind, NO_FIND, CATEGORIES } = M;
+  setKinds, setRawOnly, folderSearch, withFilter, settingOf, clearCategory, clearAll, chips, findCount, sameFind, normalizeFind, NO_FIND, CATEGORIES } = M;
 
 const st = (search = {}, filter = {}) => ({ search: { ...NO_SEARCH, ...search }, filter: { ...NO_FILTER, ...filter } });
 const keys = (cs) => cs.map(c => c.key);
@@ -45,6 +45,14 @@ test('searchIn and withSearchIn round-trip', () => {
   for (const v of ['folder', 'library', 'immich', 'both']) assert.equal(searchIn(withSearchIn(NO_SEARCH, v)), v);
   assert.equal(withSearchIn({ ...NO_SEARCH, scope: 'folder' }, 'both').scope, 'library');
   assert.equal(withSearchIn(NO_SEARCH, 'both').source, 'both');
+});
+
+test('folderSearch returns to the open folder with no words and keeps the filter fields', () => {
+  assert.equal(NO_SEARCH.scope, 'folder');
+  const q = folderSearch({ ...NO_SEARCH, source: 'both', scope: 'library', text: 'cat', minRating: 3, favorites: true });
+  assert.equal(q.source, 'local'); assert.equal(q.scope, 'folder'); assert.equal(q.text, '');
+  assert.equal(q.minRating, 3); assert.equal(q.favorites, true);
+  assert.equal(needsSearch({ search: q, filter: NO_FILTER }, true), false);
 });
 
 test('reach', () => {

@@ -19,7 +19,7 @@ import type { ImageEntry } from "./library";
 import { LABEL_COLORS } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
-import { loadLayout, offsetFor, placeRect, SIZES, storeLayout, type FindLayout, type FindSize } from "./findLayout";
+import { loadLayout, placeRect, posFor, SIZES, storeLayout, STRIP_HEIGHT, type FindLayout, type FindSize } from "./findLayout";
 
 // one thing to filter by in a row of the list: what it is set to ("" when unset)
 function Row({ title, summary, shown, onClick }: { title: string; summary: string; shown: boolean; onClick: () => void }) {
@@ -283,13 +283,14 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   useEffect(() => {
     const away = (e: PointerEvent) => {
       const el = e.target as Element;
-      if (pop.current?.contains(el) || el.closest?.(".select-menu, .context-menu")) return;
+      // the save and manage dialogs App draws over it are not outside either
+      if (pop.current?.contains(el) || el.closest?.(".select-menu, .context-menu, .modal-backdrop")) return;
       const a = anchorRef.current();
       if (a && e.clientX >= a.left && e.clientX <= a.right && e.clientY >= a.top && e.clientY <= a.bottom) return;
       close.current();
     };
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector(".select-menu")) close.current();
+      if (e.key === "Escape" && !document.querySelector(".select-menu, .context-menu, .modal-backdrop")) close.current();
     };
     const resize = () => relayout((n) => n + 1);
     window.addEventListener("pointerdown", away, true);
@@ -483,18 +484,28 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   // clamped, so a smaller window or area never leaves it out of reach
   const area = bounds() ?? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
   const anchorTop = anchor()?.top;
-  const at = placeRect(size, area, anchorTop, rtl, size === "fill" ? undefined : layout.pos[size]);
+  // the strip's height is its content's (a wrapped head is taller), so it is measured
+  const [stripH, setStripH] = useState(STRIP_HEIGHT);
+  useEffect(() => {
+    const el = pop.current;
+    if (size !== "minimize" || !el) return;
+    const measure = () => setStripH(Math.max(1, Math.round(el.getBoundingClientRect().height)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [size]);
+  const at = placeRect(size, area, anchorTop, rtl, size === "fill" ? undefined : layout.pos[size], stripH);
   // the grip drags the strip and the dock; each keeps its own place
   const drag = (e: React.PointerEvent<HTMLElement>) => {
     if (size === "fill" || e.button !== 0) return;
     const grip = e.currentTarget;
     grip.setPointerCapture(e.pointerId);
     const grab = { x: e.clientX - at.left, y: e.clientY - at.top };
-    let last = layout.pos[size];
     const go = (m: PointerEvent) => {
       const b = bounds() ?? area;
-      last = offsetFor(size, b, anchor()?.top, rtl, { left: m.clientX - grab.x, top: m.clientY - grab.y });
-      setLayout((l) => ({ ...l, pos: { ...l.pos, [size]: last } }));
+      const to = posFor(size, b, anchor()?.top, rtl, { left: m.clientX - grab.x, top: m.clientY - grab.y }, stripH);
+      setLayout((l) => ({ ...l, pos: { ...l.pos, [size]: to } }));
     };
     const up = () => {
       grip.removeEventListener("pointermove", go);

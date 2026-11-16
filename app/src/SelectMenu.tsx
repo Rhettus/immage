@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 type Item = { kind: "group"; label: string } | { kind: "option"; label: string; value: string; disabled: boolean };
 
 // popups that close on any pointerdown outside themselves: the menu must live inside
-const HOSTS = ".filter-pop, .icon-picker, .modal, .context-menu";
+const HOSTS = ".icon-picker, .modal, .context-menu";
 
 function itemsOf(sel: HTMLSelectElement): Item[] {
   const out: Item[] = [];
