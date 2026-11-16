@@ -169,80 +169,13 @@ encoding. Edited photos require a thumbnail that includes their edits.
 
 ### ORF metadata reads and library workers
 
-Olympus and OM System ORF photos use partial metadata reads while **Reading
-photos** runs. Immage tries the first 64 KB, then larger prefixes up to 16 MB
-if needed. If it cannot establish complete metadata, it reads the whole file.
-Embedded previews can be read separately from their original locations.
-Opening a photo for editing still needs its image data. Panasonic RW2 is not
-included.
-
-**Preferences > Performance > Memory > Library workers** controls how many
-library thumbnails are built at once, how many ORF metadata tasks are
-prepared at once and how many photos are moved or copied at once. These
-limits are separate, so the setting is not a shared total. It defaults to 2.
-A change applies to subsequent import batches and new move or copy jobs.
-Metadata results are applied in file order, with
-metadata, sidecars and database updates kept serial. The metadata task queue
-is bounded by this setting; the Exiv2 parser lock remains in place. Other
-formats continue through the existing serial import path.
-
-For headless comparisons, `IMMAGE_METADATA_PREFIX=0` disables prefix reads;
-otherwise they are enabled. `IMMAGE_METADATA_IO_DIAGNOSTICS=1` records
-per-file read counts and bytes in `engine.log`. These count bytes returned by
-the metadata reader's source reads, including repeated reads; they are not
-measurements of network traffic or storage cache misses. These environment
-variables are diagnostic/benchmark overrides and do not change Preferences or
-write to the original photo.
-
-The headless [ORF comparison runner](../../benchmarking/README.md#orf-partial-metadata-reads)
-uses those settings automatically, checks that imported photo entries match,
-and saves labeled A/B measurements. Use `--recursive` for a year folder with
-month subfolders. Run a warm-up pair first, then an even number of measured
-pairs on the same folder. Cache state affects elapsed time; source byte counts
-show how much the metadata reader requests in either case.
-
-### Experimental prefix and probe concurrency comparison
-
-The combined branch keeps ORF prefix reads enabled and compares
-`IMMAGE_IMPORT_READ_AHEAD=1`, `2`, `3`, and `4`. This limits concurrent small
-file-access probes (the first 4 KB of each photo and its XMP sidecar), not
-concurrent metadata imports. Metadata reads and database updates remain
-serialized. With the variable unset, the limit remains 1; there is no new
-Preferences setting. The engine accepts experimental limits up to 8.
-
-The cap includes reads still blocked after a timeout or cancellation. If all
-slots remain blocked, subsequent files can be reported unanswered until slots
-recover. Cancellation stops scheduling additional probes. This remains an
-experiment for a responsive NAS, rather than a release default.
-
-The [combined benchmark](../../benchmarking/README.md) runs isolated headless
-engines, verifies the requested limits and matching imported entries, and
-reports elapsed time, photos per second and metadata source bytes. Use the same
-month for each limit, warm it first, then measure four rounds to balance order.
-`IMMAGE_IMPORT_DIAGNOSTICS=1` records the cap, observed active probes, timeouts,
-probe waiting and serialized import time in the engine log.
-
-### Headless worker benchmark controls
-
-`IMMAGE_IMPORT_METADATA_WORKERS` overrides **Library workers** for headless
-benchmarks and diagnostics when set to 1–8. Set it to `0` to disable the
-metadata preparation pipeline; an unset or invalid value uses the Preferences
-setting. The outstanding task/result count is bounded by the worker setting,
-including abandoned reads after a timeout or cancellation. A prepared result
-can retain a full file when prefix fallback is needed, so memory use depends
-on the source files. Cancellation
-stops scheduling work; blocked filesystem reads are not forcibly interrupted.
-Tasks have a 30-second deadline, including their photo and XMP access probes;
-timed-out files are reported unanswered. `IMMAGE_IMPORT_METADATA_TIMEOUT_MS`
-accepts 10–300000 milliseconds for headless diagnostics.
-
-The [metadata pipeline benchmark](../../benchmarking/README.md) enables prefix
-reads, fixes small-probe concurrency at 1, and defaults to testing 1–4
-metadata workers.
-Use `--workers 4 6 8 --runs 6` to compare higher counts in balanced order.
-It checks that prepared results were used and that imported entries match.
-Run it after the probe-only comparison to measure these two approaches
-separately. It reads original photos and sidecars without modifying them.
+Olympus and OM System ORF photos load their metadata quickly while **Reading
+photos** runs, because Immage reads only the start of each file when that is
+enough. The number of ORF metadata tasks prepared at once follows
+**Preferences > Performance > Memory > Library workers**, the same setting that
+sets how many thumbnails are built and photos are moved or copied at once
+(default 2). Metadata is still applied in file order. A photo that does not
+answer within 30 seconds is reported as unanswered.
 
 ## Moving and copying photos
 

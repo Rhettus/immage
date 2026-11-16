@@ -133,36 +133,15 @@ static dt_imgid_t import_for_metadata_read(const std::string &path)
   return imgid;
 }
 
-static void check(const std::string &path, bool synthetic, bool expect_prefix_savings = false)
+static void check(const std::string &path, bool synthetic)
 {
   const dt_imgid_t imgid = import_for_metadata_read(path);
-  dt_image_t full_read;
-  dt_image_init(&full_read);
-  full_read.id = imgid;
-  g_setenv("IMMAGE_METADATA_PREFIX", "0", TRUE);
-  uint64_t start = read_chars();
-  require(!dt_exif_read(&full_read, path.c_str()), "baseline metadata read failed");
-  const uint64_t metadata_bytes = read_chars() - start;
-  g_unsetenv("IMMAGE_METADATA_PREFIX");
   dt_image_t image;
   dt_image_init(&image);
   image.id = imgid;
-  start = read_chars();
-  require(!dt_exif_read(&image, path.c_str()), "prefix metadata read failed");
-  const uint64_t prefix_bytes = read_chars() - start;
-  if(expect_prefix_savings && metadata_bytes && prefix_bytes)
-    require(prefix_bytes * 2 < metadata_bytes, "prefix did not reduce synthetic source reads");
-  require(image.width == full_read.width && image.height == full_read.height
-          && image.orientation == full_read.orientation
-          && !strcmp(image.exif_maker, full_read.exif_maker)
-          && !strcmp(image.exif_model, full_read.exif_model)
-          && !strcmp(image.exif_lens, full_read.exif_lens)
-          && image.exif_iso == full_read.exif_iso
-          && image.exif_exposure == full_read.exif_exposure
-          && image.exif_aperture == full_read.exif_aperture
-          && image.exif_focal_length == full_read.exif_focal_length
-          && image.exif_datetime_taken == full_read.exif_datetime_taken,
-          "prefix metadata differs from full-read baseline");
+  uint64_t start = read_chars();
+  require(!dt_exif_read(&image, path.c_str()), "metadata read failed");
+  const uint64_t metadata_bytes = read_chars() - start;
   if(synthetic)
   {
     require(!strcmp(image.exif_maker, "Fixture"), "metadata prefix lost late maker");
@@ -202,8 +181,7 @@ static void check(const std::string &path, bool synthetic, bool expect_prefix_sa
     }
     dt_free_align(pixels);
   }
-  std::cout << path << ": metadata and preview match; full metadata read chars=" << metadata_bytes
-            << ", prefix metadata read chars=" << prefix_bytes
+  std::cout << path << ": metadata and preview match; metadata read chars=" << metadata_bytes
             << ", preview read chars=" << preview_bytes << std::endl;
 }
 
@@ -311,7 +289,7 @@ int main(int argc, char **argv)
     {
       const auto path = dir + (late ? "/late.tif" : "/bounded.tif");
       fixture(path, late);
-      check(path, true, !late);
+      check(path, true);
     }
     for(const bool big : {false, true})
       for(const bool subifd : {false, true})
@@ -322,7 +300,7 @@ int main(int argc, char **argv)
           const auto path = dir + "/orf-" + (big ? "big-" : "little-") + sig
                             + (late ? "-late.orf" : "-early.orf");
           fixture(path, late, true, big, subifd);
-          check(path, true, !late);
+          check(path, true);
         }
     capture_metadata_check(dir);
     const auto dng = dir + "/orientation.dng";

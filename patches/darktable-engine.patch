@@ -32,10 +32,12 @@ index 48a99cda71..99394cf925 100644
      g_free(filename);
      CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index 8c82a5efd1..90d23e373d 100644
+index 8c82a5efd1..e87c9a097c 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
-@@ -32,4 +32,7 @@
+@@ -30,6 +30,9 @@
+ #include <zlib.h>
+ 
  #include <array>
 +#include <exception>
 +#include <memory>
@@ -43,7 +45,7 @@ index 8c82a5efd1..90d23e373d 100644
  #include <cassert>
  #include <cmath>
  #include <cstdlib>
-@@ -432,6 +435,285 @@ public:
+@@ -432,6 +435,221 @@ public:
    image->writeMetadata();                                     \
  }
  
@@ -82,34 +84,6 @@ index 8c82a5efd1..90d23e373d 100644
 +static thread_local bool _reading_prefix = false;
 +static thread_local bool _prefix_incomplete = false;
 +
-+struct MetadataIoStats
-+{
-+  bool enabled = false;
-+  bool emitted = false;
-+  bool full_buffer = false;
-+  size_t bytes = 0;
-+  size_t reads = 0;
-+  size_t seeks = 0;
-+  size_t prefix = 0;
-+  size_t size = 0;
-+  const char *format = "other";
-+  std::string path;
-+  void emit()
-+  {
-+    if(!enabled || emitted) return;
-+    emitted = true;
-+    gchar *escaped = g_uri_escape_string(path.c_str(), nullptr, TRUE);
-+    fprintf(stderr,
-+            "IMMAGE_METADATA_IO\tpath=%s\tsize=%zu\tprefix_size=%zu\tsource_read_bytes=%zu\tread_calls=%zu\tseeks=%zu\tfull_buffer=%s\tformat=%s\tprefix_enabled=%s\n",
-+            escaped ? escaped : "", size, prefix, bytes, reads, seeks,
-+            full_buffer ? "true" : "false", format,
-+            g_getenv("IMMAGE_METADATA_PREFIX") && !strcmp(g_getenv("IMMAGE_METADATA_PREFIX"), "0")
-+              ? "false" : "true");
-+    g_free(escaped);
-+  }
-+  ~MetadataIoStats() { emit(); }
-+};
-+
 +#if EXIV2_TEST_VERSION(0,28,0)
 +using ReadCount = size_t;
 +using SeekOffset = int64_t;
@@ -121,33 +95,9 @@ index 8c82a5efd1..90d23e373d 100644
 +class ReadFileIo : public Exiv2::FileIo
 +{
 +public:
-+  ReadFileIo(const char *path, std::shared_ptr<MetadataIoStats> stats)
-+    : Exiv2::FileIo(WIDEN(path)), _stats(std::move(stats)) {}
-+  ReadCount read(Exiv2::byte *buffer, ReadCount count) override
-+  {
-+    const ReadCount result = Exiv2::FileIo::read(buffer, count);
-+    if(_stats->enabled && !_stats->emitted)
-+    {
-+      if(result > 0) _stats->bytes += (size_t)result;
-+      ++_stats->reads;
-+    }
-+    return result;
-+  }
-+  int getb() override
-+  {
-+    const int result = Exiv2::FileIo::getb();
-+    if(_stats->enabled && !_stats->emitted && result != EOF) { ++_stats->bytes; ++_stats->reads; }
-+    return result;
-+  }
-+  int seek(SeekOffset offset, Exiv2::BasicIo::Position pos) override
-+  {
-+    const int result = Exiv2::FileIo::seek(offset, pos);
-+    if(_stats->enabled && !_stats->emitted) ++_stats->seeks;
-+    return result;
-+  }
++  explicit ReadFileIo(const char *path) : Exiv2::FileIo(WIDEN(path)) {}
 +  Exiv2::byte *mmap(bool writeable = false) override
 +  {
-+    _stats->full_buffer = true;
 +    if(writeable)
 +      throw Exiv2::Error(Exiv2::ErrorCode::kerErrorMessage, "read-only metadata source");
 +    const size_t length = size();
@@ -173,36 +123,27 @@ index 8c82a5efd1..90d23e373d 100644
 +    if(size) _data.assign(data, data + size);
 +  }
 +private:
-+  std::shared_ptr<MetadataIoStats> _stats;
 +  std::vector<Exiv2::byte> _data;
 +};
 +
 +static std::unique_ptr<Exiv2::Image> _read_metadata(const char *path, FileData &file)
 +{
-+  auto stats = std::make_shared<MetadataIoStats>();
-+  stats->enabled = g_getenv("IMMAGE_METADATA_IO_DIAGNOSTICS")
-+                  && !strcmp(g_getenv("IMMAGE_METADATA_IO_DIAGNOSTICS"), "1");
-+  stats->path = path;
 +  // FileIo reads JPEG segments and CR3 boxes by seeking; only TIFF-like
 +  // formats need a contiguous buffer, supplied by ReadFileIo without mmap
 +#if EXIV2_TEST_VERSION(0,28,0)
-+  auto io = std::make_unique<ReadFileIo>(path, stats);
++  auto io = std::make_unique<ReadFileIo>(path);
 +#else
-+  Exiv2::BasicIo::AutoPtr io(new ReadFileIo(path, stats));
++  Exiv2::BasicIo::AutoPtr io(new ReadFileIo(path));
 +#endif
 +  if(io->open())
 +    throw Exiv2::Error(Exiv2::ErrorCode::kerDataSourceOpenFailed, path, g_strerror(errno));
 +  const size_t length = io->size();
-+  stats->size = length;
 +  unsigned char header[4] = {};
 +  const bool have_header = (size_t)io->read(header, (ReadCount)sizeof(header)) == sizeof(header);
 +  const bool tiff = have_header && (!memcmp(header, "II*\0", 4) || !memcmp(header, "MM\0*", 4));
 +  const bool orf = have_header && (!memcmp(header, "IIRO", 4) || !memcmp(header, "IIRS", 4)
 +                                   || !memcmp(header, "MMOR", 4) || !memcmp(header, "MMSR", 4));
-+  const bool prefix_disabled = g_getenv("IMMAGE_METADATA_PREFIX")
-+                               && !strcmp(g_getenv("IMMAGE_METADATA_PREFIX"), "0");
-+  stats->format = orf ? "orf" : tiff ? "tiff" : "other";
-+  if((tiff || orf) && !prefix_disabled && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
++  if((tiff || orf) && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
 +  {
 +    size_t used = 0;
 +    for(size_t limit = 64 * 1024; limit < length && limit <= 16 * 1024 * 1024; limit *= 4)
@@ -212,7 +153,6 @@ index 8c82a5efd1..90d23e373d 100644
 +         || (size_t)io->read((Exiv2::byte *)file.data + used, (ReadCount)(limit - used)) != limit - used)
 +        throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
 +      used = file.size = limit;
-+      stats->prefix = limit;
 +      std::unique_ptr<Exiv2::Image> image;
 +      bool complete = false;
 +      {
@@ -238,7 +178,6 @@ index 8c82a5efd1..90d23e373d 100644
 +        source->setIptcData(image->iptcData());
 +        source->setXmpData(image->xmpData());
 +        source->setByteOrder(image->byteOrder());
-+        stats->emit();
 +        return source;
 +      }
 +    }
@@ -251,7 +190,6 @@ index 8c82a5efd1..90d23e373d 100644
 +  // overload throws, and callers assume a non-null image
 +  if(!image) throw Exiv2::Error(Exiv2::ErrorCode::kerFileContainsUnknownImageType);
 +  read_metadata_threadsafe(image);
-+  stats->emit();
 +  return image;
 +}
 +
@@ -329,7 +267,7 @@ index 8c82a5efd1..90d23e373d 100644
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
  
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -1769,7 +2051,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+@@ -1769,7 +1987,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
  
    try
    {
@@ -339,7 +277,7 @@ index 8c82a5efd1..90d23e373d 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -2921,19 +3204,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+@@ -2921,19 +3140,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
    }
  }
  
@@ -502,7 +440,7 @@ index 8c82a5efd1..90d23e373d 100644
  
      // Get a list of preview images available in the image. The list is sorted
      // by the preview image pixel size, starting with the smallest preview.
-@@ -2946,10 +3364,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -2946,10 +3300,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
        return TRUE;
      }
  
@@ -520,7 +458,7 @@ index 8c82a5efd1..90d23e373d 100644
  
      // Get the selected preview image
      Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
-@@ -2980,6 +3402,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -2980,6 +3338,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
    }
  }
  
@@ -532,7 +470,7 @@ index 8c82a5efd1..90d23e373d 100644
  /* Read the metadata of an image.
   * XMP data trumps IPTC data trumps EXIF data.
   */
-@@ -3002,9 +3429,35 @@ gboolean dt_exif_read(dt_image_t *img,
+@@ -3002,9 +3365,28 @@ gboolean dt_exif_read(dt_image_t *img,
  
    try
    {
@@ -547,13 +485,6 @@ index 8c82a5efd1..90d23e373d 100644
 +    {
 +      dt_exif_prefetch_t *prefetched = _exif_prefetch;
 +      prefetched->consumed = true;
-+      if(g_getenv("IMMAGE_METADATA_IO_DIAGNOSTICS")
-+         && !strcmp(g_getenv("IMMAGE_METADATA_IO_DIAGNOSTICS"), "1"))
-+      {
-+        gchar *escaped = g_uri_escape_string(path, nullptr, TRUE);
-+        fprintf(stderr, "IMMAGE_METADATA_PREFETCH\thit=1\tpath=%s\n", escaped ? escaped : "");
-+        g_free(escaped);
-+      }
 +      if(!prefetched->image)
 +      {
 +        dt_print(DT_DEBUG_IMAGEIO, "[dt_exif_read] prefetched metadata failed for %s: %s",
@@ -571,7 +502,7 @@ index 8c82a5efd1..90d23e373d 100644
      bool res = true;
  
      // EXIF metadata
-@@ -3067,9 +3520,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+@@ -3067,9 +3449,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
@@ -583,7 +514,7 @@ index 8c82a5efd1..90d23e373d 100644
      const int w = (int)image->pixelWidth();
      const int h = (int)image->pixelHeight();
      if(w <= 0 || h <= 0) return FALSE;
-@@ -3094,7 +3547,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+@@ -3094,7 +3476,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      if(!image.get()) return FALSE;
@@ -591,7 +522,7 @@ index 8c82a5efd1..90d23e373d 100644
      image->xmpData()["Xmp.darktable.neural_restore"] = task;
      write_metadata_threadsafe(image);
      return TRUE;
-@@ -3117,7 +3569,6 @@ int dt_exif_write_blob(uint8_t *blob,
+@@ -3117,7 +3498,6 @@ int dt_exif_write_blob(uint8_t *blob,
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      assert(image.get() != 0);
@@ -599,7 +530,7 @@ index 8c82a5efd1..90d23e373d 100644
      Exiv2::ExifData &imgExifData = image->exifData();
      Exiv2::ExifData blobExifData;
      Exiv2::ExifParser::decode(blobExifData, blob, size);
-@@ -3198,7 +3649,8 @@ int dt_exif_read_blob(uint8_t **buf,
+@@ -3198,7 +3578,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -609,7 +540,7 @@ index 8c82a5efd1..90d23e373d 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6297,8 +6749,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6297,8 +6678,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -620,7 +551,7 @@ index 8c82a5efd1..90d23e373d 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
-@@ -6765,6 +7218,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+@@ -6765,6 +7147,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
  static void _exif_log_handler(const int log_level,
                                const char *message)
  {

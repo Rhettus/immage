@@ -1017,15 +1017,6 @@ static gpointer _probe_run(gpointer data)
 static GMutex _quarantine_lock;
 static GHashTable *_quarantine = NULL; // folder -> monotonic time it is skipped until
 
-// Read-ahead is deliberately opt-in beyond the legacy one-at-a-time path.
-// Only these tiny file/XMP reads run speculatively; imports remain serial.
-typedef struct _ahead_probe_t
-{
-  _probe_t *probe;
-  gboolean staged;
-  gint64 launched;
-} _ahead_probe_t;
-
 static gboolean _folder_quarantined(const char *path)
 {
   gchar *dir = g_path_get_dirname(path);
@@ -1048,88 +1039,6 @@ static void _quarantine_folder(const char *path, const gint64 now)
   if(!_quarantine) _quarantine = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
   g_hash_table_replace(_quarantine, dir, when);
   eng_unlock(&_quarantine_lock, ENG_LOCK_PROBE);
-}
-
-static GMutex _ahead_lock;
-static guint _ahead_active = 0;
-static guint _ahead_max_active = 0;
-static guint _ahead_limit = 0;
-static gsize _ahead_once = 0;
-static gboolean _probe_diagnostics = FALSE;
-
-static guint _read_ahead_limit(void)
-{
-  if(g_once_init_enter(&_ahead_once))
-  {
-    const char *value = g_getenv("IMMAGE_IMPORT_READ_AHEAD");
-    guint n = 1;
-    if(value && *value)
-    {
-      char *end = NULL;
-      const guint64 parsed = g_ascii_strtoull(value, &end, 10);
-      if(end && !*end && parsed >= 1 && parsed <= 8) n = (guint)parsed;
-    }
-    const char *diag = g_getenv("IMMAGE_IMPORT_DIAGNOSTICS");
-    _probe_diagnostics = diag && !strcmp(diag, "1");
-    _ahead_limit = n;
-    g_once_init_leave(&_ahead_once, 1);
-  }
-  return _ahead_limit;
-}
-
-static gpointer _ahead_probe_run(gpointer data)
-{
-  _probe_t *p = data;
-  _probe_read(p->path);
-  gchar *xmp = g_strconcat(p->path, ".xmp", NULL);
-  _probe_read(xmp);
-  g_free(xmp);
-  // Free the process-wide slot before publishing completion, so the waiter
-  // can immediately schedule the next item without a false saturation.
-  eng_lock(&_ahead_lock, ENG_LOCK_PROBE);
-  _ahead_active--;
-  eng_unlock(&_ahead_lock, ENG_LOCK_PROBE);
-  eng_lock(&p->lock, ENG_LOCK_PROBE);
-  p->finished = TRUE;
-  p->finished_at = g_get_monotonic_time();
-  g_cond_signal(&p->done);
-  eng_unlock(&p->lock, ENG_LOCK_PROBE);
-  _probe_unref(p);
-  return NULL;
-}
-
-// NULL means the strict process-wide cap was already occupied. A running
-// thread retains its global slot until the filesystem read really returns,
-// including after its caller times out or its batch is cancelled.
-static _probe_t *_ahead_probe_start(const char *path)
-{
-  eng_lock(&_ahead_lock, ENG_LOCK_PROBE);
-  if(_ahead_active >= _read_ahead_limit())
-  {
-    eng_unlock(&_ahead_lock, ENG_LOCK_PROBE);
-    return NULL;
-  }
-  _ahead_active++;
-  _ahead_max_active = MAX(_ahead_max_active, _ahead_active);
-  eng_unlock(&_ahead_lock, ENG_LOCK_PROBE);
-  _probe_t *p = g_new0(_probe_t, 1);
-  g_mutex_init(&p->lock);
-  g_cond_init(&p->done);
-  p->refs = 2;
-  p->path = g_strdup(path);
-  GThread *t = g_thread_new("import-probe", _ahead_probe_run, p);
-  g_thread_unref(t);
-  return p;
-}
-
-static gboolean _ahead_probe_wait(_probe_t *p, const gint64 timeout_us, const gint64 launched)
-{
-  const gint64 deadline = launched + timeout_us;
-  eng_lock(&p->lock, ENG_LOCK_PROBE);
-  while(!p->finished && g_cond_wait_until(&p->done, &p->lock, deadline)) {}
-  const gboolean answered = p->finished && p->finished_at <= deadline;
-  eng_unlock(&p->lock, ENG_LOCK_PROBE);
-  return answered;
 }
 
 // FALSE when the file did not answer within `timeout_us`, or its folder
@@ -1197,59 +1106,12 @@ typedef struct _metadata_task_t
 
 static GMutex _metadata_lock;
 static guint _metadata_live = 0;
-static guint _metadata_max_live = 0;
-static guint _metadata_limit = 0;
-static guint _metadata_preference = _THUMB_THREADS;
-static guint _metadata_override = 0;
-static gboolean _metadata_has_override = FALSE;
-static gint64 _metadata_timeout_us = _METADATA_TIMEOUT_US;
-static gsize _metadata_once = 0;
-
-static void _metadata_initialize(void)
-{
-  if(g_once_init_enter(&_metadata_once))
-  {
-    const char *value = g_getenv("IMMAGE_IMPORT_METADATA_WORKERS");
-    guint workers = 0;
-    if(value && *value)
-    {
-      char *end = NULL;
-      const guint64 parsed = g_ascii_strtoull(value, &end, 10);
-      if(end && end != value && !*end && parsed <= _THUMB_THREADS_MAX)
-      {
-        workers = (guint)parsed;
-        _metadata_has_override = TRUE;
-      }
-    }
-    const char *timeout = g_getenv("IMMAGE_IMPORT_METADATA_TIMEOUT_MS");
-    if(timeout && *timeout)
-    {
-      char *end = NULL;
-      const guint64 parsed = g_ascii_strtoull(timeout, &end, 10);
-      if(end && !*end && parsed >= 10 && parsed <= 300000)
-        _metadata_timeout_us = parsed * 1000;
-    }
-    _metadata_override = workers;
-    _metadata_limit = _metadata_has_override ? workers : _metadata_preference;
-    g_once_init_leave(&_metadata_once, 1);
-  }
-}
-
-static guint _metadata_workers(void)
-{
-  _metadata_initialize();
-  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
-  const guint workers = _metadata_limit;
-  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
-  return workers;
-}
+static guint _metadata_limit = _THUMB_THREADS;
 
 void library_metadata_threads(gint n)
 {
-  _metadata_initialize();
   eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
-  _metadata_preference = (guint)CLAMP(n, 1, _THUMB_THREADS_MAX);
-  if(!_metadata_has_override) _metadata_limit = _metadata_preference;
+  _metadata_limit = (guint)CLAMP(n, 1, _THUMB_THREADS_MAX);
   eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
 }
 
@@ -1287,7 +1149,6 @@ static gpointer _metadata_run(gpointer data)
 static _metadata_task_t *_metadata_start(const char *path, const guint batch_workers)
 {
   eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
-  _metadata_initialize();
   // A preference change applies to the next batch. In-flight batches retain
   // their snapshot, while this hard process cap includes abandoned workers.
   if(_metadata_live >= _THUMB_THREADS_MAX || _metadata_live >= batch_workers)
@@ -1296,7 +1157,6 @@ static _metadata_task_t *_metadata_start(const char *path, const guint batch_wor
     return NULL;
   }
   _metadata_live++;
-  _metadata_max_live = MAX(_metadata_max_live, _metadata_live);
   eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
   _metadata_task_t *task = g_new0(_metadata_task_t, 1);
   g_mutex_init(&task->lock);
@@ -1318,7 +1178,7 @@ typedef enum _metadata_wait_result_t
 
 static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint64 job)
 {
-  const gint64 deadline = task->launched + _metadata_timeout_us;
+  const gint64 deadline = task->launched + _METADATA_TIMEOUT_US;
   for(;;)
   {
     eng_lock(&task->lock, ENG_LOCK_PROBE);
@@ -1346,9 +1206,16 @@ static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint
   }
 }
 
-static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, const gboolean background,
-                                           const guint workers)
+// import these files, as library_folder() does a folder's: the client lists the
+// folder itself and sends it in batches, so it can show its progress. with
+// a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
+// once that has passed, after a file at least. `done` is how many of the
+// files it went through, so the client sends the rest again
+void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
 {
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const guint workers = _metadata_limit;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
   JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
   const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
@@ -1359,9 +1226,7 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
   GPtrArray *silent = g_ptr_array_new();
   _metadata_task_t **tasks = g_new0(_metadata_task_t *, n);
   gboolean *staged = g_new0(gboolean, n);
-  guint prepared = 0, consumed = 0, timeouts = 0, saturated = 0;
-  gint64 wait_us = 0, import_us = 0;
-  gboolean stop_metadata = FALSE;
+    gboolean stop_metadata = FALSE;
   json_builder_set_member_name(b, "images");
   json_builder_begin_array(b);
   for(; k < n; k++)
@@ -1389,14 +1254,12 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
         if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
            || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
         tasks[j] = _metadata_start(next, workers);
-        if(!tasks[j]) saturated++;
       }
     }
 
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
-    gint64 import_start = 0;
     dt_imgid_t imgid = NO_IMGID;
     if(dt_exif_prefetch_supported(path))
     {
@@ -1406,8 +1269,6 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
         // A global slot may have opened after this file was staged.
         task = _metadata_start(path, workers);
         tasks[k] = task;
-        if(task && saturated) saturated--;
-        else if(!task) saturated++;
       }
       if(!task)
       {
@@ -1417,9 +1278,7 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
       }
       else
       {
-        const gint64 wait_start = g_get_monotonic_time();
         const _metadata_wait_result_t wait_result = _metadata_wait(task, job);
-        wait_us += g_get_monotonic_time() - wait_start;
         if(wait_result == METADATA_CANCELLED)
         {
           g_ptr_array_add(silent, (gpointer)path);
@@ -1429,11 +1288,10 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
         }
         if(wait_result == METADATA_TIMEOUT)
         {
-          timeouts++;
           stop_metadata = TRUE;
           _quarantine_folder(path, g_get_monotonic_time());
           fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
-                  path, _metadata_timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+                  path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
           g_ptr_array_add(silent, (gpointer)path);
           for(guint j = k + 1; j < n; j++)
           {
@@ -1456,17 +1314,13 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
               break;
             }
           }
-          prepared++;
           if(!task->prefetch || _folder_quarantined(path))
             g_ptr_array_add(silent, (gpointer)path);
           else
           {
             dt_exif_prefetch_set(task->prefetch);
-            import_start = g_get_monotonic_time();
             imgid = library_import(path);
-            import_us += g_get_monotonic_time() - import_start;
             dt_exif_prefetch_set(NULL);
-            consumed++;
           }
         }
         _metadata_unref(task); // the importing batch; a timed-out worker still owns its reference
@@ -1475,15 +1329,11 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
     }
     else
     {
-      const gint64 wait_start = g_get_monotonic_time();
       const gboolean answered = _file_answers(path, probe);
-      wait_us += g_get_monotonic_time() - wait_start;
       if(!answered) g_ptr_array_add(silent, (gpointer)path);
       else
       {
-        import_start = g_get_monotonic_time();
         imgid = library_import(path);
-        import_us += g_get_monotonic_time() - import_start;
       }
     }
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
@@ -1501,147 +1351,6 @@ static void _library_import_files_metadata(JsonObject *req, JsonBuilder *b, cons
   json_builder_add_int_value(b, k);
   fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
           (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
-  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
-  const guint max_active = _metadata_max_live;
-  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
-  fprintf(stderr, "[engine] metadata pipeline: workers=%u max_active=%u prepared=%u consumed=%u timeouts=%u saturated=%u wait_ms=%.1f import_ms=%.1f\n",
-          workers, max_active, prepared, consumed, timeouts, saturated, wait_us / 1000.0, import_us / 1000.0);
-}
-
-// import these files, as library_folder() does a folder's: the client lists the
-// folder itself and sends it in batches, so it can show its progress. with
-// a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
-// once that has passed, after a file at least. `done` is how many of the
-// files it went through, so the client sends the rest again
-void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
-{
-  const guint metadata_workers = _metadata_workers();
-  if(metadata_workers)
-  {
-    _library_import_files_metadata(req, b, background, metadata_workers);
-    return;
-  }
-  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
-  const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
-  const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
-  const gint64 probe = json_object_get_int_member_with_default(req, "probe_ms", _PROBE_TIMEOUT_US / 1000) * 1000;
-  const gint64 start = g_get_monotonic_time();
-  const guint n = files ? json_array_get_length(files) : 0;
-  guint k = 0;
-  GPtrArray *silent = g_ptr_array_new(); // paths that did not answer, owned by `files`
-  const guint read_ahead = _read_ahead_limit();
-  _ahead_probe_t *ahead = read_ahead > 1 ? g_new0(_ahead_probe_t, n) : NULL;
-  guint probes = 0, timeouts = 0, saturated = 0;
-  gint64 probe_wait_us = 0, import_us = 0;
-  json_builder_set_member_name(b, "images");
-  json_builder_begin_array(b);
-  for(; k < n; k++)
-  {
-    if(job)
-    {
-      eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
-      const gboolean superseded = library_import_latest != job;
-      eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
-      if(superseded) break;
-    }
-    if(budget && k && g_get_monotonic_time() - start >= budget) break;
-    if(background) engine_background_yield(); // the main loop's own import is the foreground work
-    if(ahead)
-    {
-      // Keep only a bounded window of upcoming 4 KB probes. The batch still
-      // imports in order, and cancellation stops launching more work here.
-      const guint end = MIN(n, k + read_ahead);
-      for(guint j = k; j < end; j++)
-      {
-        if(ahead[j].staged) continue;
-        ahead[j].staged = TRUE;
-        const char *next = json_array_get_string_element(files, j);
-        if(!next || _is_sidecar(next) || !g_file_test(next, G_FILE_TEST_IS_REGULAR)) continue;
-        if(_folder_quarantined(next)) continue;
-        ahead[j].launched = g_get_monotonic_time();
-        ahead[j].probe = _ahead_probe_start(next);
-        if(ahead[j].probe) probes++;
-      }
-    }
-    const char *path = json_array_get_string_element(files, k);
-    if(!path || _is_sidecar(path)) continue;
-    if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
-    gboolean answered;
-    if(ahead)
-    {
-      _ahead_probe_t *entry = &ahead[k];
-      if(!entry->probe && !_folder_quarantined(path))
-      {
-        // A cap slot may have become free after an earlier path was staged.
-        // Retry once now, but never block waiting for a stuck reader.
-        entry->launched = g_get_monotonic_time();
-        entry->probe = _ahead_probe_start(path);
-        if(entry->probe) probes++;
-        else saturated++;
-      }
-      if(!entry->probe) answered = FALSE;
-      else
-      {
-        const gint64 wait_start = g_get_monotonic_time();
-        answered = _ahead_probe_wait(entry->probe, probe, entry->launched);
-        probe_wait_us += g_get_monotonic_time() - wait_start;
-        _probe_unref(entry->probe); // the batch's reference; worker owns the other
-        entry->probe = NULL;
-        if(!answered)
-        {
-          timeouts++;
-          _quarantine_folder(path, g_get_monotonic_time());
-          fprintf(stderr, "[engine] %s did not answer in %.1f s; skipped, as is its folder for %d s\n", path,
-                  probe / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
-        }
-        // A previously successful speculative read is still rejected if any
-        // earlier probe quarantined this folder while it was in flight.
-        else if(_folder_quarantined(path)) answered = FALSE;
-      }
-    }
-    else
-    {
-      probes++;
-      const gint64 wait_start = g_get_monotonic_time();
-      answered = _file_answers(path, probe);
-      probe_wait_us += g_get_monotonic_time() - wait_start;
-      if(!answered) timeouts++;
-    }
-    if(!answered)
-    {
-      g_ptr_array_add(silent, (gpointer)path);
-      continue;
-    }
-    const gint64 import_start = g_get_monotonic_time();
-    const dt_imgid_t imgid = library_import(path);
-    import_us += g_get_monotonic_time() - import_start;
-    if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
-  }
-  if(ahead)
-  {
-    for(guint j = 0; j < n; j++) if(ahead[j].probe) _probe_unref(ahead[j].probe);
-    g_free(ahead);
-  }
-  json_builder_end_array(b);
-  json_builder_set_member_name(b, "unanswered");
-  json_builder_begin_array(b);
-  for(guint i = 0; i < silent->len; i++) json_builder_add_string_value(b, g_ptr_array_index(silent, i));
-  json_builder_end_array(b);
-  g_ptr_array_free(silent, TRUE);
-  json_builder_set_member_name(b, "done");
-  json_builder_add_int_value(b, k);
-  // the queued line is logged as it comes in (_read_requests); this one
-  // shows how far behind the import thread runs
-  fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
-          (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
-  if(_probe_diagnostics)
-  {
-    eng_lock(&_ahead_lock, ENG_LOCK_PROBE);
-    const guint max_active = _ahead_max_active;
-    eng_unlock(&_ahead_lock, ENG_LOCK_PROBE);
-    fprintf(stderr, "[engine] import diagnostics: probes=%u timeouts=%u saturated=%u max_active=%u cap=%u probe_wait_ms=%.1f import_ms=%.1f\n",
-            probes, timeouts, saturated, read_ahead > 1 ? max_active : 1, read_ahead, probe_wait_us / 1000.0, import_us / 1000.0);
-  }
 }
 
 // a tagged `import` runs here rather than in the main loop, so a folder

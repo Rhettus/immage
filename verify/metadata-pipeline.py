@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Headless metadata-pipeline parity and bounded abandoned-worker checks.
+"""Headless ORF metadata preparation parity and bounded abandoned-worker checks.
 
 Uses temporary ORFs/TIFFs and FIFO sidecars; never touches original photos.
 """
@@ -13,22 +13,29 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 background = __import__('background-priority')
-probe_checks = __import__('import-read-ahead')
 
 
-def launch(binary, work, workers=2):
-    previous = os.environ.copy()
-    os.environ.pop('IMMAGE_IMPORT_METADATA_WORKERS', None)
+def stable_images(reply):
+    return [{k: v for k, v in row.items() if k not in ('imgid', 'path')}
+            for row in reply['images']]
+
+
+def unblock(folder):
+    for fifo in folder.rglob('*.xmp'):
+        if not fifo.is_fifo():
+            continue
+        try:
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass
+
+
+def launch(binary, work, workers=None):
+    engine = background.Engine(binary, work)
     if workers is not None:
-        os.environ['IMMAGE_IMPORT_METADATA_WORKERS'] = str(workers)
-    os.environ.update(IMMAGE_IMPORT_METADATA_TIMEOUT_MS='400',
-                      IMMAGE_IMPORT_READ_AHEAD='1', IMMAGE_METADATA_PREFIX='1',
-                      IMMAGE_IMPORT_DIAGNOSTICS='1', IMMAGE_METADATA_IO_DIAGNOSTICS='1')
-    try:
-        return background.Engine(binary, work)
-    finally:
-        os.environ.clear()
-        os.environ.update(previous)
+        # the Library workers preference sizes the metadata pool
+        engine.call({'cmd': 'thumb_threads', 'threads': workers}, 10)
+    return engine
 
 
 def batch(engine, files, job):
@@ -58,14 +65,14 @@ def parity(binary, root):
                      b'xmp:Rating="3"/></rdf:RDF></x:xmpmeta>')
     sidecar.write_bytes(sidecar_bytes)
     reference = None
-    for workers in (0, 1, 2, 3, 4, 6, 8):
+    for workers in (1, 2, 3, 4, 6, 8):
         work = root / f'parity-{workers}'
         work.mkdir()
         engine = launch(binary, work, workers)
         try:
             reply = batch(engine, files, 1)
             assert reply.get('done') == len(files) and not reply.get('unanswered'), reply
-            images = probe_checks.stable_images(reply)
+            images = stable_images(reply)
             assert len(images) == len(files), reply
             assert images[0]['rating'] == 3, images[0]
             if reference is None:
@@ -74,9 +81,6 @@ def parity(binary, root):
                 assert images == reference, f'metadata differs with {workers} workers'
         finally:
             engine.close()
-        if workers:
-            logs = engine.log_path.read_text(errors='replace')
-            assert logs.count('IMMAGE_METADATA_PREFETCH') == 4, logs[-4000:]
     assert sidecar.read_bytes() == sidecar_bytes
 
 
@@ -93,7 +97,7 @@ def preference_and_live_change(binary, root):
     work.mkdir()
     engine = launch(binary, work, None)
     try:
-        # No metadata override: startup uses the existing default preference 2.
+        # startup uses the default Library workers preference
         first = batch(engine, files, 1)
         assert first.get('done') == len(files) and not first.get('unanswered'), first
         engine.call({'cmd': 'thumb_threads', 'threads': 1}, 10)
@@ -101,9 +105,6 @@ def preference_and_live_change(binary, root):
         assert second.get('done') == len(files) and not second.get('unanswered'), second
     finally:
         engine.close()
-    logs = engine.log_path.read_text(errors='replace')
-    assert 'metadata pipeline: workers=2 ' in logs, logs[-4000:]
-    assert 'metadata pipeline: workers=1 ' in logs, logs[-4000:]
 
 
 def abandoned_workers(binary, root):
@@ -137,7 +138,7 @@ def abandoned_workers(binary, root):
         for job in range(13, 16):
             reply = batch(engine, [good], job)
             assert reply.get('unanswered') and not reply.get('images'), reply
-        probe_checks.unblock(work)
+        unblock(work)
         deadline = time.monotonic() + 5
         while True:
             reply = batch(engine, [good], 20)
@@ -146,15 +147,9 @@ def abandoned_workers(binary, root):
             assert time.monotonic() < deadline, 'worker slots did not recover'
             time.sleep(0.05)
         assert len(reply.get('images', [])) == 1, reply
-        # A real task timeout releases the batch promptly, while blocked reads
-        # continue to occupy slots. No remaining staged tasks get a new wait.
-        started = time.monotonic()
-        reply = batch(engine, stalled, 30)
-        assert reply.get('done') == len(stalled) and reply.get('unanswered'), reply
-        assert time.monotonic() - started < 2, 'timeout waited for every staged worker'
-        probe_checks.unblock(work)
+        unblock(work)
     finally:
-        probe_checks.unblock(work)
+        unblock(work)
         engine.close()
 
 
@@ -166,8 +161,11 @@ def blocked_shutdown(binary, root):
     os.mkfifo(str(photo) + '.xmp')
     engine = launch(binary, work, 1)
     try:
-        reply = batch(engine, [photo], 1)
-        assert reply.get('unanswered'), reply
+        batch(engine, [], 1)
+        first = engine.tagged_send({'cmd': 'import', 'files': [str(photo)], 'job': 2})
+        time.sleep(0.3)  # the worker is now blocked on the FIFO sidecar
+        second = engine.tagged_send({'cmd': 'import', 'files': [], 'job': 3})
+        assert engine.wait_tags([first, second], 15), 'cancelled batch did not return'
         started = time.monotonic()
         engine.close()
         assert time.monotonic() - started < 3, 'shutdown waited for blocked filesystem read'
@@ -190,7 +188,7 @@ def main():
         preference_and_live_change(args.engine, root)
         abandoned_workers(args.engine, root)
         blocked_shutdown(args.engine, root)
-    print('passed; parity 0,1,2,3,4,6,8 override, default/live preference, cancellation/timeout/cap/recovery/shutdown; no GUI launched')
+    print('passed; parity at 1,2,3,4,6,8 workers, default/live preference, cancellation/cap/recovery/shutdown; no GUI launched')
 
 
 if __name__ == '__main__':

@@ -11,7 +11,6 @@ are your machine's own and stay out of git: a fresh clone starts with none.
 | SUMMARY.md | the latest numbers, and the change since the last run over the same photos (generated, gitignored) |
 | [dashboard/index.html](dashboard/index.html) | interactive dashboard; open the file in a browser, no network needed |
 | `bench.py` | the engine benchmark |
-| `orf-partial-reads.py` | headless full-read versus prefix metadata benchmark for Olympus ORF folders |
 | `report.py` | rewrites SUMMARY.md and `dashboard/data.js` from every recorded run |
 | `compare.py` | two runs side by side, as markdown |
 | `lib/edits.mjs` | Immage's control-to-module mapping (`app/src/manifest.ts`), for the benchmark |
@@ -422,111 +421,6 @@ cropped and restored frames. Corpus files remain ignored; the tracked generator
 makes the fixtures reproducible. Use these alongside camera portrait RAWs,
 which are still needed for sensor orientation and GPU validation. The default
 release check selects RAWs; run this focused check separately for these TIFFs.
-
-### ORF partial metadata reads
-
-`orf-partial-reads.py` compares full-file metadata reads with the prefix reader
-on Olympus `.ORF` photos. Each sample starts a fresh headless engine with an
-isolated temporary library, config and cache. It verifies that every requested
-photo imports and normalized image entries match, then records source bytes
-read per photo, photos per second and elapsed import time. Runs alternate
-baseline and prefix order. It reads originals without writing photos or
-sidecars and does not start the GUI. The engine build must include
-`IMMAGE_METADATA_IO` diagnostics. Source-byte totals cover metadata reader
-calls only; preview extraction, import probes and operating-system traffic are
-outside those counters. The warmup heats the file cache, so elapsed time is
-cache-sensitive even though the reader's byte counters remain useful.
-
-Run one warmup pair, then the measured run on a year/month tree:
-
-```bash
-python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 1
-python3 -I benchmarking/orf-partial-reads.py /photos/2025 --recursive --runs 6 \
-  --report /tmp/orf-partial-reads.json
-```
-
-### ORF prefix reads with probe concurrency
-
-`orf-prefix-concurrency.py` keeps ORF prefix metadata reads enabled and compares
-`IMMAGE_IMPORT_READ_AHEAD` limits 1, 2, 3 and 4. Each measurement starts a fresh
-headless engine with an isolated library, config and cache. The benchmark checks
-normalized import metadata parity, prefix-read diagnostics for every ORF, and
-that the engine applied the requested probe cap. It stops if probe diagnostics
-show timeouts or saturation. Results include logical metadata source bytes,
-photos per second and elapsed import time. The read-ahead setting overlaps only
-the bounded 4 KB photo and XMP probes; metadata imports remain serialized.
-Original photos and sidecars are read only, and no GUI is started. Source-byte
-totals exclude preview extraction, import probes and operating-system traffic.
-The file-system and storage caches may warm across runs.
-
-Run all four limits once as a warmup, then use four rounds for a balanced
-comparison. A Williams square balances each limit's run position and the limit
-that immediately precedes it.
-
-```bash
-python3 -I benchmarking/orf-prefix-concurrency.py /photos/2025 --recursive --runs 1
-python3 -I benchmarking/orf-prefix-concurrency.py /photos/2025 --recursive --runs 4 \
-  --report /tmp/orf-prefix-concurrency.json
-```
-
-To run this on the Mac after the existing ORF prefix branch, fetch and switch to
-the combined benchmark branch, then rebuild the engine. Both branches carry the
-same darktable patch, so there is no need to reverse or reapply it:
-
-```bash
-git fetch
-git switch experiment/orf-prefix-concurrency-0.46.0
-cmake --build build --target darktable-engine -j2
-```
-
-### ORF metadata pipeline
-
-`orf-metadata-pipeline.py` measures bounded metadata preparation on Olympus
-`.ORF` photos. It starts a fresh headless engine for each
-sample and checks that normalized imported metadata matches across worker
-counts. It imports originals read-only and does not start the GUI.
-
-```bash
-python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive --runs 1
-python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive --runs 4 \
-  --report /tmp/orf-metadata-pipeline.json
-```
-
-If the folder is not already warm, use one run to warm the storage cache, then
-four balanced Williams rounds for 1, 2, 3 and 4 workers. To test higher counts
-on an already warm folder, use six rounds to balance all orders:
-
-```bash
-python3 -I benchmarking/orf-metadata-pipeline.py /photos/2025 --recursive \
-  --workers 4 6 8 --runs 6 --report /tmp/orf-metadata-pipeline-4-6-8.json
-```
-
-The engine accepts 1–8 workers; the default benchmark selection stays 1–4.
-`IMMAGE_IMPORT_METADATA_WORKERS` overrides the Library workers preference for
-the benchmark; `0` disables the pipeline, while unset or invalid values use
-the preference value (2 by default).
-Every sample enables metadata prefix reads, fixes import read-ahead at 1, and
-applies a 30 second
-metadata task timeout. The benchmark requires per-photo metadata IO and
-consumed-prefetch diagnostics plus engine pipeline counts. It stops if any
-photo's prepared result was not consumed, a task timed out or saturated, or
-normalized import metadata changed. Results include source bytes, throughput
-and elapsed time.
-
-This measures overlapping metadata preparation and metadata source reads.
-Exiv2 parsing remains protected by its global lock, and catalog imports remain
-serialized. ORFs that need a full-read fallback can spend more time under that
-lock, so the worker count may not improve those cases. Instrumentation and
-operating-system or storage caches affect timings; keep the machine idle and
-compare runs made under similar conditions.
-
-On the Mac, build the release branch's engine with:
-
-```bash
-git fetch origin
-git switch release-0.46.0
-cmake --build build --target darktable-engine -j2
-```
 
 ## Local cache and search
 

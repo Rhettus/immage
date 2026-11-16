@@ -1,17 +1,9 @@
 # Release checks
 
-`python3 -I verify/metadata-pipeline.py` checks the experimental ORF metadata
-pipeline headlessly: import/XMP parity with the pipeline off and with 1–4, 6 and 8
-workers, mixed-format serial fallback, cancellation, abandoned-worker caps and
-recovery. It uses temporary photos and FIFO sidecars. The separate
-`benchmarking/orf-metadata-pipeline.py` compares real ORFs on the original
-storage paths without writing photos or sidecars.
-
-For the opt-in NAS probe experiment, run
-`python3 -I verify/import-read-ahead.py`. It checks import/XMP parity at limits
-1 and 4, cancellation, blocked-read caps, saturation and recovery using isolated
-temporary photos and FIFO sidecars. `verify/import-stall.py` also checks the
-legacy path and can be repeated with `IMMAGE_IMPORT_READ_AHEAD=3`.
+`python3 -I verify/metadata-pipeline.py` checks ORF metadata preparation
+headlessly: import/XMP parity at 1-4, 6 and 8 Library workers, the live
+preference change, cancellation, abandoned-worker caps and recovery. It uses
+temporary photos and FIFO sidecars.
 
 What to run before tagging a release ([releasing.md](../app/docs/dev/releasing.md)):
 every slider of every panel, and of a mask, moved through the app's own
@@ -421,9 +413,7 @@ build/bin/immage-thumbnail-check /tmp/immage-thumbnail-check /path/to/camera.CR2
 The check generates TIFFs with two embedded JPEG sizes, rotated orientation,
 metadata both near the header and beyond the prefix limit, and truncated data.
 It generates ORF fixtures with IIRO, IIRS, MMOR and MMSR signatures, in both
-byte orders, and checks early and distant metadata. Each fixture and supplied
-photo is read once with `IMMAGE_METADATA_PREFIX=0` and once with the prefix
-reader; the Immage metadata fields must match. Extracted JPEG bytes are compared
+byte orders, and checks early and distant metadata. Extracted JPEG bytes are compared
 with Exiv2's full-file previews, then decoded at four thumbnail sizes. It also
 writes a small DNG and checks all eight camera orientations through the
 production denoise and HDR metadata helpers, including the imported orientation,
