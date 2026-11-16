@@ -54,6 +54,8 @@ Bug fixes
   such as `.ACR` sidecars stay out of the grid from the start.
 - Rating, rejecting and labeling photos while a folder loads keeps those
   changes as more photos arrive.
+- Opening a photo from the grid no longer shows the previous photo while the
+  new one loads; its thumbnail appears right away.
 - The Presets hover preview no longer gets stuck on one preset.
 - Basic's Auto works on a photo with Film Simulation or a converted negative.
 - DNG thumbnails use embedded previews, and a photo that cannot be decoded gets

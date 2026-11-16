@@ -3927,6 +3927,25 @@ export default function App() {
   // opens run one at a time: a newer request replaces any still waiting, so
   // only the latest click wins and two never interleave in the engine
   const openGen = useRef(0);
+  // the open whose frames may paint: a closing photo's late frames are dropped
+  const frameOwner = useRef<object | null>(null);
+  // the new photo's grid or filmstrip thumbnail, fitted, in place of the last
+  // photo until its first frame arrives; blank when it has none
+  const showOpening = (id: number | null) => {
+    resetCanvases();
+    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
+    const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
+    if (!sc) return;
+    sc.width = 0;
+    const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
+    if (!thumb?.width || w <= m || h <= m) return;
+    const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
+    sc.width = thumb.width;
+    sc.height = thumb.height;
+    sc.getContext("2d")!.drawImage(thumb, 0, 0);
+    placeCanvas(sc, thumb.width, thumb.height,
+      { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
+  };
   const openChain = useRef<Promise<unknown>>(Promise.resolve());
   const openFile = (path: string, imgid: number | null = null, reload = false,
                     onFirstFrame?: () => void): Promise<boolean> => {
@@ -3947,7 +3966,20 @@ export default function App() {
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
     }
+    // the old photo's pixels go before the first await, and its late frames
+    // are dropped: only the frames of this open may paint from here on
+    const token = {}, previousOwner = frameOwner.current;
+    frameOwner.current = token;
+    if (!reload) showOpening(id);
     const old = session.current;
+      // the photo that was open still is: its frames paint again, and the
+      // layers cleared above are drawn afresh
+      frameOwner.current = previousOwner;
+      if (!reload && session.current) {
+        baseStale.current = true;
+        overviewHash.current = null;
+        session.current.requestRender();
+      }
     let closed = false;
     // the new session once opened, until session.current adopts it
     let fresh: Session | undefined;
@@ -3984,27 +4016,15 @@ export default function App() {
       copyGen.current++;
       setCopyOn(false);
       overviewHash.current = null;
-      resetCanvases();
       baseStale.current = true;
-      for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
-      // the photo's filmstrip thumbnail, fitted, until its first frame takes
-      // its place, rather than the last photo
-      const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
-      if (thumb?.width && sc) {
-        const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
-        const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
-        sc.width = thumb.width;
-        sc.height = thumb.height;
-        sc.getContext("2d")!.drawImage(thumb, 0, 0);
-        placeCanvas(sc, thumb.width, thumb.height,
-          { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
-      }
+      if (reload) showOpening(id);
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
         drawFrame(f);
         const ready = onFirstFrame;
         onFirstFrame = undefined;
         ready?.();
       }, (e) => setStatus(t("app.status.error", { error: e })))));
+        if (frameOwner.current !== token) return;
       fresh = s;
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
@@ -4020,6 +4040,7 @@ export default function App() {
         baseLowRes.current = false;
         prefetchNext(s);
       };
+        if (frameOwner.current !== token) return;
       s.onCopy = (f) => {
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
