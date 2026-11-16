@@ -376,7 +376,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       </div>
     </div>}
     {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog" aria-label={t("library.culling.gridKeywords")}>
-      <div className="modal"><h2>{t("library.culling.keywordPhotos", { count: targets.length })}</h2>
+      <div className="modal"><h2>{t("library.culling.keywordPhotos", { n: targets.length })}</h2>
         <fieldset disabled={writing} style={{ border: 0, padding: 0 }}>
         {lists.length === targets.length && <KeywordingPanel keywords={shared} known={known} open onToggle={() => {}}
           onAdd={names => { if (!writing) void change(names, []); }}

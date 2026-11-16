@@ -4182,8 +4182,8 @@ export default function App() {
         resetCanvases();
         for (const c of [canvas.current, baseCanvas.current, navThumb.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
       }
-      setStatus(closed ? t("app.status.openFailed", { filename: baseName(path), error: e })
-        : t("app.status.error", { error: e }));
+      // named the same whether or not an older photo was open
+      setStatus(t("app.status.openFailed", { filename: baseName(path), error: e }));
       return false;
     }
   };
