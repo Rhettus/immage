@@ -1358,7 +1358,9 @@ export default function App() {
     if (!from) { setHoverShown(false); return; }
     window.setTimeout(async () => {
       const s = session.current;
-      if (!s || token !== hoverToken.current) return;
+      if (token !== hoverToken.current) return;
+      // no photo: release the flag set above, or previews stay held back
+      if (!s) { presetHoverBusy.current = false; return; }
       const { w, h } = viewport();
       // tiles stay small except film and paper tiles, which like a panel's
       // swatches (grain above all, whose look depends on the pixels) render
