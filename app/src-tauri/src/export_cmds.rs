@@ -214,13 +214,20 @@ fn export_stem(item: &ExportItem) -> String {
 // so that the dialog can ask what to do before exporting
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<ExistingFile> {
-    let dir = export_dir(&dir, subfolder.as_deref());
-    let ext = extension(&format);
-    items.iter().map(|item| {
-        let path = dir.join(format!("{}.{ext}", export_stem(item)));
-        ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
-    }).collect()
+pub(crate) async fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<ExistingFile> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = export_dir(&dir, subfolder.as_deref());
+        // a folder that does not answer is not waited on; the empty list tells the page,
+        // which treats a short list as "not answering" and stops the export
+        if !crate::volumes::answering(&dir) {
+            return Vec::new();
+        }
+        let ext = extension(&format);
+        items.iter().map(|item| {
+            let path = dir.join(format!("{}.{ext}", export_stem(item)));
+            ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
+        }).collect()
+    }).await.unwrap_or_default()
 }
 
 // the target for one image, or None when an existing file is to be left alone

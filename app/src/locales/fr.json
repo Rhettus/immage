@@ -3699,6 +3699,7 @@
   "dialogs.export.newPresetHint": "Nouveau préréglage à partir des réglages actuels",
   "dialogs.export.importPresetsHint": "Importer des préréglages depuis un fichier",
   "dialogs.export.askMe": "Me demander",
+  "dialogs.export.destinationNotAnswering": "{dir} ne répond pas. Rien n'a été exporté.",
   "dialogs.export.addNumber": "Ajouter un numéro",
   "dialogs.export.replaceIt": "Le remplacer",
   "dialogs.export.skipIt": "L’ignorer",

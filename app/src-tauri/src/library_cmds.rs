@@ -643,9 +643,14 @@ pub(crate) async fn path_exists(path: String) -> bool {
 // a path dropped on the window: "dir", "file", or none when it is gone
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn path_kind(path: String) -> Option<&'static str> {
-    let p = std::fs::canonicalize(&path).ok()?;
-    if p.is_dir() { Some("dir") } else if p.is_file() { Some("file") } else { None }
+pub(crate) async fn path_kind(path: String) -> Option<&'static str> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !crate::volumes::answering(std::path::Path::new(&path)) {
+            return None;
+        }
+        let p = std::fs::canonicalize(&path).ok()?;
+        if p.is_dir() { Some("dir") } else if p.is_file() { Some("file") } else { None }
+    }).await.ok().flatten()
 }
 
 // rejected photos to the system's Trash. the engine, not the client, says

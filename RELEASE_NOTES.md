@@ -134,6 +134,8 @@ Performance
 - ORF metadata reads try a small file prefix first and fall back to the full
   file when needed. Preparation is bounded by Library workers, while results
   are applied in file order and metadata/database updates remain serial.
+- The window no longer freezes while checking an export destination or a
+  dropped folder on a slow or unreachable network share.
 
 ## 0.45.0
 

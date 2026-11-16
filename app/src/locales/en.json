@@ -3699,6 +3699,7 @@
   "dialogs.export.newPresetHint": "new preset from the settings as they are now",
   "dialogs.export.importPresetsHint": "import presets from a file",
   "dialogs.export.askMe": "Ask me",
+  "dialogs.export.destinationNotAnswering": "{dir} is not answering. Nothing was exported.",
   "dialogs.export.addNumber": "Add a number",
   "dialogs.export.replaceIt": "Replace it",
   "dialogs.export.skipIt": "Skip it",

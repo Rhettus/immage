@@ -413,6 +413,13 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       if (!toImmich && s.conflict === "ask") {
         const files = await commands.exportExisting(items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
           s.dir, s.useSubfolder ? s.subfolder : null, s.format);
+        // a short list means the destination did not answer; stop before anything is written
+        if (files.length !== items.length) {
+          setError(t("dialogs.export.destinationNotAnswering", { dir: s.dir }));
+          setPreparing(false);
+          setNote(null);
+          return;
+        }
         // macOS and Windows file names ignore case
         const seen = new Set<string>();
         const clash = files.map((f) => {
