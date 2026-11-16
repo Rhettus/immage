@@ -208,9 +208,6 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
 }
 
-// A complete, validated group only: one unknown/new/deleted sidecar forces
-// ordinary engine import, including all current virtual copies. No engine IDs
-// or negative (unsupported-file) results are persisted here.
 // the most a folder's opening waits for its files' sizes and times
 const STAT_WAIT: Duration = Duration::from_secs(4);
 // the most a folder's listing is waited for
@@ -229,6 +226,9 @@ fn publish_listing(shared: &Mutex<cache::Listed>, listing: cache::Listed, curren
     true
 }
 
+// A complete, validated group only: one unknown/new/deleted sidecar forces
+// ordinary engine import, including all current virtual copies. No engine IDs
+// or negative (unsupported-file) results are persisted here.
 fn cached_folder_metadata(
     index: Option<&crate::search_cache::SearchCache>, listed: &Mutex<cache::Listed>, path: &Path,
 ) -> Option<Vec<Value>> {
