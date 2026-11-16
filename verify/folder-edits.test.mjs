@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FolderEdits } from "../src/folderEdits.ts";
+import { FolderEdits } from "../app/src/folderEdits.ts";
 
 test("rejection survives later batches and the final stale folder reply", () => {
   const edits = new FolderEdits();

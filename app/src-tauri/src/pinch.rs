@@ -8,13 +8,11 @@
 // pinch: a wheel event with ctrl, which the viewer's wheel handler zooms
 // with (App.tsx)
 
+use crate::pinch_math;
 use gtk::glib::Propagation;
 use gtk::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
-
-// App.tsx scales by exp(-deltaY * 0.006) for a wheel event with ctrl
-const CTRL_WHEEL_RATE: f64 = 0.006;
 
 // GdkTouchpadGesturePhase
 const PHASE_BEGIN: i8 = 0;
@@ -34,18 +32,18 @@ pub fn install(window: &tauri::WebviewWindow) {
             let scale = pinch.scale();
             if phase == PHASE_BEGIN {
                 last.set(1.0);
-            } else if phase == PHASE_UPDATE && scale > 0.0 && last.get() > 0.0 {
-                let ratio = scale / last.get();
-                last.set(scale);
-                // the position is in the webview's own coordinates, which
-                // are CSS pixels at the page's zoom of 1
-                let (x, y) = pinch.position();
-                let delta = -ratio.ln() / CTRL_WHEEL_RATE;
-                if delta.is_finite() && delta != 0.0 {
-                    let _ = page.eval(format!(
-                        "(()=>{{const t=document.elementFromPoint({x},{y});t&&t.dispatchEvent(new WheelEvent('wheel',\
-                         {{bubbles:true,cancelable:true,ctrlKey:true,deltaY:{delta},clientX:{x},clientY:{y}}}))}})()"
-                    ));
+            } else if phase == PHASE_UPDATE {
+                if let Some(step) = pinch_math::update(scale, last.get()) {
+                    last.set(step.last);
+                    // the position is in the webview's own coordinates, which
+                    // are CSS pixels at the page's zoom of 1
+                    let (x, y) = pinch.position();
+                    if let Some(delta) = step.delta {
+                        let _ = page.eval(format!(
+                            "(()=>{{const t=document.elementFromPoint({x},{y});t&&t.dispatchEvent(new WheelEvent('wheel',\
+                             {{bubbles:true,cancelable:true,ctrlKey:true,deltaY:{delta},clientX:{x},clientY:{y}}}))}})()"
+                        ));
+                    }
                 }
             }
             Propagation::Stop

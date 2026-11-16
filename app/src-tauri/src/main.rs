@@ -37,6 +37,7 @@ mod scale;
 mod renderer;
 #[cfg(target_os = "linux")]
 mod pinch;
+mod pinch_math;
 mod volumes;
 mod scrub;
 mod support_bundle;

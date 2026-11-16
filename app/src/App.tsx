@@ -46,6 +46,7 @@ import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { easeZoom, ZOOM_EASE, KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
 import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
+import { pushBatchStep, truncateRedo } from "./undoStack";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
@@ -4310,12 +4311,7 @@ export default function App() {
       }
       const r = await commands.meta(target.imgid);
       pasteSaved({ imgid: target.imgid, edited: r.image.edited, error: null });
-      discardPastes(undo.current.future);
-      undo.current.future = [];
-      undo.current.key = "";
-      before.batch = { token, recovery: false };
-      undo.current.past.push(before);
-      if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+      discardPastes(pushBatchStep(undo.current, before, { token, recovery: false }));
       message = t("app.status.historyDiscarded");
     } catch (e) { message = t("app.status.historyDiscardError", { error: e }); }
     finally {
@@ -4414,9 +4410,7 @@ export default function App() {
   const truncateHistory = () => {
     const u = undo.current;
     if (!u.future.length) return;
-    discardPastes(u.future);
-    u.future = [];
-    u.key = "";
+    discardPastes(truncateRedo(u));
     setHistoryRev((n) => n + 1);
       setStatus(t("app.status.stepsDropped"));
   };

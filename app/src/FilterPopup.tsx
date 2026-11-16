@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { commands, type Named } from "./commands";
-import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, passes, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
+import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, popupCount, rejectedOptions, type ExposureKey, type Facets, type Filter } from "./filter";
 import type { ImageEntry } from "./library";
 import { immichFilterCount, NO_SEARCH, type ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
@@ -291,11 +291,8 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
     { key: "rejected", title: t("library.filters.rejected"), summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? t("library.filters.hidden") : t("library.filters.onlyRejected"),
       clear: { rejected: "all" },
       body: (v, set) => {
-        const eligible = images.filter((i) => passes(i, { ...v, rejected: "all" }));
-        const options = [
-          { value: "all", label: t("library.search.allPhotos"), count: eligible.length },
-          { value: "only", label: t("library.filters.rejected"), count: eligible.filter((i) => i.rejected).length },
-        ] as const;
+        const labels = { all: t("library.search.allPhotos"), hide: t("library.filters.hideRejected"), only: t("library.filters.rejected") };
+        const options = rejectedOptions(images, v).map((o) => ({ ...o, label: labels[o.value] }));
         return (
           <div className="filter-ticks">
             {options.map(({ value, label, count }) => (

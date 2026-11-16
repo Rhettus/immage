@@ -4,7 +4,7 @@ import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
 import { commands } from "./commands";
-import { fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
+import { cullingKey, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
 import { LABEL_COLORS, fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { t } from "./i18n";
@@ -80,7 +80,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     return () => el.removeEventListener("wheel", onWheel);
   }, [current?.imgid, current?.width, current?.height, detail, paintSize]);
   const previousIndex = useRef(0);
-  useEffect(() => { if (current) previousIndex.current = images.indexOf(current); else if (photo !== null) setPhoto(images[Math.min(previousIndex.current, images.length - 1)]?.imgid ?? null); }, [images, photo]);
+  useEffect(() => { if (current) previousIndex.current = images.indexOf(current); else if (photo !== null) setPhoto(fallbackPhoto(images, previousIndex.current)); }, [images, photo]);
   const keywords = async (items: ImageEntry[]) => {
     const generation = ++keywordGeneration.current;
     setTargets(items); setLists([]); setError("");
@@ -101,35 +101,36 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      if (targets.length && k === "escape") {
-        if (writing) { e.preventDefault(); e.stopImmediatePropagation(); return; }
-        e.preventDefault(); e.stopImmediatePropagation(); ++keywordGeneration.current; setTargets([]); return;
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.closest("input,textarea,[contenteditable=true]")) return;
-      if (document.querySelector(".modal-backdrop") && !photo && !targets.length) return;
-      if (photo !== null && !targets.length && k === " ") {
-        e.preventDefault(); e.stopImmediatePropagation(); space.current = true; setSpaceHeld(true); return;
-      }
       const hovered = document.querySelector(".filmstrip.grid .thumb:hover")?.getAttribute("data-imgid");
       const chosen = keywordTargets(allImages, selection);
       const target = images.find(i => i.imgid === (hovered === null || hovered === undefined ? NaN : Number(hovered))) ?? images.find(i => i.imgid === anchor && selection.has(i.imgid)) ?? images.find(i => selection.has(i.imgid));
-      if (photo !== null && !["f","k","z","escape","arrowleft","arrowright","0","1","2","3","4","5","6","7","8","9","x"].includes(k)) { e.stopImmediatePropagation(); return; }
-      if (!["f","k","z","escape","arrowleft","arrowright","0","1","2","3","4","5","6","7","8","9","x"].includes(k)) return;
-      if (!photo && !targets.length && k !== "f" && k !== "k") return;
-      if (targets.length && k !== "escape") return;
-      if (!photo && !target && !chosen.length) return;
-      e.preventDefault(); e.stopImmediatePropagation();
-      if (k === "escape") { if (targets.length) setTargets([]); else setPhoto(null); }
-      else if (k === "f") { direction.current = 1; setPhoto(photo ? null : target?.imgid ?? null); }
-      else if (k === "k") void keywords(current ? [current] : keywordTargets(allImages, selection, target?.imgid));
-      else if (k === "z" && current) { zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); }
-      else if (current && (k === "arrowleft" || k === "arrowright")) {
-        direction.current = k === "arrowleft" ? -1 : 1;
-        const next = images[images.indexOf(current) + direction.current];
-        if (next) setPhoto(next.imgid);
-      } else if (current && /^[0-5]$/.test(k)) onMeta(current, { rating: Number(k), rejected: false });
-      else if (current && /^[6-9]$/.test(k)) onMeta(current, { labels: current.labels ^ (1 << (Number(k) - 6)) });
-      else if (current && k === "x") onMeta(current, { rejected: !current.rejected });
+      const { kind, action } = cullingKey(k, {
+        photo, keywordsOpen: targets.length > 0, writing,
+        blocked: e.ctrlKey || e.metaKey || e.altKey || !!(e.target as HTMLElement)?.closest("input,textarea,[contenteditable=true]"),
+        modalOpen: !!document.querySelector(".modal-backdrop"),
+        hasTarget: !!target || chosen.length > 0, hasCurrent: !!current,
+      });
+      if (kind === "ignore") return;
+      e.stopImmediatePropagation();
+      if (kind === "swallow") return;
+      e.preventDefault();
+      switch (action?.type) {
+        case "closeKeywords": ++keywordGeneration.current; setTargets([]); break;
+        case "holdSpace": space.current = true; setSpaceHeld(true); break;
+        case "closeLightbox": setPhoto(null); break;
+        case "toggleLightbox": direction.current = 1; setPhoto(photo ? null : target?.imgid ?? null); break;
+        case "keywords": void keywords(current ? [current] : keywordTargets(allImages, selection, target?.imgid)); break;
+        case "toggleZoom": zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); break;
+        case "step": {
+          direction.current = action.by;
+          const next = images[images.indexOf(current!) + direction.current];
+          if (next) setPhoto(next.imgid);
+          break;
+        }
+        case "rate": onMeta(current!, { rating: action.value, rejected: false }); break;
+        case "label": onMeta(current!, { labels: current!.labels ^ (1 << action.bit) }); break;
+        case "toggleReject": onMeta(current!, { rejected: !current!.rejected }); break;
+      }
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);

@@ -65,3 +65,48 @@ export function previewNeighbors<T extends { imgid: number; remote?: unknown }>(
   }
   return result;
 }
+
+// The photo the lightbox moves to when the current one leaves the list: the
+// one now at its old position, else the last, else none (closing it).
+export function fallbackPhoto<T extends { imgid: number }>(images: T[], previousIndex: number): number | null {
+  return images[Math.min(previousIndex, images.length - 1)]?.imgid ?? null;
+}
+
+export type CullingAction =
+  | { type: "closeKeywords" | "closeLightbox" | "toggleLightbox" | "keywords" | "toggleZoom" | "holdSpace" | "toggleReject" | "none" }
+  | { type: "step"; by: -1 | 1 }
+  | { type: "rate"; value: number }
+  | { type: "label"; bit: number };
+
+// What a key does in grid culling and its lightbox: `ignore` leaves the event
+// alone, `swallow` stops other handlers without acting (the lightbox owns the
+// keyboard), `consume` also prevents the default and runs `action`.
+export function cullingKey(k: string, s: {
+  photo: number | null; keywordsOpen: boolean; writing: boolean; blocked: boolean; modalOpen: boolean;
+  hasTarget: boolean; hasCurrent: boolean;
+}): { kind: "ignore" | "swallow" | "consume"; action?: CullingAction } {
+  const none = { type: "none" } as const;
+  if (s.keywordsOpen && k === "escape") {
+    return { kind: "consume", action: s.writing ? none : { type: "closeKeywords" } };
+  }
+  if (s.blocked) return { kind: "ignore" };
+  if (s.modalOpen && !s.photo && !s.keywordsOpen) return { kind: "ignore" };
+  if (s.photo !== null && !s.keywordsOpen && k === " ") return { kind: "consume", action: { type: "holdSpace" } };
+  const handled = /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x)$/.test(k);
+  if (s.photo !== null && !handled) return { kind: "swallow" };
+  if (!handled) return { kind: "ignore" };
+  if (!s.photo && !s.keywordsOpen && k !== "f" && k !== "k") return { kind: "ignore" };
+  if (s.keywordsOpen && k !== "escape") return { kind: "ignore" };
+  if (!s.photo && !s.hasTarget) return { kind: "ignore" };
+  const c = s.hasCurrent;
+  let action: CullingAction = none;
+  if (k === "escape") action = s.keywordsOpen ? { type: "closeKeywords" } : { type: "closeLightbox" };
+  else if (k === "f") action = { type: "toggleLightbox" };
+  else if (k === "k") action = { type: "keywords" };
+  else if (k === "z") { if (c) action = { type: "toggleZoom" }; }
+  else if (k === "arrowleft" || k === "arrowright") { if (c) action = { type: "step", by: k === "arrowleft" ? -1 : 1 }; }
+  else if (/^[0-5]$/.test(k)) { if (c) action = { type: "rate", value: Number(k) }; }
+  else if (/^[6-9]$/.test(k)) { if (c) action = { type: "label", bit: Number(k) - 6 }; }
+  else if (k === "x") { if (c) action = { type: "toggleReject" }; }
+  return { kind: "consume", action };
+}

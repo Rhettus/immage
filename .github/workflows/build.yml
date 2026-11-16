@@ -114,6 +114,8 @@ jobs:
             verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
             verify/export-format.test.mjs \
+            verify/filter-rejected.test.mjs \
+            verify/folder-edits.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
             verify/gui-suites.test.mjs \
@@ -139,6 +141,7 @@ jobs:
             verify/local-search-ui.test.mjs \
             verify/search-prefs.test.mjs \
             verify/typed-commands.test.mjs \
+            verify/undo-stack.test.mjs \
             verify/ui-updates.test.mjs \
             verify/upgrade-paths.test.mjs
       - run: npm audit --omit=dev --audit-level=high

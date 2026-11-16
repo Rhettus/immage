@@ -128,3 +128,20 @@ test('text direction follows the language script', () => {
   for (const code of ['ar', 'he', 'fa', 'ur', 'az-Arab']) assert.equal(textDirection(code), 'rtl', code);
   for (const code of ['en', 'fr', 'ja', 'az-Latn']) assert.equal(textDirection(code), 'ltr', code);
 });
+
+// Every shipped catalog carries exactly English's keys, with the same
+// placeholder names per key. A fallback after the name (`{lens, unknown lens}`)
+// is translated text, so only the name is compared.
+const tokens = (s) => [...new Set([...s.matchAll(/\{(\w+)(?:,[^{}]*)?\}/g)].map(m => m[1]))].sort();
+for (const f of readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'en.json')) {
+  test(`${f} has the same keys and placeholder names as en.json`, () => {
+    const cat = load(f);
+    const missing = Object.keys(en).filter(k => !own(cat, k));
+    const extra = Object.keys(cat).filter(k => !own(en, k));
+    assert.deepEqual(missing, [], `${f}: keys missing from the catalog`);
+    assert.deepEqual(extra, [], `${f}: keys not in en.json`);
+    for (const key of Object.keys(en)) {
+      assert.deepEqual(tokens(cat[key]), tokens(en[key]), `${f}: ${key}: placeholder names differ`);
+    }
+  });
+}

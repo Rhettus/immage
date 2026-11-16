@@ -375,6 +375,16 @@ fn installed(dir: &Path, id: &str) -> bool {
     dir.join(id).join("config.json").exists()
 }
 
+// run `install` once the lock is ours, unless the install that held it
+// meanwhile already put the model there
+fn install_once(dir: &Path, id: &str, install: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
+    if installed(dir, id) {
+        return Ok(());
+    }
+    install()
+}
+
 // make sure an AI model is installed, downloading it on first use
 #[tauri::command]
 #[specta::specta]
@@ -385,11 +395,7 @@ pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, 
     }
     if let Some(m) = EXTRA_MODELS.iter().find(|m| m.id == id) {
         return tauri::async_runtime::spawn_blocking(move || {
-            let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
-            if installed(&dir, m.id) {
-                return Ok(());
-            }
-            install_extra(&|v| { let _ = app.emit("ai-model", v); }, &dir, m)
+            install_once(&dir, m.id, || install_extra(&|v| { let _ = app.emit("ai-model", v); }, &dir, m))
         })
             .await
             .map_err(|e| e.to_string())?;
@@ -397,16 +403,14 @@ pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, 
     let reply = state.engine("ai_model_ensure").request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
-        if installed(&dir, &id) {
-            return Ok(());
-        }
-        let unpack = |archive: &Path, into: &Path| {
-            app.state::<AppState>().engine("ai_model_unpack")
-                .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
-                .map(|_| ())
-        };
-        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
+        install_once(&dir, &id, || {
+            let unpack = |archive: &Path, into: &Path| {
+                app.state::<AppState>().engine("ai_model_unpack")
+                    .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
+                    .map(|_| ())
+            };
+            install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
+        })
     })
         .await
         .map_err(|e| e.to_string())?
@@ -523,6 +527,41 @@ mod tests {
         // numerically, so 5.10 above 5.7
         assert_eq!(model_release(&index, "immage").unwrap(), "v5.10");
         assert!(model_release(&index, "5.8.0").is_err());
+    }
+
+    #[test]
+    fn a_second_install_waits_and_finds_the_model_installed() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        let dir = std::env::temp_dir().join(format!("immage-install-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let runs = AtomicUsize::new(0);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let (runs, dir) = (&runs, &dir);
+            let first = scope.spawn(move || install_once(dir, "m", || {
+                runs.fetch_add(1, Ordering::SeqCst);
+                entered_tx.send(()).unwrap();
+                go_rx.recv().unwrap();
+                std::fs::create_dir_all(dir.join("m")).unwrap();
+                std::fs::write(dir.join("m").join("config.json"), "{}").unwrap();
+                Ok(())
+            }));
+            // the first holds the lock, mid-install, with nothing installed yet
+            entered_rx.recv().unwrap();
+            let second = scope.spawn(move || install_once(dir, "m", || {
+                runs.fetch_add(1, Ordering::SeqCst);
+                Err("a second install must not run".to_string())
+            }));
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert!(!second.is_finished(), "the second install did not wait for the first");
+            go_tx.send(()).unwrap();
+            assert_eq!(first.join().unwrap(), Ok(()));
+            assert_eq!(second.join().unwrap(), Ok(()));
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

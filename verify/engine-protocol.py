@@ -54,7 +54,7 @@ ROOT = background.ROOT
 # every command the engine answers; keep in step with engine/main.c
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
-ai_object baseline_end before cancel_base capture_times close color_profiles
+ai_object analysis_preview baseline_end before cancel_base capture_times clip_embed close color_profiles
 colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget get
 hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
@@ -173,6 +173,8 @@ def anywhere(img):
         R('capture_times', entries=[{'imgid': 0, 'before': '', 'after': ''}],
           label='capture_times stale'),
         R('thumb', imgid=0, label='thumb no out'),
+        R('analysis_preview', imgid=0, subject='bogus', out='{out}/a-bad.jpg',
+          label='analysis_preview invalid subject'),
         R('thumb', '{out}/t-missing.rgba', imgid=0, size=64, out='{out}/t-missing.rgba',
           label='thumb unknown'),
         R('copy', imgid=0, label='copy unknown'),
@@ -368,6 +370,14 @@ def tagged(img):
     and the reader thread's cancels (no reply of their own)."""
     return [
         T('thumb', '{out}/tt.rgba', imgid=img, size=64, out='{out}/tt.rgba'),
+        T('analysis_preview', '{out}/ta.jpg', imgid=img, subject='edited', out='{out}/ta.jpg'),
+        T('analysis_preview', imgid=img, subject='bogus', out='{out}/ta.jpg',
+          label='analysis_preview tagged invalid subject'),
+        T('analysis_preview', imgid=img, subject='original', label='analysis_preview tagged no out'),
+        T('clip_embed', tower='bogus', model_root='{tmp}/no-model', input='{tmp}/no-input',
+          label='clip_embed tagged invalid'),
+        T('clip_embed', tower='text', model_root='/', input='/no-such-clip-tensor',
+          label='clip_embed tagged missing tensor'),
         T('export', '{out}/te.jpg', imgid=img, out='{out}/te.jpg'),
         T('export', imgid=0, out='{out}/te.jpg', label='export tagged invalid id'),
         T('export_release', job=9),

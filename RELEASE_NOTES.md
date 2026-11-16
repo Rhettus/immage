@@ -10,8 +10,8 @@ Improvements
 - Preferences shows the number of photos analysed by CLIP below Background work,
   followed by model controls. Directory status uses compact rows with connection
   dots in a fixed-height scrollable list.
-- Folder filters show All photos and Rejected as selectable rows with photo
-  counts, matching the File type list and avoiding a dropdown.
+- Folder filters show All photos, Hide rejected and Rejected as selectable rows
+  with photo counts, matching the File type list and avoiding a dropdown.
 - Interface language setting in Preferences > General defaults to the system’s
   preferred supported language, with English fallback. French adds the initial
   menu and Preferences translations. Changes apply at the next launch or with
@@ -47,29 +47,28 @@ Improvements
   the photo under the pointer stays in place and the chosen size is remembered.
 - History can discard all edits and restart from New Photos defaults, with
   undo. Ctrl-click (⌘-click on Mac) Compress to discard later history steps.
-  Each Adjustments panel's eye button temporarily hides its edits.
+  Hold an Adjustments panel's eye button to see the photo without that
+  panel's edits; letting go brings them back.
 - Y cycles through side-by-side and split before/after views, then turns them
-  off. Hold the toolbar button for before, or press `\` for the full Before
-  view.
+  off. The toolbar button also offers Hold for before: press and hold on the
+  photo to see the original. Press `\` for the full Before view.
 - Right-click a folder for New Folder…, Show in Finder, or Remove from List.
   Grid view hides tools for the covered photo while keeping Print available;
   choosing another tool leaves the grid.
 - Lens Corrections offers sensor-specific raw demosaic methods, with
-  darktable's default selected. Clarity and Texture detail sliders are grouped
-  in labeled boxes, and Heal shows its source as soon as you press and keeps
-  the outer brush circle visible while painting.
-- Preferences > Performance > Memory adds a Library workers setting for
-  thumbnail creation, ORF metadata preparation, and photo transfers. The
-  separate limits apply to later import batches and new transfer jobs.
+  darktable's default selected.
+- Clarity and Texture detail sliders are grouped in labeled boxes.
+- Heal shows its source as soon as you press and keeps the outer brush circle
+  visible while painting.
 - The quick start guide points to the Advanced mode button. The Simple mode
   sliders icon is now labeled More controls.
 
 Bug fixes
 
-- Fix a startup race that could prevent preferences from being saved on Windows,
-  including the language choice and Quick start guide's Don't show again setting.
-- Immich path mappings reject traversal and symlinks that lead outside the
-  configured local folder.
+- Windows: preferences, including the language choice and the Quick start
+  guide's Don't show again setting, are no longer sometimes lost at startup.
+- Immich local folder mappings no longer match photos that sit outside the
+  mapped folder, such as through a link or a path that climbs out of it.
 - Startup shows the grid until the last photo's first preview is ready. If
   the photo is missing or cannot load, the grid stays available instead of
   leaving a grey viewer.
@@ -90,23 +89,25 @@ Bug fixes
 
 Performance
 
-- Metadata-only local search pages stop after enough filtered matches are found,
-  avoiding a full-library scan for each page.
-- Reopening unchanged folders reuses local metadata and imports photos into
-  the editing library only when an action needs them. Cached thumbnails can
-  appear without importing the photo; changed files and sidecars are reread.
-  Verified moves retain reusable analysis, and copies get separate identities.
-  Background checks retain records for offline drives and incomplete scans.
-  Metadata caching does not download search models or upload photos; optional
-  local analysis uses verified packages and runs on the CPU.
+- Local search results appear faster, as filename and date searches no longer
+  look through the whole library for every page of results.
+- Reopening an unchanged folder is faster: its photo details are reused from
+  a local cache, and cached thumbnails appear without importing the photo.
+  Changed files and sidecars are reread. Moving a photo keeps its search
+  index, while a copy is indexed as a separate photo. Photos on drives that
+  are offline, and folders that were not fully scanned, stay in the cache.
+  Nothing is downloaded or uploaded for this; the optional local search
+  indexing uses a verified model package and runs on the CPU.
 - Lightbox navigation reuses nearby previews in memory and waits briefly before
   starting speculative previews, reducing repeated loading and read-ahead work
   during rapid navigation.
 - Grid previews show thumbnails immediately while loading larger images.
   Prefetch follows the Read ahead count and Read ahead both ways preference.
-- Photo moves and copies transfer several photos at once, up to Library
-  workers, including originals downloaded from Immich; each photo and its
-  sidecars are verified before originals are removed.
+- Preferences > Performance > Memory adds a Library workers setting that
+  sets how many thumbnails are built, ORF metadata is read and photos are
+  moved or copied at once (Immich originals included). Each photo and its
+  sidecars are verified before originals are removed. A change applies to
+  later imports and new moves or copies.
 - ORF metadata reads try a small file prefix first and fall back to the full
   file when needed. Preparation is bounded by Library workers, while results
   are applied in file order and metadata/database updates remain serial.

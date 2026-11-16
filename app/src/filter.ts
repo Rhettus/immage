@@ -72,6 +72,17 @@ export const passes = (i: Known, f: Filter) =>
   && (!f.takenTo || (!!takenAt(i) && day(i) <= f.takenTo))
   && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))));
 
+// the Rejected category's rows and their counts: of the photos every other
+// filter admits, all of them, the ones not rejected, and the rejected ones
+export function rejectedOptions(images: Known[], f: Filter) {
+  const eligible = images.filter((i) => passes(i, { ...f, rejected: "all" }));
+  return [
+    { value: "all", count: eligible.length },
+    { value: "hide", count: eligible.filter((i) => !i.rejected).length },
+    { value: "only", count: eligible.filter((i) => i.rejected).length },
+  ] as const;
+}
+
 // Search results have capture-date metadata, but no search result should use
 // the file's modified time to satisfy a capture-date filter. Retain the more
 // precise source text only when it agrees with the EXIF timestamp it refines.

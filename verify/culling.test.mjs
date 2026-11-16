@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
+import { cullingKey, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
 
 test('keyword selection wins over hover, including filtered-out selections', () => {
   const images = [{imgid: 1}, {imgid: 2}, {imgid: 3}];
@@ -47,7 +47,7 @@ function fixture(overrides = {}) {
   const calls = [];
   const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
   const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images,
-    selection: new Set([1,2]), anchor: 2, keywordTargets, direction: {current:1},
+    selection: new Set([1,2]), anchor: 2, keywordTargets, cullingKey, direction: {current:1},
     zoomRef: {current:null}, zoomAnchor: {current:null},
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
@@ -238,4 +238,59 @@ test('cached foreground draws immediately even while native speculative work is 
     setTimeout:()=>123,timer:undefined};
   await new Function('env',`with(env) { ${source}; return show(); }`)(env);
   assert.deepEqual(calls,[pixels]);
+});
+
+const state = (o = {}) => ({ photo: null, keywordsOpen: false, writing: false, blocked: false,
+  modalOpen: false, hasTarget: true, hasCurrent: true, ...o });
+const act = (k, o) => cullingKey(k, state(o));
+
+test('Escape closes the keyword dialog first, then the lightbox, and waits while writing', () => {
+  assert.deepEqual(act('escape', { photo: 4, keywordsOpen: true }), { kind: 'consume', action: { type: 'closeKeywords' } });
+  assert.deepEqual(act('escape', { photo: 4, keywordsOpen: true, writing: true }), { kind: 'consume', action: { type: 'none' } });
+  assert.deepEqual(act('escape', { photo: 4 }), { kind: 'consume', action: { type: 'closeLightbox' } });
+  // the keyword dialog's Escape wins even over modifier or editable-field blocking
+  assert.equal(act('escape', { keywordsOpen: true, blocked: true }).action.type, 'closeKeywords');
+  assert.equal(act('escape').kind, 'ignore');
+  assert.equal(act('escape', { photo: 4, blocked: true }).kind, 'ignore');
+});
+
+test('z toggles zoom, arrows step, space holds, only in the lightbox', () => {
+  assert.equal(act('z', { photo: 1 }).action.type, 'toggleZoom');
+  assert.equal(act('z', { photo: 1, hasCurrent: false }).action.type, 'none');
+  assert.equal(act('z').kind, 'ignore');
+  assert.deepEqual(act('arrowleft', { photo: 1 }).action, { type: 'step', by: -1 });
+  assert.deepEqual(act('arrowright', { photo: 1 }).action, { type: 'step', by: 1 });
+  assert.equal(act('arrowright').kind, 'ignore');
+  assert.equal(act(' ', { photo: 1 }).action.type, 'holdSpace');
+  assert.equal(act(' ', { photo: 1, keywordsOpen: true }).kind, 'swallow');
+  assert.equal(act(' ').kind, 'ignore');
+});
+
+test('ratings, color labels and reject act on the current photo', () => {
+  assert.deepEqual(act('0', { photo: 1 }).action, { type: 'rate', value: 0 });
+  assert.deepEqual(act('5', { photo: 1 }).action, { type: 'rate', value: 5 });
+  assert.deepEqual(act('6', { photo: 1 }).action, { type: 'label', bit: 0 });
+  assert.deepEqual(act('9', { photo: 1 }).action, { type: 'label', bit: 3 });
+  assert.equal(act('x', { photo: 1 }).action.type, 'toggleReject');
+  assert.equal(act('3', { photo: 1, hasCurrent: false }).action.type, 'none');
+  // a lightbox swallows other keys; the grid ignores ratings
+  assert.equal(act('q', { photo: 1 }).kind, 'swallow');
+  assert.equal(act('3').kind, 'ignore');
+  assert.equal(act('3', { photo: 1, keywordsOpen: true }).kind, 'ignore');
+});
+
+test('f and k open from the grid only with a target; open modals block the grid', () => {
+  assert.equal(act('f').action.type, 'toggleLightbox');
+  assert.equal(act('k').action.type, 'keywords');
+  assert.equal(act('f', { hasTarget: false }).kind, 'ignore');
+  assert.equal(act('f', { modalOpen: true }).kind, 'ignore');
+  assert.equal(act('f', { photo: 1, modalOpen: true }).action.type, 'toggleLightbox');
+  assert.equal(act('f', { blocked: true }).kind, 'ignore');
+});
+
+test('the lightbox falls back to the photo now at the same position, else the last, else closes', () => {
+  const list = [{ imgid: 10 }, { imgid: 11 }, { imgid: 12 }];
+  assert.equal(fallbackPhoto(list, 1), 11);
+  assert.equal(fallbackPhoto(list, 7), 12);
+  assert.equal(fallbackPhoto([], 0), null);
 });
