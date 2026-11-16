@@ -81,15 +81,14 @@ folder and All folders only, Filename mode, the words typed and Enter pressed
 fixture; the runner copies it into isolated app state. The case waits for a
 cached local result and thumbnail, closes the popup with Show, rates only that
 disposable copy, retains a rating filter, and returns to its folder. It passed
-live validation against the earlier Search photos card; the Find rewrite has not
-been run live. Local per-run GUI approval rules still apply.
+live through Find on 2026-11-16 (run `2026-11-16T11-10-07.333Z_565a37b_8773884c`). Local per-run GUI approval rules still apply.
 
 `--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
 Show N, Escape), `find-sizes` (Minimize, Dock and Fill, dragging the grip,
 remembered places, double-click reset) and `find-saved` (Save filter…, changed
 and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
-`find-01` to `find-03`. All three are written, not live-validated, and the
-`filters` and `camera-body` cases now open Find (Dock size).
+`find-01` to `find-03`. All three, and the `filters` and `camera-body` cases that now
+open Find (Dock size), passed live on 2026-11-16.
 
 ## Positive hot-pixel fixture
 

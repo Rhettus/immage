@@ -95,7 +95,7 @@ export async function localSearch(t) {
   await until(() => t.driver.observe((s, value) => {
     const title = document.querySelector(s)?.title;
     return title === value && document.querySelector('.toolbar .filter button[title="no filters on"]')
-      && (document.querySelector('.status')?.textContent ?? '').includes('images');
+      && /\d+ photos?\b/.test(document.querySelector('.status')?.textContent ?? '');
   }, `.filmstrip .thumb[data-imgid][title=${JSON.stringify(filename)}]`, filename), 'folder navigation leaves local search');
   await t.evidence('local-search-folder');
   t.measure({ name: 'local-search', filename, result: found, filtered, returnedToFolder: true });
