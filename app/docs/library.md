@@ -210,6 +210,9 @@ Nothing happens until you confirm. The confirmation shows the following:
   When the folder is the photo's own folder under another name (a link,
   or the same share mounted twice), the photo counts as already in this
   folder and nothing is removed.
+- **Drives that don't answer.** When a photo's drive or share doesn't
+  answer, the move or copy stops with a message naming its folder, and
+  nothing is moved.
 - **Same name, other content.** These photos are listed, each with
   **Skip** or **Keep both**. Keep both gives the incoming photo and its
   sidecars a number (IMG_1000.CR3 arrives as IMG_1000_1.CR3). **Skip all**

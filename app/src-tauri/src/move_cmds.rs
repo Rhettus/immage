@@ -542,7 +542,6 @@ fn immich_client(app: &AppHandle) -> Result<immich_upload::Immich, String> {
 async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) -> Result<Vec<Unit>, String> {
     let dest = PathBuf::from(&req.dest);
     let mut by_path: Vec<(PathBuf, Vec<i64>)> = Vec::new();
-    let mut out = Vec::new();
     let mut assets = Vec::new();
     for s in &req.sources {
         if let Some(id) = s.imgid.filter(|i| *i > 0) {
@@ -560,21 +559,36 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
             assets.push((a.clone(), s.asset_path.clone().unwrap_or_default()));
         }
     }
+    let mut local = Vec::new();
     for (path, ids) in by_path {
         let reply = state.engine("move_plan").request(json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
-        let sidecars = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
-        out.push(local_unit(&path, ids, sidecars, &dest, false));
-    }
-    if assets.is_empty() {
-        return Ok(out);
+        let sidecars: Vec<PathBuf> = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
+        local.push((path, ids, sidecars));
     }
     let map = req.map.clone().unwrap_or_default();
     let app = app.clone();
-    let remote = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<Unit>, String> {
-        let mut client = None;
+    // the sources' sizes and folders are read here, off the event loop, and
+    // only on a drive that answers: a stalled share fails the plan instead
+    // of holding it
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<Unit>, String> {
+        let mut answers: HashMap<PathBuf, bool> = HashMap::new();
+        let mut reach = |p: &Path| -> Result<(), String> {
+            let dir = p.parent().unwrap_or(Path::new("")).to_path_buf();
+            if *answers.entry(dir.clone()).or_insert_with(|| volumes::answering(&dir)) {
+                Ok(())
+            } else {
+                Err(format!("{} is not answering", dir.display()))
+            }
+        };
         let mut v = Vec::new();
+        for (path, ids, sidecars) in local {
+            reach(&path)?;
+            v.push(local_unit(&path, ids, sidecars, &dest, false));
+        }
+        let mut client = None;
         for (id, server) in assets {
             if let Some(p) = immich_search::local_path(&server, &map) {
+                reach(&p)?;
                 let sidecars = mapped_sidecars(&p);
                 let mut u = local_unit(&p, Vec::new(), sidecars, &dest, true);
                 u.key = format!("immich:{id}");
@@ -599,9 +613,7 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
             });
         }
         Ok(v)
-    }).await.map_err(|e| e.to_string())??;
-    out.extend(remote);
-    Ok(out)
+    }).await.map_err(|e| e.to_string())?
 }
 
 fn check_dest(dest: &Path) -> Result<(), String> {
