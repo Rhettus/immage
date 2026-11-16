@@ -146,7 +146,9 @@ camera-body fields exclude remote results when those filters are selected.
 
 Local search includes cached originals and saved virtual copies, using only
 current metadata and model-versioned analysis. Temporary previews are not saved
-copy versions.
+copy versions. If the photo index changes while a search runs (during
+the first indexing, for instance), Immage restarts that search once on its own;
+if it changes again, the status line asks you to try the search again.
 Selected filters exclude unknown values; capture-date filters do not substitute
 file modification dates. Capture metadata retains the source’s fractional digits
 and UTC offset when recorded. Dates adjusted in Immage take precedence; an

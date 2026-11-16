@@ -26,6 +26,11 @@ type CoordinatorOptions<TQuery, TSources extends Record<string, unknown>> = {
   // the result distinct even if other metadata happens to look alike.
   verifiedIdentity?: (source: keyof TSources, item: TSources[keyof TSources]) => string | null;
   rankConstant?: number;
+  // An error after which a source restarts once from its first page, e.g. its
+  // index changed mid-scan. A later page's failure replaces that source's items
+  // with the restarted first page, so rows from two revisions never mix and
+  // nothing repeats. Other sources are untouched. A second failure is final.
+  restartOn?: (source: keyof TSources, error: unknown) => boolean;
 };
 
 const emptySource = <T>(): CombinedSourceState<T> => ({ status: "idle", items: [], next: null, error: null, loadingMore: false });
@@ -76,18 +81,30 @@ export function createCombinedSearchCoordinator<TQuery, TSources extends Record<
   const startSource = async (source: keyof TSources, query: TQuery, next: string | null, append: boolean, token: number) => {
     const controller = new AbortController();
     controllers.set(source, controller);
-    const before = state.sources[source];
+    let before = state.sources[source];
     updateSource(source, { status: "searching", error: null, loadingMore: append, ...(append ? {} : { items: [], next: null }) });
     try {
-      const page = await options.sources[source](query, next, controller.signal);
-      if (token !== generation || controller.signal.aborted) return;
-      updateSource(source, {
-        status: "ready", items: append ? [...before.items, ...page.items] : page.items,
-        next: page.next, error: null, loadingMore: false,
-      });
-    } catch (error) {
-      if (token !== generation || controller.signal.aborted) return;
-      updateSource(source, { status: "error", error, loadingMore: false });
+      for (let restarted = false; ; restarted = true) {
+        try {
+          const page = await options.sources[source](query, next, controller.signal);
+          if (token !== generation || controller.signal.aborted) return;
+          updateSource(source, {
+            status: "ready", items: append ? [...before.items, ...page.items] : page.items,
+            next: page.next, error: null, loadingMore: false,
+          });
+          return;
+        } catch (error) {
+          if (token !== generation || controller.signal.aborted) return;
+          if (restarted || !options.restartOn?.(source, error)) {
+            updateSource(source, { status: "error", error, loadingMore: false });
+            return;
+          }
+          next = null;
+          append = false;
+          before = state.sources[source];
+          updateSource(source, { status: "searching", error: null, loadingMore: false, items: [], next: null });
+        }
+      }
     } finally {
       if (controllers.get(source) === controller) controllers.delete(source);
     }

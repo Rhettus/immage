@@ -4773,6 +4773,7 @@
   "app.status.searchResults": "{count}{more} photos{busy}{errors}",
   "app.status.searchBusy": " · recherche…",
   "app.status.searchErrors": " · {errors}",
+  "app.status.searchIndexChanged": "L’index des photos a changé pendant la recherche. Relancez la recherche dans un instant.",
   "app.status.importedSummary": "importé : {items}",
   "app.status.importedPresetCount": "{count} préréglage{plural}",
   "app.status.importedLookCount": "{count} look{plural}",

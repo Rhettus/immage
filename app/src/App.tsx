@@ -126,7 +126,7 @@ import { effectiveFilter, folderSearch, needsSearch, normalizeFind, reach, type 
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
 import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
-import { localSearch, similarSearch } from "./localSearch";
+import { indexChanged, localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
@@ -3109,6 +3109,7 @@ export default function App() {
       },
     },
     verifiedIdentity: searchIdentity,
+    restartOn: (source, error) => source === "local" && indexChanged(error),
     onUpdate: state => {
       const q = state.query as SearchQuery | null;
       if (!q) return;
@@ -3119,7 +3120,7 @@ export default function App() {
       updateImages(list);
       loader.current?.request(list.map(i => i.imgid));
       setImmich({ search: q.form, next, busy });
-      const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${String(v.error)}`);
+      const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${indexChanged(v.error) ? t("app.status.searchIndexChanged") : String(v.error)}`);
       setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" })
         + (skipRef.current && skippedNote(reach(q.form, !!immichBaseRef.current)) ? ` ${t(skippedNote(reach(q.form, !!immichBaseRef.current))!)}` : ""));
     },

@@ -48,3 +48,42 @@ test('disabled sources perform no calls', async () => {
   let remote=0;const c=create({sources:{local:async()=>({items:['a'],next:null}),immich:async()=>{remote++;throw Error('not configured');}}});
   await c.search('x',['local']);assert.equal(remote,0);assert.equal(c.getState().sources.immich.status,'idle');
 });
+const changed = () => Error('index-changed: local index changed');
+const restartOn = (source, e) => source === 'local' && String(e).includes('index-changed');
+test('a source restarts once from its first page when its index changed', async () => {
+  const calls = []; let fail = 1;
+  const c = create({ restartOn, sources: { local: async (q, next) => { calls.push(next); if (fail-- > 0) throw changed(); return { items: ['a'], next: null }; }, immich: async () => ({ items: ['b'], next: null }) } });
+  await c.search('x');
+  assert.deepEqual(calls, [null, null]);
+  assert.equal(c.getState().sources.local.status, 'ready');
+  assert.deepEqual(c.getState().sources.local.items, ['a']);
+  assert.deepEqual(c.getState().sources.immich.items, ['b']);
+});
+test('a failing later page restarts from page one and replaces the items', async () => {
+  const calls = []; let failed = false;
+  const c = create({ restartOn, sources: { local: async (q, next) => { calls.push(next);
+    if (next === 'L' && !failed) { failed = true; throw changed(); }
+    return next ? { items: ['c'], next: null } : { items: ['a'], next: 'L' }; }, immich: async () => ({ items: [], next: null }) } });
+  await c.search('x'); await c.loadMore('local');
+  assert.deepEqual(calls, [null, 'L', null]);
+  assert.deepEqual(c.getState().sources.local.items, ['a']);
+  assert.equal(c.getState().sources.local.next, 'L');
+});
+test('two index changes in a row stop with the error and no third attempt', async () => {
+  let n = 0;
+  const c = create({ restartOn, sources: { local: async () => { n++; throw changed(); }, immich: async () => ({ items: [], next: null }) } });
+  await c.search('x');
+  assert.equal(n, 2);
+  assert.equal(c.getState().sources.local.status, 'error');
+});
+test('a cancelled query does not retry, and other errors are not retried', async () => {
+  let n = 0; const gate = deferred();
+  const c = create({ restartOn, sources: { local: async () => { n++; await gate.promise; throw changed(); }, immich: async () => ({ items: [], next: null }) } });
+  const p = c.search('x'); await tick(); c.cancel(); gate.resolve(); await p;
+  assert.equal(n, 1);
+  let m = 0;
+  const d = create({ restartOn, sources: { local: async () => { m++; throw Error('offline'); }, immich: async () => ({ items: [], next: null }) } });
+  await d.search('x');
+  assert.equal(m, 1);
+  assert.equal(String(d.getState().sources.local.error), 'Error: offline');
+});

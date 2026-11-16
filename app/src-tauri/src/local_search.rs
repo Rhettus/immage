@@ -15,6 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const ANALYSIS_VERSION: i64 = 1;
+/// Prefix of the error a search returns when the index changed under it. The
+/// page matches this marker (`INDEX_CHANGED` in localSearch.ts), not the text.
+pub const INDEX_CHANGED: &str = "index-changed";
 pub const MODEL_VERSION: &str = crate::clip_models::REVISION;
 #[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
@@ -212,7 +215,7 @@ pub fn retrieve(
             || !c.score.is_finite()
             || c.variant_id <= 0
     }) {
-        return Err("Local index or query changed; restart the search".into());
+        return Err(format!("{INDEX_CHANGED}: local index or query changed; restart the search"));
     }
     let mut heap = BinaryHeap::new();
     let needed = args.size as usize + 1;
@@ -224,7 +227,7 @@ pub fn retrieve(
             return Err("Search cancelled".into());
         }
         if cache.revision() != Ok(revision.clone()) {
-            return Err("Local index changed; restart the search".into());
+            return Err(format!("{INDEX_CHANGED}: local index changed; restart the search"));
         }
         let batch = cache.candidates(
             after,
@@ -320,7 +323,7 @@ pub fn retrieve(
         return Err("Search cancelled".into());
     }
     if cache.revision() != Ok(revision.clone()) {
-        return Err("Local index changed; restart the search".into());
+        return Err(format!("{INDEX_CHANGED}: local index changed; restart the search"));
     }
     let mut sorted = heap.into_vec();
     sorted.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.id.cmp(&b.id)));

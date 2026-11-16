@@ -3,6 +3,10 @@ import { commands } from "./commands";
 import { nativeSearchArgs, type ImmichSearch } from "./immich";
 import type { Filter } from "./filter";
 import type { ImageEntry } from "./library";
+// the prefix of the error the engine side returns when the index is written
+// during a scan or a cursor is stale (INDEX_CHANGED in local_search.rs)
+export const INDEX_CHANGED = "index-changed";
+export const indexChanged = (error: unknown) => String(error).includes(INDEX_CHANGED);
 let requestId = 0;
 export async function localSearch(q: ImmichSearch, filters: Filter, folder: string, recursive: boolean,
                                   next: string | null, signal: AbortSignal, imageVariant?: string, pendingMetadata?: Promise<unknown>[]) {
