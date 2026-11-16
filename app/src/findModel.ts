@@ -36,8 +36,11 @@ export function withSearchIn(s: ImmichSearch, v: SearchIn): ImmichSearch {
 }
 
 // opening a folder: the search half goes back to the open folder with no
-// words, so the stars and ticks filter it live rather than start a search
-export const folderSearch = (s: ImmichSearch): ImmichSearch => ({ ...s, source: "local", scope: "folder", text: "" });
+// words and none of its filters (the folder Filter is cleared alongside), so
+// the two halves agree and the stars and ticks filter it live rather than
+// start a search. Mode, subject and Immich library stay as chosen
+export const folderSearch = (s: ImmichSearch): ImmichSearch =>
+  ({ ...clearAll({ search: s, filter: NO_FILTER }).search, source: "local", scope: "folder", text: "" });
 
 // which sources a search reaches; Immich only when it is set up. `skipped`
 // says the state asked for Immich and it was not there (a saved filter run
