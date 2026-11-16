@@ -664,7 +664,8 @@ Click the magnifier in the toolbar under the grid (shown in the grid only), the
 small icon at the right of a thumbnail's hover footer, or choose
 **View > Culling Preview**, to open the same preview without the keyboard.
 The toolbar magnifier and the menu use the photo under the pointer, else the
-selected photo; the thumbnail icon opens that thumbnail's photo.
+selected photo, else the first photo in the grid; the thumbnail icon opens
+that thumbnail's photo.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
 in a fixed frame covering 80% of the window width and height, without opening it in the

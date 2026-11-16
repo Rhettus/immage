@@ -106,7 +106,9 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useEffect(() => {
     const open = (event: Event) => {
       if (document.querySelector(".modal-backdrop")) return;
-      const target = cullingTarget((event as CustomEvent<{ imgid?: number }>).detail?.imgid);
+      // the button and the menu always open something: with no photo hovered or
+      // selected, the first one
+      const target = cullingTarget((event as CustomEvent<{ imgid?: number }>).detail?.imgid) ?? images[0];
       if (!target) return;
       direction.current = 1; setPhoto(target.imgid);
     };

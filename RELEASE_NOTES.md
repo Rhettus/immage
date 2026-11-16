@@ -75,7 +75,8 @@ Improvements
   tools, keeping Print available; choosing an editing tool leaves the grid.
 - A Library button on the rail, below Import, switches between the filmstrip
   and the grid (G still works). It replaces the toolbar's Grid button, and the
-  toolbar's culling button becomes a magnifier shown in the grid.
+  toolbar's culling button becomes a magnifier shown in the grid, which opens
+  the first photo when none is selected or under the pointer.
 - Lens Corrections offers sensor-specific raw demosaic methods, with
   darktable's default selected.
 - Clarity and Texture detail sliders are grouped in labeled boxes.

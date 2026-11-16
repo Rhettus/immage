@@ -162,9 +162,7 @@ export async function findLive(t) {
 
   // the magnifier: only in the grid, and it opens the culling lightbox
   const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
-  // it opens on the selected photo, so one is picked first
-  await click(t, '.filmstrip.grid .thumb[data-imgid]');
-  await until(() => present(t, '.filmstrip.grid .thumb.active'), 'a grid photo is selected');
+  // nothing is selected or hovered here: it opens the first photo
   await click(t, '.toolbar button.culling-open');
   await until(() => present(t, lightbox), 'the magnifier opens the culling preview');
   await t.driver.keys(ESC);
