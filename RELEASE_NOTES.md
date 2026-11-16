@@ -7,147 +7,69 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Preferences shows the number of photos analysed by CLIP below Background work,
-  followed by model controls. Directory status uses compact rows with connection
-  dots in a fixed-height scrollable list.
-- Interface language setting in Preferences > General defaults to the system’s
-  preferred supported language, with English fallback. French adds the initial
-  menu and Preferences translations. Changes apply at the next launch or with
-  Relaunch, which saves the current photo first. Additional languages use one
-  JSON file each, including regional variants and language-specific plurals.
-- French translations extend across editing fields, library controls, status
-  messages, dialogs, and export and print settings. Advanced module wording reuses translations
-  from the pinned darktable version. Untranslated text falls back to English.
-- Preferences > General adds Local photo cache status, pause/resume, clear
-  and rebuild, plus explicit optional CLIP model download and CPU checks.
+- Advanced mode, a new editing mode with a Simple/Advanced switch that stays
+  available across tools. It adds searchable editing modules, presets and
+  groups, with controls to customize their order and instances. Module edits
+  support masks, undo and Copy Settings.
+- Smart search finds photos by describing them, such as "sunset on a beach",
+  using a model that runs on this computer. To turn it on, open Preferences >
+  General, find CLIP model (optional) in the Local photo cache card and press
+  Download or repair (about 608 MB), then choose Smart in Find. Until then Find
+  searches file names only, and a tip in Find links to the setting.
 - Find replaces the Search photos card and the Filters popup. The toolbar's
-  Find button opens one place for search words (Smart or Filename), where to
-  search (This folder, All folders and, with Immich set up, Immich or Both),
-  and every filter, grouped as Photo, Camera, When & where and Immich. Filters
-  on show as removable chips, with a warning when a filter can match only one
-  source in a Both search. Everything applies live, and Find can be minimized
-  to a strip, docked beside the grid or filled over it, with each size
-  remembering its place. In the grid view, Find is instead locked into the
-  right-hand panel, which the grid makes room for. Local searches cover
-  cached metadata and optional CPU
-  similarity analysis; combined results merge verified local paths and weight
-  each source equally. Saved edits and metadata changes stay searchable
-  without reopening folders. Rejected photos can be shown, hidden or isolated.
-  Without the optional CLIP model and an Immich connection, Find searches file
-  names only: it hides the Smart/Filename switch and says so in its box, and
-  Smart returns by itself once either is ready. Until the model is downloaded a
-  dismissible tip links to its setting, which is now in Preferences > General
-  (the local photo cache card moved there from Performance).
-- Saved filters keep a whole Find setup under a name: open one from Find, from
-  the toolbar's Find menu, or with Alt+1 to Alt+9 (Option on Mac) for the first
-  nine. Saved filters can be updated, renamed, reordered and deleted, and are
-  included in the Preferences & library backup. If a saved filter searches
-  Immich and Immich is unavailable, Find searches this computer only and says
-  so.
-- Cached capture metadata preserves fractional seconds and recorded UTC offsets;
-  dates adjusted in Immage take precedence over the source capture date.
-- The grid adds Show more like this for indexed local photos once the CLIP model is downloaded, searching all
-  library folders with retained filters and a visible image-query indicator.
-  Local similarity can use the original photo or its saved edited appearance.
-- Advanced mode adds searchable editing modules, presets and groups, with
-  controls to customize their order and instances. Module edits support masks,
-  undo and Copy Settings. The Simple/Advanced switch stays available across
-  tools; Masks supports expand/collapse all settings and adjustments.
-- Drag photos onto folders to move them, or hold ⌥ (Alt) to copy; Immich photos
-  are always copied. A confirmation resolves name conflicts. Sidecars travel
-  with each photo, and copies are verified before originals are removed.
-- In the grid, F opens a culling preview with navigation, ratings, labels and
-  rejection. It also opens from the toolbar's magnifier button, each
-  thumbnail's hover bar, or View > Culling Preview. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
-  Fit/100%, Space-drag to pan, and double-click to edit.
-  K keywords the selected photos, or the hovered photo when none are selected.
-- Grid thumbnails resize with the slider, trackpad pinch, ⌘-scroll, or ⌘= / ⌘-;
-  the photo under the pointer stays in place and the chosen size is remembered.
-- History can discard all edits and restart from New Photos defaults, with
-  undo. Ctrl-click (⌘-click on Mac) Compress to discard later history steps.
-  Hold an Adjustments panel's eye button to see the photo without that
-  panel's edits; letting go brings them back.
-- Y cycles through side-by-side and split before/after views, then turns them
-  off. The toolbar button also offers Hold for before: press and hold on the
-  photo to see the original. Press `\` for the full Before view.
-- Right-click a folder for New Folder…, Show in Finder, or Remove from List.
-  In the grid view the right-hand panel shows Find instead of the editing
-  tools, keeping Print available; choosing an editing tool leaves the grid.
-- A Library button on the rail, below Import, switches between the filmstrip
-  and the grid (G still works). It replaces the toolbar's Grid button, and the
-  toolbar's culling button becomes a magnifier shown in the grid, which opens
-  the first photo when none is selected or under the pointer.
-- Lens Corrections offers sensor-specific raw demosaic methods, with
-  darktable's default selected.
-- Clarity and Texture detail sliders are grouped in labeled boxes.
-- Heal shows its source as soon as you press and keeps the outer brush circle
-  visible while painting.
-- The quick start guide points to the Advanced mode button and the Library
-  button. The Simple mode
-  sliders icon is now labeled More controls.
+  Find button opens one place for search words, where to search (This folder,
+  All folders, or Immich) and every filter, shown as removable chips. In the
+  grid it sits in the right-hand panel. Saved filters keep a whole Find setup:
+  open one from Find or with Alt+1 to Alt+9 (Option on Mac).
+- Show more like this in the grid finds photos that look like one you pick,
+  across all your folders, once the CLIP model is downloaded.
+- Culling in the grid: F, the toolbar's magnifier, a thumbnail's hover bar or
+  View > Culling Preview opens a preview with navigation, ratings, labels,
+  rejection and keywording (K). Scroll to zoom, click for Fit/100%, Space-drag
+  to pan, double-click to edit.
+- A Library button on the rail switches between the filmstrip and the grid.
+  Grid thumbnails resize with the slider, trackpad pinch or ⌘-scroll, and the
+  size is remembered.
+- Drag photos onto folders to move them, or hold ⌥ (Alt) to copy. A
+  confirmation resolves name conflicts, and sidecars travel with each photo.
+  Right-click a folder for New Folder…, Show in Finder, or Remove from List.
+- History can discard all edits and restart from New Photos defaults. Hold an
+  Adjustments panel's eye button to see the photo without that panel's edits.
+- Y cycles through side-by-side and split before/after views. The toolbar
+  button also offers Hold for before.
+- The interface language follows the system's, with English fallback, and can
+  be changed in Preferences > General. French is the first translation.
+- Lens Corrections offers sensor-specific raw demosaic methods, and Heal shows
+  its source as soon as you press.
 
 Bug fixes
 
-- A photo that fails to open, such as a damaged file picked from search
-  results, no longer leaves the editor stuck on "no image open" until restart.
-  Immage names the file it could not open and you can open another photo.
-  Clicking several photos quickly opens only the last one.
-- The Presets panel's hover preview no longer gets stuck on one preset. It
-  clears when the pointer leaves the tiles or a group is collapsed, and appears
-  without waiting for tile thumbnails.
-- Linux: opening a folder on a slow or wifi network share no longer pauses
-  for up to half a minute. Photos read before appear within a few seconds,
-  and a share that stops answering is reported instead of freezing the folder.
-- Windows: preferences, including the language choice and the Quick start
-  guide's Don't show again setting, are no longer sometimes lost at startup.
-- Immich local folder mappings no longer match photos that sit outside the
-  mapped folder, such as through a link or a path that climbs out of it.
-- Startup shows the grid until the last photo's first preview is ready. If
-  the photo is missing or cannot load, the grid stays available instead of
-  leaving a grey viewer.
-- DNG thumbnails can use embedded TIFF previews without ImageMagick. When an
-  unedited photo cannot be decoded, a readable smaller preview is used instead
-  of leaving its thumbnail blank.
-- Non-photo files such as `.ACR` sidecars stay out of the grid and filmstrip
-  from the start of a folder scan, instead of disappearing when it finishes.
-- Rejecting, rating and labeling photos while a folder loads now keeps those
-  changes visible as more photos arrive and loading finishes.
-- Basic's Auto works on a photo with Film Simulation or a converted negative,
-  which turn the AgX tone mapper off; it no longer stops with "auto tune needs
-  the AgX tone mapper".
-- Linux: pinching on a touchpad zooms the photo around the pointer, as on the
-  Mac, instead of zooming the whole window.
-- AI Denoise no longer fails with "No such file or directory" when you press
-  Run while its model is still downloading for the dialog's preview.
+- A photo that fails to open no longer leaves the editor stuck until restart;
+  Immage names the file, and clicking several photos quickly opens only the
+  last one.
+- Linux: opening a folder on a slow network share no longer pauses for up to
+  half a minute, and pinching on a touchpad zooms the photo, not the window.
+- Windows: preferences are no longer sometimes lost at startup.
+- Startup shows the grid until the first preview is ready, and non-photo files
+  such as `.ACR` sidecars stay out of the grid from the start.
+- Rating, rejecting and labeling photos while a folder loads keeps those
+  changes as more photos arrive.
+- The Presets hover preview no longer gets stuck on one preset.
+- Basic's Auto works on a photo with Film Simulation or a converted negative.
+- DNG thumbnails use embedded previews, and a photo that cannot be decoded gets
+  a smaller preview instead of a blank thumbnail.
+- AI Denoise no longer fails when you press Run while its model is still
+  downloading.
 
 Performance
 
-- The grid's culling preview loads faster while thumbnails or search analysis
-  run in the background: the photo you are viewing is prepared first.
-- Local search results appear faster, as filename and date searches no longer
-  look through the whole library for every page of results.
-- Reopening an unchanged folder is faster: its photo details are reused from
-  a local cache, and cached thumbnails appear without importing the photo.
-  Changed files and sidecars are reread. Moving a photo keeps its search
-  index, while a copy is indexed as a separate photo. Photos on drives that
-  are offline, and folders that were not fully scanned, stay in the cache.
-  Nothing is downloaded or uploaded for this; the optional local search
-  indexing uses a verified model package and runs on the CPU.
-- Lightbox navigation reuses nearby previews in memory and waits briefly before
-  starting speculative previews, reducing repeated loading and read-ahead work
-  during rapid navigation.
-- Grid previews show thumbnails immediately while loading larger images.
-  Prefetch follows the Read ahead count and Read ahead both ways preference.
-- Preferences > Performance > Memory adds a Library workers setting that
-  sets how many thumbnails are built, ORF metadata is read and photos are
-  moved or copied at once (Immich originals included). Each photo and its
-  sidecars are verified before originals are removed. A change applies to
-  later imports and new moves or copies.
-- ORF metadata reads try a small file prefix first and fall back to the full
-  file when needed. Preparation is bounded by Library workers, while results
-  are applied in file order and metadata/database updates remain serial.
+- Reopening an unchanged folder is faster, and local search results appear
+  faster. Nothing is uploaded for this.
+- The culling preview and lightbox load faster while background work runs.
+- Preferences > Performance > Memory adds a Library workers setting for how
+  many thumbnails are built and photos moved or copied at once.
 - The window no longer freezes while checking an export destination or a
-  dropped folder on a slow or unreachable network share.
+  dropped folder on a slow network share.
 
 ## 0.45.0
 
