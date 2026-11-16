@@ -382,6 +382,8 @@ photos match, **Clear all**, **Save filter…**, and **Show N**, which closes
 Find and shows the matches in the grid. Esc or a click away closes Find; the
 filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
+Opening another folder clears the filters, so a folder left on Rejected only
+never looks empty.
 
 ### Sizes
 
