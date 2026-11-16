@@ -96,6 +96,12 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         let (cache_listed, shared) = (listed_cache.clone(), app.state::<Caches>().listed.clone());
         let handle = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
+            // publish at once: stamps not yet read are Unknown there, which
+            // thumb_cached stats itself, so answers stay correct while
+            // prestat runs and cached_thumb no longer sees the previous
+            // folder's listing for up to STAT_WAIT. no lock is held across it
+            let early = cache_listed.lock().unwrap().clone();
+            publish_listing(&shared, early, || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) == token);
             cache::prestat(&cache_listed, STAT_WAIT);
             let now = cache_listed.lock().unwrap().clone();
             // prestat can take seconds: a newer folder read may have
