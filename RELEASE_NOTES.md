@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Folder filters show All photos and Rejected as selectable rows with photo
+  counts, matching the File type list and avoiding a dropdown.
 - Interface language setting in Preferences > General defaults to the system’s
   preferred supported language, with English fallback. French adds the initial
   menu and Preferences translations. Changes apply at the next launch or with

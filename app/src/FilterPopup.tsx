@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { commands, type Named } from "./commands";
-import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
+import { bodyLabel, EXPOSURE, facetsWithin, NO_FILTER, passes, popupCount, type ExposureKey, type Facets, type Filter } from "./filter";
 import type { ImageEntry } from "./library";
 import { immichFilterCount, NO_SEARCH, type ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
@@ -290,17 +290,25 @@ function FolderCategories({ filter: f, images, onFilter, onSearch }: {
   const cats: Category<Filter>[] = [
     { key: "rejected", title: t("library.filters.rejected"), summary: (v) => v.rejected === "all" ? "" : v.rejected === "hide" ? t("library.filters.hidden") : t("library.filters.onlyRejected"),
       clear: { rejected: "all" },
-      body: (v, set) => (
-        <div className="meta-grid filter-immich">
-          <label className="k" htmlFor="filter-rejected">{t("library.filters.show")}</label>
-          <select id="filter-rejected" className="field" value={v.rejected}
-                  onChange={(e) => set({ rejected: e.target.value as Filter["rejected"] })}>
-            <option value="all">{t("library.search.allPhotos")}</option>
-            <option value="hide">{t("library.filters.hideRejected")}</option>
-            <option value="only">{t("library.filters.onlyRejected")}</option>
-          </select>
-        </div>
-      ) },
+      body: (v, set) => {
+        const eligible = images.filter((i) => passes(i, { ...v, rejected: "all" }));
+        const options = [
+          { value: "all", label: t("library.search.allPhotos"), count: eligible.length },
+          { value: "only", label: t("library.filters.rejected"), count: eligible.filter((i) => i.rejected).length },
+        ] as const;
+        return (
+          <div className="filter-ticks">
+            {options.map(({ value, label, count }) => (
+              <button key={value} className={v.rejected === value ? "on" : ""}
+                      aria-pressed={v.rejected === value} onClick={() => set({ rejected: value })}>
+                <span className="tick">{v.rejected === value ? "✓" : ""}</span>
+                <span className="name">{label}</span>
+                <span className="count">{formatNumber(count)}</span>
+              </button>
+            ))}
+          </div>
+        );
+      } },
     { key: "kinds", title: t("library.filters.fileType"), summary: (v) => chosen(v.kinds), clear: { kinds: [] },
       body: (v, set) => <Ticks items={within(v, { kinds: [] }).kinds} chosen={v.kinds} onChange={(kinds) => set({ kinds })} empty={t("library.filters.noPhotos")} /> },
     { key: "cameras", title: t("library.filters.camera"), summary: (v) => chosen(v.cameras), clear: { cameras: [] },

@@ -393,8 +393,11 @@ The toolbar under the filmstrip filters the folder:
   as many as you like, then click **Search** to filter the folder and show
   it in the grid; **Clear** in the panel takes that one off, at the next
   **Search**.
-  - **Rejected**: **All photos**, **Hide rejected** or **Only rejected**.
-    This counts as an active filter and resets with **Clear all**.
+  - **Rejected**: choose **All photos** or **Rejected** from rows with photo
+    counts, like the File type list. Counts reflect the other selected filters.
+    **Rejected** shows only rejected photos after **Search**; **All photos**,
+    **Clear** or **Clear all** removes this restriction. To hide rejected
+    photos, use the toolbar’s **Reject** button.
   - **File type**, **Camera** and **Lens**: tick any to show photos of
     those, for example **RAW** and **JPEG**. Each lists what the folder
     holds, with how many photos of each.
