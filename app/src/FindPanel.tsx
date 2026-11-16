@@ -19,6 +19,7 @@ import type { ImageEntry } from "./library";
 import { LABEL_COLORS } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
+import { loadLayout, offsetFor, placeRect, SIZES, storeLayout, type FindLayout, type FindSize } from "./findLayout";
 
 // one thing to filter by in a row of the list: what it is set to ("" when unset)
 function Row({ title, summary, shown, onClick }: { title: string; summary: string; shown: boolean; onClick: () => void }) {
@@ -227,6 +228,13 @@ const ids = (all: Named[], chosen: string[], onChange: (ids: string[]) => void, 
 
 type Bounds = { left: number; right: number; top: number; bottom: number };
 
+// the size buttons' pictures: a strip, a panel at the side, the whole area
+const SIZE_ICON: Record<FindSize, React.ReactNode> = {
+  minimize: <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="8.5" width="11" height="3" rx="1" fill="none" stroke="currentColor" /></svg>,
+  dock: <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="1.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" /><rect x="8" y="2" width="4.5" height="10" fill="currentColor" /></svg>,
+  fill: <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="1.5" width="11" height="11" rx="1.5" fill="currentColor" stroke="currentColor" /></svg>,
+};
+
 const GROUP_TITLE: Record<(typeof GROUPS)[number], () => string> = {
   photo: () => t("library.find.group.photo"), camera: () => t("library.find.group.camera"),
   when: () => t("library.find.group.when"), immich: () => t("library.find.group.immich"),
@@ -257,6 +265,11 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   anchorRef.current = anchor;
   const [, relayout] = useState(0);
   const [shown, setShown] = useState<CategoryKey>("rating");
+  // the size last used, and where each size was dragged to
+  const [layout, setLayout] = useState<FindLayout>(loadLayout);
+  const size = layout.size;
+  const rtl = document.dir === "rtl";
+  const move = (next: FindLayout) => { setLayout(next); storeLayout(next); };
   const { search: s, filter: f } = state;
   const r = reach(s, immichAvailable);
   const server = serverPickers(s, immichAvailable);
@@ -466,17 +479,34 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     }
   };
 
-  // over the grid, above the toolbar's Find button: centered on the grid
-  // area, as tall as fits between the area's top and the button
-  const at = (() => {
-    const b = bounds() ?? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
-    const a = anchor();
-    const width = Math.min(760, Math.max(320, b.right - b.left - 16));
-    const room = a ? a.top - 6 - b.top - 8 : b.bottom - b.top - 16;
-    return { left: Math.max(0, (b.left + b.right) / 2 - width / 2), width,
-             bottom: a ? window.innerHeight - a.top + 6 : window.innerHeight - b.bottom + 8,
-             height: Math.max(240, Math.min(640, room)) };
-  })();
+  // inside the grid area, where the size and its dragged offset put it: always
+  // clamped, so a smaller window or area never leaves it out of reach
+  const area = bounds() ?? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+  const anchorTop = anchor()?.top;
+  const at = placeRect(size, area, anchorTop, rtl, size === "fill" ? undefined : layout.pos[size]);
+  // the grip drags the strip and the dock; each keeps its own place
+  const drag = (e: React.PointerEvent<HTMLElement>) => {
+    if (size === "fill" || e.button !== 0) return;
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    const grab = { x: e.clientX - at.left, y: e.clientY - at.top };
+    let last = layout.pos[size];
+    const go = (m: PointerEvent) => {
+      const b = bounds() ?? area;
+      last = offsetFor(size, b, anchor()?.top, rtl, { left: m.clientX - grab.x, top: m.clientY - grab.y });
+      setLayout((l) => ({ ...l, pos: { ...l.pos, [size]: last } }));
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", go);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      setLayout((l) => { storeLayout(l); return l; });
+    };
+    grip.addEventListener("pointermove", go);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  };
+  const resetPos = () => { if (size !== "fill") move({ ...layout, pos: { ...layout.pos, [size]: undefined } }); };
 
   const notice = [
     ...(lacks.length > 0 && r.immich ? [t("library.search.missingPermissions", {
@@ -490,12 +520,17 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   ];
 
   const where = searchIn(s);
+  const countText = <>
+    {count === null ? "…" : t("library.find.count", { n: count, count: formatNumber(count) })}
+    {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
+  </>;
   return createPortal(
     <div className="find-pop" ref={pop} role="dialog" aria-label={t("library.find.title")}
-         style={{ left: at.left, bottom: at.bottom, width: at.width, height: at.height }}>
+         data-size={size}
+         style={{ left: at.left, top: at.top, width: at.width, ...(size === "minimize" ? {} : { height: at.height }) }}>
       <div className="find-head">
         <div className="find-row">
-          <span className="find-grip" aria-hidden="true">⠿</span>
+          <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>
           <input className="field find-text" type="search" spellCheck={false} autoFocus value={s.text}
                  aria-label={t("library.search.title")} placeholder={t("library.search.example")}
                  onChange={(e) => send({ ...state, search: { ...s, text: e.target.value } }, false)}
@@ -507,9 +542,16 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                     onClick={() => send({ ...state, search: { ...s, mode: "filename" } }, s.text.trim() !== "")}>{t("library.search.filename")}</button>
           </div>
           {saved}
-          <div className="find-sizes" />
+          {size === "minimize" && <span className="find-count find-mincount">{countText}</span>}
+          <div className="find-sizes">
+            {SIZES.map((z) => (
+              <button key={z} className={`find-size find-size-${z}${size === z ? " on" : ""}`} aria-pressed={size === z}
+                      title={t(`library.find.size.${z}`)} aria-label={t(`library.find.size.${z}`)}
+                      onClick={() => move({ ...layout, size: z })}>{SIZE_ICON[z]}</button>
+            ))}
+          </div>
         </div>
-        <div className="find-row find-where">
+        {size !== "minimize" && <div className="find-row find-where">
           <span className="find-where-label">{t("library.find.searchIn")}</span>
           <select className="field" aria-label={t("library.find.searchIn")} value={where}
                   onChange={(e) => send({ ...state, search: withSearchIn(s, e.target.value as SearchIn) })}>
@@ -532,9 +574,9 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
               {libraries.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           )}
-        </div>
-        {savedLine}
-        <div className="find-chips">
+        </div>}
+        {size !== "minimize" && savedLine}
+        {size !== "minimize" && <div className="find-chips">
           {active.map((c) => {
             const text = describe(c.key, c.setting);
             const tip = c.excludes === "local" ? t("library.find.excludesLocal") : c.excludes === "immich" ? t("library.find.excludesImmich") : undefined;
@@ -549,9 +591,22 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
             );
           })}
           {!active.length && <span className="find-none">{t("library.find.noFilters")}</span>}
-        </div>
+        </div>}
       </div>
-      <div className="find-body">
+      {size === "fill" && (
+        <div className="find-all">
+          {cats.map((c) => (
+            <section key={c.key} className="find-pane">
+              <div className="find-pane-head">
+                <h3>{title(c.key)}</h3>
+                {c.only === "immich" && <span className="find-tag">{t("library.find.group.immich")}</span>}
+              </div>
+              <div className="find-pane-body">{body(c.key)}</div>
+            </section>
+          ))}
+        </div>
+      )}
+      {size === "dock" && <div className="find-body">
         <nav className="find-nav">
           {GROUPS.map((g) => {
             const rows = cats.filter((c) => c.group === g);
@@ -580,20 +635,17 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
           </div>
           <div className="find-pane-body" key={cat.key}>{body(cat.key)}</div>
         </div>
-      </div>
-      {notice.length > 0 && <div className="find-notes">{notice.map((n, i) => <div key={i} className="find-note">{n}</div>)}</div>}
-      <div className="find-foot">
-        <span className="find-count">
-          {count === null ? "…" : t("library.find.count", { n: count, count: formatNumber(count) })}
-          {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
-        </span>
+      </div>}
+      {size !== "minimize" && notice.length > 0 && <div className="find-notes">{notice.map((n, i) => <div key={i} className="find-note">{n}</div>)}</div>}
+      {size !== "minimize" && <div className="find-foot">
+        <span className="find-count">{countText}</span>
         <button className="btn small find-clear-all" disabled={!active.length}
                 onClick={() => send(clearAll(state))}>{t("library.filters.clearAll")}</button>
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
         <button className="btn small primary find-show" onClick={onShow}>
           {count === null ? t("library.find.show") : t("library.find.showCount", { n: count, count: formatNumber(count) })}
         </button>
-      </div>
+      </div>}
     </div>,
     document.body,
   );

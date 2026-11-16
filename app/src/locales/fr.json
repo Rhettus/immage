@@ -5033,5 +5033,8 @@
   "library.find.saved.moveDown": "Descendre",
   "library.find.saved.delete": "Supprimer",
   "library.find.saved.confirmDelete": "Supprimer ce filtre ?",
-  "library.find.saved.immichSkipped": "Immich n’est pas disponible : recherche limitée à cet ordinateur"
+  "library.find.saved.immichSkipped": "Immich n’est pas disponible : recherche limitée à cet ordinateur",
+  "library.find.size.minimize": "Réduire en bandeau",
+  "library.find.size.dock": "Ancrer à côté de la grille",
+  "library.find.size.fill": "Remplir la grille"
 }

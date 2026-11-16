@@ -5033,5 +5033,8 @@
   "library.find.saved.moveDown": "Move down",
   "library.find.saved.delete": "Delete",
   "library.find.saved.confirmDelete": "Delete this filter?",
-  "library.find.saved.immichSkipped": "Immich is not available: searched this computer only"
+  "library.find.saved.immichSkipped": "Immich is not available: searched this computer only",
+  "library.find.size.minimize": "Minimize to a strip",
+  "library.find.size.dock": "Dock beside the grid",
+  "library.find.size.fill": "Fill the grid"
 }

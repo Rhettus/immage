@@ -2086,6 +2086,24 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 @keyframes find-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .find-spin { animation-duration: 3s; } }
+/* the three sizes: Minimize is a strip of the head row, Dock a column at the
+   grid's inline end, Fill every category at once in columns */
+.find-grip { cursor: grab; touch-action: none; }
+.find-size { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; background: none; border: none; border-radius: 6px; color: var(--text-3); cursor: pointer; }
+.find-size:hover { background: var(--hover); color: var(--text); }
+.find-size.on { background: var(--inset); color: var(--text); }
+.find-pop[data-size="fill"] .find-grip { visibility: hidden; cursor: default; }
+.find-pop[data-size="minimize"] { overflow: visible; }
+.find-pop[data-size="minimize"] .find-head { border-bottom: none; padding-block: 10px; }
+.find-mincount { flex: none; margin-inline-end: 0; white-space: nowrap; color: var(--text); }
+.find-pop[data-size="dock"] .find-body { flex-direction: column; }
+.find-pop[data-size="dock"] .find-nav { width: auto; flex: 0 1 38%; border-inline-end: none; border-bottom: 1px solid var(--inset, #262626); }
+.find-all {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: grid; gap: 8px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start;
+}
+.find-all .find-pane { background: var(--window); border-radius: 9px; padding-bottom: 6px; }
+.find-all .find-pane-body { overflow: visible; }
 
 /* saved filters (SavedFilters.tsx) */
 .saved-menu { display: inline-flex; }
