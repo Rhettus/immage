@@ -206,7 +206,10 @@ Nothing happens until you confirm. The confirmation shows the following:
   it, since they share its file.
 - **Photos already there.** A photo already in the folder with identical
   content (checked by checksum) isn't copied again. A move just removes
-  the original.
+  the original, but only when the photo in the folder is a separate copy.
+  When the folder is the photo's own folder under another name (a link,
+  or the same share mounted twice), the photo counts as already in this
+  folder and nothing is removed.
 - **Same name, other content.** These photos are listed, each with
   **Skip** or **Keep both**. Keep both gives the incoming photo and its
   sidecars a number (IMG_1000.CR3 arrives as IMG_1000_1.CR3). **Skip all**

@@ -433,6 +433,65 @@ fn canonical(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
+// whether two names are one file. the inode with the modification time,
+// not the device: two mounts of one share have different devices but the
+// server's file ids. identical bytes were checked first, so a match here
+// that is really two files only keeps a source a move would have removed
+#[cfg(unix)]
+fn same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    matches!((std::fs::metadata(a), std::fs::metadata(b)),
+        (Ok(x), Ok(y)) if x.ino() == y.ino() && x.mtime() == y.mtime() && x.mtime_nsec() == y.mtime_nsec())
+}
+
+#[cfg(not(unix))]
+fn same_file(_a: &Path, _b: &Path) -> bool {
+    false
+}
+
+static MARKER: AtomicU64 = AtomicU64::new(0);
+
+// whether folder `b` shows folder `a`'s contents: a file made in `a` is
+// looked for in `b`. sees through what neither canonicalize nor the inode
+// does (a share mounted twice through different clients, a case-folded
+// name). a marker that cannot be made answers yes, so nothing is removed
+fn same_folder(a: &Path, b: &Path) -> bool {
+    if canonical(a) == canonical(b) {
+        return true;
+    }
+    let name = format!(".immage-alias-{}-{}", std::process::id(), MARKER.fetch_add(1, Ordering::SeqCst));
+    let marker = a.join(&name);
+    if std::fs::OpenOptions::new().write(true).create_new(true).open(&marker).is_err() {
+        return true;
+    }
+    let seen = b.join(&name).symlink_metadata().is_ok();
+    let _ = std::fs::remove_file(&marker);
+    seen
+}
+
+// whether any file a move found already at the destination (`there`) is
+// its own source under another name: a link to it, the same file through a
+// bind mount or case-folded name, or a folder that is the source folder
+// mounted again. removing the sources then deletes the only copy
+fn aliased(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool]) -> bool {
+    let mut folders: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for ((f, r), t) in u.files.iter().zip(rel).zip(there) {
+        let Some(from) = &f.from else { continue };
+        if !*t {
+            continue;
+        }
+        let target = dest.join(r);
+        if target.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(true) || same_file(from, &target) {
+            return true;
+        }
+        let pair = (from.parent().unwrap_or(Path::new("")).to_path_buf(), target.parent().unwrap_or(dest).to_path_buf());
+        if !folders.contains(&pair) {
+            folders.push(pair);
+        }
+    }
+    folders.iter().any(|(a, b)| same_folder(a, b))
+}
+
 // a sidecar's place under the destination: beside the photo, or in the
 // same subfolder it had beside it
 fn relative(sidecar: &Path, dir: &Path) -> PathBuf {
@@ -572,6 +631,7 @@ pub(crate) async fn move_plan(app: AppHandle, state: State<'_, AppState>, req: M
         for u in &units {
             let rel: Vec<PathBuf> = u.files.iter().map(|f| f.rel.clone()).collect();
             let (c, there) = if u.here { (Clash::Same, vec![true; rel.len()]) } else { clash(u, &dest, &rel, None) };
+            let here = u.here || (c == Clash::Same && !u.keep_source && aliased(u, &dest, &rel, &there));
             let size: u64 = u.files.iter().map(|f| f.size).sum();
             bytes += u.files.iter().zip(&there).filter(|(_, t)| !**t).map(|(f, _)| f.size).sum::<u64>();
             match &u.files[0].from {
@@ -585,7 +645,7 @@ pub(crate) async fn move_plan(app: AppHandle, state: State<'_, AppState>, req: M
                 versions: u.versions,
                 files: u.files.len() as u32,
                 bytes: size,
-                clash: if u.here { "here".into() } else { c.label().into() },
+                clash: if here { "here".into() } else { c.label().into() },
                 download: u.download.is_some(),
                 keep_source: u.keep_source,
             });
@@ -821,6 +881,9 @@ fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &C
         if ctx.cancelled() { return Err(CANCELLED.into()); }
         if c == Clash::Same && (copy || u.keep_source) { return Ok(None); }
         if c == Clash::Different && !keep { return Ok(None); }
+        // the sources would go with nothing placed: only if they are not
+        // the very files found there
+        if c == Clash::Same && aliased(u, dest, &selected, &same) { return Ok(None); }
         there = same;
         needs_number = c == Clash::Different;
     }
@@ -1580,6 +1643,58 @@ mod tests {
         assert!(transfer_unit(&u, &dest, &names(&u), &there, false, true, &ctx(), &no_open).is_err());
         assert!(d.join("src/D.DNG").is_file() && d.join("src/D.DNG.xmp").is_file());
         assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0);
+    }
+
+    // M1: a destination that is the source under another name must not
+    // have the sources removed as "already there"
+    #[cfg(unix)]
+    #[test]
+    fn a_move_onto_its_own_files_removes_nothing() {
+        let d = test_dir("alias-link");
+        let u = photo(&d.join("src"), "L.CR3");
+        let dest = d.join("dest");
+        for f in &u.files {
+            std::os::unix::fs::symlink(f.from.as_ref().unwrap(), dest.join(&f.rel)).unwrap();
+        }
+        assert_eq!(clash(&u, &dest, &names(&u), None).0, Clash::Same);
+        assert!(transfer_photo(&u, &dest, false, false, &ctx(), &no_open).unwrap().is_none());
+        assert!(u.files.iter().all(|f| f.from.as_ref().unwrap().is_file()));
+
+        // the same file by a hard link: one inode, kept too
+        let d = test_dir("alias-hard");
+        let u = photo(&d.join("src"), "H.CR3");
+        let dest = d.join("dest");
+        for f in &u.files {
+            std::fs::hard_link(f.from.as_ref().unwrap(), dest.join(&f.rel)).unwrap();
+        }
+        assert!(transfer_photo(&u, &dest, false, false, &ctx(), &no_open).unwrap().is_none());
+        assert!(u.files.iter().all(|f| f.from.as_ref().unwrap().is_file()));
+    }
+
+    #[test]
+    fn a_real_copy_already_there_lets_a_move_finish() {
+        let d = test_dir("alias-none");
+        let u = photo(&d.join("src"), "R.CR3");
+        let dest = d.join("dest");
+        for f in &u.files {
+            std::fs::copy(f.from.as_ref().unwrap(), dest.join(&f.rel)).unwrap();
+        }
+        let (gone, _) = transfer_photo(&u, &dest, false, false, &ctx(), &no_open).unwrap().unwrap();
+        assert!(gone);
+        assert!(u.files.iter().all(|f| !f.from.as_ref().unwrap().exists()));
+        assert!(u.files.iter().all(|f| dest.join(&f.rel).is_file()));
+        // no marker left in the source folder
+        assert_eq!(std::fs::read_dir(d.join("src")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn the_folder_probe_sees_one_folder_by_two_names() {
+        let d = test_dir("alias-probe");
+        assert!(!same_folder(&d.join("src"), &d.join("dest")));
+        assert!(same_folder(&d.join("src"), &d.join("src")));
+        // a folder the marker cannot be made in answers yes
+        assert!(same_folder(&d.join("missing"), &d.join("dest")));
+        assert_eq!(std::fs::read_dir(d.join("src")).unwrap().count(), 0);
     }
 
     #[test]
