@@ -55,7 +55,8 @@ import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
-import { gridCulling } from './specs/grid-culling.mjs';
+import { gridCulling, gridCullingControls, gridCullingPriority } from './specs/grid-culling.mjs';
+import { openFailureRecovery } from './specs/open-failure.mjs';
 import { photoFilter } from './specs/photo-filter.mjs';
 import { startupRestore } from './specs/startup-restore.mjs';
 import { dngThumbnail } from './specs/dng-thumbnail.mjs';
@@ -68,6 +69,9 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,
   'grid-culling': gridCulling,
+  'grid-culling-controls': gridCullingControls,
+  'grid-culling-priority': gridCullingPriority,
+  'open-failure-recovery': openFailureRecovery,
   'photo-filter': photoFilter,
   'startup-restore': startupRestore,
   'dng-thumbnail': dngThumbnail,
@@ -93,7 +97,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'preferences-matrix':dialogs.preferencesMatrix,'slider-wheel':dialogs.sliderWheel,'export-options':dialogs.exportOptions,
   filters:dialogs.filters,presets:dialogs.presets,shortcuts:dialogs.shortcuts,
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
-  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
+  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'presets-hover-release':regressions.presetsHoverRelease,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
   'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,'demosaic':demosaicMethod,
   'site-shots':siteShots,

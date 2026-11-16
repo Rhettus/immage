@@ -3,7 +3,7 @@
 
 import { ActivityBar } from "./ActivityBar";
 import { type ImageEntry, type Known, LABEL_COLORS, ThumbLoader, fetchThumb, isPrimaryRaw, knownKey, pairKey } from "./library";
-import { SlidersIcon } from "./icons";
+import { CullingIcon, SlidersIcon } from "./icons";
 import { baseName } from "./paths";
 import { captureDate, known, shutter } from "./MetadataPanel";
 import { end } from "./activity";
@@ -234,6 +234,9 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
           {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
             ? <span key={k} className="dot" style={{ background: c }} /> : null))}
         </span>
+        {/* grid only (styles.css): the culling lightbox on this photo */}
+        {!isRemote(i) && <button className="thumb-cull" title={t("library.filmstrip.culling")}
+                onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: { imgid: i.imgid } }))}><CullingIcon /></button>}
       </div>
     </div>
   );

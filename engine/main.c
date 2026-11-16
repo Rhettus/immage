@@ -1735,6 +1735,7 @@ int main(int argc, char **argv)
   }
 
   library_thumb_pool = g_thread_pool_new(library_thumb_run, out, thumb_threads, FALSE, NULL);
+  g_thread_pool_set_sort_function(library_thumb_pool, library_thumb_order, NULL);
   export_pool = g_thread_pool_new(export_run, out, 1, TRUE, NULL);
   library_import_pool = g_thread_pool_new(library_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI

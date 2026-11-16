@@ -62,11 +62,12 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     if let Some(index) = state.search_cache.clone() {
         let observed = path.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let volume = volumes::volume(&observed);
-            if volume.online { let _ = index.root_state(&observed, Some(&volume.mount), "online", None); }
+            let volume = volumes::volume_online(&observed);
+            let _ = index.root_state(&observed, Some(&volume.mount), "online", None);
         }).await.map_err(|e| e.to_string())?;
     }
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
+    let top = dir.clone();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
         let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
         folder_files(&dir, recursive, &skip, &mut out, &mut listed);
@@ -77,7 +78,10 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     if state.folder_token.load(Ordering::SeqCst) != token {
         return Err("superseded".into());
     }
-    *app.state::<Caches>().listed.lock().unwrap() = listed.clone();
+    // the folder itself did not list in time: its share has stopped answering
+    if listed.stalled.contains(&top) {
+        return Err(format!("{path} is not answering: its drive or network share may be disconnected"));
+    }
     let listed_cache = std::sync::Arc::new(Mutex::new(listed));
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
@@ -85,6 +89,17 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     let list: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
     let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": total, "images": [],
                                                 "files": list }));
+    // stamps the listing could not give (Linux) are read side by side, for
+    // a few seconds at most, before the cached rows are checked against
+    // them: a file that has not answered by then keeps its cached row
+    {
+        let (cache_listed, shared) = (listed_cache.clone(), app.state::<Caches>().listed.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            cache::prestat(&cache_listed, STAT_WAIT);
+            let now = cache_listed.lock().unwrap().clone();
+            *shared.lock().unwrap() = now;
+        }).await.map_err(|e| e.to_string())?;
+    }
     let mut images = Vec::new();
     let mut unanswered: Vec<Value> = Vec::new();
     let mut done = 0;
@@ -179,6 +194,11 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
 // A complete, validated group only: one unknown/new/deleted sidecar forces
 // ordinary engine import, including all current virtual copies. No engine IDs
 // or negative (unsupported-file) results are persisted here.
+// the most a folder's opening waits for its files' sizes and times
+const STAT_WAIT: Duration = Duration::from_secs(4);
+// the most a folder's listing is waited for
+const LIST_WAIT: Duration = Duration::from_secs(10);
+
 fn cached_folder_metadata(
     index: Option<&crate::search_cache::SearchCache>, listed: &Mutex<cache::Listed>, path: &Path,
 ) -> Option<Vec<Value>> {
@@ -190,8 +210,14 @@ fn cached_folder_metadata(
     for version in versions {
         let key = if version == 0 { String::new() } else { format!("version:{version}") };
         let (_, original, edited, metadata) = rows.iter().find(|(k,_,_,_)| *k == key)?;
-        let stamps = cache::listed_metadata_fingerprints(listed, path, version)?;
-        if stamps.0 != *original || stamps.1 != *edited { return None; }
+        match cache::listed_metadata_fingerprints(listed, path, version) {
+            Some(stamps) if stamps.0 != *original || stamps.1 != *edited => return None,
+            Some(_) => {}
+            // a stat that did not answer in time: shown as cached, and
+            // found changed (if it is) when the folder is next opened
+            None if cache::metadata_unreached(listed, path, version) => {}
+            None => return None,
+        }
         let image: Value = serde_json::from_str(metadata).ok()?;
         // Reject malformed disposable rows rather than breaking folder replies.
         let mut typed = image.clone(); typed["imgid"] = json!(1);
@@ -510,7 +536,11 @@ pub(crate) fn photo_candidate(path: &Path) -> bool {
 fn folder_files(dir: &Path, recursive: bool, skip: &HashSet<PathBuf>, out: &mut Vec<PathBuf>,
                 listed: &mut cache::Listed) {
     let (mut files, mut dirs, mut stamps) = (Vec::new(), Vec::new(), Vec::new());
-    for e in listing::list(dir) {
+    let Some(entries) = listing::list_within(dir, LIST_WAIT) else {
+        listed.stalled.push(dir.to_path_buf());
+        return;
+    };
+    for e in entries {
         let name = e.name.to_string_lossy().to_lowercase();
         if name.starts_with('.') {
             continue;
@@ -775,7 +805,8 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
-               path: Option<String>, version: Option<i64>, proof: Option<bool>) -> Result<bindings::Frame, String> {
+               path: Option<String>, version: Option<i64>, proof: Option<bool>,
+               foreground: Option<bool>) -> Result<bindings::Frame, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
@@ -787,7 +818,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "out": out }))
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "out": out }))
             .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);

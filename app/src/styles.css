@@ -631,6 +631,10 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .thumb-foot button:hover { color: var(--text-2); }
 .thumb-foot button.on { color: var(--ui-text-e8e8e8, #e8e8e8); }
 .thumb-foot .thumb-reject.on { color: #ff6b6b; }
+.thumb-foot .thumb-cull { display: none; }
+.filmstrip.grid .thumb-foot .thumb-cull { display: inline-flex; margin-left: auto; }
+.filmstrip.grid .thumb-foot .labels { margin-left: 0; }
+.thumb-cull .icon { width: 12px; height: 12px; }
 .thumb-stars { display: flex; gap: 2px; }
 .thumb-foot .labels { display: flex; gap: 3px; margin-left: auto; }
 .thumb-foot .dot { width: 7px; height: 7px; border-radius: 50%; }

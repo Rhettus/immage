@@ -504,6 +504,7 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
 extern GThreadPool *library_thumb_pool;
 void library_thumb_run(gpointer data, gpointer user_data);
 gboolean library_thumb_queue(JsonParser *parser);
+gint library_thumb_order(gconstpointer a, gconstpointer b, gpointer user_data);
 void library_thumb_wait(void);
 void library_thumb_threads(gint n);
 void library_metadata_threads(gint n);

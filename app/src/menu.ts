@@ -17,7 +17,7 @@ export type ActionId =
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
-  | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "grid" | "before-after" | "compare"
+  | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "culling-preview" | "grid" | "before-after" | "compare"
   | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
   | "shortcuts" | "user-guide" | "support-bundle" | "about";
 
@@ -39,7 +39,7 @@ export const ACTION_IDS: readonly ActionId[] = [
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
-  "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "grid", "before-after", "compare",
+  "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "culling-preview", "grid", "before-after", "compare",
   "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
   "shortcuts", "user-guide", "support-bundle", "about",
 ];
@@ -114,6 +114,7 @@ export const MENUS: Menu[] = [
       item("zoom-out", t("menu.zoom-out"), "⌘-"),
       item("zoom-toggle", t("menu.zoom-toggle"), "Z"), sep(),
       item("fullscreen-preview", t("menu.fullscreen-preview"), "F"),
+      item("culling-preview", t("menu.culling-preview"), "F"),
       item("grid", t("menu.grid"), "G"),
       item("before-after", t("menu.before-after"), "Y"),
       item("compare", t("menu.compare"), "C"), sep(),

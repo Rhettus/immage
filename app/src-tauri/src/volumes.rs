@@ -28,7 +28,14 @@ pub struct Volume {
 
 pub fn volume(path: &str) -> Volume {
     // a drive that is not answering is offline, and only its mount is known
-    let online = answering(Path::new(path)) && Path::new(path).is_dir();
+    describe(path, answering(Path::new(path)) && Path::new(path).is_dir())
+}
+
+// the drive of a folder the caller has just found answering and there, so
+// it is not asked again (volume() would stat it twice more)
+pub fn volume_online(path: &str) -> Volume { describe(path, true) }
+
+fn describe(path: &str, online: bool) -> Volume {
     let found = if online { probe(Path::new(path)) } else { drive_of(Path::new(path)) };
     let mut v = found.unwrap_or_else(|| Volume {
         path: String::new(),

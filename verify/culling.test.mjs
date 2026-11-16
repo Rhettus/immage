@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cullingKey, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
+import { cullingKey, pickCullingTarget, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue } from '../app/src/culling.ts';
 
 test('keyword selection wins over hover, including filtered-out selections', () => {
   const images = [{imgid: 1}, {imgid: 2}, {imgid: 3}];
@@ -47,7 +47,7 @@ function fixture(overrides = {}) {
   const calls = [];
   const images = [{ imgid: 1, labels: 0 }, { imgid: 2, labels: 0 }, { imgid: 3, labels: 0 }];
   const env = { writing: false, targets: [], photo: null, current: null, images, allImages: images,
-    selection: new Set([1,2]), anchor: 2, keywordTargets, cullingKey, direction: {current:1},
+    selection: new Set([1,2]), anchor: 2, keywordTargets, cullingKey, pickCullingTarget, direction: {current:1},
     zoomRef: {current:null}, zoomAnchor: {current:null},
     document: { querySelector: selector => selector.includes(':hover') ? {getAttribute: () => '3'} : null },
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},

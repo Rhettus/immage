@@ -392,3 +392,113 @@ export async function gridCulling(t) {
     panned: pan.exercised, selectionAndRecentKeywords: true,
     contextKeywords: true, doubleClickEdit: true });
 }
+
+const lightboxName = () => document.querySelector('.modal-backdrop[aria-label="Culling preview"] .culling-lightbox')?.firstElementChild?.textContent ?? null;
+
+// The visible controls for the F lightbox: the toolbar button beside Grid and
+// the icon in each thumbnail's hover footer.
+export async function gridCullingControls(t) {
+  await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 3),
+    'three photos in the folder', 120000);
+  assert(await t.driver.observe(() => !document.querySelector('button.culling-open')), 'no culling button outside the grid');
+  await t.driver.keys('g');
+  await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
+  const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].map(c => {
+    const r = c.getBoundingClientRect(); return { id: c.getAttribute('data-imgid'), title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }));
+  assert(cells.length >= 3, 'three grid cells');
+  // select the second photo, then click the toolbar button away from every thumbnail
+  await t.driver.point(cells[1].x, cells[1].y);
+  await until(() => t.driver.observe(id => document.querySelector(`.filmstrip.grid .thumb[data-imgid="${id}"]`)?.classList.contains('selected'), cells[1].id), 'second photo selected');
+  const button = await until(() => t.driver.observe(() => {
+    const b = document.querySelector('button.culling-open'); if (!b) return null;
+    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, title: b.title };
+  }), 'toolbar culling button in grid view');
+  assert.match(button.title, /\(F\)/, 'button title names the F shortcut');
+  await t.driver.point(button.x, button.y);
+  await until(() => t.driver.observe(hasPreview), 'toolbar button opens the culling preview');
+  const opened = await t.driver.observe(lightboxName);
+  assert(opened && opened.startsWith(cells[1].title), `opened on the selected photo (${opened} vs ${cells[1].title})`);
+  await t.evidence('culling-toolbar-button');
+  await t.driver.keys('\uE00C');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
+  // the footer icon of the third photo, while the second stays selected
+  await t.driver.move(cells[2].x, cells[2].y);
+  const icon = await until(() => t.driver.observe(id => {
+    const b = document.querySelector(`.filmstrip.grid .thumb[data-imgid="${id}"] .thumb-cull`); if (!b) return null;
+    const r = b.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+  }, cells[2].id), 'thumbnail culling icon shows on hover');
+  await t.driver.point(icon.x, icon.y);
+  await until(() => t.driver.observe(hasPreview), 'thumbnail icon opens the culling preview');
+  const second = await t.driver.observe(lightboxName);
+  assert(second && second.startsWith(cells[2].title), `opened on the clicked photo (${second} vs ${cells[2].title})`);
+  await t.driver.keys('\uE00C');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes again');
+  t.measure({ name: 'grid-culling-controls', toolbar: opened, thumbnail: second });
+}
+
+export const priorityFixtures = Array.from({ length: 40 }, (_, i) => `prio-${String(i + 1).padStart(2, '0')}`);
+const PRIORITY_LIMIT_MS = 8000;
+
+// The lightbox is drawn when its canvas has pixels and the status line has
+// stopped saying "Loading preview…" (GridCulling's busy flag), on the photo
+// named in the title row.
+const lightboxDrawn = (expectName) => {
+  const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
+  const box = root?.querySelector('.culling-lightbox'), canvas = root?.querySelector('canvas');
+  if (!box || !canvas?.width) return null;
+  const name = box.firstElementChild?.textContent ?? '';
+  if (expectName && !name.includes(expectName)) return null;
+  if (root.querySelector('.culling-status')?.textContent.trim()) return null;
+  if (root.querySelector('[role="alert"]')) return { error: root.querySelector('[role="alert"]').textContent };
+  return { name, width: canvas.width, height: canvas.height };
+};
+
+// A lightbox opened while the grid's thumbnails are still loading must not
+// wait behind them: time open (or step) to the full preview drawn.
+export async function gridCullingPriority(t) {
+  await until(() => t.driver.observe(n => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= n, priorityFixtures.length),
+    'the copies are listed', 120000);
+  await t.driver.keys('g');
+  await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
+  const pending = await t.driver.observe(() => {
+    const cells = [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')];
+    const loaded = cells.filter(c => [...c.querySelectorAll('img')].some(i => i.complete && i.naturalWidth > 0)
+      || [...c.querySelectorAll('canvas')].some(k => k.width > 0)).length;
+    return { cells: cells.length, withThumbnail: loaded };
+  });
+  t.measure({ name: 'thumbnails-at-open', ...pending });
+  const timings = {};
+  const timeDrawn = async (label, trigger, expectName) => {
+    const start = Date.now();
+    await trigger();
+    const drawn = await until(() => t.driver.observe(lightboxDrawn, expectName), `${label}: lightbox preview drawn`, PRIORITY_LIMIT_MS * 3);
+    const ms = Date.now() - start;
+    assert(!drawn.error, `${label}: preview shows no error (${drawn.error})`);
+    timings[label] = { ms, name: drawn.name, pixels: [drawn.width, drawn.height] };
+    assert(ms <= PRIORITY_LIMIT_MS, `${label}: full preview drawn in ${ms} ms, limit ${PRIORITY_LIMIT_MS} ms`);
+    return drawn;
+  };
+  const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].slice(0, 12).map(c => {
+    const r = c.getBoundingClientRect(); return { title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }));
+  assert(cells.length >= 4, 'visible grid cells to open on');
+  await t.driver.move(cells[2].x, cells[2].y);
+  const first = await timeDrawn('open with F', () => t.driver.keys('f'), cells[2].title);
+  await t.evidence('culling-priority-open');
+  await timeDrawn('next photo', () => t.driver.keys(''), null).then(d => {
+    assert.notEqual(d.name, first.name, 'ArrowRight shows another photo');
+  });
+  await t.driver.keys('');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
+  // the toolbar button, on the selected photo
+  await t.driver.point(cells[3].x, cells[3].y);
+  const button = await until(() => t.driver.observe(() => {
+    const b = document.querySelector('button.culling-open'); if (!b) return null;
+    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }), 'toolbar culling button');
+  await timeDrawn('open with the toolbar button', () => t.driver.point(button.x, button.y), cells[3].title);
+  await timeDrawn('next photo again', () => t.driver.keys(''), null);
+  await t.driver.keys('');
+  t.measure({ name: 'grid-culling-priority', limitMs: PRIORITY_LIMIT_MS, timings });
+}

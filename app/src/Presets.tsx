@@ -301,7 +301,13 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
 
   // focus mode and ⌥ as for the Adjustments panels: opening a group alone
   // shuts the rest
-  const toggleGroup = (g: string, alt: boolean) => setShut((s) => {
+  // a tile that goes away (group shut, panel closed) takes no leave event
+  // with it, so the hover preview is cleared here
+  const hoverRef = useRef(onHover);
+  hoverRef.current = onHover;
+  useEffect(() => () => hoverRef.current(null), []);
+  const toggleGroup = (g: string, alt: boolean) => { hoverRef.current(null); toggleGroupNow(g, alt); };
+  const toggleGroupNow = (g: string, alt: boolean) => setShut((s) => {
     const solo = focusMode ? !alt && s.has(g) : alt;
     const openNow = groups.filter((x) => !s.has(x.title));
     let n: Set<string>;
@@ -380,7 +386,7 @@ export function PresetsPanel({ presets, looks, look, disabled, preview, onWant, 
               <span className="count">{g.items.length}</span>
             </div>
             {open && (
-              <div className="tiles">
+              <div className="tiles" onPointerLeave={() => onHover(null)}>
                 {g.items.map((it) => {
                   const key = keyOf(it);
                   const name = it.kind === "preset" ? it.p.name : it.l.name;

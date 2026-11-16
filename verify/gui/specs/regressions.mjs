@@ -173,3 +173,25 @@ export async function grainHover(t){
  t.measure({name:'grain-hover',...shown,wanted,got});await t.evidence('grain-hover');
  assert(got>=wanted*.95||wanted<=1600,`hover render ${got}px must match the shown size ${wanted}px`);
 }
+
+export async function presetsHoverRelease(t){
+ // a tile that disappears under the pointer (its group shut) must not leave its preview stuck
+ // on the image or block the next tile's preview
+ await settledPhoto(t);await openTool(t,'presets');
+ const tiles=await t.driver.observe(()=>[...document.querySelectorAll('.preset-group .tile')].slice(0,2).map(e=>e.title));
+ if(tiles.length<2)throw new Blocked('Requires two preset tiles in an expanded group');
+ const on=()=>t.driver.observe(()=>{const c=document.querySelector('canvas.hover-preview');return!!c&&!c.classList.contains('off')&&c.width>0;});
+ const tile=n=>`.preset-group .tile[title=${JSON.stringify(n)}]`;
+ const a=await reveal(t,tile(tiles[0]));await t.driver.move(a.x,a.y);
+ await until(on,'hover preview shown for the first tile');await t.evidence('presets-hover-a');
+ // shut the group the tile is in, with the pointer ending on its title
+ const title=await reveal(t,'.preset-group:has(.tile) .preset-group-title');
+ await click(t,'.preset-group:has(.tile) .preset-group-title');
+ await until(async()=>!await on(),'hover preview cleared when the group shuts');
+ await click(t,'.preset-group .preset-group-title');
+ const b=await reveal(t,tile(tiles[1]));await t.driver.move(b.x,b.y);
+ await until(on,'hover preview shown for the second tile');await t.evidence('presets-hover-b');
+ // off the tiles entirely
+ await t.driver.move(title.x,title.y);
+ await until(async()=>!await on(),'hover preview cleared off the tiles');
+}

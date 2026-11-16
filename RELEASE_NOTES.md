@@ -40,7 +40,8 @@ Improvements
   are always copied. A confirmation resolves name conflicts. Sidecars travel
   with each photo, and copies are verified before originals are removed.
 - In the grid, F opens a culling preview with navigation, ratings, labels and
-  rejection. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
+  rejection. It also opens from the Culling preview toolbar button, each
+  thumbnail's hover bar, or View > Culling Preview. Scroll to zoom under the pointer; Z toggles Fit/100%. Click for
   Fit/100%, Space-drag to pan, and double-click to edit.
   K keywords the selected photos, or the hovered photo when none are selected.
 - Grid thumbnails resize with the slider, trackpad pinch, ⌘-scroll, or ⌘= / ⌘-;
@@ -65,6 +66,16 @@ Improvements
 
 Bug fixes
 
+- A photo that fails to open, such as a damaged file picked from search
+  results, no longer leaves the editor stuck on "no image open" until restart.
+  Immage names the file it could not open and you can open another photo.
+  Clicking several photos quickly opens only the last one.
+- The Presets panel's hover preview no longer gets stuck on one preset. It
+  clears when the pointer leaves the tiles or a group is collapsed, and appears
+  without waiting for tile thumbnails.
+- Linux: opening a folder on a slow or wifi network share no longer pauses
+  for up to half a minute. Photos read before appear within a few seconds,
+  and a share that stops answering is reported instead of freezing the folder.
 - Windows: preferences, including the language choice and the Quick start
   guide's Don't show again setting, are no longer sometimes lost at startup.
 - Immich local folder mappings no longer match photos that sit outside the
@@ -89,6 +100,8 @@ Bug fixes
 
 Performance
 
+- The grid's culling preview loads faster while thumbnails or search analysis
+  run in the background: the photo you are viewing is prepared first.
 - Local search results appear faster, as filename and date searches no longer
   look through the whole library for every page of results.
 - Reopening an unchanged folder is faster: its photo details are reused from

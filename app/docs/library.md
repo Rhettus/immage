@@ -50,7 +50,11 @@ Open the **Folders** card in the **Library** panel.
   folder on a share that isn't connected stays under its share, dimmed.
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
-  after the file it is on.
+  after the file it is on. Photos you opened before appear straight away from
+  Immage's saved copy; the share's files are checked for changes side by side
+  for at most a few seconds, and a file that hasn't answered by then keeps its
+  saved copy until you next open the folder. A folder whose listing doesn't come
+  back within 10 seconds is reported as not answering.
 - A share that stops answering mid-folder doesn't freeze Immage. A file that
   doesn't answer within 5 seconds is skipped, with the rest of that folder for
   30 seconds, so photos on your own drive still open. Open the folder again
@@ -574,6 +578,12 @@ Press **K** in the grid to keyword selected photos, or the photo under the
 pointer when nothing is selected. Shared keywords can be removed from every
 target; new keywords are added to every target. Close the dialog before moving
 to another selection.
+
+Click **Culling preview** in the toolbar beside **Grid**, the small icon at
+the right of a thumbnail's hover footer (grid view only), or choose
+**View > Culling Preview**, to open the same preview without the keyboard.
+The toolbar button and the menu use the photo under the pointer, else the
+selected photo; the thumbnail icon opens that thumbnail's photo.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
 in a fixed frame covering 80% of the window width and height, without opening it in the

@@ -216,10 +216,28 @@ try {
     for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
     report.gridZoomFixtures = gridZoomFixtures.length;
   }
-  if (selectedCases.includes('grid-culling')) {
+  if (selectedCases.includes('grid-culling') || selectedCases.includes('grid-culling-controls')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));
     report.cullingFixtures = 3;
+  }
+  // open-failure-recovery: two more good copies and a truncated one (made from
+  // the run's own copy, never the original), so a failed open sits between opens
+  if (selectedCases.includes('open-failure-recovery')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of ['open-b', 'open-c']) await copyFile(copiedFixture, join(fixtures, name + ext));
+    const whole = await readFile(copiedFixture);
+    // a raw loses its tail past 100 KB; a small JPEG is cut to its first 2 KB
+    const keep = /\.(jpe?g|png|tiff?)$/i.test(ext) ? 2048 : 100 * 1024;
+    await writeFile(join(fixtures, `open-bad${ext}`), whole.subarray(0, Math.min(keep, Math.floor(whole.length / 2))));
+    report.openFailureFixtures = { good: ['open-b' + ext, 'open-c' + ext], truncated: `open-bad${ext}`, keptBytes: Math.min(keep, Math.floor(whole.length / 2)) };
+  }
+  // grid-culling-priority: many copies so thumbnails are still pending when the lightbox opens
+  if (selectedCases.includes('grid-culling-priority')) {
+    const { priorityFixtures } = await import('./specs/grid-culling.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of priorityFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
+    report.cullingPriorityFixtures = priorityFixtures.length;
   }
   // moving photos by drag: copies beside the fixture, and folders to drop on
   if (selectedCases.includes('move-photos') || selectedCases.includes('move-copy')) {

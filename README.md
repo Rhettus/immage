@@ -50,7 +50,7 @@ including when subfolders contain symbolic links.
 Folder filters offer **All photos** and **Rejected** as selectable rows with
 counts that reflect the other selected filters. See the [library guide](app/docs/library.md).
 
-Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
+Grid culling: **K** keywords selected photos; **F**, the toolbar's Culling preview button, a thumbnail's preview icon or View > Culling Preview opens a preview in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
 
 Library thumbnails support embedded TIFF previews in DNG photos and can use
 a smaller preview when an unedited photo's RAW data cannot be decoded.

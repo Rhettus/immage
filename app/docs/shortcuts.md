@@ -35,7 +35,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 
 | Key | Action |
 | --- | --- |
-| F | Full screen preview (F or Esc leaves) |
+| F | Full screen preview in the editor (F or Esc leaves); in the grid, the culling preview of the photo under the pointer or the selection |
 | L | Next canvas: dark, neutral gray, white |
 | Tab | Hide or show the side panels |
 | ⇧Tab | Hide or show the side panels and filmstrip |

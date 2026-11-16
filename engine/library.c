@@ -1550,12 +1550,27 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
 GThreadPool *library_thumb_pool = NULL;
 static GMutex _thumb_lock;
 
+// foreground (the lightbox's photo) before grid thumbnails and metadata,
+// those before analysis previews; equal ranks keep their arrival order
+static gint _thumb_rank(JsonParser *parser)
+{
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  if(!g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "analysis_preview")) return 2;
+  return json_object_get_boolean_member_with_default(req, "foreground", FALSE) ? 0 : 1;
+}
+
+gint library_thumb_order(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+  return _thumb_rank((JsonParser *)a) - _thumb_rank((JsonParser *)b);
+}
+
 void library_thumb_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
-  engine_background_yield();
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  // a foreground request is waited on, so it does not give way to the main loop
+  if(!json_object_get_boolean_member_with_default(req, "foreground", FALSE)) engine_background_yield();
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   char *err = NULL;
   JsonBuilder *b = json_builder_new();

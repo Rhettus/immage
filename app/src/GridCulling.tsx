@@ -4,7 +4,7 @@ import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
 import { commands } from "./commands";
-import { cullingKey, fallbackPhoto, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
+import { cullingKey, fallbackPhoto, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
 import { LABEL_COLORS, fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { t } from "./i18n";
@@ -98,12 +98,26 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     window.addEventListener("grid-keywords", open);
     return () => window.removeEventListener("grid-keywords", open);
   });
+  // The F key, the toolbar button, the menu and a thumbnail's icon all open the
+  // lightbox through here: the photo asked for, else the hovered one, else the
+  // anchor or selection.
+  const hoveredPhoto = () => document.querySelector(".filmstrip.grid .thumb:hover")?.getAttribute("data-imgid");
+  const cullingTarget = (asked?: number) => pickCullingTarget(images, asked, hoveredPhoto(), anchor, selection);
+  useEffect(() => {
+    const open = (event: Event) => {
+      if (document.querySelector(".modal-backdrop")) return;
+      const target = cullingTarget((event as CustomEvent<{ imgid?: number }>).detail?.imgid);
+      if (!target) return;
+      direction.current = 1; setPhoto(target.imgid);
+    };
+    window.addEventListener("grid-culling-open", open);
+    return () => window.removeEventListener("grid-culling-open", open);
+  });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
-      const hovered = document.querySelector(".filmstrip.grid .thumb:hover")?.getAttribute("data-imgid");
       const chosen = keywordTargets(allImages, selection);
-      const target = images.find(i => i.imgid === (hovered === null || hovered === undefined ? NaN : Number(hovered))) ?? images.find(i => i.imgid === anchor && selection.has(i.imgid)) ?? images.find(i => selection.has(i.imgid));
+      const target = pickCullingTarget(images, undefined, document.querySelector(".filmstrip.grid .thumb:hover")?.getAttribute("data-imgid"), anchor, selection);
       const { kind, action } = cullingKey(k, {
         photo, keywordsOpen: targets.length > 0, writing,
         blocked: e.ctrlKey || e.metaKey || e.altKey || !!(e.target as HTMLElement)?.closest("input,textarea,[contenteditable=true]"),
@@ -229,11 +243,11 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     }
     const key = (entry: ImageEntry, requested: number) =>
       JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested]);
-    const load = async (entry: ImageEntry, requested: number) => {
+    const load = async (entry: ImageEntry, requested: number, foreground = false) => {
       const id = key(entry, requested);
       const cached = previews.current.get(id);
       if (cached) return cached;
-      const bitmap = await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry);
+      const bitmap = await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry, false, foreground);
       if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
       if (requested === 0) return bitmap;
       previews.current.set(id, bitmap);
@@ -246,12 +260,15 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     const show = async () => {
       const cached = previews.current.get(key(current, size));
       if (cached) draw(cached);
-      else await q.enqueue(async () => {
+      else {
+        // Not behind the queue: a neighbor already reading ahead must not delay the shown photo.
         await prepare(current.imgid);
         if (stale) return;
-        const bitmap = await load(current, size);
-        if (bitmap) { draw(bitmap); if (size === 0) bitmap.close(); }
-      });
+        const bitmap = await load(current, size, true);
+        if (bitmap) {
+          if (stale) { if (size === 0) bitmap.close(); } else { draw(bitmap); if (size === 0) bitmap.close(); }
+        }
+      }
       if (stale) return;
       setDetail(detailed); setBusy(false);
       if (detailed) return;

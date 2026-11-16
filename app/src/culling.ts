@@ -81,6 +81,16 @@ export type CullingAction =
 // What a key does in grid culling and its lightbox: `ignore` leaves the event
 // alone, `swallow` stops other handlers without acting (the lightbox owns the
 // keyboard), `consume` also prevents the default and runs `action`.
+// The photo F, the toolbar button and the menu act on: the one asked for, else
+// the hovered one, else the anchor if selected, else the first selected.
+export function pickCullingTarget<T extends { imgid: number }>(
+  images: T[], asked: number | undefined, hovered: string | null | undefined, anchor: number | null, selection: Set<number>,
+): T | undefined {
+  const over = hovered === null || hovered === undefined ? NaN : Number(hovered);
+  return images.find(i => i.imgid === asked) ?? images.find(i => i.imgid === over)
+    ?? images.find(i => i.imgid === anchor && selection.has(i.imgid)) ?? images.find(i => selection.has(i.imgid));
+}
+
 export function cullingKey(k: string, s: {
   photo: number | null; keywordsOpen: boolean; writing: boolean; blocked: boolean; modalOpen: boolean;
   hasTarget: boolean; hasCurrent: boolean;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { BanIcon, FilterIcon, GridIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
+import { BanIcon, CullingIcon, FilterIcon, GridIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { type Filter, NO_FILTER, popupCount } from "./filter";
 import { type Bounds as FilterBounds, FilterPopup, type ImmichFilters } from "./FilterPopup";
 import { type ImageEntry, LABEL_COLORS } from "./library";
@@ -199,6 +199,9 @@ export function Toolbar({ filter: f, images, layout, zoomBar, viewTools, onFilte
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")} onClick={onGrid}>
           <GridIcon />{t("library.toolbar.gridLabel")}
         </button>
+        {grid && <button className="tool culling-open" title={t("library.toolbar.culling")}
+                aria-label={t("library.toolbar.culling")}
+                onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}><CullingIcon /></button>}
         <span className="sep" />
         <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")}
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>

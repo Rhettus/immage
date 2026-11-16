@@ -17,6 +17,7 @@ export const icon = (path: React.ReactNode) => (
   <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
        strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
+export const CullingIcon = () => icon(<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M8 9H5M5 9V12M16 15h3M19 15v-3" /></>);
 export const FolderIcon = () => icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />);
 export const DriveIcon = () => icon(<><rect x="3" y="13" width="18" height="7" rx="2" />
   <path d="M5.5 13 8 5h8l2.5 8" /><path d="M17 16.5h.01" /></>);

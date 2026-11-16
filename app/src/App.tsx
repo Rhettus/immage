@@ -693,9 +693,11 @@ export default function App() {
   }, []);
   // preview tiles for the presets panel, rendered while the engine is idle
   const [, setPreviewTick] = useState(0);
+  // a hover preview in progress: tile thumbnails wait for it
+  const presetHoverBusy = useRef(false);
   const previews = useRef<PreviewCache | null>(null);
   if (!previews.current)
-    previews.current = new PreviewCache(() => session.current?.idle ?? false, () => setPreviewTick((t) => t + 1));
+    previews.current = new PreviewCache(() => (session.current?.idle ?? false) && !presetHoverBusy.current, () => setPreviewTick((t) => t + 1));
   const wantedTiles = useRef<string[]>([]);
   const PREVIEW_SIZE = 220;
   // the film panel's tiles share the cache: only one of the two panels is on
@@ -1271,6 +1273,7 @@ export default function App() {
   const hoverCanvas = useRef<HTMLCanvasElement>(null);
   const [hoverShown, setHoverShown] = useState<"tiles" | "panel" | false>(false);
   const hoverToken = useRef(0);
+  const hoverFrom = useRef<"tiles" | "panel" | null>(null);
   const hoverTile = (key: string | null) => {
     const all = [...BUILTIN_PRESETS, ...presetsRef.current];
     const p = key?.startsWith("p:") ? all.find((q) => `p:${q.id}` === key) : null;
@@ -1289,6 +1292,8 @@ export default function App() {
                      render: (s: Session, size: number) => Promise<Frame> | null,
                      sharp: boolean) => {
     const token = ++hoverToken.current;
+    presetHoverBusy.current = !!from;
+    hoverFrom.current = from;
     if (!from) { setHoverShown(false); return; }
     window.setTimeout(async () => {
       const s = session.current;
@@ -1305,14 +1310,17 @@ export default function App() {
         const r = render(s, size);
         const f = r && await track(r);
         const c = hoverCanvas.current;
-        if (!f || !c || token !== hoverToken.current) return;
+        if (token !== hoverToken.current) return;
+        if (!f || !c) { setHoverShown(false); presetHoverBusy.current = false; return; }
         c.width = f.width;
         c.height = f.height;
         perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         placeLayers();
         setHoverShown(from);
+        presetHoverBusy.current = false;
       } catch {
-        // no preview: the image stays as it is
+        // no preview: hide the last one, the image stays as it is
+        if (token === hoverToken.current) { setHoverShown(false); presetHoverBusy.current = false; }
       }
     }, 250);
   };
@@ -1665,6 +1673,8 @@ export default function App() {
     const t = window.setTimeout(requestTiles, 700);
     return () => window.clearTimeout(t);
   }, [values, look, masks, tilesShown]);
+  // leaving the presets panel (mode change, crop, hidden) drops its hover
+  useEffect(() => { if (!tilesShown && hoverFrom.current === "tiles") hoverTile(null); }, [tilesShown]);
   const [cropRect, setCropRect] = useState<CropRect>(FULL);
   const [cropAspect, setCropAspect] = useState("original");
   const [cropPortrait, setCropPortrait] = useState(false);
@@ -3814,8 +3824,20 @@ export default function App() {
 
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original. false when it did not open
-  const openFile = async (path: string, imgid: number | null = null, reload = false,
-                          onFirstFrame?: () => void): Promise<boolean> => {
+  // opens run one at a time: a newer request replaces any still waiting, so
+  // only the latest click wins and two never interleave in the engine
+  const openGen = useRef(0);
+  const openChain = useRef<Promise<unknown>>(Promise.resolve());
+  const openFile = (path: string, imgid: number | null = null, reload = false,
+                    onFirstFrame?: () => void): Promise<boolean> => {
+    const gen = ++openGen.current;
+    const run = openChain.current.then(() => gen !== openGen.current && !reload
+      ? false : openFileNow(path, imgid, reload, onFirstFrame));
+    openChain.current = run.catch(() => false);
+    return run;
+  };
+  const openFileNow = async (path: string, imgid: number | null = null, reload = false,
+                             onFirstFrame?: () => void): Promise<boolean> => {
     if (pastingRef.current && !reload) return false;
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
@@ -3825,6 +3847,8 @@ export default function App() {
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
     }
+    const old = session.current;
+    let closed = false;
     try {
       if (session.current) {
         const o = session.current;
@@ -3835,6 +3859,7 @@ export default function App() {
         previous.current = { values: { ...o.values }, look: { name: o.look, path: o.lookPath, amount: o.lookAmount },
                              masks: structuredClone(o.masks), advanced };
         await o.close();
+        closed = true;
       }
       setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
@@ -4073,7 +4098,20 @@ export default function App() {
       }
       return true;
     } catch (e) {
-      setStatus(t("app.status.error", { error: e }));
+      // the engine closes the old photo before it opens the next, so a failed
+      // open leaves none: drop the old session rather than send it edits
+      if (closed && old && session.current === old) {
+        old.abandon();
+        session.current = null;
+        currentRef.current = null;
+        setCurrent(null);
+        setOpenCell(null);
+        setValues({});
+        resetCanvases();
+        for (const c of [canvas.current, baseCanvas.current, navThumb.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
+      }
+      setStatus(closed ? t("app.status.openFailed", { filename: baseName(path), error: e })
+        : t("app.status.error", { error: e }));
       return false;
     }
   };
@@ -5620,6 +5658,7 @@ export default function App() {
         if (previewRef.current) setPreview(false);
         else if (session.current) setPreview(true);
       },
+      "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
       "canvas": () => {
         if (!session.current) return;
