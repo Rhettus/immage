@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(albums[0].name, "Beach");
         assert_eq!(c.create_album("New").unwrap().id, "n");
         // inside the build tree, not the system's temp folder
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("immich-upload-test");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("immich-upload-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("a.jpg");
         std::fs::write(&file, b"jpeg").unwrap();
@@ -252,7 +252,7 @@ mod tests {
 
     // a file of a test's own, inside the build tree like the one above
     fn scratch_file(tag: &str, name: &str) -> (PathBuf, PathBuf) {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("immich-upload-{tag}"));
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("immich-upload-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(name);

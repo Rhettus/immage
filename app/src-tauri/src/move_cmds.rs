@@ -1187,7 +1187,7 @@ mod tests {
 
     fn test_dir(name: &str) -> PathBuf {
         // inside the build tree, not the system's temp folder
-        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("move-tests").join(name);
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("move-tests").join(format!("{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("src")).unwrap();
         std::fs::create_dir_all(d.join("dest")).unwrap();
