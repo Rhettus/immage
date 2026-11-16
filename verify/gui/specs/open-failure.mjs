@@ -8,8 +8,8 @@ import * as read from '../support/observations.mjs';
 
 const statusText = () => document.querySelector('.status')?.textContent ?? '';
 // the engine's refusal for an edit with nothing open; it must never reach the user here
-const noImage = () => document.body.innerText.toLowerCase().includes('no image open');
 const active = () => document.querySelector('.filmstrip .thumb.active')?.title ?? null;
+const noImage = () => document.body.innerText.toLowerCase().includes('no image open');
 
 // Open a photo from the filmstrip: two clicks open it whether the preference is
 // single or double click.
@@ -43,15 +43,15 @@ export async function openFailureRecovery(t) {
 
   // A: open and edit
   await openByName(t, goodA);
-  await until(() => t.driver.observe(a => active() === a, goodA), 'photo A is active');
+  await until(() => t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, goodA), 'photo A is active');
   await settledPhoto(t);
   await moveExposureToMax(t);
   await t.evidence('open-failure-a-edited');
 
   // the truncated file
   await openByName(t, 'open-bad');
-  const failed = await until(() => t.driver.observe(statusText).then(s => /could not open/i.test(s) && s), 'open failure status', 30000).catch(async e => {
-    if (await t.driver.observe(() => !!document.querySelector('canvas.layer.sharp:not(.empty)')) && await t.driver.observe(a => active() === a, bad))
+  const failed = await until(() => t.driver.observe(statusText).then(s => /could not (open|load)/i.test(s) && s), 'open failure status', 30000).catch(async e => {
+    if (await t.driver.observe(() => !!document.querySelector('canvas.layer.sharp:not(.empty)')) && await t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, bad))
       throw new Blocked('the truncated file opened; the fixture is not truncated enough for this engine');
     throw e;
   });
@@ -62,7 +62,7 @@ export async function openFailureRecovery(t) {
 
   // B: a good photo opens and takes an edit
   const goodB = await openByName(t, 'open-b');
-  await until(() => t.driver.observe(a => active() === a, goodB), 'photo B is active');
+  await until(() => t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, goodB), 'photo B is active');
   const before = await settledPhoto(t);
   assert(!await t.driver.observe(noImage), 'no "no image open" after opening B');
   const exposure = await until(async () => { const s = await t.driver.observe(read.exposure); return s && !s.disabled && s; }, 'Exposure available on B');
@@ -78,7 +78,7 @@ export async function openFailureRecovery(t) {
   const fromA = await openByName(t, goodA);
   const last = await openByName(t, 'open-c');
   assert.notEqual(fromA, last, 'two different photos were opened');
-  await until(() => t.driver.observe(a => active() === a, last), 'only the last opened photo is active');
+  await until(() => t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, last), 'only the last opened photo is active');
   await settledPhoto(t);
   assert.equal(await t.driver.observe(active), last, 'the last photo stays active after settling');
   assert(!await t.driver.observe(noImage), 'no "no image open" after the quick opens');

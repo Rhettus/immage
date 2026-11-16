@@ -232,8 +232,8 @@ try {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (const name of ['open-b', 'open-c']) await copyFile(copiedFixture, join(fixtures, name + ext));
     const whole = await readFile(copiedFixture);
-    // a raw loses its tail past 100 KB; a small JPEG is cut to its first 2 KB
-    const keep = /\.(jpe?g|png|tiff?)$/i.test(ext) ? 2048 : 100 * 1024;
+    // a raw loses its tail past 100 KB; a small JPEG is cut to its first 64 bytes, before the frame header, so no decoder can open it
+    const keep = /\.(jpe?g|png|tiff?)$/i.test(ext) ? 64 : 100 * 1024;
     await writeFile(join(fixtures, `open-bad${ext}`), whole.subarray(0, Math.min(keep, Math.floor(whole.length / 2))));
     report.openFailureFixtures = { good: ['open-b' + ext, 'open-c' + ext], truncated: `open-bad${ext}`, keptBytes: Math.min(keep, Math.floor(whole.length / 2)) };
   }

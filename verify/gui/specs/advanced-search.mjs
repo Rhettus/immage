@@ -90,7 +90,8 @@ export async function advancedSearch(t) {
     t.measure({ name: 'escape', ...gone });
 
     // 3. a card the photo has: with Basic folded, picking its hit opens Basic, opens the card and flashes it
-    await until(() => t.driver.observe(() => !document.querySelector('[data-panel-id="basic"] [data-module^="exposure#"].fresh')), 'earlier flash over', 6000);
+    // the fresh class stays on a card the search itself added (lastAdded); its flash is the animation, which ends
+    await until(() => t.driver.observe(() => { const e = document.querySelector('[data-panel-id="basic"] [data-module^="exposure#"]'); return !e || !e.getAnimations().some(a => a.playState === 'running'); }), 'earlier flash over', 6000);
     await click(t, `${BASIC} > .panel-title`);
     await until(() => t.driver.observe(() => !document.querySelector('[data-panel-id="basic"] > .panel-title.open')), 'Basic folded');
     await search(t, 'exposure');

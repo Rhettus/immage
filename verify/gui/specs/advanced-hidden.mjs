@@ -96,6 +96,14 @@ export async function advancedHidden(t) {
     await until(() => t.driver.observe(() => !document.querySelector('.context-menu [data-add-module]')), 'Add module menu closed');
 
     // 2. hidden but used: the photo has an Exposure card, so it stays, tagged hidden
+    // a JPEG opens without an Exposure instance under the AgX default: add one so the photo uses it
+    await panel(t, 'basic');
+    if (!await t.driver.observe(() => !!document.querySelector('[data-panel-id="basic"] [data-module^="exposure#"]'))) {
+      await click(t, '[data-panel-id="basic"] .add-module-button');
+      await until(() => t.driver.observe(() => !!document.querySelector('.context-menu [data-add-module="exposure"]')), 'Basic Add module lists Exposure');
+      await click(t, '.context-menu [data-add-module="exposure"]');
+      await until(() => t.driver.observe(() => !!document.querySelector('[data-panel-id="basic"] [data-module^="exposure#"]')), 'Exposure card added');
+    }
     await openModules(t);
     await filter(t, 'exposure');
     await toggleRow(t, 'Exposure', false);

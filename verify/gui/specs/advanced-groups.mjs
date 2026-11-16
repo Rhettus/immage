@@ -238,7 +238,8 @@ export async function advancedGroups(t) {
           : e && { options: [...e.querySelectorAll('button')].map(b => b.textContent.trim()) };
       };
       const r = { input: pick('input_profile'), working: pick('working_profile'), clipping: pick('normalize') };
-      return r.input && r.working && r.clipping && r;
+      // the profile lists arrive from the engine after the card mounts
+      return r.input && r.working && r.clipping && r.input.options.length > 1 && r.working.options.length > 1 && r;
     }, isel), 'input color profile menus');
     t.measure({ name: 'colorin-profiles', ...menus });
     await t.evidence('colorin-card');

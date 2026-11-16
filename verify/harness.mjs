@@ -15,6 +15,7 @@ import { crc32 } from "node:zlib";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withNodeLocales } from "./vite-locales.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const APP = join(HERE, "..", "app");
@@ -32,7 +33,7 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith("file:") || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    const out = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic" } });
+    const out = transformSync(path, withNodeLocales(url, readFileSync(path, "utf8")), { jsx: { runtime: "automatic" } });
     if (out.errors?.length) throw new Error(`${path}: ${out.errors.map((e) => e.message).join("; ")}`);
     return { format: "module", source: out.code, shortCircuit: true };
   },

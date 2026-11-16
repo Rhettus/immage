@@ -38,7 +38,8 @@ async function overlay(t, selector) {
 
 async function zoomIn(t) {
   await openTool(t, 'adjust');
-  if (await t.driver.observe(() => !!document.querySelector('.nav-zooms'))) await textButton(t, '.nav-zooms', '2:1');
+  // an earlier case can leave the left panel hidden: the Navigator is then not reachable
+  if (await t.driver.observe(() => { const b = document.querySelector('.nav-zooms button'); const r = b?.getBoundingClientRect(); const hit = r && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!hit && b.contains(hit); })) await textButton(t, '.nav-zooms', '2:1');
   else { const v = await reveal(t, 'main.viewer'); await t.driver.point(v.x, v.y); }
   await until(() => t.driver.observe(() => document.querySelector('main.viewer')?.classList.contains('zoom-in')), 'zoomed in', 20000);
   const photo = await settledPhoto(t);

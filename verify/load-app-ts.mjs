@@ -3,6 +3,7 @@
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { withNodeLocales } from './vite-locales.mjs';
 
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
@@ -11,7 +12,7 @@ registerHooks({
   load(url, context, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, context);
     const path = fileURLToPath(url);
-    const source = transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code;
+    const source = transformSync(path, withNodeLocales(url, readFileSync(path, 'utf8')), { jsx: { runtime: 'automatic' } }).code;
     return { format: 'module', source, shortCircuit: true };
   },
   resolve(specifier, context, next) {

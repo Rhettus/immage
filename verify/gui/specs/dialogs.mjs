@@ -28,8 +28,12 @@ export async function preferencesMatrix(t) {
         for(const o of before.options.filter(o=>!o.disabled)){await choose(t,selector,o.value);await t.evidence(`${tab}-${labels.indexOf(label)}-${o.value.replace(/[^a-z0-9]/gi,'-')}`);}
         await choose(t,selector,before.value);
       }else{
-        const selectors=await t.driver.observe(s=>[...document.querySelectorAll(`${s} .segmented button, ${s} .pref-swatches button`)].map(e=>({text:e.textContent.trim(),aria:e.getAttribute('aria-label')})),row);
-        for(const o of selectors){if(o.aria)await click(t,`${row} button[aria-label=${JSON.stringify(o.aria)}]`);else await textButton(t,`${row} .segmented`,o.text);await t.evidence(`${tab}-${labels.indexOf(label)}-${selectors.indexOf(o)}`);}
+        const selectors=await t.driver.observe(s=>[...document.querySelectorAll(`${s} .segmented button, ${s} .pref-swatches button`)].map(e=>({text:e.textContent.trim(),aria:e.getAttribute('aria-label'),
+          on:e.classList.contains('active')||e.classList.contains('on')||e.getAttribute('aria-pressed')==='true'||e.getAttribute('aria-checked')==='true'})),row);
+        const pick=async o=>{if(o.aria)await click(t,`${row} button[aria-label=${JSON.stringify(o.aria)}]`);else await textButton(t,`${row} .segmented`,o.text);};
+        for(const o of selectors){await pick(o);await t.evidence(`${tab}-${labels.indexOf(label)}-${selectors.indexOf(o)}`);}
+        // leave the setting as found: a later case expects Simple editing, the default canvas and the dark theme
+        const original=selectors.find(o=>o.on);if(original)await pick(original);
       }
     }
   }
@@ -51,10 +55,11 @@ export async function sliderWheel(t) {
 export async function exportOptions(t) {
   await click(t,'button[data-tour="export"]');
   await until(()=>t.driver.observe(()=>!!document.querySelector('.modal.export')),'export dialog');
-  const sections=await t.driver.observe(()=>[...document.querySelectorAll('.export-section-head .title')].map(e=>e.textContent));
-  for(const title of sections){
-    const open=await t.driver.observe(title=>[...document.querySelectorAll('.export-section')].find(e=>e.querySelector('.title')?.textContent===title)?.classList.contains('open'),title);
-    const section=`[data-export-section=${JSON.stringify(title)}]`;
+  // sections are keyed by an id, not by their (translated) title
+  const sections=await t.driver.observe(()=>[...document.querySelectorAll('.export-section')].map(e=>e.dataset.exportSection));
+  for(const id of sections){
+    const section=`[data-export-section=${JSON.stringify(id)}]`;
+    const open=await t.driver.observe(s=>document.querySelector(s)?.classList.contains('open'),section);
     if(!open)await click(t,`${section} > .export-section-head`);
     const seen=new Set();
     for(let pass=0;pass<30;pass++) {

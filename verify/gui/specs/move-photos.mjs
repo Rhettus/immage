@@ -188,7 +188,8 @@ export async function moveCopy(t) {
   const other = await sha(join(clash, b));
   await foldersCard(t);
   if ((await t.driver.observe(folderState)).active !== fixtures) await click(t, row(fixtures));
-  await t.driver.keys('g');
+  // an earlier case can leave the grid open, and G toggles it
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view for copy selection');
   await until(() => t.driver.observe((x, y) => !!document.querySelector(x) && !!document.querySelector(y), cell(b), cell(c)),
               'move-b and move-c listed', 60000);

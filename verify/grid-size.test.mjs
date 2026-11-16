@@ -135,9 +135,9 @@ test('thumbnail threads: 1, 2, 3, 4, 6 or 8, two by default', () => {
   withValue(key, null);
 });
 
-test('the Linux pinch (pinch.rs) sends ctrl wheel events at the rate the viewer and grid zoom by', () => {
-  const rust = readFileSync(new URL('../app/src-tauri/src/pinch.rs', import.meta.url), 'utf8');
-  const rate = Number(/const CTRL_WHEEL_RATE: f64 = ([0-9.]+);/.exec(rust)?.[1]);
+test('the Linux pinch (pinch_math.rs) sends ctrl wheel events at the rate the viewer and grid zoom by', () => {
+  const rust = readFileSync(new URL('../app/src-tauri/src/pinch_math.rs', import.meta.url), 'utf8');
+  const rate = Number(/(?:pub )?const CTRL_WHEEL_RATE: f64 = ([0-9.]+);/.exec(rust)?.[1]);
   assert.ok(rate > 0, 'CTRL_WHEEL_RATE found');
   for (const file of ['App.tsx', 'Filmstrip.tsx']) {
     const text = readFileSync(new URL(file, src), 'utf8');

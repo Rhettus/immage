@@ -350,9 +350,10 @@ async function choiceBody(t, definition) {
       await click(t, profile);
       await until(async () => (await t.driver.observe(inspect, profile)).checked, 'enable lens corrections for the LensPicker');
     }
-    const initial = (await t.driver.observe(inspect, button)).text;
     await click(t, button);
     await until(() => t.driver.observe(s => !!document.querySelector(s), '.lens-menu'), 'lens picker opens');
+    // the camera's lenses arrive after the menu opens, from the engine's lens list
+    await until(() => t.driver.observe(s => document.querySelectorAll(s).length > 1, options), 'lens list loaded');
     const names = await t.driver.observe(s => [...document.querySelectorAll(s)].map(b => b.textContent.trim()), options);
     const selected = names.find(n => /^Auto/.test(n)), candidate = names.find(n => !/^Auto/.test(n));
     assert(selected && candidate, `LensPicker offers Auto and a lens: ${names.length} options`);
@@ -362,7 +363,8 @@ async function choiceBody(t, definition) {
     await click(t, button);
     await until(() => t.driver.observe(s => !!document.querySelector(s), '.lens-menu'), 'lens picker reopens');
     await textButton(t, '.lens-list', selected);
-    await until(async () => (await t.driver.observe(inspect, button)).text === initial, 'initial lens choice restored');
+    // the button names the matched lens once the list has loaded, as the Auto row does
+    await until(async () => (await t.driver.observe(inspect, button)).text === selected, 'initial lens choice restored');
     if (!profileInitial.checked) {
       await click(t, profile);
       await until(async () => !(await t.driver.observe(inspect, profile)).checked, 'restore lens corrections state');

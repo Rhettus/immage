@@ -27,7 +27,11 @@ const keys = s => s.replace(/[⇧⌥⌘⌃]+(-(?=[a-z])|)/g, (m, dash, at) => {
 // the menus as the app builds them for Windows and Linux, from app/src/menu.ts
 async function expectedMenus() {
   let mod;
-  try { mod = await import(new URL('../../../app/src/menu.ts', import.meta.url)); }
+  try {
+    // menu.ts imports without extensions and reads Vite's locale glob
+    await import('../../load-app-ts.mjs');
+    mod = await import(new URL('../../../app/src/menu.ts', import.meta.url));
+  }
   catch (e) { throw new Blocked(`cannot load app/src/menu.ts (Node >= 22.18 strips types): ${e.message}`); }
   return mod.forPlatform(mod.MENUS, false);
 }
@@ -253,6 +257,11 @@ export async function menus(t) {
   assert(await thumbs(t) >= before, 'Photo > Create Virtual Copy removes no filmstrip entry');
   await t.evidence('virtual-copy-from-menu');
   t.measure({ name: 'virtual-copy', thumbsBefore: before, thumbsAfter: await thumbs(t) });
+  // The editor now shows the copy, and later cases edit "the open photo" and
+  // reopen the original after a restart. Relaunch so the original is open again.
+  await pause(1800);
+  await t.restart();
+  await startup(t);
 }
 
 export async function menusGuards(t) {

@@ -286,7 +286,7 @@ export async function gridCulling(t) {
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'keyword is added to the selected photo');
   await t.evidence('culling-keywords');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close');
+  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
   await until(() => t.driver.observe(() => !document.querySelector('[aria-label="Grid keywords"]')), 'keyword dialog closes');
   await t.driver.move(cells[2].x, cells[2].y);
   await t.driver.keys('k');
@@ -294,7 +294,7 @@ export async function gridCulling(t) {
     'K reopens the selected-photo keyword dialog');
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'shared keyword is visible on both selected photos');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close');
+  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
   // A context click on an unselected photo acts on that photo alone, even
   // while another multi-selection remains selected.
   const beforeUnselectedContext = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb.selected')].map(e => e.title));
@@ -319,7 +319,7 @@ export async function gridCulling(t) {
   await textButton(t, '.context-menu', 'Keywords… (K)');
   const unselectedContextHeading = await until(() => t.driver.observe(() => document.querySelector('[aria-label="Grid keywords"] h2')?.textContent ?? null),
     'unselected context keyword dialog opens');
-  assert.equal(unselectedContextHeading, 'Keywords · 1 photo', 'unselected context action targets only its hit photo');
+  assert.match(unselectedContextHeading, /^Keywords · 1 photo$/, 'unselected context action targets only its hit photo');
   const afterUnselectedContext = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb.selected')].map(e => e.title));
   assert.deepEqual(afterUnselectedContext, beforeUnselectedContext, 'context action leaves the existing selection intact');
   await t.driver.keys('\uE00C');
@@ -375,7 +375,7 @@ export async function gridCulling(t) {
   await textButton(t, '[aria-label="Grid keywords"] .kw-recent', 'Grid Culling');
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'recent keyword can be applied');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close');
+  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
   await until(() => t.driver.observe(() => !document.querySelector('[aria-label="Grid keywords"]')), 'keyword dialog closes');
   // With no photo under the pointer, F falls back to the first selected photo.
   await t.driver.move(10, 10);
@@ -403,13 +403,14 @@ export async function gridCullingControls(t) {
   assert(await t.driver.observe(() => !document.querySelector('button.culling-open')), 'no culling button outside the grid');
   await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
+  await pause(1000); // let the grid finish laying out before measuring its cells
   const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].map(c => {
     const r = c.getBoundingClientRect(); return { id: c.getAttribute('data-imgid'), title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }));
   assert(cells.length >= 3, 'three grid cells');
   // select the second photo, then click the toolbar button away from every thumbnail
   await t.driver.point(cells[1].x, cells[1].y);
-  await until(() => t.driver.observe(id => document.querySelector(`.filmstrip.grid .thumb[data-imgid="${id}"]`)?.classList.contains('selected'), cells[1].id), 'second photo selected');
+  await until(() => t.driver.observe(id => document.querySelector(`.filmstrip.grid .thumb[data-imgid="${id}"]`)?.classList.contains('active'), cells[1].id), 'second photo selected');
   const button = await until(() => t.driver.observe(() => {
     const b = document.querySelector('button.culling-open'); if (!b) return null;
     const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, title: b.title };
@@ -479,9 +480,10 @@ export async function gridCullingPriority(t) {
     assert(ms <= PRIORITY_LIMIT_MS, `${label}: full preview drawn in ${ms} ms, limit ${PRIORITY_LIMIT_MS} ms`);
     return drawn;
   };
-  const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].slice(0, 12).map(c => {
+  // the grid scrolls to the open photo, the last one, so take the cells on screen rather than the first ones
+  const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].map(c => {
     const r = c.getBoundingClientRect(); return { title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }));
+  }).filter(c => c.y > 0 && c.y < innerHeight && c.x > 0 && c.x < innerWidth).slice(0, 12));
   assert(cells.length >= 4, 'visible grid cells to open on');
   await t.driver.move(cells[2].x, cells[2].y);
   const first = await timeDrawn('open with F', () => t.driver.keys('f'), cells[2].title);

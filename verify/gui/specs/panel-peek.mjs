@@ -44,6 +44,8 @@ export async function panelPeek(t) {
   const edited = await settledPhoto(t, p => p.hash !== neutral.hash && p.luma > neutral.luma + 2);
   await t.evidence('peek-edited');
 
+  // the drag can leave the panel scrolled with its title (and eye) above the scroller
+  await reveal(t, '[data-panel-id="basic"] > .panel-title [data-panel-peek]');
   const ready = await until(async () => { const e = await t.driver.observe(eye, 'basic'); return e && !e.disabled && e; }, 'Basic eye enabled once edited');
   assert(ready.hit, 'the eye receives hit testing');
   assert(ready.open, 'Basic is open before the eye is held');
