@@ -14,7 +14,7 @@ export type PasteDefaults = {
 // rendered file gets it only when Preferences' Also apply to JPEGs is on,
 // and then without what needs a raw (the controls marked rawOnly) or what
 // the camera did already (Lens Corrections). null: nothing to apply
-const LENS_IDS = new Set(["lens_profile", "lens_ca", "lens_pick"]);
+const LENS_IDS = new Set(["lens_profile", "lens_ca", "lens_pick", "lens_method"]);
 export function newPhotoPresetValues(values: Values, raw: boolean, nonRaw: boolean): Values | null {
   if (raw) return values;
   if (!nonRaw) return null;

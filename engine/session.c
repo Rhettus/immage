@@ -558,8 +558,12 @@ static gboolean _write_details(dt_iop_module_t *mod, const double num, char **er
 // of the Lensfun lens chosen in its place. the params keep the lens's name
 // and its geometry, as the module's own lens menu sets them, and the method
 // is Lensfun's: a raw that carries its own correction defaults to the
-// embedded one, which has no use for a lens of the database
+// embedded one, which has no use for a lens of the database. 0 restores the
+// default params' three, unless the lens is already the matched one
 #define LENS_PICK "lens_pick"
+// read-only: 1 when Lensfun has a profile for the camera and the lens the
+// default params name, so the Simple panel prefers the Lensfun method
+#define LENS_LENSFUN "lens_lensfun"
 #define LENS_METHOD_LENSFUN 1
 
 static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **err)
@@ -574,6 +578,9 @@ static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **
   if(!lens || !auto_lens || !geom || !auto_geom || !method || !auto_method) return FALSE;
   if(num <= 0.0)
   {
+    // Auto written over Auto leaves the method as the card or Advanced set it;
+    // Simple writes the whole lens map on every edit
+    if(!g_strcmp0(lens, auto_lens)) return TRUE;
     g_strlcpy(lens, auto_lens, 128);
     *geom = *auto_geom;
     *method = *auto_method;
@@ -710,6 +717,15 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
     return wb_setting_read(mod, name, from_defaults, num, err);
   if(files_is_field(mod, name)) return files_read(mod, name, from_defaults, num, err);
   if(cmap_is_field(mod, name)) return cmap_read(mod, name, from_defaults, num, err);
+  if(!g_strcmp0(name, LENS_LENSFUN) && !g_strcmp0(mod->op, "lens"))
+  {
+    dt_introspection_field_t *lf = NULL;
+    const char *auto_lens = session_field_in(mod, mod->default_params, "lens", &lf, err);
+    if(!auto_lens) return FALSE;
+    const dt_image_t *img = &_s.dev.image_storage;
+    *num = lenses_has_profile(img->exif_maker, img->exif_model, auto_lens) ? 1.0 : 0.0;
+    return TRUE;
+  }
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
   {
     dt_introspection_field_t *lf = NULL;

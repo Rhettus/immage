@@ -1482,16 +1482,25 @@ export const modules: ModuleMap[] = [
   },
   {
     op: "lens", keepOn: false,
-    controls: ["lens_profile", "lens_ca", "lens_pick"],
+    controls: ["lens_profile", "lens_ca", "lens_pick", "lens_method"],
     // lens_pick is the engine's own field: 0 for the lens matched from the
     // EXIF, else the hash of the Lensfun lens chosen in its place
-    fields: ["modify_flags", "has_been_set", "lens_pick"],
+    fields: ["modify_flags", "has_been_set", "lens_pick", "method", "lens_lensfun"],
     // flags: TCA 1, vignetting 2, distortion 4 (lens.cc). until has_been_set,
     // commit_params ignores the params for the defaults, as darktable's GUI
-    // sets it on the first change; the method stays the one the defaults
-    // picked for the photo
-    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick }),
-    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1, lens_pick: v.lens_pick }),
+    // sets it on the first change. a lens module never set keeps darktable's
+    // embedded default for a photo with correction data, but Immage prefers
+    // the Lensfun profile when the database has one: Simple reads that as the
+    // method, so its first write carries it. a module already set keeps the
+    // method it stores, and an enabled one that was never set shows what it
+    // renders (the defaults object is the photo's untouched module). embedded
+    // metadata has no use for a database lens, so choosing it puts the pick
+    // back to Auto
+    read: (p, defaults) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick,
+                              lens_method: lensMethodRead(p, p === defaults) }),
+    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1,
+                     lens_pick: v.lens_method === LENS_EMBEDDED ? 0 : v.lens_pick,
+                     ...(v.lens_method === undefined ? {} : { method: v.lens_method }) }),
     enabled: (v) => v.lens_profile === 1,
   },
   {
@@ -1631,6 +1640,15 @@ function demosaicOptions(ctx: ImageContext, value: number): [string, number][] {
   return list.some(([, m]) => m === value) ? list
     : [...list, [`${methodName(value) ?? "Custom"}${list.length ? " (Advanced)" : ""}`, value]];
 }
+
+const LENS_EMBEDDED = 0;
+const LENS_LENSFUN = 1;
+export const lensMethodRead = (p: Params, untouched: boolean) =>
+  untouched && !p.has_been_set && p.method === LENS_EMBEDDED && p.lens_lensfun ? LENS_LENSFUN : p.method;
+const LENS_METHODS: [string, number][] = [["Embedded metadata", 0], ["Lensfun database", 1]];
+const lensMethodLabel = (v: number) => LENS_METHODS.find(([, m]) => m === v)?.[0] ?? "Manual vignette only";
+const lensMethodOptions = (_ctx: ImageContext, value: number): [string, number][] =>
+  value === 2 ? [...LENS_METHODS, ["Manual vignette only", 2]] : LENS_METHODS;
 
 export const panels: Panel[] = [
   {
@@ -1812,6 +1830,12 @@ export const panels: Panel[] = [
             step: 1, neutral: 0, format: (v) => (v ? "chosen" : "auto"),
             note: "the lens whose profile corrects the photo; Auto uses the one the file names" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
+          // shown only for a photo that carries its own correction, where
+          // darktable starts on embedded metadata (the default method is
+          // the control's neutral)
+          { id: "lens_method", label: "Correction method", kind: "choice", menu: true, options: [],
+            optionsFor: lensMethodOptions, min: 0, max: 2, step: 1, format: lensMethodLabel,
+            note: "the corrections the camera wrote into the file, or the Lensfun database's for the lens" },
         ],
       },
       {

@@ -25,6 +25,10 @@ void lenses_list(const char *cam_maker, const char *cam_model, lenses_cb cb, voi
 // module finds it for the camera; `model` is left alone when none matches
 void lenses_match(const char *cam_maker, const char *cam_model, const char *name, char *model, size_t size);
 
+// whether the database has a profile for the camera and the lens as the lens
+// module looks it up: the camera is known and a lens of that name fits it
+gboolean lenses_has_profile(const char *cam_maker, const char *cam_model, const char *name);
+
 // the lens whose lenses_hash() is `hash`, among all of them; its model is
 // copied to `model` and darktable's target geometry to `geom`
 gboolean lenses_find(unsigned hash, char *model, size_t size, int *geom);

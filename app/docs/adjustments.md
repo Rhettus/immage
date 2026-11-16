@@ -363,6 +363,18 @@ uses the same module.
   fit the camera (all of them when the camera is not in the database). Type in
   the search box at its top to filter; every word you type must appear in
   the lens's maker or name, in any order, so `12-32` finds the Panasonic
+- **Correction method**: shown only for a photo whose file carries its own
+  correction data. When the lensfun database has a profile for the camera and
+  lens, a photo you have not corrected yet starts on **Lensfun database**, and
+  enabling Lens Corrections uses it; darktable alone would use **Embedded
+  metadata**. Choose **Embedded metadata** to use the file's correction
+  instead; it is kept for that photo. A photo you already corrected keeps its
+  method, and a photo with no lensfun profile stays on embedded. It is the
+  same setting as the Correction method in the Advanced mode's Lens
+  correction card, so a change made in either place shows in the other.
+  Choosing **Embedded metadata** puts the **Lens** picker back to Auto, and
+  picking a lens switches the method to Lensfun. Reset returns to the
+  preferred method.
   12-32mm and `pana 12-32` narrows it to Panasonic. Up and Down move, Enter
   chooses and Esc closes. Choosing a lens uses its lensfun profile, even on a
   raw whose own embedded correction Auto would use. The choice follows the photo's edits: undo, copy

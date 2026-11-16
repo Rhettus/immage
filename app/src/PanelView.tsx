@@ -229,7 +229,9 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
   const toggleSection = (title: string) => setClosed(toggleClosedSection(`${p.id}/${title}`));
   const [advanced, toggleAdvanced] = useAdvanced(p.id);
   // Whites: Advanced is AgX's
-  const shown = (c: Control) => choiceShows(c.id, values) && (c.id !== "whites_brilliance" || values.tm_mode === 1);
+  // the lens method only where there is a choice: the photo carries embedded correction data, or it is not Lensfun
+  const shown = (c: Control) => choiceShows(c.id, values) && (c.id !== "whites_brilliance" || values.tm_mode === 1)
+    && (c.id !== "lens_method" || !!session?.lensEmbedded || (values.lens_method ?? 1) !== 1);
   const advancedIds = p.sections.flatMap((sec) => sec.controls).filter((c) => isAdvancedControl(c.id) && shown(c)).map((c) => c.id);
   const [tab, setTab] = useState(0);
   const [wheels, setWheels] = useState<WheelMode>("3way");
@@ -378,7 +380,8 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
                        module={switchFor("sc_pn") && <ModuleSwitch {...switchFor("sc_pn")!} scope="global" />} />
                     : null;
                   if (c.id === "lens_pick") return <LensPicker key={c.id} value={values.lens_pick ?? 0} photo={session}
-                    disabled={disabled || values.lens_profile !== 1} onChange={(v) => onChange(c, v)} />;
+                    disabled={disabled || values.lens_profile !== 1}
+                    onChange={(v) => onChangeMany([["lens_pick", v], ["lens_method", v ? 1 : session?.neutral.lens_method ?? 1]])} />;
                   const props = controlProps(c);
                   return c.kind === "toggle" ? <Toggle key={c.id} {...props} />
                     : c.kind === "choice" ? <Choice key={c.id} {...props} />

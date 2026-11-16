@@ -39,8 +39,12 @@ Improvements
   button also offers Hold for before.
 - The interface language follows the system's, with English fallback, and can
   be changed in Preferences > General. French is the first translation.
-- Lens Corrections offers sensor-specific raw demosaic methods, and Heal shows
-  its source as soon as you press.
+- Lens Corrections offers sensor-specific raw demosaic methods, and a
+  Correction method choice (Embedded metadata or Lensfun database) for photos
+  that carry their own correction data. Enabling Lens Corrections now uses
+  the Lensfun database profile when one exists for the lens, instead of the
+  file's embedded correction; photos already corrected keep their method.
+  Heal shows its source as soon as you press.
 
 Bug fixes
 
@@ -56,6 +60,8 @@ Bug fixes
   changes as more photos arrive.
 - Opening a photo from the grid no longer shows the previous photo while the
   new one loads; its thumbnail appears right away.
+- A lens Correction method chosen in Advanced mode is no longer undone by the
+  next edit in Lens Corrections, and shows there.
 - The Presets hover preview no longer gets stuck on one preset.
 - Basic's Auto works on a photo with Film Simulation or a converted negative.
 - DNG thumbnails use embedded previews, and a photo that cannot be decoded gets
