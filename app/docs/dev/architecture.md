@@ -43,8 +43,10 @@ The boundary is strict. The front end never touches files or darktable
 directly. It calls typed commands (`commands.x(...)`, from the generated bindings), and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
 serialized, one request at a time. Thumbnails, folder imports and
-exports are the exceptions: the engine builds thumbnails on two threads
-of its own (`library_thumb_run`), and reads folders (`library_import_run`), exports
+exports are the exceptions: the engine builds thumbnails on its own threads
+(`library_thumb_run`; Preferences' Library workers sets their count and the
+metadata pool's through `thumb_threads`, in `library_thumb_threads` and
+`library_metadata_threads`), and reads folders (`library_import_run`), exports
 (`export_run`), runs AI Denoise (`ai_denoise_run`) and the AI selections'
 models (`ai_run`) on one each, beside
 whatever the mutex's holder is doing. Most commands are async and wait for
@@ -176,6 +178,8 @@ and one undo after Done.
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` and `fullDraftK` in App.tsx; the latter also sizes `exactView`, the detail sliders' whole-view draft), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale"; `settledScale()` does the same for the settled Fit frame (`viewAt(1)` in App.tsx), behind "Fit frames at the screen's scale" (on by default). |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `session_module_state`). |
+| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` is the pure targeting and bounded scheduling: one active request, one replaceable foreground request and a bounded list of neighbors, kept in memory. |
+| [folderEdits.ts](../../src/folderEdits.ts) | `FolderEdits`: keeps only the fields changed (`patchImage`) while a folder read runs, and reapplies them to each arriving batch and the final list, so rating, label and reject changes survive the read's older snapshots. |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 | [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
 
@@ -247,6 +251,9 @@ and one undo after Done.
 
 | File | Responsibility |
 |---|---|
+| [localSearch.ts](../../src/localSearch.ts) | The local search source: queries over the metadata cache and, once the CLIP model is installed, text and image similarity; paging and the "Show more like this" image query. |
+| [combinedSearch.ts](../../src/combinedSearch.ts) | Frontend-only coordinator over independent sources (local, Immich): each keeps its own results, errors and pagination; it knows neither backend, callers pass adapters. |
+| [searchIdentity.ts](../../src/searchIdentity.ts) | Merging a local and an Immich result only on an exact indexed local path (Immich mapping canonicalizes the file); virtual copies stay separate. It is path identity, not proof the bytes are equal. |
 | [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 

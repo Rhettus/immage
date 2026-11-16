@@ -30,6 +30,28 @@ photo cache provides status, pause, clear/rebuild and optional model controls,
 with a distinct CLIP photo count and a scrollable directory connection list.
 Local retrieval keeps selected unknown metadata out of filtered results.
 
+The Search photos card queries cached local metadata without Immich and can
+combine independent local and Immich results, merging exact verified local paths
+and preserving metadata edits while additional results arrive. Metadata edits
+refresh search results without a folder reload or optional model. Saved edits
+also stay indexed as you switch photos through bounded background refreshes.
+After the optional model download, background CPU analysis builds original and
+edited embeddings, backfilling metadata for reconciled library paths through
+bounded lazy imports, respecting removed and excluded folders. Image queries use the grid
+context menu’s Show more like this action and retain active filters. Cached
+capture metadata preserves source fractions and known UTC offsets. Search keeps
+original and virtual-copy identities consistent with the metadata cache.
+Metadata-only pages stop after enough filtered matches; repeatable headless
+measurements are described in [benchmarks](benchmarking/README.md#local-cache-and-search).
+
+Immich local path mappings keep resolved files within the configured folder,
+including when subfolders contain symbolic links.
+
+Folder filters offer **All photos** and **Rejected** as selectable rows with
+counts that reflect the other selected filters. See the [library guide](app/docs/library.md).
+
+Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
+
 Library thumbnails support embedded TIFF previews in DNG photos and can use
 a smaller preview when an unedited photo's RAW data cannot be decoded.
 
@@ -117,25 +139,3 @@ another photo from the grid.
 
 Immage is GPL-3.0-or-later. Bundled third-party content keeps its own license.
 See [license details and source availability](app/docs/credits.md#license).
-
-Folder filters offer **All photos** and **Rejected** as selectable rows with
-counts that reflect the other selected filters. See the [library guide](app/docs/library.md).
-
-Grid culling: **K** keywords selected photos; **F** previews in a fixed 80% window frame without opening the editor, with arrow navigation and rating shortcuts. Scroll to zoom under the pointer; **Z** toggles Fit and 100%. The bottom bar provides ratings and color labels. Nearby previews are retained in memory; preview prefetch honors **Read ahead** and **Read ahead both ways**, without decoding editor RAWs. See the [library guide](app/docs/library.md).
-
-The Search photos card queries cached local metadata without Immich and can
-combine independent local and Immich results, merging exact verified local paths
-and preserving metadata edits while additional results arrive. Metadata edits
-refresh search results without a folder reload or optional model. Saved edits
-also stay indexed as you switch photos through bounded background refreshes.
-After the optional model download, background CPU analysis builds original and
-edited embeddings, backfilling metadata for reconciled library paths through
-bounded lazy imports, respecting removed and excluded folders. Image queries use the grid
-context menu’s Show more like this action and retain active filters. Cached
-capture metadata preserves source fractions and known UTC offsets. Search keeps
-original and virtual-copy identities consistent with the metadata cache.
-Metadata-only pages stop after enough filtered matches; repeatable headless
-measurements are described in [benchmarks](benchmarking/README.md#local-cache-and-search).
-
-Immich local path mappings keep resolved files within the configured folder,
-including when subfolders contain symbolic links.
