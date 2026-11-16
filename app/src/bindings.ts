@@ -358,6 +358,7 @@ export type Counts = {
 	variants: number,
 	metadata: number,
 	analyses: number,
+	analysed_photos: number,
 };
 
 export type DepthMap = {

@@ -453,6 +453,15 @@ The thumbnail caches keep nothing while the disk has under 5 GB free.
   the relevance of search results. Model downloads have their own Cancel button
   and are independent of Pause.
 
+**CLIP analysis**, directly below **Background work**, shows the number of distinct
+photos analysed and the total original and edited analyses. A photo counts once
+even when both its original and edited versions have been analysed. Model download
+and check controls follow. Directory status appears below in a fixed-height
+scrollable box, with one row per path and a right-aligned green (connected) or
+red (offline) dot. Hover a truncated path to see it in full; hover its dot for
+connection details or an error. The list can also be focused and scrolled with
+the keyboard.
+
 After downloading the optional CLIP package, background CPU analysis fills
 original and edited embeddings. Reconciled paths receive bounded metadata imports
 before analysis, including folders you have not browsed. Pause stops new jobs;

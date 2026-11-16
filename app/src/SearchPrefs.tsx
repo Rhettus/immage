@@ -45,7 +45,7 @@ export function SearchPrefs() {
       hint={t("library.cache.backgroundHint")}>
       <button className="btn small" disabled={busy || !queue} onClick={() => void run(() => commands.searchPause(!queue!.paused))}>{queue?.paused ? t("library.cache.resume") : t("library.cache.pause")}</button>
     </PrefRow>
-    {status?.roots.map(root => <PrefRow key={root.path} label={root.path} summary={t("library.cache.lastCheck", { state: root.state, error: root.error ? ` — ${root.error}` : "" })} children={null} />)}
+    <PrefRow label={t("library.cache.analysis")} summary={count ? t("library.cache.analysedPhotos", { photos: count.analysed_photos.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")} children={null} />
     <PrefRow label={t("library.cache.model")} summary={downloading ? t("library.cache.downloading") : model?.verified ? t("library.cache.verified") : t("library.cache.notVerified")}
       hint={t("library.cache.modelHint", { size })}>
       <button className="btn small" disabled={busy || downloading || !model} onClick={() => void run(() => commands.searchModelDownload(true))}>{t("library.cache.download", { size })}</button>
@@ -57,6 +57,21 @@ export function SearchPrefs() {
         setProbe(t("library.cache.probe", { text: result.dimensions, image: result.image_dimensions, timing: result.elapsed_ms === null ? t("library.cache.timingUnavailable") : t("library.cache.elapsed", { ms: Math.round(result.elapsed_ms) }) }));
       })}>{t("library.cache.check")}</button>
     </PrefRow>
+    {!!status?.roots.length && <div className="cache-directories" role="region" aria-label={t("library.cache.directories")} tabIndex={0}>
+      {status.roots.map(root => {
+        const connected = root.state === "online";
+        const label = root.state === "online" || root.state === "offline"
+          ? t(connected ? "library.folders.connected" : "library.folders.offline")
+          : t("library.cache.lastCheck", { state: root.state, error: "" });
+        return <div className="cache-directory" key={root.path}>
+          <span className="cache-directory-path" title={root.path}>{root.path}</span>
+          <span className="cache-directory-status" role="img" aria-label={label}
+            title={`${label}${root.error ? ` — ${root.error}` : ""}`}>
+            <span className={`drive-dot${connected ? "" : " off"}`} />
+          </span>
+        </div>;
+      })}
+    </div>}
     {(error || model?.error) && <p role="alert" className="prefs-error">{error || model?.error}</p>}
   </PrefCard>;
 }

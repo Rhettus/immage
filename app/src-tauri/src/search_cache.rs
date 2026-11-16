@@ -57,6 +57,7 @@ pub struct Counts {
     pub variants: i64,
     pub metadata: i64,
     pub analyses: i64,
+    pub analysed_photos: i64,
 }
 pub struct Candidate {
     pub asset_id: i64,
@@ -627,7 +628,7 @@ impl SearchCache {
 
     pub fn counts(&self) -> Result<Counts, String> {
         self.db.lock().map_err(|_|"search cache lock poisoned")?.query_row(
-            "SELECT (SELECT count(*) FROM assets),(SELECT count(*) FROM variants),(SELECT count(*) FROM variants WHERE metadata_json IS NOT NULL),(SELECT count(*) FROM analyses)",[],|row| Ok(Counts{assets:row.get(0)?,variants:row.get(1)?,metadata:row.get(2)?,analyses:row.get(3)?})).map_err(|e|e.to_string())
+            "SELECT (SELECT count(*) FROM assets),(SELECT count(*) FROM variants),(SELECT count(*) FROM variants WHERE metadata_json IS NOT NULL),(SELECT count(*) FROM analyses),(SELECT count(DISTINCT asset_id) FROM analyses)",[],|row| Ok(Counts{assets:row.get(0)?,variants:row.get(1)?,metadata:row.get(2)?,analyses:row.get(3)?,analysed_photos:row.get(4)?})).map_err(|e|e.to_string())
     }
     /// Clear disposable rows while retaining root identity and AUTOINCREMENT
     /// sequences. Late work cannot accidentally target a newly reused ID.
@@ -893,6 +894,21 @@ mod tests {
         let db=Connection::open(&path).unwrap();db.execute("UPDATE search_cache_meta SET value=5 WHERE key='schema_version'",[]).unwrap();drop(db);
         let cache=SearchCache::open(&path).unwrap();assert_eq!(cache.variant("/photos/a.jpg","").unwrap().unwrap().id,v.id);
         assert!(cache.metadata(v.id).unwrap().is_none());assert_eq!(cache.analysis(v.id,"original",1,"model").unwrap(),Some(vec![1,2]));
+    }
+
+    #[test]
+    fn analysed_photo_count_deduplicates_original_and_edited_versions() {
+        let cache = cache();
+        let a = cache.upsert_variant("/photos/a.jpg", "", "source", "edit", None, None, None).unwrap();
+        let b = cache.upsert_variant("/photos/b.jpg", "", "source", "edit", None, None, None).unwrap();
+        cache.put_analysis(a.id, "original", "source", 1, "model", b"vector").unwrap();
+        cache.put_analysis(a.id, "edited", "edit", 1, "model", b"vector").unwrap();
+        cache.put_analysis(b.id, "edited", "edit", 1, "model", b"vector").unwrap();
+        let counts = cache.counts().unwrap();
+        assert_eq!(counts.analysed_photos, 2);
+        assert_eq!(counts.analyses, 3);
+        cache.clear().unwrap();
+        assert_eq!(cache.counts().unwrap().analysed_photos, 0);
     }
 
     #[test]

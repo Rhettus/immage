@@ -26,7 +26,7 @@ const {SearchPrefs}=await import(source);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
  const calls=[],slots=[],effects=[];let index=0,mounted=false;
- const status={counts:{assets:3,variants:4,metadata:4,analyses:0},roots:[{path:'/photos',state:'offline',error:'unmounted'}],queue:{paused:false,active:0,queued:0},model:{bytes:607974672,verified:true,downloading:false,error:null}};
+ const status={counts:{assets:3,variants:4,metadata:4,analyses:0,analysed_photos:0},roots:[{path:'/photos',state:'offline',error:'unmounted'}],queue:{paused:false,active:0,queued:0},model:{bytes:607974672,verified:true,downloading:false,error:null}};
  const f={calls,status,commands:{
   async searchStatus(){calls.push(['status']);return structuredClone(status);},
   async searchPause(v){calls.push(['pause',v]);status.queue.paused=v;},

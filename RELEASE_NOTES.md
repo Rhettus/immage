@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Preferences shows the number of photos analysed by CLIP below Background work,
+  followed by model controls. Directory status uses compact rows with connection
+  dots in a fixed-height scrollable list.
 - Folder filters show All photos and Rejected as selectable rows with photo
   counts, matching the File type list and avoiding a dropdown.
 - Interface language setting in Preferences > General defaults to the system’s
