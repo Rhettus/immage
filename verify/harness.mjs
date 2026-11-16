@@ -1221,7 +1221,7 @@ async function decisions(photo) {
       : judge({ expect: { lum: 1 } }, compare(f, o.base), 1);
   });
 
-  // the Filters popup narrows a folder by camera, keywords (a keyword
+  // Find's filters narrow a folder by camera, keywords (a keyword
   // with those under it) and exposure settings, which needs the engine to
   // list each photo's keywords with the folder (filter.ts; library.md,
   // Filtering)
@@ -1243,7 +1243,7 @@ async function decisions(photo) {
       : wrong.length ? `wrong for ${wrong.map(([f]) => JSON.stringify(f)).join(", ")}` : null;
   });
 
-  // each of the Filters popup's lists holds only what the other choices
+  // each of Find's lists holds only what the other choices
   // leave, so a camera chosen narrows the lenses, ISOs and the rest to
   // those it took (library.md, Filtering)
   await decide("the filter's lists narrow by the other choices", async () => {

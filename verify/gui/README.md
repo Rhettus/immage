@@ -72,14 +72,24 @@ Failed assertions also exit 1. Signals clean up only the run's own process group
 reports and copied fixtures remain available. No automatic retries or reference
 acceptance are provided.
 
-## Local search case
+## Local search and Find cases
 
 `--case local-search` (or `--suite search`) checks filename search without an
-Immich server or CLIP model. Use the bundled sample JPEG as the configured
+Immich server or CLIP model, through the Find popup: Search in offers This
+folder and All folders only, Filename mode, the words typed and Enter pressed
+(there is no Search button). Use the bundled sample JPEG as the configured
 fixture; the runner copies it into isolated app state. The case waits for a
-cached local result and thumbnail, rates only that disposable copy, retains a
-rating filter, and returns to its folder. This case passed live Linux
-system-WebKitGTK validation; see `suites.mjs` for the retained run identity. Local per-run GUI approval rules still apply.
+cached local result and thumbnail, closes the popup with Show, rates only that
+disposable copy, retains a rating filter, and returns to its folder. It passed
+live validation against the earlier Search photos card; the Find rewrite has not
+been run live. Local per-run GUI approval rules still apply.
+
+`--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
+Show N, Escape), `find-sizes` (Minimize, Dock and Fill, dragging the grip,
+remembered places, double-click reset) and `find-saved` (Save filter…, changed
+and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
+`find-01` to `find-03`. All three are written, not live-validated, and the
+`filters` and `camera-body` cases now open Find (Dock size).
 
 ## Positive hot-pixel fixture
 
@@ -350,7 +360,7 @@ node --input-type=module -e 'import { availableMemory } from "./verify/gui/suppo
 ## Expanded selections and fixtures
 
 List cases without starting an app with `node verify/gui/run.mjs --list`.
-Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, and `inventory`.
+Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, `search`, `find`, and `inventory`.
 `--suite all` selects every declaration, but mixes incompatible prerequisites;
 it excludes the standalone `startup-restore` and `dng-thumbnail` cases and is
 not a turnkey full-coverage run. Prefer one case and its required fixture:

@@ -73,14 +73,20 @@ export async function exportOptions(t) {
   // Settings and preview only: never native destination chooser or external editor.
   await textButton(t,'.export .modal-foot','Cancel');
 }
+// Find's category rows and their panes. The popup opens at its stored size,
+// Dock by default (one column, the list above the pane); a size other than
+// Dock has no list, so the case chooses Dock first.
 export async function filters(t) {
-  await click(t,'.kind-button');
-  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.filter-cat .name')].map(e=>e.textContent));
+  await click(t,'.find-button');
+  await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
+  if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
+  await until(()=>t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size==='dock'),'Dock size');
+  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-cat .name')].map(e=>e.textContent));
   assert(categories.length>0);
   for(const name of categories){
-    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.filter-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
+    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
     await t.driver.point(point.x,point.y);
-    const shown=await t.driver.observe(()=>document.querySelector('.filter-pane h3')?.textContent);assert.equal(shown,name);
+    const shown=await t.driver.observe(()=>document.querySelector('.find-pane h3')?.textContent);assert.equal(shown,name);
     await t.evidence(`filter-${categories.indexOf(name)}`);
   }
   await t.driver.keys('\uE00C');

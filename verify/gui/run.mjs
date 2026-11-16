@@ -221,6 +221,11 @@ try {
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));
     report.cullingFixtures = 3;
   }
+  // find-live: copies of the fixture, one of which the case rates
+  if (selectedCases.includes('find-live')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `find-${String(i).padStart(2, '0')}${ext}`));
+  }
   // open-failure-recovery: two more good copies and a truncated one (made from
   // the run's own copy, never the original), so a failed open sits between opens
   if (selectedCases.includes('open-failure-recovery')) {
