@@ -91,7 +91,9 @@ downloading them:
 - **On this computer**: the same folder here. Click **Choose…**.
 
 Left blank, these follow the importer's **Path prefix** and destination.
-Photos outside that folder are downloaded before they open.
+Photos outside that folder are downloaded before they open. Only photos
+opened from the mapped folder can be denoised with AI Denoise, since the DNG
+is written beside the raw.
 
 ## Searching
 

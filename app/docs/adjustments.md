@@ -310,7 +310,12 @@ there opens the DNG. The DNG starts with the raw's edit as it was when
 you clicked Denoise, and the first time it opens, Profiled Denoise's
 Luminance and Color go to 0, since the AI took the noise out. It is a
 photo of its own and sits after the raw in the folder; the raw itself
-isn't changed. Raws only, in a folder on this computer, one at a time.
+isn't changed. Raws only, one at a time, for photos in a folder on this
+computer. That includes photos opened from Find results and Immich photos
+that open from a mapped external library, whose DNG lands in the library's
+folder, where Immich finds it at its next library scan. An Immich photo
+that was downloaded has no folder to write to, so AI Denoise is not offered
+for it; map the library or download the photo to a folder first.
 To try another Amount, run it again on the raw; the next DNG is
 `<name>_raw-denoise_1.dng`.
 
@@ -358,11 +363,6 @@ uses the same module.
   a lensfun database installed on the system is used instead (update it with
   `lensfun-update-data`). A camera or lens still missing from the database
   gets no correction.
-- **Lens**: **Auto** uses the lens matched from the photo's EXIF, shown
-  beside it. Open the drop-down to pick another from the lensfun lenses that
-  fit the camera (all of them when the camera is not in the database). Type in
-  the search box at its top to filter; every word you type must appear in
-  the lens's maker or name, in any order, so `12-32` finds the Panasonic
 - **Correction method**: shown only for a photo whose file carries its own
   correction data. When the lensfun database has a profile for the camera and
   lens, a photo you have not corrected yet starts on **Lensfun database**, and
@@ -375,6 +375,11 @@ uses the same module.
   Choosing **Embedded metadata** puts the **Lens** picker back to Auto, and
   picking a lens switches the method to Lensfun. Reset returns to the
   preferred method.
+- **Lens**: **Auto** uses the lens matched from the photo's EXIF, shown
+  beside it. Open the drop-down to pick another from the lensfun lenses that
+  fit the camera (all of them when the camera is not in the database). Type in
+  the search box at its top to filter; every word you type must appear in
+  the lens's maker or name, in any order, so `12-32` finds the Panasonic
   12-32mm and `pana 12-32` narrows it to Panasonic. Up and Down move, Enter
   chooses and Esc closes. Choosing a lens uses its lensfun profile, even on a
   raw whose own embedded correction Auto would use. The choice follows the photo's edits: undo, copy

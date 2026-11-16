@@ -68,6 +68,9 @@ Bug fixes
   a smaller preview instead of a blank thumbnail.
 - AI Denoise no longer fails when you press Run while its model is still
   downloading.
+- AI Denoise is available for photos opened from Find results and from an
+  Immich external library mapped to this computer; the DNG is written beside
+  the raw. A downloaded Immich photo says why it cannot be denoised.
 
 Performance
 

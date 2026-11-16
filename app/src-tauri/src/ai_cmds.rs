@@ -458,14 +458,34 @@ pub(crate) async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<De
     serde_json::from_value(reply).map_err(|e| format!("ai_depth: unexpected reply: {e}"))
 }
 
+// the DNG goes beside the raw, so a raw in the Immich download cache (evicted
+// later, never sent back) is refused, and so is a folder that does not answer.
+// the page shows these two codes as translated text (runDenoise in App.tsx)
+fn denoise_destination(path: &str, cache: &Path) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.starts_with(cache) {
+        return Err("cached-original".into());
+    }
+    if let Some(dir) = path.parent() {
+        if !crate::volumes::answering(dir) {
+            return Err(format!("not-answering:{}", dir.display()));
+        }
+    }
+    Ok(())
+}
+
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
 // its edit, which the folder view then shows after it, as an Edit In
 // result. replies { path, original, image }; the engine takes the edit,
 // then denoises on a thread of its own
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: Number)
+pub(crate) async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                               caches: State<'_, crate::cache::Caches>, path: String, strength: Number)
     -> Result<GeneratedReply, String> {
+    let cache = caches.immich_originals.dir().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || denoise_destination(&path, &cache))
+        .await.map_err(|e| e.to_string())??;
     let reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
@@ -514,6 +534,15 @@ pub(crate) async fn ai_accel(state: State<'_, AppState>) -> Result<Vec<AccelProv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn denoise_refuses_only_the_immich_cache() {
+        let cache = Path::new("/c/immich-originals");
+        assert_eq!(denoise_destination("/c/immich-originals/a.dng", cache), Err("cached-original".into()));
+        assert_eq!(denoise_destination("/c/immich-originals/sub/a.dng", cache), Err("cached-original".into()));
+        assert!(denoise_destination("/c/immich-originals-2/a.dng", cache).is_ok());
+        assert!(denoise_destination("/c/other/a.dng", cache).is_ok());
+    }
     use crate::engine::Engine;
     use crate::repo_root;
     use std::path::PathBuf;

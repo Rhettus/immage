@@ -1118,7 +1118,12 @@ export default function App() {
                 : p.stage === "installing" ? t("app.status.modelInstall") : "");
       });
       try {
-        return await withModel("rawdenoise-nind", () => commands.aiDenoise(amount / 100));
+        return await withModel("rawdenoise-nind", () => commands.aiDenoise(from, amount / 100));
+      } catch (e) {
+        const code = String(e);
+        if (code === "cached-original") throw new Error(t("app.denoise.localOnly"));
+        if (code.startsWith("not-answering:")) throw new Error(t("app.denoise.notAnswering", { dir: code.slice(14) }));
+        throw e;
       } finally {
         stop();
       }
@@ -3922,11 +3927,6 @@ export default function App() {
     commands.prefetch(ids).catch(() => {});
   };
 
-  // `imgid` picks one of the file's versions (a virtual copy); without it,
-  // the original. false when it did not open
-  // opens run one at a time: a newer request replaces any still waiting, so
-  // only the latest click wins and two never interleave in the engine
-  const openGen = useRef(0);
   // the open whose frames may paint: a closing photo's late frames are dropped
   const frameOwner = useRef<object | null>(null);
   // the new photo's grid or filmstrip thumbnail, fitted, in place of the last
@@ -3946,6 +3946,11 @@ export default function App() {
     placeCanvas(sc, thumb.width, thumb.height,
       { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
   };
+  // `imgid` picks one of the file's versions (a virtual copy); without it,
+  // the original. false when it did not open
+  // opens run one at a time: a newer request replaces any still waiting, so
+  // only the latest click wins and two never interleave in the engine
+  const openGen = useRef(0);
   const openChain = useRef<Promise<unknown>>(Promise.resolve());
   const openFile = (path: string, imgid: number | null = null, reload = false,
                     onFirstFrame?: () => void): Promise<boolean> => {
@@ -3961,17 +3966,12 @@ export default function App() {
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
     if (!reload && session.current && cur && cur.path === path && (id === null || cur.imgid === id)) return true;
-    if (!(await commands.pathExists(path))) {
-      setStatus(t("app.status.fileNotFound", { path: baseName(path) }));
-      if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
-      return false;
-    }
     // the old photo's pixels go before the first await, and its late frames
     // are dropped: only the frames of this open may paint from here on
     const token = {}, previousOwner = frameOwner.current;
     frameOwner.current = token;
     if (!reload) showOpening(id);
-    const old = session.current;
+    if (!(await commands.pathExists(path))) {
       // the photo that was open still is: its frames paint again, and the
       // layers cleared above are drawn afresh
       frameOwner.current = previousOwner;
@@ -3980,6 +3980,11 @@ export default function App() {
         overviewHash.current = null;
         session.current.requestRender();
       }
+      setStatus(t("app.status.fileNotFound", { path: baseName(path) }));
+      if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
+      return false;
+    }
+    const old = session.current;
     let closed = false;
     // the new session once opened, until session.current adopts it
     let fresh: Session | undefined;
@@ -4019,12 +4024,12 @@ export default function App() {
       baseStale.current = true;
       if (reload) showOpening(id);
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
+        if (frameOwner.current !== token) return;
         drawFrame(f);
         const ready = onFirstFrame;
         onFirstFrame = undefined;
         ready?.();
       }, (e) => setStatus(t("app.status.error", { error: e })))));
-        if (frameOwner.current !== token) return;
       fresh = s;
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
@@ -4035,12 +4040,12 @@ export default function App() {
       setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
+        if (frameOwner.current !== token) return;
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
         baseLowRes.current = false;
         prefetchNext(s);
       };
-        if (frameOwner.current !== token) return;
       s.onCopy = (f) => {
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
@@ -7113,7 +7118,8 @@ export default function App() {
                        ) : undefined}
                        denoiseTools={p.id === "detail" ? (
                          session.current && !session.current.raw ? <div className="note-plain">{t("app.denoise.rawOnly")}</div>
-                         : immich ? <div className="note-plain">{t("app.denoise.localOnly")}</div>
+                         : currentEntry?.remote && !currentEntry.remote.localPath
+                           ? <div className="note-plain">{t("app.denoise.localOnly")}</div>
                          : (
                            <div className="denoise-tools">
                              <button className="btn small" disabled={!current || aiBusy || denoiseRunning}
