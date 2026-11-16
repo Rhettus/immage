@@ -94,10 +94,13 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     // them: a file that has not answered by then keeps its cached row
     {
         let (cache_listed, shared) = (listed_cache.clone(), app.state::<Caches>().listed.clone());
+        let handle = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
             cache::prestat(&cache_listed, STAT_WAIT);
             let now = cache_listed.lock().unwrap().clone();
-            *shared.lock().unwrap() = now;
+            // prestat can take seconds: a newer folder read may have
+            // published its own listing meanwhile
+            publish_listing(&shared, now, || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) == token);
         }).await.map_err(|e| e.to_string())?;
     }
     let mut images = Vec::new();
@@ -206,6 +209,19 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
 const STAT_WAIT: Duration = Duration::from_secs(4);
 // the most a folder's listing is waited for
 const LIST_WAIT: Duration = Duration::from_secs(10);
+
+// Publish a folder's listing unless a newer read has superseded it. The token
+// is checked while holding the `Caches.listed` mutex: every publisher bumps
+// `folder_token` at the start of open_folder, long before any publish, so a
+// stale read either sees the bump or has already written before the newer one
+// publishes. Lock order: the mutex, then only an atomic load; nothing else is
+// taken inside `current`.
+fn publish_listing(shared: &Mutex<cache::Listed>, listing: cache::Listed, current: impl FnOnce() -> bool) -> bool {
+    let mut slot = shared.lock().unwrap();
+    if !current() { return false; }
+    *slot = listing;
+    true
+}
 
 fn cached_folder_metadata(
     index: Option<&crate::search_cache::SearchCache>, listed: &Mutex<cache::Listed>, path: &Path,
@@ -1114,6 +1130,17 @@ mod tests {
         for name in ["photo.ACR", "photo.orf.xmp", "photo.jpg.txt", "notes", "movie.MOV", "data.json"] {
             assert!(!photo_candidate(Path::new(name)), "{name}");
         }
+    }
+
+    #[test]
+    fn superseded_read_does_not_publish_listing() {
+        let shared = Mutex::new(cache::Listed::default());
+        let mut stale = cache::Listed::default();
+        stale.stalled.push(PathBuf::from("/stale"));
+        assert!(!publish_listing(&shared, stale.clone(), || false));
+        assert!(shared.lock().unwrap().stalled.is_empty());
+        assert!(publish_listing(&shared, stale, || true));
+        assert!(shared.lock().unwrap().stalled.contains(&PathBuf::from("/stale")));
     }
 
     /// Cache lookup/listing costs only; no engine extraction or GUI timing.
