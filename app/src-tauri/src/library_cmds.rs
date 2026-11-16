@@ -802,6 +802,7 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
 // then RGBA. given the photo's file, it is also kept in the thumbnail cache.
 // the engine builds it on a thread of its own, beside any edit or render,
 // so it does not take engine()
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
