@@ -3921,6 +3921,8 @@ export default function App() {
     }
     const old = session.current;
     let closed = false;
+    // the new session once opened, until session.current adopts it
+    let fresh: Session | undefined;
     try {
       if (session.current) {
         const o = session.current;
@@ -3975,6 +3977,7 @@ export default function App() {
         onFirstFrame = undefined;
         ready?.();
       }, (e) => setStatus(t("app.status.error", { error: e })))));
+      fresh = s;
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
@@ -4170,6 +4173,10 @@ export default function App() {
       }
       return true;
     } catch (e) {
+      // opened but never adopted (a throw before session.current = s): drop
+      // it, stopping its save timer and render loop. not close(): that asks
+      // for one more render of the photo that failed, and nothing was edited
+      if (fresh && session.current !== fresh) fresh.abandon();
       // the engine closes the old photo before it opens the next, so a failed
       // open leaves none: drop the old session rather than send it edits
       if (closed && old && session.current === old) {
