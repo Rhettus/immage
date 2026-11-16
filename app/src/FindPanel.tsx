@@ -290,7 +290,11 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
       close.current();
     };
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector(".select-menu, .context-menu, .modal-backdrop")) close.current();
+      if (e.key !== "Escape" || document.querySelector(".select-menu, .context-menu, .modal-backdrop")) return;
+      // the key is Find's: App's own Escape (leaving the grid, the preview) must not run too
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close.current();
     };
     const resize = () => relayout((n) => n + 1);
     window.addEventListener("pointerdown", away, true);

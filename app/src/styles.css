@@ -2078,9 +2078,25 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .find-all .find-pane { background: var(--window); border-radius: 9px; padding-bottom: 6px; }
 .find-all .find-pane-body { overflow: visible; }
 
+/* the head's first row wraps so the search box keeps its width: in the dock it has a line of its own */
+.find-head > .find-row:first-child { flex-wrap: wrap; }
+.find-row .find-text { flex: 1 1 160px; min-width: 160px; }
+.find-sizes { margin-inline-start: auto; }
+.find-pop[data-size="dock"] .find-text { flex-basis: calc(100% - 28px); }
+
 /* saved filters (SavedFilterMenus.tsx) */
 .saved-menu { display: inline-flex; }
 .saved-menu-button { display: inline-flex; align-items: center; gap: 4px; }
+/* the toolbar's Find button with its saved filters beside it, the height of a .tool */
+.find-split { display: inline-flex; align-items: center; flex: none; }
+.find-split .tool.find-button { width: auto; padding: 0 7px; border-radius: 7px; font-size: var(--fs-small); white-space: nowrap; }
+.find-split .find-button.open { background: var(--inset); color: var(--text); }
+.find-split .find-saved { display: inline-flex; }
+.find-split .saved-menu-button {
+  width: 20px; height: 28px; padding: 0; justify-content: center; background: transparent; border: none;
+  border-radius: 7px; color: var(--text-2); cursor: pointer;
+}
+.find-split .saved-menu-button:hover, .find-split .saved-menu-button.on { background: var(--hover); color: var(--text); }
 .saved-list { min-width: 200px; max-width: 320px; }
 .saved-list .saved-empty { text-transform: none; letter-spacing: 0; white-space: normal; max-width: 240px; color: var(--text-3); }
 .saved-list .saved-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
