@@ -52,7 +52,8 @@ a smaller preview when an unedited photo's RAW data cannot be decoded.
 - Choose the Dark, Darktable Grey or Light interface theme, or import a custom
   color theme.
 - Back up your settings, presets, looks, Edit In plugins and keywords to one
-  file, and restore the parts you choose from it.
+  file, and restore the parts you choose from it. Saved preferences are loaded
+  before the app opens.
 - Add optional Geoapify place-name search to the location map; map tiles and
   manual pin placement work without a search key.
 - Browse folders with non-photo files hidden even while scanning, import

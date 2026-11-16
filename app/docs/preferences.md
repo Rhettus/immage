@@ -30,6 +30,10 @@ storage, so it survives a reset of that storage. To keep it with your presets,
 looks and keywords, use **Backup** under General (see [Backup](#backup)), or
 copy the file while Immage is closed.
 
+Immage loads this file before opening its windows, so saved preferences are
+available on the first screen. Changes such as the interface language and the
+Quick start guide's **Don't show again** choice are saved for the next launch.
+
 On the first start of this version, Immage copies settings from the web view's
 storage into `settings.json`. That storage is left as it was, so an older
 version of Immage still finds its own settings.

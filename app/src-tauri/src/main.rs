@@ -162,19 +162,21 @@ fn async_workers(cores: usize) -> usize {
     cores.max(1) + ENGINE_WAITERS
 }
 
+fn defer_window_creation(context: &mut tauri::Context<tauri::Wry>) {
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
+}
+
 fn main() {
-    #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     // before GTK and WebKit start, and before any other thread
     #[cfg(target_os = "linux")]
     renderer::init(&context.config().identifier).expect("cannot select the webview renderer");
-    // Linux: setup builds the windows, with the web extension that hands
-    // frames over (webext_dir); it has to be in place before their web
-    // process starts
-    #[cfg(target_os = "linux")]
-    for w in &mut context.config_mut().app.windows {
-        w.create = false;
-    }
+    // Tauri otherwise creates configured windows before setup. Wait until the
+    // app state and settings store are registered before their pages can call
+    // commands. Linux also needs its frame extension installed before build.
+    defer_window_creation(&mut context);
     // after renderer::init, which needs to run before any other thread
     let runtime = Box::leak(Box::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -227,18 +229,6 @@ fn main() {
         })
         .setup(|app| {
             memory_budget::watch(app.handle().clone());
-            #[cfg(target_os = "linux")]
-            {
-                let dir = webext_dir(app.handle());
-                for config in app.config().app.windows.clone() {
-                    let mut window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
-                    if let Some(dir) = &dir {
-                        window = window.extensions_path(dir);
-                    }
-                    pinch::install(&window.build()?);
-                }
-                shm_frame::sweep();
-            }
             // a dev build runs the engine from the checkout's build/ tree; a
             // bundled app carries its own (scripts/bundle_engine.py) and keeps
             // the engine's config and cache in its data folder
@@ -320,6 +310,28 @@ fn main() {
             std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
             app.manage(support_bundle::BundleState::default());
             app.manage(Caches::new(&app.path().app_cache_dir()?));
+            // Build the configured pages only after every command dependency
+            // is managed, including on platforms where Tauri normally creates
+            // windows before setup.
+            #[cfg(target_os = "linux")]
+            let dir = webext_dir(app.handle());
+            for config in app.config().app.windows.clone() {
+                let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
+                #[cfg(target_os = "linux")]
+                let window = if let Some(dir) = &dir {
+                    window.extensions_path(dir)
+                } else {
+                    window
+                };
+                #[cfg(target_os = "linux")]
+                let window = window.build()?;
+                #[cfg(target_os = "linux")]
+                pinch::install(&window);
+                #[cfg(not(target_os = "linux"))]
+                let _window = window.build()?;
+            }
+            #[cfg(target_os = "linux")]
+            shm_frame::sweep();
             Ok(())
         })
         .invoke_handler(bindings::handler())
@@ -351,5 +363,20 @@ mod tests {
     fn async_workers_leave_room_beside_engine_waiters() {
         assert_eq!(async_workers(0), 1 + ENGINE_WAITERS);
         assert_eq!(async_workers(4), 4 + ENGINE_WAITERS);
+    }
+
+    #[test]
+    fn configured_windows_are_deferred_on_every_platform() {
+        let mut context = tauri::generate_context!();
+        defer_window_creation(&mut context);
+        assert!(context.config().app.windows.iter().all(|window| !window.create));
+        assert_eq!(context.config().app.windows.len(), 2);
+
+        let setup = include_str!("main.rs");
+        let settings = setup.find("app.manage(settings)").unwrap();
+        let state = setup.find("app.manage(AppState {").unwrap();
+        let windows = setup.find("for config in app.config().app.windows.clone()").unwrap();
+        assert!(settings < windows, "windows must wait for the settings store");
+        assert!(state < windows, "windows must wait for application state");
     }
 }

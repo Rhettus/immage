@@ -49,6 +49,19 @@ async function load({ file = {}, ls = null, fail = false } = {}) {
 }
 const sets = calls => calls.filter(c => c.cmd === 'settings_set');
 
+test('native windows wait until the settings store and app state are managed', () => {
+  const source = readFileSync(new URL('../app/src-tauri/src/main.rs', import.meta.url), 'utf8');
+  assert.match(source, /fn defer_window_creation[\s\S]*?window\.create = false;/);
+  const deferred = source.indexOf('defer_window_creation(&mut context)');
+  const builder = source.indexOf('tauri::Builder::default()');
+  const settings = source.indexOf('app.manage(settings)');
+  const state = source.indexOf('app.manage(AppState {');
+  const windows = source.indexOf('for config in app.config().app.windows.clone()');
+  assert.ok(deferred >= 0 && deferred < builder, 'automatic creation is disabled before Tauri builds');
+  assert.ok(settings >= 0 && settings < windows, 'settings are registered before pages are created');
+  assert.ok(state >= 0 && state < windows, 'application state is registered before pages are created');
+});
+
 test('get, set, remove and keys', async () => {
   const { settings } = await load({ file: { a: '1', 'immage.settings-migrated': '1' } });
   assert.equal(settings.get('a'), '1');

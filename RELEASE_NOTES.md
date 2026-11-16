@@ -66,6 +66,8 @@ Improvements
 
 Bug fixes
 
+- Fix a startup race that could prevent preferences from being saved on Windows,
+  including the language choice and Quick start guide's Don't show again setting.
 - Immich path mappings reject traversal and symlinks that lead outside the
   configured local folder.
 - Startup shows the grid until the last photo's first preview is ready. If
