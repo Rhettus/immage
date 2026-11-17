@@ -322,6 +322,18 @@ try {
     await mkdir(runtime, { recursive: true });
     await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1' }, null, 2));
   }
+  // new-photo-defaults: a second raw, and a profile seeded with Preferences'
+  // Profile = Standard and a New photos preset holding profile AgX Default
+  if (selectedCases.includes('new-photo-defaults')) {
+    await copyFile(copiedFixture, join(fixtures, 'second-raw' + (basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '')));
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.newPhotosProfile': '1', 'immage.newPhotosPreset': 'seed:agx-default', 'native.darktable-resources': 'small' }, null, 2));
+    await writeFile(join(runtime, 'presets.json'), JSON.stringify({ version: 3, presets: [{ id: 'seed:agx-default',
+      name: 'Seeded AgX', group: 'Import', rawOnly: true, values: { profile: 0, lens_profile: 1, lens_ca: 1 } }] }, null, 2));
+    report.newPhotoDefaultsSeed = 'Profile Standard (1); New photos preset with profile AgX Default (0)';
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
