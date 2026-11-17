@@ -5027,7 +5027,6 @@
   "library.find.group.immich": "Immich",
   "library.find.saved.button": "Charger un filtre",
   "library.find.saved.empty": "Aucun filtre enregistré. Réglez une recherche, puis choisissez Enregistrer le filtre actuel.",
-  "library.find.saved.saveCurrent": "Enregistrer le filtre actuel…",
   "library.find.saved.manage": "Gérer les filtres enregistrés…",
   "library.find.saved.changed": "modifié",
   "library.find.saved.update": "Mettre à jour",

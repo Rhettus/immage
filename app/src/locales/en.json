@@ -5027,7 +5027,6 @@
   "library.find.group.immich": "Immich",
   "library.find.saved.button": "Load filter",
   "library.find.saved.empty": "No saved filters yet. Set up a search, then choose Save current filter.",
-  "library.find.saved.saveCurrent": "Save current filter…",
   "library.find.saved.manage": "Manage saved filters…",
   "library.find.saved.changed": "changed",
   "library.find.saved.update": "Update",

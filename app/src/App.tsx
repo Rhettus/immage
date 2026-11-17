@@ -6213,7 +6213,7 @@ export default function App() {
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
               onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
               saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
-                                onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} />}
+                                onManage={() => setManageSaved(true)} />}
               savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
@@ -6725,7 +6725,7 @@ export default function App() {
                  onToggleFind={toggleFind} findButtonRef={findButton}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
-                                                    onManage={() => setManageSaved(true)} onSaveNew={() => setSaveDialog(true)} button={button} />}
+                                                    onManage={() => setManageSaved(true)} button={button} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>

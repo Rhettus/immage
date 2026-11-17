@@ -13,11 +13,10 @@ import { sameFind, type FindState, type SavedFilter } from "./findModel";
 import { deleteSaved, moveSaved, renameSaved, useSaved } from "./savedFilters";
 import { t } from "./i18n";
 
-export function SavedMenu({ current, onApply, onManage, onSaveNew, button }: {
+export function SavedMenu({ current, onApply, onManage, button }: {
   current: string | null;
   onApply: (f: SavedFilter) => void;
   onManage: () => void;
-  onSaveNew: () => void;
   button?: ReactNode;
 }) {
   const saved = useSaved();
@@ -42,9 +41,6 @@ export function SavedMenu({ current, onApply, onManage, onSaveNew, button }: {
             </button>
           ))}
           {saved.length > 0 && <div className="menu-sep" />}
-          <button type="button" role="menuitem" onClick={run(onSaveNew)}>
-            <span className="check" /><span className="name">{t("library.find.saved.saveCurrent")}</span>
-          </button>
           <button type="button" role="menuitem" onClick={run(onManage)}>
             <span className="check" /><span className="name">{t("library.find.saved.manage")}</span>
           </button>
