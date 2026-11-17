@@ -32,7 +32,7 @@ export async function gridZoom(t) {
   await until(async () => (await t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb').length)) >= 25,
               'the grid fixtures listed', 120000);
   await settledPhoto(t);
-  await t.driver.keys('g');
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1500);
   const start = await t.driver.observe(state);

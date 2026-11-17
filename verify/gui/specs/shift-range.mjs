@@ -20,7 +20,7 @@ export async function shiftRange(t) {
   for (const name of shiftRangeFixtures)
     await until(() => t.driver.observe(s => !!document.querySelector(s), `.filmstrip .thumb[title="${name}"]`), `imported ${name}`, 60000);
   await settledPhoto(t);
-  await t.driver.keys('g');
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1500);
   const seed = Number(process.env.SHIFT_SEED) || Date.now() % 1e9, rnd = prng(seed);

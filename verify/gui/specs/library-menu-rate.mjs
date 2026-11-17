@@ -46,7 +46,7 @@ async function pick(t, parent, row, rowSelector) {
 export async function libraryMenuRate(t) {
   if (!t.fixtureDir) throw new Blocked('no fixture folder');
   await until(() => t.driver.observe((s) => document.querySelectorAll(s).length >= 3, '.filmstrip .thumb[data-imgid]'), 'three photos', 120000);
-  await t.driver.keys('g');
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1500);
   const names = (await everything(t)).map(c => c.title);

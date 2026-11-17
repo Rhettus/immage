@@ -30,7 +30,7 @@ const inspect = () => {
 export async function gridCulling(t) {
   await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 3),
     'three photos in the folder', 120000);
-  await t.driver.keys('g');
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   const target = await t.driver.observe(() => {
     const cell = document.querySelector('.filmstrip.grid .thumb.selected')
@@ -404,7 +404,7 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 3),
     'three photos in the folder', 120000);
   assert(await t.driver.observe(() => !document.querySelector('button.culling-open')), 'no culling button outside the grid');
-  await t.driver.keys('g');
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1000); // let the grid finish laying out before measuring its cells
   const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].map(c => {
@@ -463,7 +463,8 @@ const lightboxDrawn = (expectName) => {
 export async function gridCullingPriority(t) {
   await until(() => t.driver.observe(n => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= n, priorityFixtures.length),
     'the copies are listed', 120000);
-  await t.driver.keys('g');
+  // G toggles: grid-culling-controls can leave the grid open
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   const pending = await t.driver.observe(() => {
     const cells = [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')];
