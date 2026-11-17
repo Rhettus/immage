@@ -5746,8 +5746,18 @@ export default function App() {
   useEffect(() => {
     // the open photo among those showing, for the keys and menu items that rate it
     const openPhoto = () => shownRef.current.find((i) => isOpen(i)) ?? null;
-    const rate = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
-    const label = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
+    // the photo a rating key acts from. in the grid a selection the open photo
+    // is not part of takes the key (its last clicked photo, else its first):
+    // a click there opens its photo only once the open finishes, and a range
+    // picked meanwhile, or with a rejected open photo filtered out, was left out
+    const keyPhoto = () => {
+      const open = openPhoto(), sel = selectionRef.current;
+      if (!gridRef.current || !sel.size || (open && sel.has(open.imgid))) return open;
+      const list = shownRef.current;
+      return list.find((i) => i.imgid === pickAnchor.current && sel.has(i.imgid)) ?? list.find((i) => sel.has(i.imgid)) ?? open;
+    };
+    const rate = (n: number) => () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
+    const label = (n: number) => () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
     const actions: Record<ActionId, () => void> = {
       "perf-overlay": () => {
         setPerfHud(!perf.enabled);
@@ -5822,7 +5832,7 @@ export default function App() {
       "zoom-toggle": () => { setZoom(zoomRef.current === "fit" ? navZoom.current : "fit"); },
       "rate-0": rate(0), "rate-1": rate(1), "rate-2": rate(2), "rate-3": rate(3), "rate-4": rate(4), "rate-5": rate(5),
       "label-red": label(0), "label-yellow": label(1), "label-green": label(2), "label-blue": label(3),
-      "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
+      "reject": () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
       // menu-only items
       "add-folder": () => { void addFolderRef.current(); },
       "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
@@ -5968,7 +5978,7 @@ export default function App() {
         const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
         if (next) { e.preventDefault(); void openEntry(next); }
       }
-      else if (!cur) return;
+      else if (!keyPhoto()) return;
       else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
       else if (e.key >= "6" && e.key <= "9") run((["label-red", "label-yellow", "label-green", "label-blue"] as const)[Number(e.key) - 6]);
       else if (e.key === "x" || e.key === "X") run("reject");

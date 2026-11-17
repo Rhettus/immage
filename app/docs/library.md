@@ -310,7 +310,8 @@ Drag the top edge of the filmstrip to make it taller or shorter.
 - ← and → step through the photos.
 
 Ratings, labels, rejecting, exporting, virtual copies and Edit In all act
-on the whole selection.
+on the whole selection. In the grid the keys follow the selection even when
+the open photo is not part of it.
 
 ## Rating, rejecting and labels
 
