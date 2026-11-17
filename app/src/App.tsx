@@ -3974,6 +3974,8 @@ export default function App() {
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
     if (!reload && session.current && cur && cur.path === path && (id === null || cur.imgid === id)) return true;
+    // a crop in progress is kept on the photo being left
+    if (!reload && croppingRef.current) leaveCrop(true);
     // the old photo's pixels go before the first await, and its late frames
     // are dropped: only the frames of this open may paint from here on
     const token = {}, previousOwner = frameOwner.current;
@@ -4014,9 +4016,10 @@ export default function App() {
       const opening = { path, imgid: id };
       setCurrent(opening);
       currentRef.current = opening;
-      // masks, heal and zones belong to the last photo, so a new one opens on
-      // the adjustments; presets stay, for applying one photo after another
-      setRightMode((m) => (m === "presets" ? m : "adjust"));
+      // a photo opened (not a reload, paste or undo) starts on Adjust with only
+      // Basic open; presets stay, for applying one photo after another
+      if (reload) setRightMode((m) => (m === "presets" ? m : "adjust"));
+      else { setRightMode("adjust"); setOpenPanels(new Set(["basic"])); }
       // a new image opens fitted, as in Lightroom, with both layers cleared
       zoomRef.current = "fit";
       setZoomState("fit");

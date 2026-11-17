@@ -29,9 +29,10 @@ is no process version to choose: the tone mapper, AgX, plays that part.
   goes further.
 
 **Panels:** click a panel's title to open it. With **Focus mode** on (the
-default), opening one closes the others; ⌥-click opens one alongside. The
-buttons in the panel's head collapse or expand them all, and **Reset all**
-takes the photo back to its starting point (⌘Z undoes it).
+default), opening one closes the others; ⌥-click opens one alongside.
+Opening a photo shows Adjustments with only Basic open. The buttons in the
+panel's head collapse or expand them all, and **Reset all** takes the photo
+back to its starting point (⌘Z undoes it).
 
 **Preset rows:** some sections have a row of swatches or buttons, such as
 the B&W filters or the grain amounts. Hover over one to preview it on the

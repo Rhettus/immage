@@ -52,6 +52,8 @@ Improvements
 - A new Lens correction method setting in Preferences > Photos > New Photos
   chooses whether new raw photos take their lens data from the Lensfun
   database (the default) or from the metadata embedded in the raw.
+- Opening a photo starts on Adjustments with only Basic open, and a crop in
+  progress is kept on the photo you leave.
 
 Performance
 
