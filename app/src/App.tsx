@@ -4176,13 +4176,6 @@ export default function App() {
         s.setMany([["tm_mode", 1]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
-      // and a raw with the profile chosen in Preferences
-      const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
-        s.setMany(Object.entries(profileSelection(profile)));
-        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
-                    label: "profile", enabled: true });
-      }
       // and a raw with Preferences' exposure compensation, on an instance of
       // its own (exp_comp), so Exposure still reads 0 and adds to it
       const comp = loadExposureCompNew();
@@ -4211,6 +4204,14 @@ export default function App() {
         base.push({ op: "preset", name: preset.name, label: "new photos preset", enabled: true });
       } else if (plugin && Object.keys(plugin.values).length) {
         s.setMany(Object.entries(plugin.values));
+      }
+      // and a raw with the profile chosen in Preferences, over the preset's
+      // AgX Default (0) included: it puts back a profile the preset set
+      const profile = loadNewPhotosProfile();
+      if (!s.wasEdited && raw && s.values.profile !== profile) {
+        s.setMany(Object.entries(profileSelection(profile)));
+        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
+                    label: "profile", enabled: true });
       }
       if (back && plugin) {
         back.applied = true;

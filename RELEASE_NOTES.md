@@ -81,6 +81,8 @@ Bug fixes
 - Basic's Auto works on a photo with Film Simulation or a converted negative.
 - DNG thumbnails use embedded previews, and an undecodable photo gets a smaller
   preview instead of a blank thumbnail.
+- The profile chosen in Preferences > Photos > New Photos now applies to new
+  raw photos even when the New photos preset also holds a profile.
 - AI Denoise no longer fails while its model is still downloading, and works
   on photos opened from Find results and Immich external libraries mapped to
   this computer.

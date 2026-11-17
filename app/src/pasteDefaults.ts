@@ -28,13 +28,15 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
   if (s.wasEdited) return;
   const values: Values = { tm_mode: 1 };
   if (s.raw) {
-    if (defaults.profile) Object.assign(values, profileSelection(defaults.profile));
     if (defaults.compensation) values.exp_comp = defaults.compensation;
     values.capture = 1;
   }
   const preset = defaults.preset && (s.raw || !defaults.preset.rawOnly)
     ? newPhotoPresetValues(defaults.preset.values, s.raw, !!defaults.preset.nonRaw) : null;
   if (preset) Object.assign(values, preset);
+  // Preferences' profile wins over a preset's, AgX Default (0) included
+  if (s.raw && (defaults.profile || values.profile !== undefined))
+    Object.assign(values, profileSelection(defaults.profile));
   s.setMany(Object.entries(values));
   await s.settled();
   if (s.raw && defaults.auto) {

@@ -543,7 +543,8 @@ photo's starting point: they don't mark it as edited.
 - **Profile**: the color look a raw starts with: one of AgX's looks
   (**AgX Default**, the default) or one of color balance rgb's
   (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
-  keep the camera's look.
+  keep the camera's look. It takes precedence over a profile saved in the
+  **Apply preset** preset.
 - **Exposure compensation** and **Amount**: brightens or darkens every new
   raw by an amount in EV, for a camera whose raws come out too dark or too
   light; +1 is common. Exposure in Basic still starts at 0 and adds to it,
