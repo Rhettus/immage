@@ -148,6 +148,8 @@ export class Session {
   private info: Record<string, ModuleInfo> = {};
   // the photo carries its own lens correction: darktable's lens module starts on embedded metadata
   get lensEmbedded() { return this.info.lens?.defaults.method === 0; }
+  // Lensfun's database has a lens for the photo
+  get lensfunKnown() { return !!this.info.lens?.defaults.lens_lensfun; }
   private ctx: ImageContext = { sensorWidth: 1, sensorHeight: 1, orientation: 0, camera: 0 };
   private dirty = new Set<string>();
   // ops sent since the last full frame: a drag of Grain or Sharpening still

@@ -13,7 +13,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
+import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { MoveDialog } from "./MoveDialog";
@@ -75,7 +75,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -4213,6 +4213,12 @@ export default function App() {
         base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
                     label: "profile", enabled: true });
       }
+      // and its lens correction method, once the preset has set the corrections
+      const lensMethod = !s.wasEdited && raw ? newPhotoLensMethod(s, loadNewPhotosLensMethod()) : null;
+      if (lensMethod !== null) {
+        s.setMany([["lens_method", lensMethod]]);
+        base.push({ op: "lens", name: lensMethod ? "lensfun" : "embedded", label: "lens method", enabled: true });
+      }
       if (back && plugin) {
         back.applied = true;
         void commands.pluginReturnApplied(path);
@@ -4412,7 +4418,7 @@ export default function App() {
   // what Preferences gives a new photo, for a photo set up without the viewer
   const newPhotoDefaults = () => {
     const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
-    return { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
+    return { profile: loadNewPhotosProfile(), lensMethod: loadNewPhotosLensMethod(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
       preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
   };
   const pasteSettings = async (previousClip?: Clip) => {

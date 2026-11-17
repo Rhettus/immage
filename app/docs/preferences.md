@@ -545,6 +545,12 @@ photo's starting point: they don't mark it as edited.
   (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
   keep the camera's look. It takes precedence over a profile saved in the
   **Apply preset** preset.
+- **Lens correction method**: where a new raw's lens corrections take their
+  data from: the **Lensfun database** (the default) or the **Embedded
+  metadata** in the raw file. It is set after the preset, so it wins over a
+  method the preset holds. If Lensfun has no lens for the photo, darktable's
+  own choice stays. It only applies when the photo's lens corrections are on,
+  and photos already edited keep their method.
 - **Exposure compensation** and **Amount**: brightens or darkens every new
   raw by an amount in EV, for a camera whose raws come out too dark or too
   light; +1 is common. Exposure in Basic still starts at 0 and adds to it,

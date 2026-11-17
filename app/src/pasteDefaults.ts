@@ -7,7 +7,7 @@ import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
 import { DEFAULT_TRANSITION, parseZones } from "./zones";
 
 export type PasteDefaults = {
-  profile: number; compensation: number; auto: boolean;
+  profile: number; compensation: number; auto: boolean; lensMethod?: number;
   preset: { values: Values; rawOnly?: boolean; nonRaw?: boolean } | null;
 };
 // the new-photos preset is a raw's starting point. a JPEG, TIFF or other
@@ -20,6 +20,18 @@ export function newPhotoPresetValues(values: Values, raw: boolean, nonRaw: boole
   if (!nonRaw) return null;
   return Object.fromEntries(Object.entries(values)
     .filter(([id]) => !LENS_IDS.has(id) && !controlById.get(id)?.rawOnly));
+}
+
+// Preferences' lens correction method for a new raw whose lens corrections
+// are on, written so the engine renders it. Lensfun is left to darktable's
+// default when the database has no lens for the photo. null: nothing to set
+export function newPhotoLensMethod(s: Session, method: number | undefined): number | null {
+  if (method === undefined) return null;
+  if (!s.raw || s.values.lens_profile !== 1) return null;
+  if (method === 1 && !s.lensfunKnown) return null;
+  // a raw without embedded data already renders Lensfun: no step to add
+  if (method === 1 && !s.lensEmbedded) return null;
+  return method;
 }
 
 // Establish the same new-photo baseline as opening it in the viewer, before
@@ -39,6 +51,8 @@ export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
     Object.assign(values, profileSelection(defaults.profile));
   s.setMany(Object.entries(values));
   await s.settled();
+  const lens = newPhotoLensMethod(s, defaults.lensMethod);
+  if (lens !== null) { s.setMany([["lens_method", lens]]); await s.settled(); }
   if (s.raw && defaults.auto) {
     s.setMany(AUTO_TONE_IDS.map(id => [id, 0]));
     await s.settled();

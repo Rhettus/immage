@@ -49,6 +49,9 @@ Improvements
   value they borrow from the import destination, a warning appears when the local folder is
   missing or unreachable, and an example shows how a result opens or why it
   downloads.
+- A new Lens correction method setting in Preferences > Photos > New Photos
+  chooses whether new raw photos take their lens data from the Lensfun
+  database (the default) or from the metadata embedded in the raw.
 
 Performance
 

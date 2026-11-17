@@ -28,13 +28,13 @@ import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sh
 import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, storeSettledScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
-import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
+import { loadNewPhotosProfile, storeNewPhotosProfile, loadNewPhotosLensMethod, storeNewPhotosLensMethod } from "./profileDefault";
 import { settings } from "./settings";
 import { loadThumbThreads, storeThumbThreads, THUMB_THREADS } from "./library";
 export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { LOCALES, SYSTEM, startupLanguage, loadLanguage, storeLanguage, t } from "./i18n";
 import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
-export { loadNewPhotosProfile } from "./profileDefault";
+export { loadNewPhotosProfile, loadNewPhotosLensMethod } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
 // exp_comp), so Exposure still starts at 0; off unless set. the amount is
@@ -556,6 +556,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   // the guide's own "don't show" box sets the same thing
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
+  const [lensMethod, setLensMethod] = useState(loadNewPhotosLensMethod);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
   const [presetNonRaw, setPresetNonRaw] = useState(loadNewPhotosNonRaw);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
@@ -705,6 +706,13 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                         <optgroup key={group} label={group}>
                           {opts.map(([label, v]) => <option key={v} value={v}>{label}</option>)}
                         </optgroup>))}
+                    </select>
+                  </PrefRow>
+                  <PrefRow id="Lens correction method" label={t("prefs.row.lensMethod")} summary={t("prefs.row.lensMethod.summary")} hint={t("prefs.row.lensMethod.hint")}>
+                    <select className="field" value={lensMethod}
+                            onChange={(e) => { const v = Number(e.target.value); setLensMethod(v); storeNewPhotosLensMethod(v); }}>
+                      <option value={1}>{t("prefs.lensMethod.lensfun")}</option>
+                      <option value={0}>{t("prefs.lensMethod.embedded")}</option>
                     </select>
                   </PrefRow>
                 </PrefCard>
