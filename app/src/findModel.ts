@@ -38,7 +38,7 @@ export function withSearchIn(s: ImmichSearch, v: SearchIn): ImmichSearch {
 // opening a folder: the search half goes back to the open folder with no
 // words and none of its filters (the folder Filter is cleared alongside), so
 // the two halves agree and the stars and ticks filter it live rather than
-// start a search. Mode, subject and Immich library stay as chosen
+// start a search. Mode and Immich library stay as chosen
 export const folderSearch = (s: ImmichSearch): ImmichSearch =>
   ({ ...clearAll({ search: s, filter: NO_FILTER }).search, source: "local", scope: "folder", text: "" });
 
@@ -83,7 +83,7 @@ export function needsSearch(st: FindState, immichAvailable: boolean): boolean {
 export type Group = "photo" | "camera" | "when" | "immich";
 export const GROUPS: Group[] = ["photo", "camera", "when", "immich"];
 
-export type CategoryKey = "rating" | "kinds" | "keywords" | "cameras" | "bodies" | "lenses" | "exposure"
+export type CategoryKey = "rating" | "edits" | "kinds" | "keywords" | "cameras" | "bodies" | "lenses" | "exposure"
   | "taken" | "place" | "people" | "albums" | "favorites";
 
 // `local`: needs this computer's photos (hidden for Immich-only searches);
@@ -95,6 +95,7 @@ export type Category = { key: CategoryKey; group: Group; only: Only };
 
 export const CATEGORIES: Category[] = [
   { key: "rating", group: "photo", only: null },
+  { key: "edits", group: "photo", only: "local" },
   { key: "kinds", group: "photo", only: null },
   { key: "keywords", group: "photo", only: null },
   { key: "cameras", group: "camera", only: null },
@@ -157,9 +158,11 @@ export function settingOf(key: CategoryKey, st: FindState, server: boolean): Set
     case "rating": {
       const stars = f.minRating || s.minRating;
       const local = !server;
-      const on = stars > 0 || (local && (f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled));
-      return on ? { stars, ...(local ? { rejected: f.rejected, edited: f.edited, labels: f.labels, unlabeled: f.unlabeled } : {}) } : null;
+      const on = stars > 0 || (local && (f.rejected !== "all" || f.labels !== 0 || f.unlabeled));
+      return on ? { stars, ...(local ? { rejected: f.rejected, labels: f.labels, unlabeled: f.unlabeled } : {}) } : null;
     }
+    case "edits":
+      return f.edited !== "all" ? { edited: f.edited } : null;
     case "kinds":
       if (server) return s.rawOnly ? { flags: ["raw"] } : null;
       return f.kinds.length ? { values: f.kinds } : null;
@@ -198,7 +201,8 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
   const s = st.search, f = st.filter;
   switch (key) {
     case "rating": return { search: { ...s, minRating: 0 },
-                            filter: { ...f, minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false } };
+                            filter: { ...f, minRating: 0, rejected: "all", labels: 0, unlabeled: false } };
+    case "edits": return { search: s, filter: { ...f, edited: "all" } };
     case "kinds": return { search: { ...s, rawOnly: false }, filter: { ...f, kinds: [] } };
     case "keywords": return { search: { ...s, tagIds: [] }, filter: { ...f, keywords: [] } };
     case "cameras": return { search: { ...s, make: "", model: "", lens: "" }, filter: { ...f, cameras: [] } };
@@ -254,8 +258,8 @@ export type Chip = { key: CategoryKey; setting: Setting; excludes: "local" | "im
 // local-only fields Immich results cannot be checked against: remoteFieldsKnown
 const dropsImmich = (key: CategoryKey, st: FindState) => {
   const f = st.filter;
-  if (key === "rating") return f.rejected !== "all" || f.edited !== "all" || f.labels !== 0 || f.unlabeled;
-  return key === "bodies" || key === "keywords";
+  if (key === "rating") return f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
+  return key === "edits" || key === "bodies" || key === "keywords";
 };
 
 export function chips(st: FindState, immichAvailable: boolean): Chip[] {

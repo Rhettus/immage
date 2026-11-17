@@ -357,8 +357,6 @@ Searching the library and narrowing a folder both happen here.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.
-- **Original** or **Edited**: for photos on this computer, whether a Smart
-  search looks at the photo as shot or with its saved edits.
 - **Immich library**: a picker that appears when Immich is in the search.
   See [Immich](immich.md).
 
@@ -370,7 +368,7 @@ flags or **Camera body**, hide Immich results.
 
 The filters are grouped:
 
-- **Photo**: **Rating & flags**, **File type**, **Keywords**.
+- **Photo**: **Rating & flags**, **Edit status**, **File type**, **Keywords**.
 - **Camera**: **Camera**, **Camera body**, **Lens**, **Exposure**.
 - **When & where**: **Captured**, **Place**.
 - **Immich**: **People**, **Albums**, **Favorites**.
@@ -380,9 +378,12 @@ The filters are grouped:
 in the search. In an Immich-only search, **Camera**, **Lens** and **Keywords**
 list the server's values.
 
-- **Rating & flags**: a minimum star rating, **Rejected** (**All photos**,
-  **Hide rejected** or **Rejected**, with photo counts), **Edited** or
-  **Unedited**, color labels, and **RAW only**.
+- **Rating & flags**: a minimum star rating and color labels side by side on
+  one row, then **Rejected** (**All photos**, **Hide rejected** or **Rejected**,
+  with photo counts).
+- **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
+  computer. A photo counts as edited once it has been changed in the editor,
+  beyond the automatic starting edits. It has its own chip and summary.
 - **File type**, **Camera** and **Lens**: tick any to show photos of those,
   for example **RAW** and **JPEG**. Each lists what the search holds, with how
   many photos of each.
@@ -419,7 +420,7 @@ empty and the stars and ticks filter the folder you open.
 ### Find in the grid
 
 In the grid, Find is not a popup. It fills the right-hand panel with the
-**Dock** layout (search, every filter, chips and saved filters), locked in
+**Dock** layout (search, every filter, chips and the footer's saved filters), locked in
 place: it has no size buttons, cannot be dragged and has no close button, and
 Esc does not close it. Esc in its search box leaves the box; Esc again leaves
 the grid, as it does anywhere else. The toolbar's **Find** button shows the
@@ -447,11 +448,11 @@ grip to put the current size back in its default place.
 searches and every filter. A saved filter that says **This folder** follows
 whatever folder is open, so one filter can serve any folder.
 
-Open a saved filter from **Saved** ⌄ in Find, from the ⌄ beside the toolbar's
+Open a saved filter from **Load filter** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
 **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
 nine in the list. While a saved filter is open, Find shows its name, with
 **changed** beside it after you edit, and **Update** (overwrite it) and
-**Save as new…**. **Manage saved filters…** renames, reorders and deletes
+**Save as new…**. **Manage saved filters…** (also in the Load filter menu) renames, reorders and deletes
 them. Saved filters are included in the **Preferences & library** backup
 component ([Preferences](preferences.md)).
 

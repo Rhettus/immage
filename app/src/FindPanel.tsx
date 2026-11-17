@@ -254,7 +254,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   notes: string[];              // extra notes from App (e.g. Immich skipped)
   onShow: () => void;           // Show N: close and show the grid
   onClose: () => void;          // Escape / click away
-  saved?: React.ReactNode;      // the Saved menu button, head row
+  saved?: React.ReactNode;      // the Load filter menu button, footer
   savedLine?: React.ReactNode;  // the saved-filter name line, above the chips
   onSaveNew?: () => void;       // footer Save filter…
   anchor: () => DOMRect | undefined;   // the toolbar Find button, to place the popup above
@@ -355,6 +355,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   const title = (key: CategoryKey): string => {
     switch (key) {
       case "rating": return t("library.find.rating");
+      case "edits": return t("library.find.editStatus");
       case "kinds": return t("library.filters.fileType");
       case "keywords": return t("library.keywording.title");
       case "cameras": return t("library.filters.camera");
@@ -376,8 +377,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
       case "rating":
         return [v.stars ? t("library.toolbar.starsAndUp", { count: v.stars }) : "",
                 v.rejected === "hide" ? t("library.filters.hideRejected") : v.rejected === "only" ? t("library.filters.onlyRejected") : "",
-                v.edited === "edited" ? t("library.find.editedOnly") : v.edited === "unedited" ? t("library.find.uneditedOnly") : "",
                 v.labels || v.unlabeled ? t("library.find.labelsSet") : ""].filter(Boolean).join(", ");
+      case "edits": return v.edited === "edited" ? t("library.find.editedOnly") : v.edited === "unedited" ? t("library.find.uneditedOnly") : "";
       case "kinds": return v.flags?.includes("raw") ? "RAW" : chosen(list);
       case "keywords": return chosen(list, server ? nameOf(tags) : keyword);
       case "cameras": return list.length ? chosen(list) : [v.make, v.model].filter(Boolean).join(" ");
@@ -404,14 +405,27 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
         const labels = { all: t("library.search.allPhotos"), hide: t("library.filters.hideRejected"), only: t("library.filters.rejected") };
         return (
           <div className="find-rating">
-            <div className="find-sub">{t("library.find.minRating")}</div>
-            <div className="find-stars stars-edit">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} className={stars >= n ? "on" : ""} title={t("library.toolbar.starsAndUp", { count: n })}
-                        aria-pressed={stars >= n} onClick={() => send(setStars(state, stars === n ? 0 : n))}>
-                  <StarIcon filled={stars >= n} />
-                </button>
-              ))}
+            <div className="find-sub">{r.local ? t("library.find.ratingAndLabel") : t("library.find.minRating")}</div>
+            <div className="find-rating-row">
+              <div className="find-stars stars-edit">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} className={stars >= n ? "on" : ""} title={t("library.toolbar.starsAndUp", { count: n })}
+                          aria-pressed={stars >= n} onClick={() => send(setStars(state, stars === n ? 0 : n))}>
+                    <StarIcon filled={stars >= n} />
+                  </button>
+                ))}
+              </div>
+              {r.local && <>
+                <span className="find-rating-sep" aria-hidden="true" />
+                <div className="find-labels">
+                  {LABEL_COLORS.map((c, k) => (
+                    <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
+                            title={t("library.toolbar.withLabel")} onClick={() => patchFilter({ labels: f.labels ^ (1 << k) })} />
+                  ))}
+                  <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
+                          title={t("library.toolbar.withoutLabel")} onClick={() => patchFilter({ unlabeled: !f.unlabeled })} />
+                </div>
+              </>}
             </div>
             {r.local && <>
               <div className="find-sub">{t("library.filters.rejected")}</div>
@@ -425,27 +439,23 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                   </button>
                 ))}
               </div>
-              <div className="find-sub">{t("library.find.editStatus")}</div>
-              <div className="segmented small find-edited">
-                {(["all", "edited", "unedited"] as const).map((v) => (
-                  <button key={v} className={f.edited === v ? "active" : ""} onClick={() => patchFilter({ edited: v })}>
-                    {v === "all" ? t("library.filters.any") : v === "edited" ? t("library.find.editedOnly") : t("library.find.uneditedOnly")}
-                  </button>
-                ))}
-              </div>
-              <div className="find-sub">{t("library.culling.labels")}</div>
-              <div className="find-labels">
-                {LABEL_COLORS.map((c, k) => (
-                  <button key={c} className={`swatch${f.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}
-                          title={t("library.toolbar.withLabel")} onClick={() => patchFilter({ labels: f.labels ^ (1 << k) })} />
-                ))}
-                <button className={`swatch${f.unlabeled ? " on" : ""}`} style={{ background: "#9ca3af" }}
-                        title={t("library.toolbar.withoutLabel")} onClick={() => patchFilter({ unlabeled: !f.unlabeled })} />
-              </div>
             </>}
           </div>
         );
       }
+      case "edits":
+        return (
+          <div className="find-rating">
+            <div className="find-sub">{t("library.find.editStatusHint")}</div>
+            <div className="segmented small find-edited">
+              {(["all", "edited", "unedited"] as const).map((v) => (
+                <button key={v} className={f.edited === v ? "active" : ""} onClick={() => patchFilter({ edited: v })}>
+                  {v === "all" ? t("library.filters.any") : v === "edited" ? t("library.find.editedOnly") : t("library.find.uneditedOnly")}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
       case "kinds":
         return server
           ? <div className="meta-grid filter-immich">
@@ -571,13 +581,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                    // locked, Escape only leaves the box: the next one leaves the grid, as it does elsewhere
                    else if (e.key === "Escape" && locked) e.currentTarget.blur();
                  }} />
-          {smart && <div className="segmented small" title={t("library.search.matchAgainst")}>
-            <button className={s.mode === "smart" ? "active" : ""} title={t("library.search.photoContent")}
-                    onClick={() => send({ ...state, search: { ...s, mode: "smart" } }, s.text.trim() !== "")}>{t("library.search.smart")}</button>
-            <button className={s.mode === "filename" ? "active" : ""}
-                    onClick={() => send({ ...state, search: { ...s, mode: "filename" } }, s.text.trim() !== "")}>{t("library.search.filename")}</button>
-          </div>}
-          {saved}
           {locked && pin}
           {size === "minimize" && <span className="find-count find-mincount">{countText}</span>}
           {!locked && <div className="find-sizes">
@@ -588,6 +591,14 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
             ))}
           </div>}
         </div>
+        {size !== "minimize" && smart && <div className="find-row find-mode">
+          <div className="segmented small" title={t("library.search.matchAgainst")}>
+            <button className={s.mode === "smart" ? "active" : ""} title={t("library.search.photoContent")}
+                    onClick={() => send({ ...state, search: { ...s, mode: "smart" } }, s.text.trim() !== "")}>{t("library.search.smart")}</button>
+            <button className={s.mode === "filename" ? "active" : ""}
+                    onClick={() => send({ ...state, search: { ...s, mode: "filename" } }, s.text.trim() !== "")}>{t("library.search.filename")}</button>
+          </div>
+        </div>}
         {size !== "minimize" && clipTip && (
           <div className="find-tip" role="note">
             <span className="find-tip-text">{t("library.find.clipTip")}</span>
@@ -680,6 +691,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
         <button className="btn small find-clear-all" disabled={!active.length}
                 onClick={() => send(clearAll(state))}>{t("library.filters.clearAll")}</button>
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
+        {saved}
         {!locked && <button className="btn small primary find-show" onClick={onShow}>
           {count === null ? t("library.find.show") : t("library.find.showCount", { n: count, count: formatNumber(count) })}
         </button>}

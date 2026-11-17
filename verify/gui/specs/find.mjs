@@ -287,6 +287,7 @@ export async function findSaved(t) {
   assert(!await present(t, `${pop} .saved-changed`), 'not changed straight after saving');
 
   // change it: changed and Update, and Update takes the change in
+  await category(t, 'Edit status');
   await click(t, `${pop} .find-edited button:nth-child(2)`);
   await until(() => present(t, `${pop} .saved-changed`), 'the line says changed');
   await t.evidence('find-saved-changed');

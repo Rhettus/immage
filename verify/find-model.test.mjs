@@ -79,12 +79,14 @@ test('visibleCategories', () => {
   const hidden = ['place', 'people', 'albums', 'favorites'];
   const local = keys(visibleCategories({ ...NO_SEARCH, source: 'local' }, true));
   for (const k of hidden) assert.ok(!local.includes(k));
-  assert.equal(local.length, 8);
+  assert.equal(local.length, 9);
+  assert.equal(local[local.indexOf('rating') + 1], 'edits');
+  assert.ok(!keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true)).includes('edits'));
   const im = keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true));
   assert.ok(!im.includes('bodies') && !im.includes('exposure'));
   for (const k of hidden) assert.ok(im.includes(k));
   const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true);
-  assert.equal(both.length, 12);
+  assert.equal(both.length, 13);
   assert.deepEqual(both, CATEGORIES);
 });
 
@@ -135,6 +137,10 @@ test('settingOf', () => {
   assert.deepEqual(settingOf('kinds', s, false), { values: ['JPEG'] });
   assert.equal(settingOf('rating', st({ minRating: 3 }), true).stars, 3);
   assert.equal(settingOf('rating', st({}, { minRating: 2 }), false).stars, 2);
+  // Edit status is its own category; the rating setting no longer carries it
+  assert.deepEqual(settingOf('edits', st({}, { edited: 'edited' }), false), { edited: 'edited' });
+  assert.equal(settingOf('rating', st({}, { edited: 'unedited' }), false), null);
+  assert.equal(settingOf('rating', st({}, { minRating: 2, edited: 'edited' }), false).edited, undefined);
 });
 
 test('clearCategory clears both halves', () => {
@@ -142,6 +148,10 @@ test('clearCategory clears both halves', () => {
     { minRating: 3, kinds: ['RAW'], keywords: ['k'], cameras: ['c'], takenFrom: 'x', takenTo: 'y', rejected: 'hide' });
   let r = clearCategory(s, 'rating');
   assert.equal(r.search.minRating, 0); assert.equal(r.filter.minRating, 0); assert.equal(r.filter.rejected, 'all');
+  r = clearCategory(st({}, { edited: 'unedited', minRating: 2 }), 'edits');
+  assert.equal(r.filter.edited, 'all'); assert.equal(r.filter.minRating, 2);
+  r = clearCategory(st({}, { edited: 'unedited', minRating: 2 }), 'rating');
+  assert.equal(r.filter.edited, 'unedited'); assert.equal(r.filter.minRating, 0);
   r = clearCategory(s, 'kinds');
   assert.equal(r.search.rawOnly, false); assert.deepEqual(r.filter.kinds, []);
   r = clearCategory(s, 'keywords');
@@ -166,6 +176,10 @@ test('chips excludes', () => {
   const by = (cs) => Object.fromEntries(cs.map(c => [c.key, c.excludes]));
   let e = by(chips(s, true));
   assert.equal(e.people, 'local'); assert.equal(e.keywords, 'immich'); assert.equal(e.rating, null); assert.equal(e.taken, null);
+  const ed = chips(st({ source: 'both' }, { edited: 'edited' }), true);
+  assert.deepEqual(ed.map(c => c.key), ['edits']); assert.equal(ed[0].excludes, 'immich');
+  assert.deepEqual(chips(st({ source: 'local' }, { edited: 'unedited' }), true).map(c => c.setting), [{ edited: 'unedited' }]);
+  assert.deepEqual(chips(st({ source: 'immich' }, { edited: 'edited' }), true), []);
   const rej = st({ source: 'both' }, { rejected: 'hide' });
   assert.equal(by(chips(rej, true)).rating, 'immich');
   const loc = { ...s, search: { ...s.search, source: 'local' } };
