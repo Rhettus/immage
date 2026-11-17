@@ -244,13 +244,14 @@ impl Service {
         self.output.remove(&out);
         let preview = match preview {
             Ok(p) => p,
-            // The engine answered that it cannot render this photo (an
-            // unsupported DNG, say) and the file is as listed: remember it, so
-            // the photo is not imported and tried again at every launch. Any
-            // other error (engine exit or restart, timeout, a share that did
-            // not answer, a cancelled job) is retried later.
+            // The engine read the file but could not decode it (an unsupported
+            // DNG, say; library_analysis_preview) and the file is as listed:
+            // remember it, so the photo is not imported and tried again at
+            // every launch. Any other error (a failed read, memory, a failed
+            // write, engine exit or restart, timeout, a share that did not
+            // answer, a cancelled job) is retried later.
             Err(e) => {
-                if e.starts_with("could not write '")
+                if e.starts_with("cannot decode image ")
                     && !job.cancelled()
                     && !self.stop.load(Ordering::Acquire)
                     && current(row, subject, version)
@@ -396,6 +397,30 @@ mod tests {
             .unwrap();
         let rows = cache.pending_analyses(0, 32).unwrap();
         assert!(rows[0].needs_original && !rows[0].needs_edited);
+    }
+
+    #[test]
+    fn failed_render_is_retried_by_another_app_version_or_after_a_while() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let v = cache
+            .upsert_variant("/photos/a.dng", "", "source", "edit", None, None, None)
+            .unwrap();
+        cache.store_metadata(v.id, "{}").unwrap();
+        let (av, mv) = (
+            crate::local_search::ANALYSIS_VERSION,
+            crate::local_search::MODEL_VERSION,
+        );
+        let row = cache.pending_analyses(0, 32).unwrap().remove(0);
+        assert!(cache.put_analysis_failure(&row, "original", av, mv).unwrap());
+        assert!(cache.put_analysis_failure(&row, "edited", av, mv).unwrap());
+        assert!(cache.pending_analyses(0, 32).unwrap().is_empty());
+        cache.set_render_failures(0, "0.0.1");
+        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_original);
+        cache.set_render_failures(31 * 24 * 3600, env!("CARGO_PKG_VERSION"));
+        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_original);
+        cache.set_render_failures(29 * 24 * 3600, env!("CARGO_PKG_VERSION"));
+        assert!(cache.pending_analyses(0, 32).unwrap().is_empty());
     }
 
     #[test]

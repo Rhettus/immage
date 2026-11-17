@@ -10,6 +10,11 @@ use std::sync::Mutex;
 
 const SCHEMA_VERSION: i64 = 6;
 
+// a photo the engine could not decode is tried again by another Immage
+// version (another darktable), or after this long in case the failure passes
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+const RENDER_FAILURE_RETRY: std::time::Duration = std::time::Duration::from_secs(30 * 24 * 3600);
+
 /// A stable cache-owned identity for one source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asset {
@@ -221,12 +226,13 @@ impl SearchCache {
                 CHECK((subject='original' AND variant_id IS NULL) OR (subject='edited' AND variant_id IS NOT NULL))
              );
              CREATE INDEX IF NOT EXISTS variants_capture_time ON variants(capture_time_ns);
-             CREATE TABLE IF NOT EXISTS analysis_failures (
+             CREATE TABLE IF NOT EXISTS render_failures (
                 subject TEXT NOT NULL CHECK(subject IN ('original','edited')),
                 owner_id INTEGER NOT NULL,
                 fingerprint TEXT NOT NULL,
                 analysis_version INTEGER NOT NULL,
                 model_version TEXT NOT NULL,
+                app_version TEXT NOT NULL,
                 failed_at INTEGER NOT NULL DEFAULT (unixepoch()),
                 PRIMARY KEY(subject, owner_id)
              );"
@@ -549,11 +555,12 @@ impl SearchCache {
         Ok(true)
     }
 
-    /// Remember that the engine could not render this photo, so the analysis
-    /// is not retried until the file (original) or its edit (edited) changes
-    /// or the analysis/model version moves on. `owner_id` is the asset for
-    /// the original and the variant for the edited subject, as in the
-    /// analyses indexes. Stored only if the fingerprint still matches.
+    /// Remember that the engine could not decode this photo, so the analysis
+    /// is not retried until the file (original) or its edit (edited) changes,
+    /// the analysis/model version or the app (and with it darktable) moves
+    /// on, or RENDER_FAILURE_RETRY passes. `owner_id` is the asset for the
+    /// original and the variant for the edited subject, as in the analyses
+    /// indexes. Stored only if the fingerprint still matches.
     pub fn put_analysis_failure(
         &self,
         row: &PendingAnalysis,
@@ -568,13 +575,21 @@ impl SearchCache {
         };
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         db.execute(
-            "INSERT OR REPLACE INTO analysis_failures(subject,owner_id,fingerprint,analysis_version,model_version)
-             SELECT ?1,?2,?3,?4,?5 WHERE EXISTS(
+            "INSERT OR REPLACE INTO render_failures(subject,owner_id,fingerprint,analysis_version,model_version,app_version)
+             SELECT ?1,?2,?3,?4,?5,?8 WHERE EXISTS(
                SELECT 1 FROM variants v JOIN assets a ON a.id=v.asset_id
                WHERE v.id=?6 AND a.id=?7 AND
                  CASE WHEN ?1='original' THEN a.original_fingerprint ELSE v.edited_fingerprint END=?3)",
-            params![subject, owner, expected, analysis_version, model_version, row.variant_id, row.asset_id])
+            params![subject, owner, expected, analysis_version, model_version, row.variant_id, row.asset_id, APP_VERSION])
             .map(|n| n == 1).map_err(|e| e.to_string())
+    }
+
+    #[cfg(test)]
+    pub fn set_render_failures(&self, age_secs: i64, app_version: &str) {
+        self.db.lock().unwrap()
+            .execute("UPDATE render_failures SET failed_at=unixepoch()-?1, app_version=?2",
+                     params![age_secs, app_version])
+            .unwrap();
     }
 
     #[cfg(test)]
@@ -781,17 +796,18 @@ impl SearchCache {
 
     pub fn pending_analyses(&self, after: i64, limit: u32) -> Result<Vec<PendingAnalysis>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
-        // a subject whose render failed for this very fingerprint is not pending
-        // until the file or its edit changes (analysis_failures)
+        // a subject the engine could not decode for this very fingerprint, app
+        // version and analysis is not pending until RENDER_FAILURE_RETRY passes
+        // (render_failures)
         let mut query = db.prepare("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,o.embedding IS NULL AND fo.owner_id IS NULL,e.embedding IS NULL AND fe.owner_id IS NULL,v.metadata_json IS NULL
           FROM variants v JOIN assets a ON a.id=v.asset_id
           LEFT JOIN analyses o ON o.asset_id=a.id AND o.subject='original' AND o.analysis_version=?3 AND o.model_version=?4
           LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
-          LEFT JOIN analysis_failures fo ON fo.subject='original' AND fo.owner_id=a.id AND fo.fingerprint=a.original_fingerprint AND fo.analysis_version=?3 AND fo.model_version=?4
-          LEFT JOIN analysis_failures fe ON fe.subject='edited' AND fe.owner_id=v.id AND fe.fingerprint=v.edited_fingerprint AND fe.analysis_version=?3 AND fe.model_version=?4
+          LEFT JOIN render_failures fo ON fo.subject='original' AND fo.owner_id=a.id AND fo.fingerprint=a.original_fingerprint AND fo.analysis_version=?3 AND fo.model_version=?4 AND fo.app_version=?5 AND fo.failed_at>unixepoch()-?6
+          LEFT JOIN render_failures fe ON fe.subject='edited' AND fe.owner_id=v.id AND fe.fingerprint=v.edited_fingerprint AND fe.analysis_version=?3 AND fe.model_version=?4 AND fe.app_version=?5 AND fe.failed_at>unixepoch()-?6
           WHERE v.id>?1 AND (v.metadata_json IS NULL OR (o.embedding IS NULL AND fo.owner_id IS NULL) OR (e.embedding IS NULL AND fe.owner_id IS NULL))
           ORDER BY v.id LIMIT ?2").map_err(|e| e.to_string())?;
-        let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION], |r| Ok(PendingAnalysis {
+        let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok(PendingAnalysis {
           variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_original:r.get(6)?,needs_edited:r.get(7)?,needs_metadata:r.get(8)?,
         })).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
@@ -807,7 +823,7 @@ impl SearchCache {
         self.db
             .lock()
             .map_err(|_| "search cache lock poisoned")?
-            .execute_batch("DELETE FROM assets; DELETE FROM analysis_failures;")
+            .execute_batch("DELETE FROM assets; DELETE FROM render_failures;")
             .map_err(|e| e.to_string())?;
         Ok(())
     }

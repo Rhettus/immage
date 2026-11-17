@@ -51,9 +51,11 @@ Bug fixes
 - A photo that fails to open no longer leaves the editor stuck until restart;
   Immage names the file, and clicking several photos quickly opens only the
   last one.
-- Smart search no longer retries a photo it cannot render (for example a
+- Smart search no longer retries a photo it cannot decode (for example a
   panorama DNG in an unsupported format) at every launch, which kept the app
-  busy reading it from a network drive; it tries again only if the file changes.
+  busy reading it from a network drive. It tries again when the file changes,
+  after an Immage update, or a month later; a photo that could not be read for
+  a moment is tried again at the next pass.
 - Opening a photo no longer waits while Smart search reads a large photo from
   a network drive: photos there are analysed only after two minutes without
   opening or editing.

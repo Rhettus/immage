@@ -118,7 +118,9 @@ within a few seconds and respects Pause; existing results remain searchable.
 Browsing or reading metadata again refreshes invalidated records for analysis.
 After model opt-in, reconciled paths also receive bounded background metadata
 imports before analysis, including unvisited folders. Missing or offline files
-wait for a later pass. Photos on a network drive are analysed only after two
+wait for a later pass. A photo Immage cannot decode, such as a DNG in an
+unsupported format, is left out of Smart search until the file changes, Immage
+is updated or a month passes. Photos on a network drive are analysed only after two
 minutes without opening or editing a photo, so reading a large file from the
 drive never holds up the photo you open. Background imports and analysis skip
 removed and excluded folders, including work that was queued before the folder

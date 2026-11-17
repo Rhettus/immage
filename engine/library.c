@@ -1425,6 +1425,23 @@ gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, c
   json_object_set_boolean_member(req, "analysis_original", !g_strcmp0(subject, "original"));
   const gboolean ok = export_export(imgid, req, err);
   json_object_unref(req);
+  // a file darktable could read but not decode gets its own error, so Smart
+  // search can stop retrying it (search_analysis.rs) while a failed read, a
+  // missing file, memory or a failed write are tried again later. the load
+  // status is the one the full mipmap load just recorded (mipmap_cache.c)
+  if(!ok)
+  {
+    const dt_image_t *img = dt_image_cache_get(imgid, 'r');
+    const dt_imageio_retval_t status = img ? img->load_status : DT_IMAGEIO_OK;
+    if(img) dt_image_cache_read_release(img);
+    if(status == DT_IMAGEIO_LOAD_FAILED || status == DT_IMAGEIO_UNSUPPORTED_FORMAT
+       || status == DT_IMAGEIO_UNSUPPORTED_CAMERA || status == DT_IMAGEIO_UNSUPPORTED_FEATURE
+       || status == DT_IMAGEIO_FILE_CORRUPTED || status == DT_IMAGEIO_UNRECOGNIZED)
+    {
+      g_free(*err);
+      *err = g_strdup_printf("cannot decode image %d (status %d)", imgid, (int)status);
+    }
+  }
   return ok;
 }
 
