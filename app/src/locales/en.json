@@ -5033,5 +5033,16 @@
   "library.find.size.fill": "Fill the grid",
   "library.find.titleCount": "Find ({count})",
   "dialogs.tour.find.title": "Find",
-  "dialogs.tour.find.body": "Search this folder, every folder or your Immich library by words, and narrow the photos by rating, camera, date and more. Save a filter to open it again from the arrow beside Find. In the grid it stays open in the right-hand panel."
+  "dialogs.tour.find.body": "Search this folder, every folder or your Immich library by words, and narrow the photos by rating, camera, date and more. Save a filter to open it again from the arrow beside Find. In the grid it stays open in the right-hand panel.",
+  "app.deleteRejected.title": "Delete rejected photos",
+  "app.deleteRejected.trash_one": "Move \"{name}\" to the {trash}? Its sidecar goes too.\n\n{names}",
+  "app.deleteRejected.trash_other": "Move {n} rejected photos to the {trash}? Their sidecars go too.\n\n{names}",
+  "app.deleteRejected.allNetwork_one": "\"{name}\" is on a network drive, which has no {trash}. It and its sidecar will be deleted permanently.\n\n{names}",
+  "app.deleteRejected.allNetwork_other": "These {n} rejected photos are on a network drive, which has no {trash}. They and their sidecars will be deleted permanently.\n\n{names}",
+  "app.deleteRejected.someNetwork_other": "{network} of these {n} rejected photos are on a network drive, which has no {trash}. Those and their sidecars will be deleted permanently; the rest move to the {trash}.\n\n{names}",
+  "app.deleteRejected.more": "…and {n} more",
+  "app.deleteRejected.moveLabel": "Move to {trash}",
+  "app.deleteRejected.deleteLabel": "Delete",
+  "app.status.deletedFromNetwork": "Deleted {items} from a network drive",
+  "app.status.deletedMixed": "Moved {moved} to the {trash} and deleted {deleted} from a network drive"
 }

@@ -70,6 +70,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::library_cmds::capture_times,
         crate::library_cmds::sample_folder,
         crate::library_cmds::trash_files,
+        crate::library_cmds::on_network_share,
         crate::library_cmds::create_virtual_copy,
         crate::library_cmds::remove_virtual_copy,
         crate::library_cmds::path_exists,

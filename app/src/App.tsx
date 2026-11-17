@@ -3713,11 +3713,16 @@ export default function App() {
   };
   const deleteRejected = async (list: ImageEntry[]) => {
     if (!list.length) return;
-    const n = list.length, photos = n === 1 ? `"${list[0].filename}"` : `${n} rejected photos`;
+    const n = list.length;
+    // a network share has no Trash: those photos are deleted outright, so say so first
+    const flags = await commands.onNetworkShare(list.map((i) => i.path)).catch(() => []);
+    const network = list.filter((_, k) => flags[k]).length;
     // named, so a wrong selection shows before anything moves
-    const names = list.slice(0, 8).map((i) => i.filename).join("\n") + (n > 8 ? `\n…and ${n - 8} more` : "");
-    const ok = await ask(`Move ${photos} to the ${TRASH}? ${n === 1 ? "Its sidecar goes" : "Their sidecars go"} too.\n\n${names}`,
-                         { title: "Delete rejected photos", kind: "warning", okLabel: `Move to ${TRASH}` });
+    const names = list.slice(0, 8).map((i) => i.filename).join("\n") + (n > 8 ? "\n" + t("app.deleteRejected.more", { n: n - 8 }) : "");
+    const kind = network === 0 ? "trash" : network === n ? "allNetwork" : "someNetwork";
+    const ok = await ask(t(`app.deleteRejected.${kind}`, { n, name: list[0].filename, network, trash: TRASH, names }),
+                         { title: t("app.deleteRejected.title"), kind: "warning",
+                           okLabel: network === 0 ? t("app.deleteRejected.moveLabel", { trash: TRASH }) : t("app.deleteRejected.deleteLabel") });
     if (!ok) return;
     // an original takes its virtual copies with it; a copy goes alone
     const ids = new Set(list.map((i) => i.imgid)), files = new Set(list.filter((i) => !i.copy).map((i) => i.path));
@@ -3729,7 +3734,10 @@ export default function App() {
     try {
       if (cur && gone(cur)) await leavePhoto(gone);
       await commands.trashFiles(list.map((i) => i.imgid));
-      setStatus(t("app.status.movedToTrash", { items: n === 1 ? list[0].filename : t("app.status.photoCount", { count: n }), trash: TRASH }));
+      const items = (count: number) => (n === 1 ? list[0].filename : t("app.status.photoCount", { count }));
+      setStatus(network === 0 ? t("app.status.movedToTrash", { items: items(n), trash: TRASH })
+        : network === n ? t("app.status.deletedFromNetwork", { items: items(n) })
+        : t("app.status.deletedMixed", { moved: items(n - network), deleted: items(network), trash: TRASH }));
     } catch (e) {
       // Re-read disk: a failed batch may already have moved some files.
       pendingDeletes.current.delete(gone);

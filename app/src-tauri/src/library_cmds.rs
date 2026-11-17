@@ -698,8 +698,16 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
     Ok(gone)
 }
 
+// files on network shares, which have no Trash, and the rest
+fn split_network(items: Vec<PathBuf>, on_network: impl Fn(&Path) -> bool) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    items.into_iter().partition(|p| on_network(p))
+}
+
 // the files that are still there, each once: an original and its own
-// copy in one batch name the copy's sidecar twice
+// copy in one batch name the copy's sidecar twice. files on a network
+// share have no Trash to go to, so they are deleted outright, and only
+// once every share involved answers: a stuck share fails the batch
+// before anything is removed
 async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         items.sort();
@@ -708,19 +716,50 @@ async fn trash_existing(mut items: Vec<PathBuf>) -> Result<(), String> {
         if items.is_empty() {
             return Ok(());
         }
-        #[allow(unused_mut)]
-        let mut trash = trash::TrashContext::default();
-        // the crate's default asks Finder over AppleScript, which needs the
-        // Automation permission and fails without it; NSFileManager does not
-        #[cfg(target_os = "macos")]
-        {
-            use trash::macos::{DeleteMethod, TrashContextExtMacos};
-            trash.set_delete_method(DeleteMethod::NsFileManager);
+        let (network, local) = split_network(items, volumes::on_network);
+        let mut folders: Vec<&Path> = network.iter().filter_map(|p| p.parent()).collect();
+        folders.dedup();
+        for folder in folders {
+            if !volumes::answering(folder) {
+                return Err(format!("{} is on a network drive that is not answering; nothing was deleted", folder.display()));
+            }
         }
-        trash.delete_all(&items).map_err(|e| e.to_string())
+        let mut failed = Vec::new();
+        for file in &network {
+            match std::fs::remove_file(file) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => failed.push(format!("{}: {e}", file.display())),
+            }
+        }
+        if !local.is_empty() {
+            #[allow(unused_mut)]
+            let mut trash = trash::TrashContext::default();
+            // the crate's default asks Finder over AppleScript, which needs the
+            // Automation permission and fails without it; NSFileManager does not
+            #[cfg(target_os = "macos")]
+            {
+                use trash::macos::{DeleteMethod, TrashContextExtMacos};
+                trash.set_delete_method(DeleteMethod::NsFileManager);
+            }
+            if let Err(e) = trash.delete_all(&local) {
+                failed.push(e.to_string());
+            }
+        }
+        if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// whether each path is on a network share, from the mount table alone: the
+// share is never asked, so this does not wait on a stuck one
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn on_network_share(paths: Vec<String>) -> Vec<bool> {
+    tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| volumes::on_network(Path::new(p))).collect())
+        .await
+        .unwrap_or_default()
 }
 
 // a virtual copy of a photo: a new darktable version carrying its edit,
@@ -1334,6 +1373,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(result, Ok(()));
         assert_eq!(tauri::async_runtime::block_on(trash_existing(vec![])), Ok(()));
+    }
+
+    // the split sends only the paths the predicate calls network to direct
+    // deletion; nothing here touches the disk or the user's Trash
+    #[test]
+    fn network_files_are_split_from_trashable_ones() {
+        let items = vec![PathBuf::from("/mnt/nas/a.arw"), PathBuf::from("/home/me/b.arw"), PathBuf::from("/mnt/nas/a.arw.xmp")];
+        let (network, local) = split_network(items, |p| p.starts_with("/mnt/nas"));
+        assert_eq!(network, vec![PathBuf::from("/mnt/nas/a.arw"), PathBuf::from("/mnt/nas/a.arw.xmp")]);
+        assert_eq!(local, vec![PathBuf::from("/home/me/b.arw")]);
     }
 
     #[test]

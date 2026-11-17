@@ -48,6 +48,8 @@ Improvements
 
 Bug fixes
 
+- Delete Rejected Photos now works for photos on a network drive, which has no
+  Trash: the confirmation says they will be deleted permanently.
 - A photo that fails to open no longer leaves the editor stuck until restart;
   Immage names the file, and clicking several photos quickly opens only the
   last one.

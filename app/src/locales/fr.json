@@ -5033,5 +5033,16 @@
   "library.find.size.fill": "Remplir la grille",
   "library.find.titleCount": "Rechercher ({count})",
   "dialogs.tour.find.title": "Rechercher",
-  "dialogs.tour.find.body": "Recherchez dans ce dossier, dans tous les dossiers ou dans votre photothèque Immich par mots, puis affinez les photos par note, appareil, date et plus encore. Enregistrez un filtre pour le rouvrir depuis la flèche à côté de Rechercher. Dans la grille, elle reste ouverte dans le panneau de droite."
+  "dialogs.tour.find.body": "Recherchez dans ce dossier, dans tous les dossiers ou dans votre photothèque Immich par mots, puis affinez les photos par note, appareil, date et plus encore. Enregistrez un filtre pour le rouvrir depuis la flèche à côté de Rechercher. Dans la grille, elle reste ouverte dans le panneau de droite.",
+  "app.deleteRejected.title": "Supprimer les photos rejetées",
+  "app.deleteRejected.trash_one": "Déplacer « {name} » vers la {trash} ? Son fichier sidecar part aussi.\n\n{names}",
+  "app.deleteRejected.trash_other": "Déplacer {n} photos rejetées vers la {trash} ? Leurs fichiers sidecar partent aussi.\n\n{names}",
+  "app.deleteRejected.allNetwork_one": "« {name} » se trouve sur un lecteur réseau, qui n’a pas de {trash}. Elle et son fichier sidecar seront supprimés définitivement.\n\n{names}",
+  "app.deleteRejected.allNetwork_other": "Ces {n} photos rejetées se trouvent sur un lecteur réseau, qui n’a pas de {trash}. Elles et leurs fichiers sidecar seront supprimés définitivement.\n\n{names}",
+  "app.deleteRejected.someNetwork_other": "{network} de ces {n} photos rejetées se trouvent sur un lecteur réseau, qui n’a pas de {trash}. Celles-ci et leurs fichiers sidecar seront supprimés définitivement ; les autres vont dans la {trash}.\n\n{names}",
+  "app.deleteRejected.more": "…et {n} de plus",
+  "app.deleteRejected.moveLabel": "Déplacer vers la {trash}",
+  "app.deleteRejected.deleteLabel": "Supprimer",
+  "app.status.deletedFromNetwork": "Suppression de {items} sur un lecteur réseau effectuée",
+  "app.status.deletedMixed": "{moved} déplacé(es) vers la {trash} et {deleted} supprimé(es) d’un lecteur réseau"
 }

@@ -569,8 +569,9 @@ Immage only deletes photos you have rejected. Reject them with X, select
 them (or show only rejected photos and press ⌘A), then right-click and
 choose **Delete Rejected Photo…** (with several, **Delete 3 Rejected
 Photos…**). They move to the Trash with their sidecars, after you
-confirm. Thumbnails disappear immediately while the files move in the
-background. If deletion fails, an error appears and the folder refreshes to
+confirm. A network drive has no Trash, so photos stored on one are deleted
+permanently instead; the confirmation says so and offers **Delete**.
+Thumbnails disappear immediately while the files move in the background. If deletion fails, an error appears and the folder refreshes to
 show any files still present.
 
 ## The right-click menu

@@ -56,6 +56,7 @@ export const commands = {
 	captureTimes: (entries: CaptureTimeEntry[]) => __TAURI_INVOKE<CaptureTimesReply>("capture_times", { entries }),
 	sampleFolder: () => __TAURI_INVOKE<string>("sample_folder"),
 	trashFiles: (imgids: number[]) => __TAURI_INVOKE<string[]>("trash_files", { imgids }),
+	onNetworkShare: (paths: string[]) => __TAURI_INVOKE<boolean[]>("on_network_share", { paths }),
 	createVirtualCopy: (imgid: number) => __TAURI_INVOKE<LibraryImage>("create_virtual_copy", { imgid }),
 	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
 	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
