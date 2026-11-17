@@ -14,12 +14,12 @@ and Linux. **All builds are alpha; bugs are expected.**
 [User guide](app/docs/README.md) ·
 [Release notes](RELEASE_NOTES.md)
 
-ORF metadata reads try a small prefix before reading the whole photo when
+Metadata reads try a small prefix before reading the whole photo when
 possible. **Preferences > Performance > Memory > Library workers** controls
-thumbnail generation, ORF metadata preparation and photo moves/copies with
+thumbnail generation, metadata preparation and photo moves/copies with
 separate worker limits. Transfers keep each photo and its sidecars together;
 metadata and database updates remain ordered and serial. See the
-[library guide](app/docs/library.md#orf-metadata-reads-and-library-workers).
+[library guide](app/docs/library.md#metadata-reads-and-library-workers).
 
 Unchanged folders reuse a disposable [local metadata cache](app/docs/library.md#cached-folder-metadata).
 Photos enter the in-memory editing library when an action needs them; cached

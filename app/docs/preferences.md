@@ -434,7 +434,7 @@ scale**; zoomed-in frames still use the full webview resolution.
   Off disables speculative preview loading; 100% detail remains on demand.
 - **Read ahead both ways**: as many photos behind the open one too, for
   stepping back, including previews in the grid lightbox. Off by default.
-- **Library workers**: how many library thumbnails, ORF metadata tasks and
+- **Library workers**: how many library thumbnails, metadata tasks and
   photo transfers run at the same time, from 1 to 8. Two by default.
   These limits are separate, so this is not a shared total. Moves and copies
   keep each photo and its sidecars together, including downloads from Immich.

@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The Library workers setting and its help no longer single out one camera
+  format; they describe metadata reads in general.
 - Advanced mode: a Simple/Advanced switch (the stacked-cards button at the top
   of Adjustments) gives you darktable's full set of modules. Search them, use
   presets, add instances and masks, undo, and include them in Copy Settings.

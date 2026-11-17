@@ -183,11 +183,11 @@ Immage tries a smaller embedded preview before leaving its thumbnail blank.
 This fallback can look softer and does not enable editing an unsupported RAW
 encoding. Edited photos require a thumbnail that includes their edits.
 
-### ORF metadata reads and library workers
+### Metadata reads and library workers
 
-Olympus and OM System ORF photos load their metadata quickly while **Reading
-photos** runs, because Immage reads only the start of each file when that is
-enough. The number of ORF metadata tasks prepared at once follows
+Some raw formats load their metadata quickly while **Reading photos** runs,
+because Immage reads only the start of each file when that is enough. The
+number of metadata tasks prepared at once follows
 **Preferences > Performance > Memory > Library workers**, the same setting that
 sets how many thumbnails are built and photos are moved or copied at once
 (default 2). Metadata is still applied in file order. A photo that does not
