@@ -406,8 +406,8 @@ export async function siteShots(t) {
     await click(t, 'button[data-tour="export"]');
     await until(() => t.driver.observe(() => !!document.querySelector('.modal.export')), 'export dialog');
     await textButton(t, '.export-presets', 'Frame with EXIF');
-    const open = await t.driver.observe(() => document.querySelector('[data-export-section="Frame & Captions"]')?.classList.contains('open'));
-    if (!open) await click(t, '[data-export-section="Frame & Captions"] > .export-section-head');
+    const open = await t.driver.observe(() => document.querySelector('[data-export-section="frame"]')?.classList.contains('open'));
+    if (!open) await click(t, '[data-export-section="frame"] > .export-section-head');
     await pause(2500);
     await shot(t, 'export-dialog', '.export-preview', { settled: false });
     await textButton(t, '.export .modal-foot', 'Cancel');
