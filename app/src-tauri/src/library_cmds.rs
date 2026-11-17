@@ -37,6 +37,7 @@ use crate::repo_root;
 pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
                      skip: Option<Vec<String>>, token: u64) -> Result<FolderReply, String> {
     state.folder_token.store(token, Ordering::SeqCst);
+    state.tagged.mark_active();
     let recursive = recursive.unwrap_or(false);
     let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
     let known = {
@@ -858,6 +859,8 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
     let proof = proof.unwrap_or(false);
+    // browsing: Smart search leaves network drives until it stops
+    state.tagged.mark_active();
     let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
@@ -910,7 +913,10 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
 // as a stat finds it. the engine is not asked
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn thumb_cached(caches: State<'_, Caches>, path: String, version: i64, size: u32) -> Result<bindings::Frame, String> {
+pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
+                                 size: u32) -> Result<bindings::Frame, String> {
+    // browsing: Smart search leaves network drives until it stops
+    state.tagged.mark_active();
     let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let photo = Path::new(&path);

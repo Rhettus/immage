@@ -121,8 +121,10 @@ imports before analysis, including unvisited folders. Missing or offline files
 wait for a later pass. A photo Immage cannot decode, such as a DNG in an
 unsupported format, is left out of Smart search until the file changes, Immage
 is updated or a month passes. Photos on a network drive are analysed only after two
-minutes without opening or editing a photo, so reading a large file from the
-drive never holds up the photo you open. Background imports and analysis skip
+minutes without opening, editing or browsing photos (reading a folder, or
+loading thumbnails in the grid or lightbox), so reading a large file from the
+drive seldom holds up the photo you open. A read that is already under way
+when you open a photo can still delay it, by up to a minute on a slow drive. Background imports and analysis skip
 removed and excluded folders, including work that was queued before the folder
 selection changed.
 Metadata caching without the optional model still fills

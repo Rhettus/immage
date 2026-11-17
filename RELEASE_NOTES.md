@@ -56,9 +56,10 @@ Bug fixes
   busy reading it from a network drive. It tries again when the file changes,
   after an Immage update, or a month later; a photo that could not be read for
   a moment is tried again at the next pass.
-- Opening a photo no longer waits while Smart search reads a large photo from
-  a network drive: photos there are analysed only after two minutes without
-  opening or editing.
+- Smart search reads photos from a network drive only after two minutes
+  without opening, editing or browsing photos, so a slow read there rarely
+  holds up the photo you open. An open can still wait for a read that started
+  before it.
 - In the grid, rating, label and reject keys act on the photos selected, even
   while the photo you clicked is still opening or the open photo is filtered
   out; a second range no longer ignored X.

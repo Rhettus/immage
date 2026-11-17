@@ -77,11 +77,12 @@ pub fn start(
     }
     Control(stop)
 }
-// photos on a network share are analysed only once the user has opened or
-// rendered no photo for this long. importing one there can take a minute
-// (a large DNG over a slow share), and the engine's import, which every
-// photo open also takes, is held while the file is read; an open cannot cut
-// that read short, so it is not started while the user is working
+// photos on a network share are analysed only once the user has opened,
+// rendered or browsed no photo for this long (Tagged::mark_active).
+// importing one there can take a minute (a large DNG over a slow share), and
+// the engine's import, which every photo open also takes, is held while the
+// file is read; an open cannot cut that read short, so it is not started
+// while the user is working. one already under way still delays an open
 const SHARE_QUIET: Duration = Duration::from_secs(120);
 
 impl Service {
