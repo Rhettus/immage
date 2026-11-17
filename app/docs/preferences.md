@@ -644,7 +644,9 @@ chromatic aberrations: darktable deprecates its older defringe module.
 
 ## Immich
 
-The server, API key, duplicate checking and path map. See
+The server, API key, duplicate checking (Destination as Immich sees it) and
+how search results open from this computer (External library path and Folder
+on this computer, with warnings and an example). See
 [Immich](immich.md) for setting it up step by step.
 
 ## Plugins

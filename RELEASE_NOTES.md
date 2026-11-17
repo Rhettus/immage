@@ -44,6 +44,11 @@ Improvements
   in), Edit, Advanced mode, then Export and Print together.
 - Preferences > Performance has a Local photo cache card with status, pause,
   resume, clear and rebuild.
+- Preferences > Immich path settings are clearer: Destination as Immich sees
+  it, External library path and Folder on this computer. Blank fields show the
+  value they borrow from the import destination, a warning appears when the local folder is
+  missing or unreachable, and an example shows how a result opens or why it
+  downloads.
 
 Performance
 

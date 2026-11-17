@@ -3,8 +3,8 @@
 [Immich](https://immich.app) is a self-hosted photo library. Immage uses it
 in three ways:
 
-- **Importing** checks new photos against your Immich library and marks
-  the ones it already has.
+- **Importing** asks Immich whether each new photo is already there and marks
+  the ones it is. Immage does not send imported photos to Immich.
 - **Searching**, from **Find** in the toolbar, finds
   photos by what is in them, by people, places, tags or albums. You then
   edit them as if they were local.
@@ -74,24 +74,46 @@ Existing setups keep working without entering the key again.
 
 ### 3. Duplicates during import (optional)
 
-- **Match the folder path**: a photo only counts as being in Immich if it
-  is at the path the import would give it. Leave it off to match anywhere.
-- **Path prefix**: where your library sits inside Immich, for example
-  `/mnt/photos`. After a test, a **Use …** button can fill it in from a
-  photo on the server.
+- **Match the folder path**: a photo only counts as already in Immich if
+  Immich has it at the path the import would give it. Leave it off to match
+  anywhere.
+- **Destination as Immich sees it**: the import destination's path inside
+  Immich, for example `/mnt/photos`. The importer only copies photos to its
+  destination folder on disk. Immich sees them only if it scans that folder
+  as an external library, so this path is the one the duplicate check asks
+  Immich about when **Match the folder path** is on. After a test, a
+  **Use …** button can fill it in from a photo on the server.
 
-### 4. Opening photos (for external libraries)
+### 4. Opening search results (for external libraries)
 
-If Immich reads your photos from a folder this computer also has (an
-external library), Immage can open those files directly instead of
-downloading them:
+If Immich reads photos from a folder this computer also has (an external
+library), Immage can open those files directly instead of downloading them.
+Only one external library can be mapped. Photos uploaded to Immich always
+download.
 
-- **Path in Immich**: where that folder is on the server, for example
-  `/mnt/photos`.
-- **On this computer**: the same folder here. Click **Choose…**.
+- **External library path**: the library's folder as Immich sees it on the
+  server, for example `/mnt/photos`, as listed in Immich under
+  Administration › External Libraries.
+- **Folder on this computer**: the same photos here: a network share, or a
+  local or external drive. Click **Choose…**.
 
-Left blank, these follow the importer's **Path prefix** and destination.
-Photos outside that folder are downloaded before they open. Only photos
+Left blank, a field borrows the importer's value: the external library path
+borrows the destination as Immich sees it, and the folder on this computer
+borrows the import destination. The borrowed value is shown under the field
+("using the destination's: …" or "using the import destination: …"), so you
+can see what is in effect. If the folder on this computer is blank and the
+importer has no destination either, a warning says results will download
+instead of opening. If the folder is set but cannot be reached (for example a
+drive that is not connected), the warning "not available right now" appears.
+
+Below the fields, an example line shows how a result opens: a sample server
+path (from the last **Test**, else built from the external library path and
+the importer's folder template) with a check mark and the file it opens on
+this computer, or a cross and why it would download: no folder on this
+computer, the folder is not reachable, or the path is not inside the external
+library path.
+
+Photos outside that library are downloaded before they open. Only photos
 opened from the mapped folder can be denoised with AI Denoise, since the DNG
 is written beside the raw.
 
@@ -133,7 +155,7 @@ local paths merge with primary local results; virtual copies remain separate.
 ## Opening a result
 
 Double-click a result to open it. If the file is in the folder set under
-**Opening photos**, Immage opens it in place and saves the edit beside it,
+**Opening search results**, Immage opens it in place and saves the edit beside it,
 like any other photo. Otherwise it downloads the original first ("downloading
 the original from Immich…") and edits the downloaded copy.
 
@@ -152,7 +174,7 @@ With a server URL and API key configured in Preferences, choose
 **Import Parent Folder** to add the result's containing folder to
 **Folders** and browse its photos in the grid. An existing library folder
 expands to show it; otherwise the folder is added to the library. This uses
-the local file set up under **Opening photos**, without copying files.
+the local file set up under **Opening search results**, without copying files.
 The action is disabled when the result has no available local file;
 downloading an original does not provide access to its server folder.
 Browsing follows your **Include Photos from Subfolders** setting.
@@ -164,7 +186,7 @@ Drag a result onto a folder in the **Folders** card to copy it there (see
 are always copied, never moved, and Immich keeps its photos.
 
 - **On this computer.** A result whose file is in the folder set under
-  **Opening photos** is copied from that file, with its XMP sidecar.
+  **Opening search results** is copied from that file, with its XMP sidecar.
 - **Not on this computer.** Otherwise the original is downloaded into the
   folder. For a photo uploaded to Immich, the download is checked against
   Immich's own checksum. A photo in an external library is checked by

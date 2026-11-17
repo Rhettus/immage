@@ -2199,6 +2199,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .pref-hint { color: var(--text-3); font-size: var(--fs-small); line-height: 1.4; }
 .pref-hint .warn, .pref-hint.warn { color: #f5b041; }
 .pref-hint .good { color: #7fd18b; }
+.pref-card-lead { padding-block: 10px; }
 .pref-hint code { font-size: var(--fs-small); color: var(--text-2); word-break: break-all; }
 .pref-control { flex: 1; min-width: 0; display: flex; justify-content: flex-end; }
 .pref-control > .field, .pref-control > select { width: 100%; }

@@ -11,7 +11,7 @@ import { api, type ImmichSettings, type ImmichTestResult } from "@immporter/api"
 import { EMPTY, insecureRemote, serverChanged, suggestPrefix } from "@immporter/immich-form";
 import { commands } from "./commands";
 import { open } from "@tauri-apps/plugin-dialog";
-import { importerPathMap, storedPathMap, storePathMap, type PathMap } from "./immich";
+import { effectivePathMap, importerPathMap, planOpen, storedPathMap, storePathMap, type PathMap } from "./immich";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { t } from "./i18n";
 
@@ -37,10 +37,26 @@ export function ImmichPrefs() {
   const say = (text: string | null, warn = false) => { setMessage(text); setMessageWarn(warn); };
   const [exampleRel, setExampleRel] = useState("");
   // where the server's paths are here, for opening search results; blank
-  // fields fall back to the importer's (shown as placeholders)
+  // fields fall back to the importer's (shown under the field)
   const [map, setMap] = useState<Partial<PathMap>>(storedPathMap);
   const [mapDefault, setMapDefault] = useState<PathMap>({ immich: "", local: "" });
   useEffect(() => { void importerPathMap().then(setMapDefault); }, []);
+  const eff = effectivePathMap(map, mapDefault);
+  // whether the effective local folder answered as a folder: checked after
+  // the page paints, a moment after typing stops; a stale reply is ignored
+  const [reach, setReach] = useState<{ path: string; ok: boolean } | null>(null);
+  const reachSeq = useRef(0);
+  useEffect(() => {
+    const path = eff.local.trim();
+    const seq = ++reachSeq.current;
+    if (!path) { setReach(null); return; }
+    const id = window.setTimeout(() => {
+      commands.pathKind(path).then((k) => { if (seq === reachSeq.current) setReach({ path, ok: k === "dir" }); })
+        .catch(() => { if (seq === reachSeq.current) setReach({ path, ok: false }); });
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [eff.local]);
+  const unreachable = !!eff.local.trim() && reach?.path === eff.local.trim() && !reach.ok;
   const updateMap = (patch: Partial<PathMap>) => {
     const next = { ...map, ...patch };
     setMap(next);
@@ -116,6 +132,12 @@ export function ImmichPrefs() {
   };
   const prefix = form.pathPrefix.trim().replace(/\/+$/, "");
   const suggestion = test?.samplePath && exampleRel ? suggestPrefix(test.samplePath, exampleRel) : null;
+
+  // a server path to show how a result would open: the tested one, else
+  // the importer's example under the effective server folder
+  const serverDir = eff.immich.trim().replace(/[\\/]+$/, "");
+  const sample = test?.samplePath || (serverDir && exampleRel ? `${serverDir}/${exampleRel}` : "");
+  const plan = sample ? planOpen(sample, eff) : null;
 
   // a test also checks what exporting needs, which reads the saved
   // settings: anything waiting is saved first
@@ -199,7 +221,7 @@ export function ImmichPrefs() {
           <PrefSwitch checked={form.matchPath} onChange={(v) => update({ matchPath: v })} />
         </PrefRow>
         {form.matchPath && (
-          <PrefRow id="Path prefix" label={t("immich.row.prefix")}
+          <PrefRow id="Destination as Immich sees it" label={t("immich.row.prefix")}
                    hint={exampleRel ? <>{t("immich.row.prefix.expected")} <code>{prefix || "…"}/{exampleRel}</code></> : t("immich.row.prefix.hint")}>
             <div className="pref-inline">
               <input className="field" placeholder="/mnt/photos" value={form.pathPrefix} spellCheck={false}
@@ -213,15 +235,24 @@ export function ImmichPrefs() {
         )}
       </PrefCard>
       <PrefCard title={t("immich.card.opening")}>
-        <PrefRow id="Path in Immich" label={t("immich.row.path")} hint={t("immich.row.path.hint")}>
-          <input className="field" placeholder={mapDefault.immich || "/mnt/photos"} value={map.immich ?? ""} spellCheck={false}
+        <div className="pref-hint pref-card-lead">{t("immich.opening.lead")}</div>
+        <PrefRow id="External library path"label={t("immich.row.path")}
+                 hint={<>{t("immich.row.path.hint")}
+                   {!map.immich?.trim() && mapDefault.immich.trim() && (
+                     <><br />{t("immich.using.prefix", { path: mapDefault.immich })}</>)}</>}>
+          <input className="field" placeholder="/mnt/photos" value={map.immich ?? ""} spellCheck={false}
                  onChange={(e) => updateMap({ immich: e.target.value })} />
         </PrefRow>
-        <PrefRow id="On this computer" label={t("immich.row.local")}
-                 summary={t("immich.row.local.summary")}
-                 hint={t("immich.row.local.hint")}>
+        <PrefRow id="Folder on this computer" label={t("immich.row.local")}
+                 hint={<>{t("immich.row.local.hint")}
+                   {!map.local?.trim() && mapDefault.local.trim() && (
+                     <><br />{t("immich.using.dest", { path: mapDefault.local })}</>)}
+                   {!eff.local.trim() && (
+                     <><br /><span className="warn">{t("immich.local.notset")}</span></>)}
+                   {unreachable && (
+                     <><br /><span className="warn">{t("immich.local.unavailable")}</span></>)}</>}>
           <div className="pref-inline">
-            <input className="field" placeholder={mapDefault.local || "/Volumes/photos"} value={map.local ?? ""} spellCheck={false}
+            <input className="field" placeholder="/Volumes/photos" value={map.local ?? ""} spellCheck={false}
                    onChange={(e) => updateMap({ local: e.target.value })} />
             <button className="btn small" onClick={async () => {
               const dir = await open({ directory: true });
@@ -229,6 +260,18 @@ export function ImmichPrefs() {
             }}>{t("prefs.choose")}</button>
           </div>
         </PrefRow>
+        {sample && (
+          <div className="pref-hint pref-card-lead">
+            {plan && "local" in plan && !unreachable ? (
+              <><span className="good">✓ {sample}</span><br />{t("immich.example.opens")} <code>{plan.local}</code></>
+            ) : (
+              <><span className="warn">✗ {sample}</span> {
+                plan && "local" in plan ? t("immich.example.unreachable", { path: eff.local.trim() })
+                : plan?.reason === "nolocal" ? t("immich.example.nolocal")
+                : t("immich.example.outside")}</>
+            )}
+          </div>
+        )}
       </PrefCard>
       {message && <div className={`prefs-status${messageWarn ? " warn" : ""}`}>{message}</div>}
     </>

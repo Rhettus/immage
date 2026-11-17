@@ -45,7 +45,7 @@ export function storeSearch(s: ImmichSearch) {
 }
 
 // where the server's paths are on this computer. unset, it is the
-// importer's: its Path prefix in Immich, and the folder it imports to
+// importer's: the destination as Immich sees it, and the folder it imports to
 export type PathMap = { immich: string; local: string };
 const MAP_KEY = "immage.immichPathMap";
 export function storedPathMap(): Partial<PathMap> {
@@ -58,9 +58,40 @@ export async function importerPathMap(): Promise<PathMap> {
   const [immich, ui] = await Promise.all([api.getImmichSettings().catch(() => null), api.getSettings().catch(() => null)]);
   return { immich: immich?.pathPrefix ?? "", local: ui?.destRoot ?? "" };
 }
-export async function pathMap(): Promise<PathMap> {
-  const stored = storedPathMap(), dflt = await importerPathMap();
+// the stored value when it has text, else the importer's (what search uses)
+export function effectivePathMap(stored: Partial<PathMap>, dflt: PathMap): PathMap {
   return { immich: stored.immich || dflt.immich, local: stored.local || dflt.local };
+}
+export async function pathMap(): Promise<PathMap> {
+  return effectivePathMap(storedPathMap(), await importerPathMap());
+}
+
+// a server path as immich_search.rs `server_path` reads it: a root ("/",
+// a drive, or UNC) and its components; both separators; null when relative
+function serverParts(p: string): { root: string; parts: string[] } | null {
+  let root: string, rest: string;
+  if (p.startsWith("\\\\") || p.startsWith("//")) { root = "\\\\"; rest = p.slice(2); }
+  else if (p.startsWith("/") || p.startsWith("\\")) { root = "/"; rest = p.slice(1); }
+  else if (/^[A-Za-z]:[\\/]/.test(p)) { root = p.slice(0, 2).toUpperCase(); rest = p.slice(3); }
+  else return null;
+  return { root, parts: rest.split(/[\\/]/).filter((c) => c) };
+}
+export type OpenPlan = { local: string } | { reason: "nolocal" | "outside" };
+// where a result opens on this computer: mirrors `local_path` in
+// immich_search.rs (component-wise prefix, strictly inside the folder, no
+// "." or ".."), without the file checks. `local` must be absolute here
+export function planOpen(original: string, map: PathMap): OpenPlan {
+  const to = map.local.trim();
+  const from = serverParts(map.immich.trim());
+  const absolute = to.startsWith("/") || /^[A-Za-z]:[\\/]/.test(to) || to.startsWith("\\\\");
+  if (!to || !absolute) return { reason: "nolocal" };
+  if (!from || from.parts.length === 0) return { reason: "outside" };
+  const o = serverParts(original.trim());
+  if (!o || o.root !== from.root || o.parts.length <= from.parts.length
+      || from.parts.some((c, i) => o.parts[i] !== c)
+      || o.parts.slice(from.parts.length).some((c) => c === "." || c === "..")) return { reason: "outside" };
+  const sep = to.includes("\\") && !to.includes("/") ? "\\" : "/";
+  return { local: to.replace(/[\\/]+$/, "") + sep + o.parts.slice(from.parts.length).join(sep) };
 }
 
 // the server's URL when Immich is set up (a URL and a stored key), else null
