@@ -13,23 +13,17 @@ import { settings } from "./settings";
 import { t } from "./i18n";
 
 type Callout = { target: string; title: string; body: string };
-type Step = { target?: string; title: string; body: string; callouts?: Callout[] };
+// `also`: further parts of the window lit with the target, each with its
+// own arrow from the note (the Library button and the Folders panel)
+type Step = { target?: string; also?: string[]; title: string; body: string; callouts?: Callout[] };
 
 const STEPS: Step[] = [
   { title: t("dialogs.tour.welcome.title"),
     body: t("dialogs.tour.welcome.body") },
   { target: "import", title: t("dialogs.tour.import.title"),
     body: keys(t("dialogs.tour.import.body")) },
-  { target: "folders", title: t("dialogs.tour.folders.title"),
-    body: t("dialogs.tour.folders.body") },
-  { target: "library", title: t("dialogs.tour.library.title"),
+  { target: "library", also: ["folders"], title: t("dialogs.tour.library.title"),
     body: t("dialogs.tour.library.body") },
-  { target: "find", title: t("dialogs.tour.find.title"),
-    body: t("dialogs.tour.find.body") },
-  { target: "filmstrip", title: t("dialogs.tour.pickPhoto.title"),
-    body: t("dialogs.tour.pickPhoto.body") },
-  { target: "viewer", title: t("dialogs.tour.viewer.title"),
-    body: t("dialogs.tour.viewer.body") },
   { target: "edit", title: t("dialogs.tour.edit.title"),
     body: keys(t("dialogs.tour.edit.body")),
     callouts: [
@@ -52,12 +46,14 @@ const STEPS: Step[] = [
     ] },
   { target: "advanced-mode", title: t("dialogs.tour.advanced.title"),
     body: t("dialogs.tour.advanced.body") },
-  { target: "history", title: t("dialogs.tour.history.title"),
-    body: keys(t("dialogs.tour.history.body")) },
-  { target: "export", title: t("dialogs.tour.export.title"),
-    body: keys(t("dialogs.tour.export.body")) },
-  { target: "print", title: t("dialogs.tour.print.title"),
-    body: keys(t("dialogs.tour.print.body")) },
+  { target: "send-out", title: t("dialogs.tour.sendOut.title"),
+    body: t("dialogs.tour.sendOut.body"),
+    callouts: [
+      { target: "export", title: t("dialogs.tour.export.title"),
+        body: keys(t("dialogs.tour.export.body")) },
+      { target: "print", title: t("dialogs.tour.print.title"),
+        body: keys(t("dialogs.tour.print.body")) },
+    ] },
   { target: "prefs", title: t("dialogs.tour.preferences.title"),
     body: keys(t("dialogs.tour.preferences.body")) },
 ];
@@ -70,6 +66,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
   const close = () => { setTourSeen(hide); onClose(); };
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [callRects, setCallRects] = useState<(DOMRect | null)[]>([]);
+  const [alsoRects, setAlsoRects] = useState<DOMRect[]>([]);
   const s = STEPS[step];
 
   // where the spotlight goes: its target as it is now on screen; a step
@@ -83,6 +80,12 @@ export function Tour({ onClose }: { onClose: () => void }) {
       setCallRects((s.callouts ?? []).map((c) => {
         const r = document.querySelector(`[data-tour="${c.target}"]`)?.getBoundingClientRect();
         return r && r.width > 4 ? r : null;
+      }));
+      setAlsoRects((s.also ?? []).flatMap((a) => {
+        const r = document.querySelector(`[data-tour="${a}"]`)?.getBoundingClientRect();
+        if (!r || r.width <= 4 || r.height <= 4) return [];
+        const top = Math.max(r.top, 0), bottom = Math.min(r.bottom, window.innerHeight - 8);
+        return bottom - top > 4 ? [new DOMRect(r.left, top, r.width, bottom - top)] : [];
       }));
       const r = el?.getBoundingClientRect();
       if (!r || r.width <= 4 || r.height <= 4) { setRect(null); return; }
@@ -142,12 +145,22 @@ export function Tour({ onClose }: { onClose: () => void }) {
     card.top = Math.min(vh - CARD_H - 12, Math.max(12, card.top));
   }
 
+  // with more than one part lit, the dimming is one layer with a hole for
+  // each: the spotlight's own shadow would cover the others
+  const extra = rect ? alsoRects.map(padded) : [];
   return (
     <div className="tour" onPointerDown={(e) => e.stopPropagation()}>
-      <div className={`tour-spot${rect ? " ring" : ""}`} style={spot} />
+      {extra.length > 0 && (
+        <svg className="tour-dim" width={vw} height={vh}>
+          <path fillRule="evenodd" d={`M0,0H${vw}V${vh}H0Z ${[spot, ...extra].map(roundRect).join(" ")}`} />
+        </svg>
+      )}
+      <div className={`tour-spot${rect ? " ring" : ""}${extra.length ? " multi" : ""}`} style={spot} />
+      {extra.map((b, k) => <div key={`also-${step}-${k}`} className="tour-spot ring multi" style={b} />)}
       {rect && !notes && (
         <svg key={`arrow-${step}`} className="tour-arrows" width={vw} height={vh}>
           <SketchArrow {...cardArrow(card, CARD_W, CARD_H, spot)} seed={step} />
+          {extra.map((b, k) => <SketchArrow key={k} {...cardArrow(card, CARD_W, CARD_H, b)} seed={step + k + 1} />)}
         </svg>
       )}
       {notes && (
@@ -210,6 +223,15 @@ function layoutCallouts(callouts: Callout[], rects: (DOMRect | null)[], group: D
     return item;
   });
   return { left: right - CALLOUT_W, items };
+}
+
+// a lit part's box with the spotlight's margin, and that box as a rounded
+// hole in the dimming
+const padded = (r: DOMRect) => ({ left: r.left - PAD, top: r.top - PAD, width: r.width + 2 * PAD, height: r.height + 2 * PAD });
+function roundRect(b: { left: number; top: number; width: number; height: number }) {
+  const r = Math.min(12, b.width / 2, b.height / 2), x = b.left, y = b.top, w = b.width, h = b.height;
+  return `M${x + r},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h - r}A${r},${r} 0 0 1 ${x + w - r},${y + h}` +
+    `H${x + r}A${r},${r} 0 0 1 ${x},${y + h - r}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}Z`;
 }
 
 // the arrow from a step's card to its spotlight: from the card's side that

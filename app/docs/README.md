@@ -118,7 +118,5 @@ not yet confirmed by hand:
 - The menu path to API keys in Immich's web page ([Immich](immich.md)).
 - How long AI features take on your machine: the guide quotes the app's
   own estimates.
-- The quick start guide says "1 to 5 rate it"; the shortcut sheet and this
-  guide say 0-5, as 0 clears a rating.
 
 Windows and Linux: the guide shows Mac keys. Use Ctrl for ⌘, Alt for ⌥.

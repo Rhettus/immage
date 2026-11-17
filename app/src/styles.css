@@ -1601,6 +1601,9 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   transition: left 0.5s cubic-bezier(0.22, 1, 0.36, 1), top 0.5s cubic-bezier(0.22, 1, 0.36, 1),
               width 0.5s cubic-bezier(0.22, 1, 0.36, 1), height 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.tour-spot.multi { box-shadow: none; transition: none; }
+.tour-dim { position: fixed; inset: 0; pointer-events: none; }
+.tour-dim path { fill: rgba(0, 0, 0, 0.62); }
 .tour-spot.ring::after {
   content: ""; position: absolute; inset: -3px; border-radius: 14px;
   border: 2px solid var(--accent); animation: tour-pulse 1.8s ease-in-out infinite;

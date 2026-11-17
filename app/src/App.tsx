@@ -7221,9 +7221,11 @@ export default function App() {
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
         <div className="rail-sep" />
+        <div className="rail-group" data-tour="send-out">
         <button className="tool" title={keys(t("app.rail.export"))} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
         <button className={`tool${rightOpen && !cropping && rightMode === "print" ? " on" : ""}`} title={keys(t("app.rail.print"))}
                 data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
+        </div>
         <div className="rail-fill" />
         <button className="tool" title={t("app.rail.guide")} onClick={() => setTouring(true)}><HelpIcon /></button>
         <button className="tool" title={keys(t("app.rail.shortcuts"))} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>

@@ -39,6 +39,9 @@ Improvements
 - Lens Corrections adds raw demosaic methods and a Correction method choice
   (Embedded metadata or Lensfun database). Turning it on uses the Lensfun
   profile when the lens has one. Heal shows its source as soon as you press.
+- The quick start guide is shorter and follows the work: Import from SD cards
+  and folders, the Library for folders already on your computer (or drag them
+  in), Edit, Advanced mode, then Export and Print together.
 - Preferences > Performance has a Local photo cache card with status, pause,
   resume, clear and rebuild.
 
