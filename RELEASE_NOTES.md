@@ -7,8 +7,6 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- The Library workers setting and its help no longer single out one camera
-  format; they describe metadata reads in general.
 - Advanced mode: a Simple/Advanced switch (the stacked-cards button at the top
   of Adjustments) gives you darktable's full set of modules. Search them, use
   presets, add instances and masks, undo, and include them in Copy Settings.
@@ -47,29 +45,20 @@ Improvements
   Preferences > General. French is the first translation.
 - Lens Corrections adds raw demosaic methods and a Correction method choice
   (Embedded metadata or Lensfun database). Turning it on uses the Lensfun
-  profile when the lens has one. Heal shows its source as soon as you press.
+  profile when the lens has one, and Preferences > Photos > New Photos sets
+  the method new raw photos start with. Heal shows its source as soon as you press.
 - The quick start guide is shorter and follows the work: Import from SD cards
   and folders, the Library for folders already on your computer (or drag them
   in), Edit, Advanced mode, then Export and Print together.
-- Preferences > Performance has a Local photo cache card with status, pause,
-  resume, clear and rebuild.
 - Preferences > Immich path settings are clearer: Destination as Immich sees
   it, External library path and Folder on this computer. Blank fields show the
   value they borrow from the import destination, a warning appears when the local folder is
   missing or unreachable, and an example shows how a result opens or why it
   downloads.
-- A new Lens correction method setting in Preferences > Photos > New Photos
-  chooses whether new raw photos take their lens data from the Lensfun
-  database (the default) or from the metadata embedded in the raw.
-- Opening a photo starts on Adjustments with only Basic open, and a crop in
-  progress is kept on the photo you leave.
 
 Performance
 
-- Smart search analyses each photo once, as edited, instead of twice, so
-  the background analysis finishes in about half the time.
-- Reopening an unchanged folder and local search results are faster.
-- The culling preview and lightbox load faster while background work runs.
+- Reopening an unchanged folder is faster.
 - A new Library workers setting in Preferences > Performance > Memory sets how
   many thumbnails are built and photos moved or copied at once.
 - The window no longer freezes while checking an export destination or a
@@ -83,8 +72,6 @@ Bug fixes
   deleted permanently.
 - A photo that fails to open no longer leaves the editor stuck, and clicking
   several photos quickly opens only the last one.
-- Smart search no longer keeps retrying photos it cannot decode, and reads from
-  a network drive only after two quiet minutes.
 - In the grid, rating, label and reject keys act on the selected photos, and
   changes made while a folder loads are kept.
 - Linux: opening a folder on a slow network share no longer pauses, and
@@ -94,7 +81,6 @@ Bug fixes
   such as `.ACR` sidecars stay out of the grid.
 - Opening a photo from the grid no longer shows the previous photo while it
   loads.
-- A lens Correction method chosen in Advanced mode is kept and shown.
 - The Presets hover preview no longer gets stuck on one preset.
 - Basic's Auto works on a photo with Film Simulation or a converted negative.
 - DNG thumbnails use embedded previews, and an undecodable photo gets a smaller
