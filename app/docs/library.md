@@ -432,6 +432,8 @@ empty and the stars and ticks filter the folder you open.
 
 ### Find in the grid
 
+![The Find column in the grid, with a rating and a file type filter on](images/library-find.png)
+
 In the grid, Find is not a popup. It fills the right-hand panel, titled
 **Find** like the other panels (with auto-hide on, the pin is at the end of
 the title row), with the **Dock** layout (search, every filter, chips and the
