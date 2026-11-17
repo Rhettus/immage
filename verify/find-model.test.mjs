@@ -162,12 +162,12 @@ test('clearCategory clears both halves', () => {
   assert.deepEqual([r.search.takenFrom, r.search.takenTo, r.filter.takenFrom, r.filter.takenTo], ['', '', '', '']);
 });
 
-test('clearAll keeps what is searched and where', () => {
+test('clearAll clears the words, keeping where and how', () => {
   const base = { text: 'cat', mode: 'filename', source: 'both', scope: 'library', subject: 'edited', library: 'all' };
   const dirty = st({ ...base, minRating: 2, favorites: true, personIds: ['p'], albumIds: ['a'], country: 'NL', city: 'X', rawOnly: true },
     { cameras: ['c'], bodies: ['b'], lenses: ['l'], iso: ['100'], kinds: ['RAW'], rejected: 'only', labels: 1, unlabeled: true, edited: 'only' });
-  assert.ok(sameFind(clearAll(dirty), st(base)));
-  assert.deepEqual(clearAll(dirty).search.text, 'cat');
+  assert.ok(sameFind(clearAll(dirty), st({ ...base, text: '' })));
+  assert.deepEqual([clearAll(dirty).search.text, clearAll(dirty).search.mode], ['', 'filename']);
 });
 
 test('chips excludes', () => {

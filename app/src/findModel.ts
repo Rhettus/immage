@@ -218,9 +218,11 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
   }
 }
 
-// Clear all: every category, keeping what is searched for and where
+// Clear all: every category and the search words, keeping where and how
+// the search looks (source, scope, smart or file name)
 export function clearAll(st: FindState): FindState {
-  return CATEGORIES.reduce((acc, c) => clearCategory(acc, c.key), st);
+  const r = CATEGORIES.reduce((acc, c) => clearCategory(acc, c.key), st);
+  return { ...r, search: { ...r.search, text: "" } };
 }
 
 // ---- rows that write both halves -------------------------------------

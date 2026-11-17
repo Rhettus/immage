@@ -693,7 +693,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
       {size !== "minimize" && notice.length > 0 && <div className="find-notes">{notice.map((n, i) => <div key={i} className="find-note">{n}</div>)}</div>}
       {size !== "minimize" && <div className="find-foot">
         <span className="find-count">{countText}</span>
-        <button className="btn small find-clear-all" disabled={!active.length}
+        <button className="btn small find-clear-all" disabled={!active.length && !s.text.trim()}
                 onClick={() => send(clearAll(state))}>{t("library.filters.clearAll")}</button>
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
         {saved}

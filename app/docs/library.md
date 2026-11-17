@@ -421,7 +421,8 @@ Each list counts only the photos your other choices leave: tick a camera, and
 
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. At the bottom, the footer shows how many
-photos match, **Clear all**, **Save filter…**, and, in the popup, **Show N**,
+photos match, **Clear all** (every filter and the search words),
+**Save filter…**, and, in the popup, **Show N**,
 which closes Find and shows the matches in the grid. In the popup, Esc or a
 click away closes Find; the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
