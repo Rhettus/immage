@@ -651,6 +651,8 @@ another case in the same launch is an ordering effect, so rerun it alone:
 
 - `menus` makes a virtual copy and leaves it open, so run it last or alone
   (`color-range` restarts the app on the original file and then finds no mask).
+- `negative` and `negative-profile-memory` each leave the negative photo
+  converted, so whichever runs second in a launch fails: give them a launch each.
 - `panel-scroll` needs a launch of its own (it asserts Presets opens at its
   top the first time); `native-reset` must not follow `module-options`, which
   leaves another Contrast backend selected.

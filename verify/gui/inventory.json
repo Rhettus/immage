@@ -2660,6 +2660,18 @@
               "step": 1,
               "nonlinear": false,
               "status": "pending"
+            },
+            {
+              "id": "lens_method",
+              "label": "Correction method",
+              "kind": "choice",
+              "rawOnly": false,
+              "min": 0,
+              "max": 2,
+              "step": 1,
+              "nonlinear": false,
+              "options": [],
+              "status": "pending"
             }
           ]
         },
