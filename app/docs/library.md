@@ -110,8 +110,7 @@ rebuilds wait while background work is paused.
 
 [Find](#find) searches this cache without an Immich connection. Choose
 **This folder** (respecting Include subfolders) or **All folders** under
-**Search in**, and original or edited analysis for local similarity. Original analysis
-renders with editing history disabled; edited analysis uses saved edits.
+**Search in**. Smart search matches each photo as edited, using its saved edits.
 **Filename** and empty-text searches can use cached metadata without a model.
 Smart text needs a downloaded model and current indexed embeddings. After you
 opt in to the model download, background CPU analysis fills original and edited
@@ -167,7 +166,7 @@ In the grid, right-click a local photo and choose **Show more like this**
 (offered once the optional model is downloaded).
 The clicked photo supplies the image query, independently of the open editor.
 The query covers all local library folders, retains selected filters and uses
-the chosen original/edited subject. An **Image query** indicator names the seed;
+the photo as edited. An **Image query** indicator names the seed;
 **Clear image query** returns to a metadata listing. Missing or stale seed
 analysis produces an error rather than substituting another photo. Background
 embeddings require the optional model and cached metadata; a photo without

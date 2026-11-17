@@ -17,7 +17,7 @@ export async function localSearch(q: ImmichSearch, filters: Filter, folder: stri
   signal.addEventListener("abort", cancel, { once: true });
   try {
     const page = await commands.localSearch({ text: imageVariant ? "" : q.text, mode: imageVariant ? "smart" : q.mode,
-      imageVariant, subject: q.subject, scope: q.scope, folder: folder || null, recursive,
+      imageVariant, subject: "edited", scope: q.scope, folder: folder || null, recursive,
       filters, remote: nativeSearchArgs(q, null), next, size: 250 }, id);
     if (signal.aborted) throw new Error("Search cancelled");
     return { items: page.items.map(hit => ({ ...hit.image,

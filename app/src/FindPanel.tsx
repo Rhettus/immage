@@ -604,13 +604,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
             <option value="library">{t("library.find.allFolders")}</option>
             {immichAvailable && <><option value="immich">Immich</option><option value="both">{t("library.find.both")}</option></>}
           </select>
-          {r.local && (
-            <select className="field" aria-label={t("library.search.subject")} value={s.subject}
-                    onChange={(e) => patchSearch({ subject: e.target.value as ImmichSearch["subject"] })}>
-              <option value="original">{t("library.search.original")}</option>
-              <option value="edited">{t("library.search.edited")}</option>
-            </select>
-          )}
           {r.immich && (
             <select className="field" value={s.library} title={t("library.search.immichLibrary")}
                     aria-label={t("library.search.immichLibrary")} onChange={(e) => patchSearch({ library: e.target.value })}>

@@ -28,7 +28,7 @@ export type ImmichSearch = {
 };
 
 export const NO_SEARCH: ImmichSearch = {
-  source: "local", scope: "folder", subject: "original",
+  source: "local", scope: "folder", subject: "edited",
   mode: "smart", text: "", library: "external", takenFrom: "", takenTo: "", minRating: 0, favorites: false,
   rawOnly: false, make: "", model: "", lens: "", country: "", city: "", personIds: [], tagIds: [], albumIds: [],
 };
