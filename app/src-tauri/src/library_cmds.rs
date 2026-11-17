@@ -316,7 +316,6 @@ fn mutation_metadata_snapshot(
         original: asset.original_fingerprint,
         edited: variant.edited_fingerprint,
         needs_metadata: true,
-        needs_original: false,
         needs_edited: false,
     }))
 }

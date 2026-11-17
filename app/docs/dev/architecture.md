@@ -1340,7 +1340,8 @@ and automatic embedding generation remain separate work.
 
 Local analysis previews use a separate develop and the thumbnail worker pool.
 `analysis_preview` renders an sRGB JPEG at up to 1024 pixels on the long edge.
-Original analysis passes darktable’s `history_end=0`; edited analysis uses the
+Original analysis passes darktable’s `history_end=0` (no longer queued: only edited
+analyses are, and Find always searches `edited`); edited analysis uses the
 current saved history. Neither path replaces the open editor or writes source
 sidecars. Export metadata’s history switch does not control rendered edits.
 

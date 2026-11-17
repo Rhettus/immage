@@ -113,8 +113,8 @@ rebuilds wait while background work is paused.
 **Search in**. Smart search matches each photo as edited, using its saved edits.
 **Filename** and empty-text searches can use cached metadata without a model.
 Smart text needs a downloaded model and current indexed embeddings. After you
-opt in to the model download, background CPU analysis fills original and edited
-embeddings for photos whose metadata has been cached by browsing. Analysis starts
+opt in to the model download, background CPU analysis fills one edited embedding per photo
+for photos whose metadata has been cached by browsing. Analysis starts
 within a few seconds and respects Pause; existing results remain searchable.
 Browsing or reading metadata again refreshes invalidated records for analysis.
 After model opt-in, reconciled paths also receive bounded background metadata

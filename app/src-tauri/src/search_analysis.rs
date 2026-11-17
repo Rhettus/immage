@@ -141,29 +141,19 @@ impl Service {
                         });
                     continue;
                 }
-                for subject in ["original", "edited"] {
-                    if job.cancelled() || self.stop.load(Ordering::Acquire) {
-                        return Ok(());
-                    }
-                    if !(if subject == "original" {
-                        row.needs_original
-                    } else {
-                        row.needs_edited
-                    }) {
-                        continue;
-                    }
-                    let key = if subject == "original" {
-                        format!("clip:original:{}", row.asset_id)
-                    } else {
-                        format!("clip:edited:{}", row.variant_id)
-                    };
+                if job.cancelled() || self.stop.load(Ordering::Acquire) {
+                    return Ok(());
+                }
+                // only edited analyses are queued: Find no longer reads original ones
+                if row.needs_edited {
                     let service = self.clone();
                     let row = row.clone();
-                    self.queue.submit(key, move |job| {
-                        if let Err(e) = service.analyze(&row, subject, &job) {
-                            eprintln!("local analysis: {e}");
-                        }
-                    });
+                    self.queue
+                        .submit(format!("clip:edited:{}", row.variant_id), move |job| {
+                            if let Err(e) = service.analyze(&row, "edited", &job) {
+                                eprintln!("local analysis: {e}");
+                            }
+                        });
                 }
             }
             if offered {
@@ -394,10 +384,10 @@ mod tests {
         assert!(!cache.put_analysis_failure(&stale, "original", av, mv).unwrap());
         // the file changed: tried again
         cache
-            .upsert_variant("/photos/a.dng", "", "source2", "edit", None, None, None)
+            .upsert_variant("/photos/a.dng", "", "source2", "edit2", None, None, None)
             .unwrap();
         let rows = cache.pending_analyses(0, 32).unwrap();
-        assert!(rows[0].needs_original && !rows[0].needs_edited);
+        assert!(rows[0].needs_edited);
     }
 
     #[test]
@@ -417,9 +407,9 @@ mod tests {
         assert!(cache.put_analysis_failure(&row, "edited", av, mv).unwrap());
         assert!(cache.pending_analyses(0, 32).unwrap().is_empty());
         cache.set_render_failures(0, "0.0.1");
-        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_original);
+        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_edited);
         cache.set_render_failures(31 * 24 * 3600, env!("CARGO_PKG_VERSION"));
-        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_original);
+        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_edited);
         cache.set_render_failures(29 * 24 * 3600, env!("CARGO_PKG_VERSION"));
         assert!(cache.pending_analyses(0, 32).unwrap().is_empty());
     }
@@ -451,33 +441,18 @@ mod tests {
         cache.store_metadata(b.id, "{}").unwrap();
         let rows = cache.pending_analyses(0, 32).unwrap();
         assert_eq!(rows.len(), 2);
-        assert!(rows.iter().all(|r| r.needs_original && r.needs_edited));
+        assert!(rows.iter().all(|r| r.needs_edited));
         cache
             .put_analysis(
                 a.id,
-                "original",
-                "source",
+                "edited",
+                "edit",
                 crate::local_search::ANALYSIS_VERSION,
                 "old-model",
                 &[0; 2048],
             )
             .unwrap();
-        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_original);
-        cache
-            .put_analysis(
-                a.id,
-                "original",
-                "source",
-                crate::local_search::ANALYSIS_VERSION,
-                crate::local_search::MODEL_VERSION,
-                &[0; 2048],
-            )
-            .unwrap();
-        assert!(cache
-            .pending_analyses(0, 32)
-            .unwrap()
-            .iter()
-            .all(|r| !r.needs_original && r.needs_edited));
+        assert!(cache.pending_analyses(0, 32).unwrap()[0].needs_edited);
         cache
             .put_analysis(
                 a.id,
@@ -538,7 +513,6 @@ mod tests {
             original,
             edited,
             needs_metadata: false,
-            needs_original: true,
             needs_edited: true,
         };
         assert!(current(&row, "original", 0) && current(&row, "edited", 0));

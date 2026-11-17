@@ -57,6 +57,8 @@ Improvements
 
 Performance
 
+- Smart search analyses each photo once, as edited, instead of twice, so
+  the background analysis finishes in about half the time.
 - Reopening an unchanged folder and local search results are faster.
 - The culling preview and lightbox load faster while background work runs.
 - A new Library workers setting in Preferences > Performance > Memory sets how

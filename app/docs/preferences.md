@@ -473,8 +473,9 @@ that follows the optional CLIP model (see Smart search (CLIP) in General).
   checks. An offline drive is never treated as evidence that photos were deleted.
 
 **CLIP analysis**, directly below **Background work**, shows the number of distinct
-photos analysed and the total original and edited analyses. A photo counts once
-even when both its original and edited versions have been analysed. Directory
+photos analysed and the total analyses. A photo counts once however many
+analyses it has (older cache entries may include original analyses, which
+Find no longer uses). Directory
 status appears below in a fixed-height
 scrollable box, with one row per path and a right-aligned green (connected) or
 red (offline) dot. Hover a truncated path to see it in full; hover its dot for
@@ -482,7 +483,7 @@ connection details or an error. The list can also be focused and scrolled with
 the keyboard.
 
 After downloading the optional CLIP package, background CPU analysis fills
-original and edited embeddings. Reconciled paths receive bounded metadata imports
+an embedding of each photo as edited. Reconciled paths receive bounded metadata imports
 before analysis, including folders you have not browsed. Pause stops new jobs;
 active jobs can finish. Clear cancels old jobs and removes their cached output.
 Rebuild checks your saved folders again before backfilling metadata and analysis.
