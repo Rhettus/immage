@@ -26,7 +26,8 @@ Improvements
 - Find replaces Search photos and the Filters popup: search words, where to
   search (This folder, All folders, or Immich) and every filter in one place,
   shown as removable chips. Edit status (any, edited or unedited) is its own
-  filter. Saved filters open from Load filter in Find's footer or with Alt+1
+  filter, and File type lists every extension (DNG, ORF, JPG and so on) under
+  All RAW. Saved filters open from Load filter in Find's footer or with Alt+1
   to Alt+9 (Option on Mac).
 - Drag photos onto folders to move them, or hold ⌥ (Alt) to copy; sidecars go
   with them. Right-click a folder for New Folder…, Show in Finder, or Remove

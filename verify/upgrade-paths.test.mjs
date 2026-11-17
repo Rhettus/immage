@@ -159,7 +159,7 @@ test('a v0.40.0 folder snapshot entry (without imgid, serial, version, keywords)
   assert.equal(F.passes(known[2], { ...F.NO_FILTER, takenFrom: '2023-11-11', takenTo: '2023-11-11' }), true);
   assert.equal(F.passes(known[2], { ...F.NO_FILTER, rejected: 'only' }), true);
   const f = F.facets(known.map((i, n) => ({ ...i, imgid: n })));
-  assert.deepEqual(f.kinds, [['RAW', 1], ['JPEG', 1], ['TIFF', 1]]);
+  assert.deepEqual(f.kinds, [['RAW', 1], ['CR3', 1], ['JPG', 1], ['TIFF', 1]]);
   assert.deepEqual(f.months, [['2024-03', 2], ['2023-11', 1]]);
   assert.deepEqual(f.bodies, [['', 3]]);
   // RAW+JPEG pairing still stacks them

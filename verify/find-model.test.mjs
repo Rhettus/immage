@@ -233,3 +233,29 @@ test('clipTipVisible: only once known, missing and not dismissed', () => {
   assert.equal(M.clipTipVisible(true, true, false), false, 'gone once the model is installed');
   assert.equal(M.clipTipVisible(true, false, true), false, 'never again after dismissing');
 });
+
+test('File type ticks: All RAW, one raw extension, legacy kinds', async () => {
+  const { passes, facets } = await import('../app/src/filter.ts');
+  const { pickKinds } = M;
+  const img = (filename) => ({ filename, rejected: false, edited: false, rating: 0, labels: 0, exif: {}, keywords: [] });
+  const names = ['a.ORF', 'b.orf', 'c.DNG', 'd.jpg', 'e.JPEG', 'f.tiff', 'g.cr3'];
+  const pass = (kinds) => names.filter((n) => passes(img(n), { ...NO_FILTER, kinds }));
+  assert.deepEqual(pass(['ORF']), ['a.ORF', 'b.orf']);
+  assert.deepEqual(pass(['RAW']), ['a.ORF', 'b.orf', 'c.DNG', 'g.cr3']);
+  assert.deepEqual(pass(['DNG', 'JPG']), ['c.DNG', 'd.jpg', 'e.JPEG']);
+  // saved filters from before the extension list still mean what they did
+  assert.deepEqual(pass(['JPEG']), ['d.jpg', 'e.JPEG']);
+  assert.deepEqual(pass(['TIFF']), ['f.tiff']);
+  assert.deepEqual(pass([]), names);
+  // the list: the RAW group, its extensions, then the others by name
+  assert.deepEqual(facets(names.map(img)).kinds, [['RAW', 4], ['CR3', 1], ['DNG', 1], ['ORF', 2], ['JPG', 2], ['TIFF', 1]]);
+  assert.deepEqual(facets([img('a.jpg')]).kinds, [['JPG', 1]]);
+  // All RAW and the raw extensions exclude each other; others combine
+  assert.deepEqual(pickKinds(['ORF'], ['ORF', 'RAW']), ['RAW']);
+  assert.deepEqual(pickKinds(['RAW'], ['RAW', 'ORF']), ['ORF']);
+  assert.deepEqual(pickKinds(['RAW'], ['RAW', 'JPG']), ['RAW', 'JPG']);
+  assert.deepEqual(pickKinds(['RAW'], []), []);
+  // RAW alone still narrows the server to Raw only; an extension does not
+  assert.equal(setKinds(st(), ['RAW']).search.rawOnly, true);
+  assert.equal(setKinds(st(), ['ORF']).search.rawOnly, false);
+});

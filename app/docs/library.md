@@ -384,9 +384,14 @@ list the server's values.
 - **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
   computer. A photo counts as edited once it has been changed in the editor,
   beyond the automatic starting edits. It has its own chip and summary.
-- **File type**, **Camera** and **Lens**: tick any to show photos of those,
-  for example **RAW** and **JPEG**. Each lists what the search holds, with how
-  many photos of each.
+- **File type**: lists each extension the search holds (DNG, ORF, CR3, JPG,
+  TIFF and so on) with how many photos of each. **All RAW** comes first and
+  stands for every raw format; the raw extensions are indented below it, so
+  you can tick **ORF** alone or **All RAW**. Tick several to show any of them.
+  A saved filter made before extensions were listed, with **RAW** or **JPEG**,
+  still matches the same photos.
+- **Camera** and **Lens**: tick any to show photos of those. Each lists what
+  the search holds, with how many photos of each.
 - **Camera body**: distinguish physical bodies of the same model by their
   full serial numbers, even when you swap lenses. Entries show the camera
   model, serial and photo count; tick several to include any of them. Long

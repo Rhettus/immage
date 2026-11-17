@@ -12,6 +12,7 @@
 // means the same on both (rating, capture date, RAW) writes both, so the
 // server narrows its pages and `passes` still checks what comes back.
 import { EXPOSURE, NO_FILTER, type Filter } from "./filter";
+import { fileKind } from "./library";
 import { NO_SEARCH, type ImmichSearch } from "./immich";
 
 export type FindState = { search: ImmichSearch; filter: Filter };
@@ -235,6 +236,16 @@ export const setTaken = (st: FindState, from: string, to: string): FindState =>
 // the one ticked; with others ticked too `passes` sorts the results by name
 export const setKinds = (st: FindState, kinds: string[]): FindState =>
   ({ search: { ...st.search, rawOnly: RAW_ONLY(kinds) }, filter: { ...st.filter, kinds } });
+
+// a File type tick: All RAW stands for every raw extension, so ticking it
+// drops the raw extensions already ticked, and ticking one of them while All
+// RAW is ticked narrows to it
+export function pickKinds(prev: string[], next: string[]): string[] {
+  const raw = (k: string) => k !== "RAW" && fileKind(`.${k}`) === "RAW";
+  if (!next.includes("RAW")) return next;
+  if (!prev.includes("RAW")) return next.filter((k) => !raw(k));
+  return next.some((k) => raw(k) && !prev.includes(k)) ? next.filter((k) => k !== "RAW") : next;
+}
 
 // the server's RAW switch for an Immich-only search, kept in step with the
 // file types so a change of source keeps the meaning

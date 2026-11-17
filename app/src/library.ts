@@ -114,6 +114,18 @@ export const fileKind = (filename: string) => {
   return NOT_RAW[ext] ?? "RAW";
 };
 
+// the file's extension as Find's File type lists it, upper case: ORF, DNG,
+// JPG (also .jpeg and .jpe) and TIFF (also .tif). fileKind stays the
+// coarser name, and a saved filter's older "RAW" or "JPEG" still matches
+export const fileExt = (filename: string) => {
+  const ext = filename.match(/\.([^.]+)$/)?.[1].toUpperCase() ?? "";
+  return ext === "JPEG" || ext === "JPE" ? "JPG" : ext === "TIF" ? "TIFF" : ext;
+};
+// whether a file passes a list of ticked types: one of its extension, its
+// kind ("RAW" is every raw format) or, from older saved filters, its kind name
+export const kindsInclude = (kinds: string[], filename: string) =>
+  !kinds.length || kinds.includes(fileExt(filename)) || kinds.includes(fileKind(filename));
+
 // a camera's RAW+JPEG (or RAW+HEIF) pair shares its folder and name; this
 // is that shared part, the same for both files
 export const pairKey = (path: string) => path.replace(/\.[^./\\]+$/, "").toLowerCase();

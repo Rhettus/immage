@@ -4992,6 +4992,7 @@
   "library.find.minRating": "Note minimale",
   "library.find.ratingAndLabel": "Note et étiquette de couleur",
   "library.find.editStatusHint": "Photos modifiées dans l’éditeur, au-delà des retouches automatiques de départ",
+  "library.find.allRaw": "Tous les RAW",
   "library.find.editStatus": "État des retouches",
   "library.find.editedOnly": "Retouchées",
   "library.find.uneditedOnly": "Non retouchées",

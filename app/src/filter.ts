@@ -5,14 +5,14 @@
 // flags and labels, and the Filters popup's fields. Immich results are
 // narrowed by the server instead (immich.ts), all but the stars and type
 import { shutter } from "./exportTokens";
-import { fileKind, takenAt, type ImageEntry, type Known } from "./library";
+import { fileExt, fileKind, kindsInclude, takenAt, type ImageEntry, type Known } from "./library";
 
 export const EXPOSURE = ["iso", "aperture", "focal", "shutter"] as const;
 export type ExposureKey = typeof EXPOSURE[number];
 
 // `rejected` hides rejected photos or shows only them; `edited` picks those
-// darktable counts as altered, or those it does not; `kinds` are file kinds
-// as fileKind() names them; an empty list means all
+// darktable counts as altered, or those it does not; `kinds` are file
+// extensions as fileExt() names them, "RAW" for every raw format; an empty list means all
 export type Filter = {
   minRating: number; rejected: "all" | "hide" | "only"; edited: "all" | "edited" | "unedited";
   labels: number; unlabeled: boolean;
@@ -60,7 +60,7 @@ const day = (i: Known) => takenAt(i).slice(0, 10).replace(/:/g, "-");
 export const passes = (i: Known, f: Filter) =>
   (f.rejected === "all" || (f.rejected === "only") === i.rejected)
   && (f.edited === "all" || (f.edited === "edited") === i.edited)
-  && (!f.kinds.length || f.kinds.includes(fileKind(i.filename)))
+  && kindsInclude(f.kinds, i.filename)
   && (f.minRating === 0 || (!i.rejected && i.rating >= f.minRating))
   // label filters admit an image carrying any of the chosen labels
   && ((!f.labels && !f.unlabeled) || (i.labels & f.labels) !== 0 || (f.unlabeled && i.labels === 0))
@@ -119,9 +119,13 @@ const byName = (m: Map<string, number>) => [...m].sort(([a], [b]) => a.localeCom
 
 // what the shown photos hold, to choose from, with how many of each
 export function facets(images: ImageEntry[]): Facets {
-  const kinds = [...counted(images.map((i) => fileKind(i.filename)))]
-    // RAW first, then the rest by name
-    .sort(([a], [b]) => (a === "RAW" ? -1 : b === "RAW" ? 1 : a.localeCompare(b)));
+  // the RAW group (every raw format) first, then each raw extension, then the
+  // other extensions, each by name
+  const exts = counted(images.map((i) => fileExt(i.filename)));
+  const isRaw = (ext: string) => fileKind(`.${ext}`) === "RAW";
+  const rawCount = [...exts].reduce((n, [e, c]) => n + (isRaw(e) ? c : 0), 0);
+  const byExt = (raw: boolean) => [...exts].filter(([e]) => isRaw(e) === raw).sort(([a], [b]) => a.localeCompare(b));
+  const kinds: [string, number][] = [...(rawCount ? [["RAW", rawCount] as [string, number]] : []), ...byExt(true), ...byExt(false)];
   // a keyword counts its photo once, and each level above it counts it too
   const keywords = counted(images.flatMap((i) => [...new Set((i.keywords ?? []).flatMap((k) =>
     k.split("|").map((_, n, parts) => parts.slice(0, n + 1).join("|"))))]));

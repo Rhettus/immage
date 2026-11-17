@@ -12,12 +12,12 @@ import { createPortal } from "react-dom";
 import { commands, type Named } from "./commands";
 import { bodyLabel, EXPOSURE, facetsWithin, rejectedOptions, type ExposureKey, type Facets, type Filter } from "./filter";
 import {
-  chips, clearAll, clearCategory, GROUPS, reach, searchIn, serverPickers, setKinds, setRawOnly, setStars, setTaken,
+  chips, clearAll, clearCategory, GROUPS, pickKinds, reach, searchIn, serverPickers, setKinds, setRawOnly, setStars, setTaken,
   settingOf, visibleCategories, withSearchIn, type CategoryKey, type FindState, type SearchIn, type Setting,
 } from "./findModel";
 import { StarIcon } from "./icons";
 import type { ImageEntry } from "./library";
-import { LABEL_COLORS } from "./library";
+import { fileKind, LABEL_COLORS } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
 import { loadLayout, placeRect, posFor, SIZES, storeLayout, STRIP_HEIGHT, type FindLayout, type FindSize } from "./findLayout";
@@ -34,11 +34,12 @@ function Row({ title, summary, shown, onClick }: { title: string; summary: strin
 
 // values to tick, any of them, with how many photos have each; a long
 // list gets a box to find one in
-function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts = true }: {
+function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts = true, indent }: {
   items: [string, number][]; chosen: string[]; onChange: (v: string[]) => void;
   show?: (v: string) => string; empty: string;
   find?: string;                           // the find box's placeholder
   counts?: boolean;
+  indent?: (v: string) => boolean;         // rows set in under the one before
 }) {
   const [words, setWords] = useState("");
   const w = words.trim().toLowerCase();
@@ -53,7 +54,7 @@ function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts =
       )}
       <div className="filter-ticks">
         {all.map(([v, n]) => (
-          <button key={v} className={chosen.includes(v) ? "on" : ""}
+          <button key={v} className={`${chosen.includes(v) ? "on" : ""}${indent?.(v) ? " indent" : ""}`}
                   onClick={() => onChange(chosen.includes(v) ? chosen.filter((x) => x !== v) : [...chosen, v])}>
             <span className="tick">{chosen.includes(v) ? "✓" : ""}</span><span className="name">{show(v)}</span>
             {counts && <span className="count">{formatNumber(n)}</span>}</button>
@@ -462,7 +463,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
               <span className="k">{t("library.find.rawOnly")}</span>
               <input type="checkbox" className="switch" checked={s.rawOnly} onChange={(e) => send(setRawOnly(state, e.target.checked))} />
             </div>
-          : <Ticks items={within({ kinds: [] }).kinds} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, kinds))}
+          : <Ticks items={within({ kinds: [] }).kinds} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, pickKinds(f.kinds, kinds)))}
+                   show={(v) => v === "RAW" ? t("library.find.allRaw") : v} indent={(v) => v !== "RAW" && fileKind(`.${v}`) === "RAW"}
                    empty={t("library.filters.noPhotos")} />;
       case "keywords":
         return server

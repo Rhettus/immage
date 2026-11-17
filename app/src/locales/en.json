@@ -4992,6 +4992,7 @@
   "library.find.minRating": "Minimum rating",
   "library.find.ratingAndLabel": "Rating and color label",
   "library.find.editStatusHint": "Photos changed in the editor, beyond the automatic starting edits",
+  "library.find.allRaw": "All RAW",
   "library.find.editStatus": "Edit status",
   "library.find.editedOnly": "Edited",
   "library.find.uneditedOnly": "Unedited",

@@ -316,7 +316,7 @@ test('facets: counts, order, nesting', () => {
     img({ imgid: 4, filename: 'd.nef', exif: { iso: 0 } }),
   ];
   const r = F.facets(imgs);
-  assert.deepEqual(r.kinds, [['RAW', 2], ['JPEG', 1], ['PNG', 1]]);
+  assert.deepEqual(r.kinds, [['RAW', 2], ['CR3', 1], ['NEF', 1], ['JPG', 1], ['PNG', 1]]);
   assert.deepEqual(r.keywords, [['a', 2], ['a|b', 2], ['a|c', 1]]);
   assert.deepEqual(r.months, [['2024-03', 2], ['2024-01', 1], ['2023-12', 1]]);
   assert.deepEqual(r.iso, [['100', 1], ['400', 1], ['800', 1]]);

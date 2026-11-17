@@ -1953,7 +1953,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .filter-split { display: flex; height: 100%; }
 .filter-sub { flex: none; width: 210px; overflow-y: auto; padding-right: 8px; border-right: 1px solid var(--inset, #262626); }
 .filter-values { flex: 1; min-width: 140px; overflow-y: auto; }
-.filter-ticks .indent { padding-left: 28px; }
+.filter-ticks .indent { padding-inline-start: 28px; }
 .filter-group { padding: 8px 10px 3px; color: var(--text-3); font-size: var(--fs-small); }
 .filter-ticks button {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: none; border: none;
