@@ -15,6 +15,8 @@ import { GuidedSteps, openStep, useStepOpen, type Step } from "./GuidedSteps";
 import { Tile } from "./Presets";
 import { autoPaper, filmOf, PAPER_AUTO, PAPER_SCAN, paperOf, presetLabel, SF_PRESETS, type FetchStatus,
          type Stock, type Stocks } from "./spektrafilm";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // darktable's tabs, as the folds under Advanced
 const ADVANCED: { title: string; ids: string[]; print?: boolean }[] = [
@@ -110,21 +112,21 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
     <p className="note-plain">spektrafilm by Andrea Volpato, in darktable; its film data is under CC BY-SA 4.0 and
       shared with darktable on this computer.</p>
   );
-  if (!stocks) return <div className="panel film"><section><p className="note-plain">Reading the film data…</p></section></div>;
+  if (!stocks) return <div className="panel film"><section><p className="note-plain">{t("fields.film.reading")}</p></section></div>;
   const hasPack = stocks.pack && stocks.stocks.length > 0;
   const auto = autoPaper(stocks.stocks, film);
   const paper = paperOf(stocks.stocks, values.sf_paper_hash ?? 0, film);
   const presetMenu = (
     <div className="choice-row">
-      <span>Preset</span>
+      <span>{t("fields.film.preset")}</span>
       <select className="field" data-action="film-preset" value={on ? preset : ""} disabled={disabled}
               onChange={(e) => { setPreset(e.target.value); if (e.target.value) onPreset(e.target.value); }}>
-        <option value="">{on ? "Apply a preset…" : "Start from a preset…"}</option>
+        <option value="">{on ? t("fields.film.applyPreset") : t("fields.film.startPreset")}</option>
         {["Film", "Look", ""].map((group) => {
           const list = SF_PRESETS.filter((p) => presetLabel(p.name).group === group);
           const opts = list.map((p) => <option key={p.name} value={p.name}>
-            {group ? presetLabel(p.name).label : "Default"}</option>);
-          return group ? <optgroup key={group} label={group}>{opts}</optgroup> : opts;
+            {group ? fieldText(presetLabel(p.name).label) : fieldText("Default")}</option>);
+          return group ? <optgroup key={group} label={t(`fields.film.group.${group.toLowerCase()}`)}>{opts}</optgroup> : opts;
         })}
       </select>
     </div>
@@ -142,50 +144,47 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
   const num = (v: number | undefined, d: number) => (v ?? 0).toFixed(d);
   const signed = (v: number | undefined, d: number) => `${(v ?? 0) > 0 ? "+" : ""}${num(v, d)}`;
   const paperPick = scan ? PAPER_SCAN : values.sf_paper_hash ? paper?.hash ?? PAPER_AUTO : PAPER_AUTO;
-  const paperName = scan ? "Scanned" : paperPick === PAPER_AUTO ? "Auto paper" : paper?.name ?? "";
+  const paperName = scan ? t("fields.film.scanned") : paperPick === PAPER_AUTO ? t("fields.film.autoPaper") : paper?.name ?? "";
   const printTile = (pick: number, name: string, title?: string) =>
     tile(paperTileKey(film?.hash ?? 0, pick), name, paperPick === pick, () => onPaper(pick), title);
   const locked = !on;
-  const lockNote = hasPack ? "convert first" : "download the film data first";
+  const lockNote = hasPack ? t("fields.film.convertFirst") : t("fields.film.downloadFirst");
   const steps: Step[] = [
-    { id: "convert", title: "Convert", hidden: on,
-      summary: hasPack ? "turn on, or start from a preset" : "download the film data, about 12 MB",
+    { id: "convert", title: t("fields.film.convert"), hidden: on,
+      summary: hasPack ? t("fields.film.convertSummary") : t("fields.film.downloadSummary"),
       content: !hasPack ? (
         <>
-          <p className="note-plain">Film Simulation renders the photo as a film would: exposed, developed and printed on
-            a paper, or scanned. It needs the measured data of the films and papers, about 12 MB, downloaded once.</p>
+          <p className="note-plain">{t("fields.film.intro")}</p>
           {running ? (
             <>
               <div className="progress"><div className="bar" style={{ width: `${Math.max(0, fetch.progress) * 100}%` }} /></div>
               <p className="note-plain">{fetch.message}</p>
-              <button className="btn small" onClick={onCancel}>Cancel</button>
+              <button className="btn small" onClick={onCancel}>{t("fields.film.cancel")}</button>
             </>
           ) : (
             <>
               <button className="btn small" disabled={disabled} onClick={onDownload}>
-                {fetch?.state === "failed" ? "Try Again" : "Download Film Data"}</button>
-              {fetch?.state === "failed" && <p className="note-plain">The download failed: {fetch.message}</p>}
+                {fetch?.state === "failed" ? t("fields.film.tryAgain") : t("fields.film.download")}</button>
+              {fetch?.state === "failed" && <p className="note-plain">{t("fields.film.downloadFailed", { message: fetch.message })}</p>}
             </>
           )}
         </>
       ) : (
         <>
-          <p className="note-plain">Film Simulation takes the place of the tone mapper: the photo's light exposes a film,
-            which is developed and printed on a paper, or scanned. Exposure and white balance still set what the film
-            sees.</p>
+          <p className="note-plain">{t("fields.film.description")}</p>
           <div className="neg-step">
-            <button className="btn small primary" disabled={disabled} onClick={onTurnOn}>Convert to Film</button>
+            <button className="btn small primary" disabled={disabled} onClick={onTurnOn}>{t("fields.film.convertToFilm")}</button>
           </div>
           {presetMenu}
         </>
       ) },
-    { id: "stock", title: "Stock", locked, lockNote, summary: `${film?.name ?? ""} · ${slide ? "Scanned" : paperName}`,
+    { id: "stock", title: t("fields.film.stock"), locked, lockNote, summary: `${film?.name ?? ""} · ${slide ? t("fields.film.scanned") : paperName}`,
       content: (
         <>
           {presetMenu}
           {groups(stocks.stocks, false).map(([title, list]) => (
             <div key={title}>
-              <div className="tile-group">{title}</div>
+              <div className="tile-group">{fieldText(title)}</div>
               <div className="tile-grid">
                 {list.map(([name, hash]) => tile(filmTileKey(hash), name, film?.hash === hash, () => onFilm(hash)))}
               </div>
@@ -193,25 +192,25 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           ))}
         </>
       ) },
-    { id: "paper", title: "Paper", locked, lockNote, skipped: slide,
-      summary: slide ? "a slide film: scanned, with no print" : scan ? "None: scan the film"
-        : paperPick === PAPER_AUTO ? `Auto (${auto?.name ?? ""})` : paperName,
+    { id: "paper", title: t("fields.film.paper"), locked, lockNote, skipped: slide,
+      summary: slide ? t("fields.film.slideScanned") : scan ? t("fields.film.noneScan")
+        : paperPick === PAPER_AUTO ? t("fields.film.autoWith", { name: auto?.name ?? "" }) : paperName,
       content: (
         <>
           <div className="tile-grid">
-            {printTile(PAPER_AUTO, `Auto${auto ? ` (${auto.name})` : ""}`)}
-            {printTile(PAPER_SCAN, "None: scan the film")}
+            {printTile(PAPER_AUTO, auto ? t("fields.film.autoWith", { name: auto.name }) : t("fields.film.auto"))}
+            {printTile(PAPER_SCAN, t("fields.film.noneScan"))}
           </div>
           {groups(stocks.stocks, true).map(([title, list]) => (
             <div key={title}>
-              <div className="tile-group">{title}</div>
+              <div className="tile-group">{fieldText(title)}</div>
               <div className="tile-grid">{list.map(([name, hash]) => printTile(hash, name))}</div>
             </div>
           ))}
         </>
       ) },
-    { id: "exposure", title: "Exposure", locked, lockNote,
-      summary: `Exposure ${signed(values.sf_exposure_ev, 1)} · Push ${signed(values.sf_push_pull_stops, 0)}`,
+    { id: "exposure", title: t("fields.film.exposure"), locked, lockNote,
+      summary: `${t("fields.film.exposure") } ${signed(values.sf_exposure_ev, 1)} · ${t("fields.film.push")} ${signed(values.sf_push_pull_stops, 0)}`,
       content: (
         <>
           {shown("exposure_ev")}
@@ -222,11 +221,11 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           {shown("output_luminance_boost")}
         </>
       ) },
-    { id: "color", title: "Color", hidden: scan, locked, lockNote, summary: `M ${signed(values.sf_filter_m, 0)} · Y ${signed(values.sf_filter_y, 0)}`,
+    { id: "color", title: t("fields.film.color"), hidden: scan, locked, lockNote, summary: `M ${signed(values.sf_filter_m, 0)} · Y ${signed(values.sf_filter_y, 0)}`,
       content: <>{shown("filter_m")}{shown("filter_y")}</> },
-    { id: "grain", title: "Grain & Halation", locked, lockNote,
-      summary: `${values.sf_grain_on === 1 ? `Grain ${num(values.sf_grain_amount, 2)}` : "Grain off"} · `
-        + `${values.sf_halation_on === 1 ? `Halation ${num(values.sf_halation_amount, 2)}` : "Halation off"}`,
+    { id: "grain", title: t("fields.film.grainHalation"), locked, lockNote,
+      summary: `${values.sf_grain_on === 1 ? `${t("fields.film.grain")} ${num(values.sf_grain_amount, 2)}` : t("fields.film.grainOff")} · `
+        + `${values.sf_halation_on === 1 ? `${t("fields.film.halation")} ${num(values.sf_halation_amount, 2)}` : t("fields.film.halationOff")}`,
       content: (
         <>
           {renderControl(id("grain_on"))}
@@ -236,13 +235,13 @@ export function FilmPanel({ values, disabled, on, stocks, fetch, onDownload, onC
           {values.sf_halation_on === 1 && renderControl(id("halation_amount"))}
         </>
       ) },
-    { id: "darkroom", title: "Darkroom", locked, lockNote,
-      summary: `Development, couplers, print, scanner…${darkroomChanged ? " · changed" : ""}`,
+    { id: "darkroom", title: t("fields.film.darkroom"), locked, lockNote,
+      summary: `${t("fields.film.darkroomSummary")}${darkroomChanged ? ` · ${t("fields.film.changed")}` : ""}`,
       content: (
         <div className="section-body">
           {ADVANCED.filter((g) => !g.print || !scan).map((g) => (
             <div key={g.title}>
-              <div className="neg-sub fold" onClick={() => fold(g.title)}>{g.title}<Chevron open={open.has(g.title)} /></div>
+              <div className="neg-sub fold" onClick={() => fold(g.title)}>{fieldText(g.title)}<Chevron open={open.has(g.title)} /></div>
               <Collapse open={open.has(g.title)}>
                 <div>{g.ids.map((f) => renderControl(id(f)))}</div>
               </Collapse>

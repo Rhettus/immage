@@ -7,6 +7,7 @@
 // are crop's own left/top/right/bottom
 import { useRef } from "react";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 export type CropRect = { l: number; t: number; r: number; b: number };
 export const FULL: CropRect = { l: 0, t: 0, r: 1, b: 1 };
@@ -15,8 +16,8 @@ export const FULL: CropRect = { l: 0, t: 0, r: 1, b: 1 };
 // landscape or portrait by the crop's orientation
 export type Aspect = { id: string; label: string; ratio: [number, number] | "original" | null };
 export const ASPECTS: Aspect[] = [
-  { id: "free", label: "Free", ratio: null },
-  { id: "original", label: "Original", ratio: "original" },
+  { id: "free", label: t("fields.crop.free"), ratio: null },
+  { id: "original", label: t("fields.crop.original"), ratio: "original" },
   { id: "1:1", label: "1 × 1", ratio: [1, 1] },
   { id: "5:4", label: "4 × 5 / 8 × 10", ratio: [5, 4] },
   { id: "7:5", label: "5 × 7", ratio: [7, 5] },

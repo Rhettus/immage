@@ -47,13 +47,27 @@ colorful background is built so its feather stops at that color; see
 [Selections over a plain background](#selections-over-a-plain-background).
 
 Color and luminance ranges are not drawn shapes. The engine builds them as
-darktable converts a classic parametric mask: one parametric element per
-channel, multiplied with the mask's shapes in a flexi product group named
-`immage ranges: <mask>` (`_set_ranges_group`). The instances that blend in
-scene-referred RGB, where the ranges were measured, take that group; the
+darktable converts a classic parametric mask, in a flexi product group named
+`immage ranges: <mask>` (`_set_ranges_group`). Its members are the mask's shapes
+group, when it has shapes, and a **channels group** (`immage channels: <mask>`,
+a product group too) holding one parametric element per channel, so the ranges
+stay r = hue x chroma x ... The group's value is S x r. The instances that blend
+in scene-referred RGB, where the ranges were measured, take that group; the
 rest take the shapes alone (`_apply_ranges`). The refinements
 (feather, blur, detail, contrast) are blend parameters in the same way. The
 mask's Opacity slider is each instance's opacity.
+
+**Invert.** Without ranges (and on modules that drop them) an inverted mask
+sets `DEVELOP_COMBINE_MASKS_POS`, giving 1 - S. With ranges that would give
+1 - S x r, which turns a shape shown as taking away into everything outside it
+(the page shows an inverted mask's shape modes flipped, `flipMode`, which is
+exact for 1 - S). So `_apply_ranges` instead sets `DT_MASKS_STATE_INVERSE` on both
+members of the ranges group: (1 - S) x (1 - r), the shapes as shown inside the
+inverted range. `maskAt` and `overlayPixels` in masks.ts compute the same.
+`_instance_inverted` reads the new form, and an older edit's flat channel members
+with `MASKS_POS`; the next `masks` call rebuilds those to the new layout.
+`masks_attach_mask` invalidates the pipe caches, as the members' state is
+not in a piece's cache hash. `verify/mask-invert-ranges.py` checks the formulas.
 
 ## Selections over a plain background
 
@@ -132,11 +146,9 @@ On a stilt over water, the mask 1-3 px outside the edge fell from 49% to
 to 80%. Blurring or feathering the hue shape cleared the speckle but gave
 the halo back, which is why the limits keep such photos out instead.
 
-darktable evaluates the hue shape with the module's own `mask_combine`
-(`masks/parametric.c`). An inverted mask with ranges (`DEVELOP_COMBINE_INV`)
-would invert the shape too, so `_backdrop_polarity` flips its channel to
-match. Such a mask shares no instance (`canMerge`), so every instance of it
-agrees.
+darktable evaluates the hue shape with the module's own blend parameters
+(`masks/parametric.c`), which `_apply_ranges` never inverts, so its own channel
+takes the color out.
 
 ## The adjustments: one instance per module
 
@@ -193,8 +205,8 @@ view is on.
 
 ## Where the instances run
 
-The **mask anchor** is the one place in the pipe where masks' instances
-run, with the two exceptions below: just after the photo's own **color
+The **mask anchor** is the usual place in the pipe where masks' instances
+run: just after the photo's own **color
 balance rgb** (`_MASK_ANCHOR` in main.c). In darktable's v5.0 module order
 that is the last scene-referred color module before the tone mapper.
 `_named_instance` moves each new mask instance there, and a color or
@@ -220,9 +232,31 @@ Two modules stay where darktable normally runs them, ahead of the anchor:
 Modules that already run after the anchor, such as local contrast, stay
 where they are.
 
-The order is fixed. Immage has no way to move a module, so the question of
-what a mask's instances do when a global module moves never comes up in
-Immage. In darktable the user can move them like any instance.
+Advanced masking uses `MASK_MODULES` in `manifest.ts` to allow only blendable
+modules suitable for local adjustments. Its `anchor` flag is sent as `anchored`
+when creating the named instance. Early-stage modules can retain their natural
+position; modules already later than the anchor stay later. Mask cards follow
+the engine's processing order and cannot be reordered independently. In
+darktable the user can move them like any instance.
+
+## Advanced mask instances
+
+The `instances` reply identifies a mask-owned instance with `owner: "mask"`
+and its mask name in `mask`. Global Adjustments excludes these instances;
+the selected mask's Advanced cards address them by operation and priority.
+Delete and restore require the matching mask name. Other global instance
+actions and presets remain unavailable on mask-owned instances.
+
+The `masks` reply includes owned modules beyond those requested in
+`localFields()`. Its `extra` flag identifies parameters outside the local
+map that differ from defaults, or a module with no local map. Its `state`
+contains the complete parameter blob and enabled flag, with `blend: null`;
+restoring it preserves the destination's mask identifiers. `Mask.moduleStates`
+retains these snapshots for duplication, copying and undo. The frontend keeps
+explicit module on/off choices separately from temporary hiding and the
+physical disabling of instances used by sharing. Editing a card refreshes the local
+slider values; editing a local slider invalidates the corresponding card.
+Hide and Before update every owned instance, including advanced-only modules.
 
 ## Sharing instances between masks
 
@@ -263,6 +297,10 @@ shared instances):
   that scales the shared instance's strength down to that member's own
 - each mask keeps its own instance too, switched off, holding its settings
   so they can be read back
+
+An operation listed in a mask's `extra` state never shares an instance:
+`planMerge` leaves that mask's own instance active so its complete parameters
+render. Other operations on the same mask can still share.
 
 Only masks whose settings point the same way can share an instance, since
 it has one set of params. Masks are grouped either by that direction, or one

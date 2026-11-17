@@ -1,0 +1,63 @@
+[
+ {
+  "label": "3 open / instance new",
+  "reply": {
+   "instances": [
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 100,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "rawprepare",
+     "owner": null,
+     "priority": 0,
+     "switchable": false
+    },
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 200,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "invert",
+     "owner": null,
+     "priority": 0,
+     "switchable": true
+    },
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 300,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "temperature",
+     "owner": null,
+     "priority": 0,
+     "switchable": true
+    }
+   ],
+   "ms": 0.0,
+   "ok": true,
+   "priority": 1
+  }
+ }
+]

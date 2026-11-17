@@ -535,18 +535,31 @@ int location_sidecar_missing(const char *path)
 
 // Called on request/import threads. Cache source metadata across virtual copies
 // and repeated meta replies; source changes invalidate it, sidecar edits do not.
-char *camera_body_serial(const char *path)
+char *camera_source_metadata(const char *path, char **capture, char **offset)
 {
-  _lock lock; // Protect both Exiv2 and the cache across request/import threads.
-  struct Entry { gint64 mtime; gint64 ctime; gint64 size; std::string serial; };
-  static std::map<std::string, Entry> cache;
+  if(capture) *capture = g_strdup("");
+  if(offset) *offset = g_strdup("");
+  // A stale or offline NAS path can block in stat; do not hold the global
+  // Exiv2/cache lock while waiting on filesystem metadata.
   GStatBuf st;
   if(g_stat(path, &st)) return g_strdup("");
+  _lock lock; // Protect both Exiv2 and the cache across request/import threads.
+  struct Entry { std::string stamp, serial, capture, offset; };
+  static std::map<std::string, Entry> cache;
+  std::string stamp = std::to_string(st.st_mtime) + ":" + std::to_string(st.st_ctime) + ":" + std::to_string(st.st_size);
+#if defined(__APPLE__)
+  stamp += ":" + std::to_string(st.st_mtimespec.tv_nsec) + ":" + std::to_string(st.st_ctimespec.tv_nsec);
+#elif defined(G_OS_UNIX)
+  stamp += ":" + std::to_string(st.st_mtim.tv_nsec) + ":" + std::to_string(st.st_ctim.tv_nsec);
+#endif
   const auto hit = cache.find(path);
-  if(hit != cache.end() && hit->second.mtime == st.st_mtime
-     && hit->second.ctime == st.st_ctime && hit->second.size == st.st_size)
+  if(hit != cache.end() && hit->second.stamp == stamp)
+  {
+    if(capture) { g_free(*capture); *capture = g_strdup(hit->second.capture.c_str()); }
+    if(offset) { g_free(*offset); *offset = g_strdup(hit->second.offset.c_str()); }
     return g_strdup(hit->second.serial.c_str());
-  std::string serial;
+  }
+  std::string serial, raw, zone;
   try
   {
     auto image = Exiv2::ImageFactory::open(path);
@@ -558,6 +571,17 @@ char *camera_body_serial(const char *path)
       if(it == exif.end()) it = exif.findKey(Exiv2::ExifKey("Exif.Image.CameraSerialNumber"));
       if(it == exif.end()) it = Exiv2::serialNumber(exif);
       if(it != exif.end()) serial = it->print(&exif);
+      auto text = [&exif](const char *key) {
+        auto at = exif.findKey(Exiv2::ExifKey(key));
+        return at == exif.end() ? std::string() : at->toString();
+      };
+      raw = text("Exif.Photo.DateTimeOriginal");
+      if(raw.empty()) raw = text("Exif.Image.DateTimeOriginal");
+      auto subsec = text("Exif.Photo.SubSecTimeOriginal");
+      if(!raw.empty() && !subsec.empty() && subsec.size() <= 32
+         && subsec.find_first_not_of("0123456789") == std::string::npos) raw += "." + subsec;
+      zone = text("Exif.Photo.OffsetTimeOriginal");
+
     }
   }
   catch(const Exiv2::Error &) { /* Missing or unsupported metadata is unknown. */ }
@@ -569,6 +593,10 @@ char *camera_body_serial(const char *path)
   if(serial == "n/a" || serial == "Unknown" || serial == "unknown"
      || (!serial.empty() && serial.find_first_not_of("0 ") == std::string::npos)) serial.clear();
   if(cache.size() >= 4096) cache.clear();
-  cache[path] = { st.st_mtime, st.st_ctime, st.st_size, serial };
+  cache[path] = { stamp, serial, raw, zone };
+  if(capture) { g_free(*capture); *capture = g_strdup(raw.c_str()); }
+  if(offset) { g_free(*offset); *offset = g_strdup(zone.c_str()); }
   return g_strdup(serial.c_str());
 }
+
+char *camera_body_serial(const char *path) { return camera_source_metadata(path, nullptr, nullptr); }

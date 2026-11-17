@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { t } from "./i18n";
 import { appName, choosePluginApp, findApps, KINDS, kindOf, newPlugin, setPluginApp, storePlugins,
          type PluginConfig, type PluginKind } from "./plugins";
 
@@ -37,80 +38,80 @@ export function PluginPrefs({ plugins, onPlugins }: {
 
   return (
     <>
-      <p className="prefs-lead">
-        Send photos to external editors with right-click › Edit In. Returned files appear beside their photo, ready to edit.
-      </p>
+      <p className="prefs-lead">{t("plugins.lead")}</p>
       {plugins.map((p) => {
         const kind = kindOf(p.kind)!;
+        const kindLabel = t(`plugins.kind.${kind.id}`);
         return (
-          <PrefCard key={p.id} title={kind.label}>
-            <PrefRow label="Name" hint="as the Edit In menu shows it">
+          <PrefCard key={p.id} title={kindLabel}>
+            <PrefRow id="Name" label={t("plugins.row.name")} hint={t("plugins.row.name.hint")}>
               <input className="field" value={p.name} spellCheck={false}
                      onChange={(e) => update(p.id, { name: e.target.value })}
                      onBlur={() => { if (!p.name.trim()) update(p.id, { name: kind.label }); }} />
             </PrefRow>
-            <PrefRow label="Application" hint={p.app ? p.app : `${kind.label} was not found on this computer`}>
+            <PrefRow id="Application" label={t("plugins.row.app")} hint={p.app ? p.app : t("plugins.notfound", { name: kindLabel })}>
               <div className="pref-inline">
-                <span className="pref-value">{p.app ? appName(p.app) : "none"}</span>
-                <button className="btn small" onClick={() => void chooseApp(p.id)}>Choose…</button>
+                <span className="pref-value">{p.app ? appName(p.app) : t("plugins.none")}</span>
+                <button className="btn small" onClick={() => void chooseApp(p.id)}>{t("prefs.choose")}</button>
               </div>
             </PrefRow>
             {kind.send === "choice" && (
-              <PrefRow label="Send" summary={kind.rawOriginals
-                ? "RAWs return without edits; TIFFs bake edits and may clip saturated colors."
-                : "TIFFs include edits; originals suit raw-aware apps."}
+              <PrefRow id="Send" label={t("plugins.row.send")} summary={kind.rawOriginals
+                ? t("plugins.send.raw.summary")
+                : t("plugins.send.orig.summary")}
                 hint={kind.rawOriginals
-                ? "raws keep the most color and come back as a raw DNG, without the edit; TIFFs carry the edit so far, but very saturated colors can clip"
-                : "TIFFs carry the edit so far; originals suit applications that read raws"}>
+                ? t("plugins.send.raw.hint")
+                : t("plugins.send.orig.hint")}>
                 <div className="segmented small">
-                  {([[kind.rawOriginals ? "Raws" : "Originals", "original"], ["16-bit TIFFs", "tiff"]] as const).map(([label, v]) => (
+                  {([[kind.rawOriginals ? t("plugins.send.raws") : t("plugins.send.originals"), "original"], [t("plugins.send.tiff"), "tiff"]] as const).map(([label, v]) => (
                     <button key={v} className={p.send === v ? "active" : ""} onClick={() => update(p.id, { send: v })}>{label}</button>
                   ))}
                 </div>
               </PrefRow>
             )}
             {kind.handoff === "macrostudio" && (
-              <PrefRow label="Look" summary="Macro Studio finish; Enhanced adds sharpness and clarity."
-                       hint="Macro Studio's finish on the stack; Enhanced sharpens and adds clarity">
+              <PrefRow id="Look" label={t("plugins.row.look")} summary={t("plugins.row.look.summary")}
+                       hint={t("plugins.row.look.hint")}>
                 <div className="segmented small">
-                  {([["Natural", "natural"], ["Enhanced", "enhanced"], ["Default", ""]] as const).map(([label, v]) => (
+                  {([[t("plugins.look.natural"), "natural"], [t("plugins.look.enhanced"), "enhanced"], [t("plugins.look.default"), ""]] as const).map(([label, v]) => (
                     <button key={v} className={(p.look ?? "") === v ? "active" : ""} onClick={() => update(p.id, { look: v })}>{label}</button>
                   ))}
                 </div>
               </PrefRow>
             )}
-            {kind.handoff !== "macrostudio" && <PrefRow label="Results folder" summary="Override the usual location for returned files."
-                     hint={`where ${appName(p.app || kind.label)} saves, if not ${kind.returns.subfolders
-                       .map((s) => (s ? `a "${s}" folder beside the photo` : "beside the photo")).join(" or ")}`}>
+            {kind.handoff !== "macrostudio" && <PrefRow id="Results folder" label={t("plugins.row.results")} summary={t("plugins.row.results.summary")}
+                     hint={t("plugins.results.hint", { app: appName(p.app || kind.label), list: kind.returns.subfolders
+                       .map((s) => (s ? t("plugins.results.sub", { name: s }) : t("plugins.results.beside"))).join(t("plugins.results.or")) })}>
               <div className="pref-inline">
-                <input className="field" placeholder="the usual place" value={p.outputDir} spellCheck={false}
+                <input className="field" placeholder={t("plugins.usual")} value={p.outputDir} spellCheck={false}
                        onChange={(e) => update(p.id, { outputDir: e.target.value })} />
-                <button className="btn small" onClick={() => void chooseDir(p.id)}>Choose…</button>
+                <button className="btn small" onClick={() => void chooseDir(p.id)}>{t("prefs.choose")}</button>
               </div>
             </PrefRow>}
             {kind.onReturn.map((o) => (
-              <PrefRow key={o.id} label={o.label} summary={`On first open: ${o.hint}`}
-                       hint={`on a returned file, the first time it opens: ${o.hint}`}>
+              <PrefRow key={o.id} label={t(`plugins.kind.${kind.id}.return.${o.id}.label`)}
+                       summary={t("plugins.onreturn.summary", { hint: t(`plugins.kind.${kind.id}.return.${o.id}.hint`) })}
+                       hint={t("plugins.onreturn.hint", { hint: t(`plugins.kind.${kind.id}.return.${o.id}.hint`) })}>
                 <PrefSwitch checked={!!p.onReturn[o.id]}
                             onChange={(on) => update(p.id, { onReturn: { ...p.onReturn, [o.id]: on } })} />
               </PrefRow>
             ))}
             <PrefRow label="" summary={kind.id === "dxo-pureraw"
-              ? "Save DNGs; Immage opens each when ready."
-              : "Choose a focus bracket; saved stacks return as DNG."}
-              hint={kind.note}>
+              ? t("plugins.pureraw")
+              : t("plugins.bracket")}
+              hint={t(`plugins.kind.${kind.id}.note`)}>
               <button className="btn small danger" onClick={() => onPlugins(plugins.filter((q) => q.id !== p.id))}>
-                Remove</button>
+                {t("plugins.remove")}</button>
             </PrefRow>
           </PrefCard>
         );
       })}
-      {!plugins.length && <p className="prefs-lead">No plugins yet.</p>}
+      {!plugins.length && <p className="prefs-lead">{t("plugins.empty")}</p>}
       <div className="plugin-add">
-        <button className="btn small" onClick={() => setAdding(!adding)}>Add Plugin {adding ? "▴" : "▾"}</button>
+        <button className="btn small" onClick={() => setAdding(!adding)}>{t("plugins.add")} {adding ? "▴" : "▾"}</button>
         {adding && (
           <div className="context-menu plugin-kinds">
-            {KINDS.map((k) => <button key={k.id} onClick={() => void add(k)}>{k.label}</button>)}
+            {KINDS.map((k) => <button key={k.id} onClick={() => void add(k)}>{t(`plugins.kind.${k.id}`)}</button>)}
           </div>
         )}
       </div>

@@ -1,18 +1,23 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
+import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
-import { profileSelection, AGX_USER_FIRST } from "./manifest";
+import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 
 
 
+import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
+import { advancedEdits } from "./advancedEdits";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
+import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { MoveDialog } from "./MoveDialog";
+import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -39,20 +44,21 @@ import { Pipette } from "lucide-react";
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
-import { KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
-import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type Frame, type HistoryItem, type ModuleState, type View } from "./session";
+import { easeZoom, ZOOM_EASE, KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
+import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
+import { pushBatchStep, truncateRedo } from "./undoStack";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
-import { fetchThumb, fileKind, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { runInBackground, runMerge, useJobs } from "./background";
+import { runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, type WB } from "./wb";
@@ -69,7 +75,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -113,23 +119,33 @@ import { hasPendingTuner } from "./PerformanceTuner";
 import { PerformanceTuner } from "./PerformanceTuner";
 import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
+import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
-import { ImmichPanel } from "./ImmichPanel";
-import { immichUrl, isRemote, loadSearch, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
-import { needsRead, NO_FILTER, passes, type Filter } from "./filter";
+import { FindPanel } from "./FindPanel";
+import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, smartAvailable, type FindState } from "./findModel";
+import { loadClipState } from "./clipStatus";
+import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
+import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
+import { createCombinedSearchCoordinator } from "./combinedSearch";
+import { indexChanged, localSearch, similarSearch } from "./localSearch";
+import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
+import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
+import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
-import { ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
+import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
 import { ActivityBar, JobActivity } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
-import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
+import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type PrintReply, type Value } from "./commands";
+import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type Value } from "./commands";
+import { t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
+
 const OTHER_MENUS = forPlatform(MENUS, false);
 // what a layer keeps of its frame to be placed (framePlace)
 type Placed = Pick<Frame, "x" | "y" | "view" | "fullWidth" | "fullHeight" | "width" | "height">;
@@ -140,8 +156,8 @@ const placed = (f: Frame): Placed => ({ x: f.x, y: f.y, view: f.view, fullWidth:
 type BaMode = "off" | "side" | "vsplit" | "hsplit" | "overlay";
 const BA_MODES: BaMode[] = ["off", "side", "vsplit", "hsplit", "overlay"];
 const BA_NAMES: Record<BaMode, string> = {
-  off: "Before / after off", side: "Side by side", vsplit: "Split left / right",
-  hsplit: "Split top / bottom", overlay: "Hold for before",
+  off: t("app.beforeAfter.off"), side: t("app.beforeAfter.side"), vsplit: t("app.beforeAfter.vertical"),
+  hsplit: t("app.beforeAfter.horizontal"), overlay: t("app.beforeAfter.hold"),
 };
 
 // the overlay view explains its hold the first few times it opens
@@ -238,7 +254,7 @@ export default function App() {
                                      (imgid, e) => {
                                        if (imgid >= 0 || thumbError.current) return;
                                        thumbError.current = true;
-                                       setStatus(`Immich thumbnails: ${e}`);
+                                       setStatus(t("app.status.immichThumbnails", { error: e }));
                                      });
   const thumbError = useRef(false);
   const [current, setCurrent] = useState<Opened | null>(null);
@@ -251,7 +267,7 @@ export default function App() {
   const setValues = (update: React.SetStateAction<Record<string, number>>) =>
     valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
   useEffect(() => () => valueUpdates.current?.dispose(), []);
-  const [status, setStatusRaw] = useState("open a folder to start");
+  const [status, setStatusRaw] = useState(t("app.status.openFolder"));
   // a command the engine's exit cut off reports it as an error; while the
   // engine restarts, and just after, that goes to the console: the restart
   // has its own words (engineEvent)
@@ -308,7 +324,10 @@ export default function App() {
     // leaving the crop tool for the mode it was opened over is not a second click
     const wasCropping = croppingRef.current;
     if (wasCropping) leaveCrop(true);
-    if (layout.right && rightMode === mode && !wasCropping) { toggleSide("right"); return; }
+    // in the grid, a tool other than Print leaves it for the open photo
+    const leaving = gridRef.current && mode !== "print";
+    if (leaving) setGrid(false);
+    if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
     if (!layout.right) toggleSide("right");
   };
@@ -329,29 +348,110 @@ export default function App() {
   const [tunerOpen, setTunerOpen] = useState(false);
   useEffect(() => { if (current && hasPendingTuner()) setTunerOpen(true); }, [current]);
   const [prefsOpen, setPrefsOpen] = useState<false | true | PrefsTab>(false);
+  // a card to scroll Preferences to (Find's CLIP tip: the local photo cache card on General)
+  const [prefsCard, setPrefsCard] = useState<string | undefined>();
   // the Immich card: shown once Immich is set up (checked again as
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
+  const pendingSearchMetadata = useRef(new Set<Promise<unknown>>());
+  const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
-  useEffect(() => { if (!prefsOpen) void immichUrl().then(setImmichBase); }, [prefsOpen]);
+  // without Immich configured, a stored search that asks for it is turned to this computer's, once,
+  // as the Search in choices hold no Immich then
+  const immichChecked = useRef(false);
+  useEffect(() => {
+    if (prefsOpen) return;
+    void immichUrl().then((u) => {
+      setImmichBase(u);
+      if (immichChecked.current) return;
+      immichChecked.current = true;
+      if (!u && immichFormRef.current.source !== "local") {
+        const next = { ...immichFormRef.current, source: "local" as const };
+        immichFormRef.current = next; setImmichForm(next); storeSearch(next);
+      }
+    });
+  }, [prefsOpen]);
+  // the local CLIP package, for Smart search and similar photos: asked after the
+  // first paint and again as Preferences closes, then while a download runs
+  const [clipReady, setClipReady] = useState(false);
+  // not shown before the first status answer, so the tip never flashes for an installed model
+  const [clipKnown, setClipKnown] = useState(false);
+  const [clipTipGone, setClipTipGone] = useState(() => { try { return settings.get("immage.findClipTipDismissed") === "1"; } catch { return false; } });
+  const clipReadyRef = useRef(false);
+  useEffect(() => {
+    if (prefsOpen) return;
+    let alive = true, timer = 0;
+    const ask = () => void loadClipState().then((c) => {
+      if (!alive) return;
+      if (c.known) { clipReadyRef.current = c.installed; setClipReady(c.installed); setClipKnown(true); }
+      if (c.downloading) timer = window.setTimeout(ask, 2000);
+    });
+    timer = window.setTimeout(ask, 0);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [prefsOpen]);
   const [immich, setImmichState] = useState<{ search: ImmichSearch; next: string | null; busy: boolean } | null>(null);
   const immichRef = useRef(immich);
   const setImmich = (v: typeof immich) => { immichRef.current = v; setImmichState(v); };
-  // the Immich search as the card, the Filters popup and the stars set it.
-  // a change searches again a moment later while its results show
+  // the Find popup's search half; `filter` is the other. a change searches
+  // again a moment later while its results show (changeFind)
   const [immichForm, setImmichForm] = useState<ImmichSearch>(loadSearch);
   const immichFormRef = useRef(immichForm);
   const immichTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(immichTimer.current), []);
-  const updateImmich = (patch: Partial<ImmichSearch>, now = false) => {
-    const next = { ...immichFormRef.current, ...patch };
-    immichFormRef.current = next;
-    setImmichForm(next);
-    storeSearch(next);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+  const immichBaseRef = useRef(immichBase);
+  immichBaseRef.current = immichBase;
+  const find: FindState = { search: immichForm, filter };
+  const [findOpen, setFindOpen] = useState(false);
+  const findButton = useRef<HTMLButtonElement>(null);
+  // the saved filter the Find state came from, and its dialogs
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saveDialog, setSaveDialog] = useState(false);
+  const [manageSaved, setManageSaved] = useState(false);
+  const savedList = useSaved();
+  const savedNow = savedList.find((f) => f.id === savedId) ?? null;
+  // every change of what is searched or filtered, from the popup, the
+  // toolbar and the saved filters. `now` runs the search at once, else after
+  // a 400 ms pause (typing)
+  // the "Immich was skipped" note: only right after a saved or restored search asked for Immich without it
+  const [skipShown, setSkipShown] = useState(false);
+  const skipRef = useRef(false);
+  const showSkip = (v: boolean) => { skipRef.current = v; setSkipShown(v); };
+  const changeFind = (next: FindState, now = false, restored = false) => {
+    const avail = !!immichBaseRef.current;
+    // the query now running, not the form: keystrokes have already changed the form
+    const running = combined.current?.getState().query as SearchQuery | null;
+    const smart = smartAvailable(clipReadyRef.current, avail);
+    const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(effectiveSearch(next.search, smart));
+    showSkip(restored && reach(next.search, avail).skipped);
     window.clearTimeout(immichTimer.current);
-    if (now) void searchImmich(next);
-    else if (immichRef.current) immichTimer.current = window.setTimeout(() => void searchImmich(next), 400);
+    const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
+    // back to the open folder, as choosing it does, with the filter on at once
+    // (showFolder starts a new folder unfiltered, so the filter is set after it)
+    if (leaving) void showFolder(folderRef.current!);
+    immichFormRef.current = next.search; setImmichForm(next.search);
+    filterRef.current = next.filter; setFilter(next.filter);
+    storeSearch(next.search);
+    if (!needsSearch(next, avail)) return;
+    const run = () => {
+      // only the filters changed: the same search again, so a similar-photos query stays
+      const q = combined.current?.getState().query as SearchQuery | null;
+      if (sameSearch && immichRef.current && q) {
+        const active = Object.entries(combined.current!.getState().sources).filter(([, v]) => v.status !== "idle").map(([k]) => k as "local" | "immich");
+        void combined.current!.search({ ...q, filters: effectiveFilter(next, avail) }, active);
+      } else void searchImmich(next.search, false, undefined, next.filter);
+    };
+    if (now) run();
+    else immichTimer.current = window.setTimeout(run, 400);
   };
+  // a saved filter sets the whole state; "This folder" is the open folder
+  const applySaved = (f: { id: string; state: FindState }) => {
+    setSavedId(f.id);
+    changeFind(normalizeFind(f.state), true, true);
+  };
+  const applySavedRef = useRef(applySaved);
+  applySavedRef.current = applySaved;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // the filmstrip's selection, by image: ratings, labels and rejects apply
   // to all of it, as in Lightroom; the open photo is the active one
@@ -403,7 +503,7 @@ export default function App() {
   const floatingRef = useRef<Pins>({ left: false, right: false, strip: false });
   const pinButton = (side: keyof Pins) => autoHide && (
     <button className={`tool pin${pins[side] ? " on" : ""}`}
-            title={pins[side] ? "unpin: let the panel hide" : "pin: keep the panel open"}
+            title={pins[side] ? t("app.pin.unpin") : t("app.pin.pin")}
             onClick={() => setPins((p) => { const n = { ...p, [side]: !p[side] }; storePins(n); return n; })}>
       <PinIcon on={pins[side]} /></button>
   );
@@ -423,12 +523,12 @@ export default function App() {
     const reference = preferred && local.some((i) => i.imgid === preferred.imgid) && valid(preferred)
       ? preferred : local.find(valid);
     if (reference) setCaptureDialog({ targets: local, reference });
-    else setStatus("no selected photos have a recorded capture time");
+    else setStatus(t("app.status.noCaptureTime"));
   };
   const startCaptureUndo = () => {
     const reference = imagesRef.current.find((i) => i.imgid === captureUndo[0]?.imgid);
     if (reference) setCaptureDialog({ targets: [], reference, undo: captureUndo.map((e) => ({ imgid: e.imgid, before: e.after, after: e.before })) });
-    else setStatus("open the folder containing the adjusted photos to undo their capture times");
+    else setStatus(t("app.status.captureUndoFolder"));
   };
   const applyCaptureTimes = async (entries: CaptureTimeEntry[]) => {
     const reply = await commands.captureTimes(entries);
@@ -464,8 +564,20 @@ export default function App() {
       : hit ? [hit] : []);
     setFileMenu({ x: e.clientX, y: e.clientY, imgid, targets });
   };
+  // the photos a thumbnail drags, as its menu takes them: the selection it
+  // is in, or itself, with its stacked partners
+  const dragSet = (i: ImageEntry) => {
+    const sel = selectionRef.current;
+    return withPartners(sel.size > 1 && sel.has(i.imgid) ? imagesRef.current.filter((p) => sel.has(p.imgid)) : [i]);
+  };
+  // photos dropped on a folder, waiting for the confirmation (MoveDialog)
+  const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
+                                                 plan: MovePlan | null; error: string | null } | null>(null);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
+  const [editMode, setEditMode] = useState(loadEditMode);
+  // the Adjustments header's mode button and Preferences > General share this
+  const chooseEditMode = useCallback((v: EditMode) => { setEditMode(v); storeEditMode(v); }, []);
   const [overlayColor, setOverlayColor] = useState(loadOverlayColor);
   // the guides' color, for the stylesheet (styles.css, --guide)
   const [guideColor, setGuideColor] = useState(loadGuideColor);
@@ -474,6 +586,44 @@ export default function App() {
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
   const [stackPairs, setStackPairs] = useState(loadStackPairs);
+  // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- and
+  // a pinch or ⌘ wheel in the grid), any size in its range. a key step eases
+  // there over 150 ms, as the photo's zoom does; a pinch follows the fingers.
+  // the setting is written once the size settles, not every frame
+  const [gridSize, setGridSize] = useState(loadGridSize);
+  const gridAnim = useRef({ raf: 0, target: gridSize, now: gridSize, store: 0 });
+  const settleGridSize = (v: number) => {
+    const a = gridAnim.current;
+    window.clearTimeout(a.store);
+    a.store = window.setTimeout(() => storeGridSize(Math.round(v)), 250);
+  };
+  const applyGridSize = (v: number) => {
+    const a = gridAnim.current;
+    if (a.raf) { cancelAnimationFrame(a.raf); a.raf = 0; }
+    a.target = a.now = clampGridSize(v);
+    setGridSize(a.now);
+    settleGridSize(a.now);
+  };
+  const chooseGridSize = (v: number) => applyGridSize(v);
+  const zoomGrid = (factor: number) => applyGridSize(gridAnim.current.now * factor);
+  const stepGridSize = (by: number) => {
+    const a = gridAnim.current;
+    const from = a.now;
+    const to = clampGridSize((a.raf ? a.target : a.now) * 1.25 ** by);
+    if (a.raf) cancelAnimationFrame(a.raf);
+    a.raf = 0;
+    a.target = to;
+    if (Math.abs(to - from) < 0.5) return;
+    const start = performance.now();
+    const frame = (t: number) => {
+      const k = Math.min(1, (t - start) / 150);
+      a.now = from + (to - from) * (1 - (1 - k) ** 3);
+      setGridSize(a.now);
+      a.raf = k < 1 ? requestAnimationFrame(frame) : 0;
+    };
+    a.raf = requestAnimationFrame(frame);
+    settleGridSize(to);
+  };
   // the import screen, over the editor until closed
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
@@ -490,6 +640,12 @@ export default function App() {
   }, [touring]);
   // what the right-hand panel shows: the adjustments, or the presets
   const [rightMode, setRightMode] = useState<RightMode>("adjust");
+  // the grid hides the right-hand panel: its tools work on the open photo,
+  // which the grid covers. Print stays, as the grid picks its sheet's photos
+  const rightOpen = layout.right && (!grid || rightMode === "print");
+  // in the grid the right-hand column holds Find, locked in place, in the tools' stead
+  const findLocked = grid && rightMode !== "print";
+  const [findFocus, setFindFocus] = useState(0);
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
@@ -600,8 +756,8 @@ export default function App() {
     return () => { window.clearTimeout(first); window.clearInterval(hourly); };
   }, []);
   useEffect(() => {
-    loadPresets().then(setPresets).catch((e) => setStatus(`presets: ${e}`));
-    loadLooks().then((l) => { looksRef.current = l; setLooks(l); }).catch((e) => setStatus(`looks: ${e}`));
+    loadPresets().then(setPresets).catch((e) => setStatus(t("app.status.presetsError", { error: e })));
+    loadLooks().then((l) => { looksRef.current = l; setLooks(l); }).catch((e) => setStatus(t("app.status.looksError", { error: e })));
   }, []);
   // the folder tree is read again when the window comes back, as folders
   // may have been made or moved meanwhile
@@ -623,9 +779,11 @@ export default function App() {
   }, []);
   // preview tiles for the presets panel, rendered while the engine is idle
   const [, setPreviewTick] = useState(0);
+  // a hover preview in progress: tile thumbnails wait for it
+  const presetHoverBusy = useRef(false);
   const previews = useRef<PreviewCache | null>(null);
   if (!previews.current)
-    previews.current = new PreviewCache(() => session.current?.idle ?? false, () => setPreviewTick((t) => t + 1));
+    previews.current = new PreviewCache(() => (session.current?.idle ?? false) && !presetHoverBusy.current, () => setPreviewTick((t) => t + 1));
   const wantedTiles = useRef<string[]>([]);
   const PREVIEW_SIZE = 220;
   // the film panel's tiles share the cache: only one of the two panels is on
@@ -724,7 +882,7 @@ export default function App() {
       setSpotSel(s.spots.length - 1);
       syncSpots();
     } catch (e) {
-      setStatus(`heal: ${e}`);
+      setStatus(t("app.status.healError", { error: e }));
     }
   };
   const editSpots = (next: Spot[], key: string) => {
@@ -770,7 +928,7 @@ export default function App() {
         setMaskTool(null);
       } else createShape(r);
     } catch (e) {
-      setStatus(`sample: ${e}`);
+      setStatus(t("app.status.sampleError", { error: e }));
     }
   };
   // a Parametric component: darktable's parametric mask, alone on a new mask
@@ -830,7 +988,7 @@ export default function App() {
       editParametric(k, { ...par.channels, [pickChan]: { ...cur, p, invert: wrap } }, "mask:range");
       setMaskTool(null);
     } catch (e) {
-      setStatus(`sample: ${e}`);
+      setStatus(t("app.status.sampleError", { error: e }));
     }
   };
   // the show picker's reading under the pointer: one request at a time,
@@ -872,16 +1030,16 @@ export default function App() {
     setAiBusy(true);
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
       const p = e.payload;
-      setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
-              : p.stage === "installing" ? "installing the AI model…" : working);
+      setStatus(p.stage === "downloading" ? t("app.status.modelDownload", { size: p.mb ?? "?" })
+              : p.stage === "installing" ? t("app.status.modelInstall") : working);
     });
     try {
       const paths = await withModel(model, () => { setStatus(working); return run(); });
       if (session.current !== s) setStatus("");
-      else if (!paths.length) setStatus("nothing found");
+      else if (!paths.length) setStatus(t("app.status.nothingFound"));
       else { done(paths); setStatus(""); }
     } catch (e) {
-      setStatus(session.current === s ? `AI mask: ${e}` : "");
+      setStatus(session.current === s ? t("app.status.aiMaskError", { error: e }) : "");
     } finally {
       stop();
       setAiBusy(false);
@@ -910,8 +1068,8 @@ export default function App() {
   const denoiseModel = async () => {
     const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
       const p = e.payload;
-      setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
-              : p.stage === "installing" ? "installing the AI model…" : "");
+      setStatus(p.stage === "downloading" ? t("app.status.modelDownload", { size: p.mb ?? "?" })
+              : p.stage === "installing" ? t("app.status.modelInstall") : "");
     });
     try {
       await commands.aiModelEnsure("rawdenoise-nind");
@@ -956,11 +1114,16 @@ export default function App() {
     void runInBackground(`AI Denoise: ${baseName(from)}`, async () => {
       const stop = await listen<{ stage: string; mb?: number }>("ai-model", (e) => {
         const p = e.payload;
-        setStatus(p.stage === "downloading" ? `downloading the AI model (${p.mb ?? "?"} MB), first use only…`
-                : p.stage === "installing" ? "installing the AI model…" : "");
+        setStatus(p.stage === "downloading" ? t("app.status.modelDownload", { size: p.mb ?? "?" })
+                : p.stage === "installing" ? t("app.status.modelInstall") : "");
       });
       try {
-        return await withModel("rawdenoise-nind", () => commands.aiDenoise(amount / 100));
+        return await withModel("rawdenoise-nind", () => commands.aiDenoise(from, amount / 100));
+      } catch (e) {
+        const code = String(e);
+        if (code === "cached-original") throw new Error(t("app.denoise.localOnly"));
+        if (code.startsWith("not-answering:")) throw new Error(t("app.denoise.notAnswering", { dir: code.slice(14) }));
+        throw e;
       } finally {
         stop();
       }
@@ -1123,7 +1286,7 @@ export default function App() {
       s.setShapes(name, m.shapes.map((x, i) => (i === k ? { ...x, paths, depth, feather } as Shape : x)));
       syncMasks();
     } catch (e) {
-      setStatus(`depth range: ${e}`);
+      setStatus(t("app.status.depthRangeError", { error: e }));
     }
   };
   const editShapes = (f: (shapes: Shape[]) => Shape[]) => {
@@ -1201,6 +1364,7 @@ export default function App() {
   const hoverCanvas = useRef<HTMLCanvasElement>(null);
   const [hoverShown, setHoverShown] = useState<"tiles" | "panel" | false>(false);
   const hoverToken = useRef(0);
+  const hoverFrom = useRef<"tiles" | "panel" | null>(null);
   const hoverTile = (key: string | null) => {
     const all = [...BUILTIN_PRESETS, ...presetsRef.current];
     const p = key?.startsWith("p:") ? all.find((q) => `p:${q.id}` === key) : null;
@@ -1219,10 +1383,14 @@ export default function App() {
                      render: (s: Session, size: number) => Promise<Frame> | null,
                      sharp: boolean) => {
     const token = ++hoverToken.current;
+    presetHoverBusy.current = !!from;
+    hoverFrom.current = from;
     if (!from) { setHoverShown(false); return; }
     window.setTimeout(async () => {
       const s = session.current;
-      if (!s || token !== hoverToken.current) return;
+      if (token !== hoverToken.current) return;
+      // no photo: release the flag set above, or previews stay held back
+      if (!s) { presetHoverBusy.current = false; return; }
       const { w, h } = viewport();
       // tiles stay small except film and paper tiles, which like a panel's
       // swatches (grain above all, whose look depends on the pixels) render
@@ -1235,14 +1403,17 @@ export default function App() {
         const r = render(s, size);
         const f = r && await track(r);
         const c = hoverCanvas.current;
-        if (!f || !c || token !== hoverToken.current) return;
+        if (token !== hoverToken.current) return;
+        if (!f || !c) { setHoverShown(false); presetHoverBusy.current = false; return; }
         c.width = f.width;
         c.height = f.height;
         perf.time("pixels.canvasUpload", () => c.getContext("2d")!.putImageData(new ImageData(f.pixels, f.width, f.height), 0, 0));
         placeLayers();
         setHoverShown(from);
+        presetHoverBusy.current = false;
       } catch {
-        // no preview: the image stays as it is
+        // no preview: hide the last one, the image stays as it is
+        if (token === hoverToken.current) { setHoverShown(false); presetHoverBusy.current = false; }
       }
     }, 250);
   };
@@ -1305,7 +1476,7 @@ export default function App() {
   };
   const storePresets = (next: Preset[]) => {
     setPresets(next);
-    savePresets(next).catch((e) => setStatus(`presets: ${e}`));
+    savePresets(next).catch((e) => setStatus(t("app.status.presetsError", { error: e })));
   };
   // sharing: a preset or a look to a file, or files' presets and looks in
   const safeName = (name: string) => name.replace(/[/\\:*?"<>|]+/g, "_");
@@ -1316,11 +1487,11 @@ export default function App() {
   };
   const exportPreset = async (p: Preset) => {
     await commands.exportPresetsExport(sharedPresets([p]), safeName(p.name), "Immage preset")
-      .then((saved) => { if (saved) setStatus(`exported "${p.name}"`); }, (e) => setStatus(`export preset: ${e}`));
+      .then((saved) => { if (saved) setStatus(t("app.status.exportedName", { name: p.name })); }, (e) => setStatus(t("app.status.exportPresetError", { error: e })));
   };
   const exportLook = async (l: Look) => {
     await commands.lookExport(l.path, safeName(l.name))
-      .then((saved) => { if (saved) setStatus(`exported "${l.name}"`); }, (e) => setStatus(`export look: ${e}`));
+      .then((saved) => { if (saved) setStatus(t("app.status.exportedName", { name: l.name })); }, (e) => setStatus(t("app.status.exportLookError", { error: e })));
   };
   const deleteLook = async (l: Look) => {
     try {
@@ -1329,7 +1500,7 @@ export default function App() {
       // it back on after the Before view needs the file
       if (session.current?.lookPath === l.path) session.current.lookPath = null;
       await reloadLooks();
-    } catch (e) { setStatus(`delete look: ${e}`); }
+    } catch (e) { setStatus(t("app.status.deleteLookError", { error: e })); }
   };
   const importShared = async () => {
     const got = await commands.sharedImport()
@@ -1343,15 +1514,15 @@ export default function App() {
         if (!more.length) throw new Error("it has no presets this version can use");
         added = [...added, ...more];
       } catch (e) {
-        failed.push(`preset file: ${e instanceof Error ? e.message : e}`);
+        failed.push(t("app.status.presetFileError", { error: e instanceof Error ? e.message : e }));
       }
     }
     if (added.length) storePresets([...presets, ...added]);
-    if (looksIn) await reloadLooks().catch((e) => failed.push(`looks: ${e}`));
-    const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
-    const done = [added.length && plural(added.length, "preset"), looksIn && plural(looksIn, "look")].filter(Boolean);
+    if (looksIn) await reloadLooks().catch((e) => failed.push(t("app.status.looksError", { error: e })));
+    const done = [added.length && t("app.status.importedPresetCount", { count: added.length, plural: added.length === 1 ? "" : "s" }),
+                  looksIn && t("app.status.importedLookCount", { count: looksIn, plural: looksIn === 1 ? "" : "s" })].filter(Boolean);
     if (done.length || failed.length)
-      setStatus([done.length && `imported ${done.join(" and ")}`, ...failed].filter(Boolean).join("; "));
+      setStatus([done.length && t("app.status.importedSummary", { items: done.join(t("app.status.conjunction")) }), ...failed].filter(Boolean).join("; "));
   };
   // the crop tool: while it is open the crop module is bypassed, so the
   // whole image shows under the rectangle, which is applied on Done
@@ -1371,24 +1542,27 @@ export default function App() {
   // WebKitGTK keeps the panel's scroll offset when its content shrinks (a
   // fold or Advanced closed) without clamping it: the top of the panel then
   // sits out of reach, with no scrollbar to bring it back. Clamp whenever a
-  // panel changes size
+  // panel changes size. The left column has the same flaw (History folded or
+  // started over left it blank below its cards, #41)
   useEffect(() => {
-    const el = panelsRef.current;
-    if (!el) return;
-    const clamp = () => {
-      const max = Math.max(0, el.scrollHeight - el.clientHeight);
-      if (el.scrollTop > max) el.scrollTop = max;
-    };
-    const ro = new ResizeObserver(clamp);
-    const watch = () => {
-      ro.disconnect();
-      ro.observe(el);
-      for (const c of el.children) ro.observe(c);
-    };
-    watch();
-    const mo = new MutationObserver(watch);
-    mo.observe(el, { childList: true });
-    return () => { ro.disconnect(); mo.disconnect(); };
+    const stops = [panelsRef.current, leftAside.current].map((el) => {
+      if (!el) return () => {};
+      const clamp = () => {
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (el.scrollTop > max) el.scrollTop = max;
+      };
+      const ro = new ResizeObserver(clamp);
+      const watch = () => {
+        ro.disconnect();
+        ro.observe(el);
+        for (const c of el.children) ro.observe(c);
+      };
+      watch();
+      const mo = new MutationObserver(watch);
+      mo.observe(el, { childList: true });
+      return () => { ro.disconnect(); mo.disconnect(); };
+    });
+    return () => stops.forEach((stop) => stop());
   }, []);
   // the key handler is installed once; it reaches the latest of this
   const pickToolRef = useRef<(t: MaskTool) => void>(() => {});
@@ -1439,7 +1613,7 @@ export default function App() {
     return true;
   };
   const showHealRef = useRef(() => {});
-  showHealRef.current = () => { if (rightMode !== "heal" || !layout.right) showRight("heal"); };
+  showHealRef.current = () => { if (rightMode !== "heal" || !rightOpen) showRight("heal"); };
   pickToolRef.current = pickMaskTool;
   const selMask = masks.find((m) => m.name === maskSel) ?? null;
   // a mask whose name the pointer rests on in the Masks panel: its overlay
@@ -1474,7 +1648,7 @@ export default function App() {
     const ranges = target?.shapes.filter(isRange) ?? [];
     if (!s || !f || !masksMode || (!maskShown && !peekMask && !refining) || !ranges.length) { setRangeMap(null); return; }
     let stale = false;
-    const t = window.setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       let stopped = false;
       while (!s.idle && !stale) {
         stopped = s.stopBase() || stopped;
@@ -1492,12 +1666,12 @@ export default function App() {
           setRangeFor(target!.name);
         }
       } catch (e) {
-        setStatus(`range map: ${e}`);
+        setStatus(t("app.status.rangeMapError", { error: e }));
       } finally {
         if (stopped) resumeBase();
       }
     }, 150);
-    return () => { stale = true; window.clearTimeout(t); };
+    return () => { stale = true; window.clearTimeout(timer); };
   }, [selMask, peekMask, values, look, masksMode, maskShown, refining]);
   // darktable's own mask, for the overlay of a refined mask: refinements
   // follow the photo's edges and detail, which the shapes cannot show.
@@ -1595,6 +1769,8 @@ export default function App() {
     const t = window.setTimeout(requestTiles, 700);
     return () => window.clearTimeout(t);
   }, [values, look, masks, tilesShown]);
+  // leaving the presets panel (mode change, crop, hidden) drops its hover
+  useEffect(() => { if (!tilesShown && hoverFrom.current === "tiles") hoverTile(null); }, [tilesShown]);
   const [cropRect, setCropRect] = useState<CropRect>(FULL);
   const [cropAspect, setCropAspect] = useState("original");
   const [cropPortrait, setCropPortrait] = useState(false);
@@ -1873,6 +2049,8 @@ export default function App() {
       // a <select>'s native menu takes the pointer on macOS: its pointerup
       // never reaches the page, so a drag begun there would never end
       if ((e.target as Element).closest?.("select")) return;
+      // a panel's eye held is a look, not a drag: its frames are final ones
+      if ((e.target as Element).closest?.("[data-panel-peek]")) return;
       if (e.button === 0 && (e.target as Element).closest?.(DRAG_AREAS)) dragging.current = true;
     };
     const wheel = (e: WheelEvent) => {
@@ -2138,7 +2316,7 @@ export default function App() {
   const boxZoneObject = (prompt: ObjectPrompt) => {
     setZoneBoxing(false);
     const kind = nextObjectKind(zoneObjects);
-    if (!kind) { setStatus("no more objects on this photo"); return; }
+    if (!kind) { setStatus(t("app.status.noMoreObjects")); return; }
     const invert = zonePart?.invert ?? false;
     void runAi("mask-object-sam21-small", "finding the object…",
       () => commands.aiObject(prompt.points ?? [], prompt.box ?? null, null, null).then((r) => r as ObjectShape["paths"]),
@@ -2156,7 +2334,7 @@ export default function App() {
     let name = zoneMaskOf(r)?.name;
     const want = zoneMaskName(r, zonePart);
     const paths = zonePart ? partPaths(zonePart.kind) : null;
-    if (!name && zonePart && !paths) { setStatus("choose the part of the photo again"); return; }
+    if (!name && zonePart && !paths) { setStatus(t("app.status.choosePhotoPart")); return; }
     record([`mask:${name ?? want}:${what}`]);
     if (!name) {
       name = s.masks.some((m) => m.name === want) ? nextMaskName(s.masks, want) : want;
@@ -2445,11 +2623,11 @@ export default function App() {
     try { f(); } finally { holdRecord.current = false; }
   };
   const applyAutoTone = (px: Uint8ClampedArray, width: number, height: number) => {
-    const t = tonePending.current;
+    const pending = tonePending.current;
     tonePending.current = null;
-    if (!t || t.s !== session.current) return;
-    const v = autoTone(px, width, height, t.key);
-    if (!v) { setStatus("auto: nothing to measure"); return; }
+    if (!pending || pending.s !== session.current) return;
+    const v = autoTone(px, width, height, pending.key);
+    if (!v) { setStatus(t("app.status.autoNothingToMeasure")); return; }
     // part of the step Auto began
     quietly(() => changeMany(Object.entries(v)));
   };
@@ -2470,7 +2648,7 @@ export default function App() {
       const { exposure, ...key } = autoExposure(s.values.exposure, z);
       if (exposure !== s.values.exposure) quietly(() => changeMany([["exposure", exposure]]));
       let range: [string, number][] = [];
-      if (s.values.tm_mode === 1) {
+      if (agxRuns(s.values)) {
         await s.settled();
         if (gone()) return;
         const r = await commands.agxAuto();
@@ -2493,7 +2671,7 @@ export default function App() {
       }
     } catch (e) {
       tonePending.current = null;
-      if (!gone()) setStatus(`auto: ${e}`);
+      if (!gone()) setStatus(t("app.status.autoError", { error: e }));
     }
   };
 
@@ -2667,7 +2845,7 @@ export default function App() {
     if (!next || settled || t.round >= 4) {
       wbTarget.current = null;
       if (!next && t.round === 0) {
-        setStatus(t.at ? "pick a lighter spot, not a clipped or black one" : "no usable colors for auto");
+        setStatus(t.at ? translate("app.status.pickLighterSpot") : translate("app.status.noUsableColors"));
         return;
       }
       if (t.anchor) {
@@ -2739,7 +2917,6 @@ export default function App() {
                         end: { x: number; y: number } | null; asked: View | null }>(
     { raf: null, target: 0, zoom: "fit", settleAt: 0, anchor: null, end: null, asked: null });
   // the share of the way left that one frame eases: half the frames 0.3 took
-  const ZOOM_EASE = 1 - 0.7 * 0.7;
 
   // the view's center that keeps the anchor under its screen point at zoom z
   const anchoredCenter = (an: Anchor, z: number) => {
@@ -2775,8 +2952,7 @@ export default function App() {
     }
     if (running) return;
     const step = () => {
-      let zz = viewZ.current + (a.target - viewZ.current) * ZOOM_EASE;
-      if (Math.abs(a.target - zz) < a.target * 0.002) zz = a.target;
+      const zz = easeZoom(viewZ.current, a.target);
       viewZ.current = zz;
       if (a.zoom === "fit") {
         center.current = { x: center.current.x + (0.5 - center.current.x) * ZOOM_EASE,
@@ -2840,6 +3016,7 @@ export default function App() {
 
   // Refreshes must not restore thumbnails while their Trash job runs.
   const pendingDeletes = useRef(new Set<(image: ImageEntry) => boolean>());
+  const folderEdits = useRef(new Set<FolderEdits<ImageEntry>>());
   const updateImages = (next: ImageEntry[]) => {
     next = next.filter((image) => ![...pendingDeletes.current].some((gone) => gone(image)));
     imagesRef.current = next;
@@ -2849,6 +3026,7 @@ export default function App() {
   };
   // one photo's fields, in the filmstrip and in the open photo's kept cell
   const patchImage = (imgid: number, fields: Partial<ImageEntry>) => {
+    for (const edits of folderEdits.current) edits.patch(imgid, fields);
     updateImages(imagesRef.current.map((i) => (i.imgid === imgid ? { ...i, ...fields } : i)));
     setOpenCell((c) => (c?.imgid === imgid ? { ...c, ...fields } : c));
   };
@@ -2858,8 +3036,8 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
     try {
       const v = settings.get(`immage.${id}.open`);
-      return id === "folders" || id === "immich" ? v !== "0" : v === "1";
-    } catch { return id === "folders" || id === "immich"; }
+      return id === "folders" ? v !== "0" : v === "1";
+    } catch { return id === "folders"; }
   })));
   // focus mode and ⌥ as for the right panel's panels (togglePanel)
   const toggleLeft = (id: LeftCard, alt = false) => setLeftOpen((old) => {
@@ -2883,8 +3061,10 @@ export default function App() {
   const shownGen = useRef(0);
   const showFolder = async (dir: string, again = false,
                             seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
+    window.clearTimeout(immichTimer.current);
     setImmich(null);
-    immichToken.current++;
+    setImageQuery(null);
+    combined.current?.cancel();
     setFolder(dir);
     saveLibrary({ current: dir });
     if (!again) {
@@ -2892,6 +3072,10 @@ export default function App() {
       loader.current!.clear();
       // a new folder starts unfiltered: one left on Rejected only looked empty
       setFilter(NO_FILTER);
+      // and the search half back to this folder, so the stars and ticks filter it live
+      const fs = folderSearch(immichFormRef.current);
+      immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
+      showSkip(false);
       // the last folder's photos go at once: listing a folder on a network
       // share can take seconds before its first batch
       updateImages([]);
@@ -2900,6 +3084,8 @@ export default function App() {
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
+    const edits = new FolderEdits<ImageEntry>();
+    folderEdits.current.add(edits);
     try {
       setReading({ done: 0, total: 0, files, listed, known });
       const list = await openFolder(dir, includeSubRef.current, [...hiddenRef.current], (batch, done, total, all, last) => {
@@ -2914,16 +3100,16 @@ export default function App() {
           files = all;
           listed = true;
         }
-        got = byCaptureTime([...got, ...batch]);
+        got = byCaptureTime(edits.apply([...got, ...batch]));
         if (!again && batch.length) { updateImages(got); seen?.(got); }
         loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
       });
       if (immichRef.current) return list;
       setReading(null);
-      const sorted = byCaptureTime(list);
+      const sorted = byCaptureTime(edits.apply(list));
       updateImages(sorted);
-      setStatus(`${list.length} images`);
+      setStatus(t("app.status.photoCount", { count: list.length }));
       if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
       return sorted;
     } catch (e) {
@@ -2931,46 +3117,76 @@ export default function App() {
       if (String(e) === "superseded") return [];
       setReading(null);
       if (String(e).startsWith("Reading photos timed out")) {
-        setStatus(`error: ${e}`);
+        setStatus(t("app.status.error", { error: e }));
       } else if (!(await commands.pathExists(dir))) {
         updateImages([]);
         setFolderRefresh((n) => n + 1);
-        setStatus(`folder not found: ${dir}. it was moved or deleted outside Immage`);
-      } else setStatus(`error: ${e}`);
+        setStatus(t("app.status.folderNotFound", { path: dir }));
+      } else setStatus(t("app.status.error", { error: e }));
       return null;
+    } finally {
+      folderEdits.current.delete(edits);
     }
   };
 
-  // an Immich search into the filmstrip; `more` adds its next page. a newer
-  // search, or a folder opened, drops what an older one brings back
-  const immichToken = useRef(0);
-  const searchImmich = async (q: ImmichSearch, more = false) => {
-    const prev = immichRef.current;
-    if (more && (!prev?.next || prev.busy)) return;
-    const token = ++immichToken.current;
-    const after = more ? prev!.next : null;
-    if (!more) thumbError.current = false;
-    setImmich({ search: q, next: after, busy: true });
-    if (!more) {
-      loader.current!.clear();
-      setFilter(NO_FILTER);
-      setReading(null);
-      updateImages([]);
-      setGrid(true);
-    }
-    try {
-      const page = await searchImmichPage(q, after);
-      if (token !== immichToken.current) return;
-      const list = more ? [...imagesRef.current, ...page.entries] : page.entries;
+  type SearchQuery = { form: ImmichSearch; filters: Filter; folder: string; recursive: boolean; imageVariant?: string };
+  const combined = useRef<ReturnType<typeof createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>> | null>(null);
+  if (!combined.current) combined.current = createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>({
+    sources: {
+      local: (q, next, signal) => localSearch(q.form, q.filters, q.folder, q.recursive, next, signal, q.imageVariant, [...pendingSearchMetadata.current]),
+      immich: async (q, next, signal) => {
+        const page = await searchImmichPage(q.form, next);
+        if (signal.aborted) throw new Error("Search cancelled");
+        const f = q.filters;
+        return { items: remoteFieldsKnown(f) ? page.entries.filter(i => passes(i, f)) : [], next: page.next };
+      },
+    },
+    verifiedIdentity: searchIdentity,
+    restartOn: (source, error) => source === "local" && indexChanged(error),
+    onUpdate: state => {
+      const q = state.query as SearchQuery | null;
+      if (!q) return;
+      const sources = Object.entries(state.sources);
+      const busy = sources.some(([, v]) => v.status === "searching");
+      const next = sources.some(([, v]) => v.next) ? "more" : null;
+      const list = preserveSearchEntries(state.results.map(r => r.item), imagesRef.current);
       updateImages(list);
-      loader.current!.request(page.entries.map((i) => i.imgid));
-      setImmich({ search: q, next: page.next, busy: false });
-      setStatus(`${list.length.toLocaleString()}${page.next ? "+" : ""} photos from Immich`);
-    } catch (e) {
-      if (token !== immichToken.current) return;
-      setImmich({ search: q, next: null, busy: false });
-      setStatus(`Immich: ${e}`);
+      loader.current?.request(list.map(i => i.imgid));
+      setImmich({ search: q.form, next, busy });
+      const errors = sources.filter(([, v]) => v.error).map(([name, v]) => `${name}: ${indexChanged(v.error) ? t("app.status.searchIndexChanged") : String(v.error)}`);
+      setStatus(t("app.status.searchResults", { count: list.length.toLocaleString(), more: next ? "+" : "", busy: busy ? t("app.status.searchBusy") : "", errors: errors.length ? t("app.status.searchErrors", { errors: errors.join("; ") }) : "" })
+        + (skipRef.current && skippedNote(reach(q.form, !!immichBaseRef.current)) ? ` ${t(skippedNote(reach(q.form, !!immichBaseRef.current))!)}` : ""));
+    },
+  });
+  useEffect(() => () => combined.current?.cancel(), []);
+  const searchImmich = async (q: ImmichSearch, more = false, imageVariant?: string, filters?: Filter) => {
+    if (more) {
+      await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
+      return;
     }
+    if (!imageVariant) setImageQuery(null);
+    thumbError.current = false;
+    loader.current!.clear();
+    setReading(null);
+    setGrid(true);
+    // Immich not available: the local part only (reach.skipped)
+    const avail = !!immichBaseRef.current;
+    const enabled: ("local" | "immich")[] = !avail || q.source === "local" ? ["local"]
+      : q.source === "immich" ? ["immich"] : ["local", "immich"];
+    const f = filters ?? filterRef.current;
+    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
+  };
+
+  const showSimilar = async (hit: ImageEntry) => {
+    try {
+      const variant = hit.localIndex?.variantId ?? await commands.localSearchSeed(hit.path, hit.version ?? 0);
+      if (!variant) throw new Error("This photo has not been indexed yet");
+      const q = similarSearch(immichFormRef.current);
+      immichFormRef.current = q; setImmichForm(q); storeSearch(q);
+      window.clearTimeout(immichTimer.current);
+      setImageQuery(hit.filename);
+      await searchImmich(q, false, variant);
+    } catch (e) { setStatus(t("app.status.similarPhotosError", { error: e })); }
   };
 
   // a photo picked in the filmstrip. an Immich result opens the external
@@ -2985,7 +3201,7 @@ export default function App() {
     // never reached the cell and the open photo had no cell
     if (resolving.current.has(i.imgid)) return;
     resolving.current.add(i.imgid);
-    setStatus(i.remote?.localPath ? "opening…" : "downloading the original from Immich…");
+    setStatus(i.remote?.localPath ? t("app.status.immichOpening") : t("app.status.immichDownloading"));
     try {
       const r = await resolve(i);
       await openFile(r.path);
@@ -3000,7 +3216,7 @@ export default function App() {
       setSelection(new Set([s.imgid]));
       loader.current!.request([s.imgid], true);
     } catch (e) {
-      setStatus(`Immich: ${e}`);
+      setStatus(t("app.status.immichError", { error: e }));
     } finally {
       resolving.current.delete(i.imgid);
     }
@@ -3073,6 +3289,7 @@ export default function App() {
   // the importer's Immich buttons open Preferences there; stable, as the
   // importer keeps it
   const openImmichPrefs = useCallback(() => setPrefsOpen("immich"), []);
+  const openEditingMode = useCallback(() => setPrefsOpen("general"), []);
   // an import landed: its destination joins the library (or the listed
   // folder holding it opens down to it), so the new folders show
   const importDone = (r: ImportResult) => {
@@ -3103,7 +3320,7 @@ export default function App() {
     const list = await showFolder(dir);
     if (!list) return;
     if (list.some((i) => i.path === path)) await openFile(path);
-    else setStatus(`not a photo Immage can open: ${path}`);
+    else setStatus(t("app.status.notOpenable", { path }));
   };
 
   // files dragged onto the window from Finder or Explorer: folders join the
@@ -3192,7 +3409,7 @@ export default function App() {
       // nothing more goes to an engine that is gone
       session.current?.abandon();
       restoreGen.current++;
-      setStatusRaw("Restarting the engine…");
+      setStatus(t("app.status.engineRestarting"));
     }
     if (e.state === "failed") quietUntil.current = 0;
     const r = engineStep(engine.current, e, now);
@@ -3206,12 +3423,15 @@ export default function App() {
     // a newer death or restart took over
     const stale = () => gen !== restoreGen.current;
     if (!l) { quietUntil.current = performance.now() + 3000; return; }
-    setStatusRaw("Restarting the engine…");
+    setStatus(t("app.status.engineRestarting"));
     // every image id the page holds is of the old library
     setSelection(new Set());
     setCompare(null);
     try {
-      if (l.search) await searchImmich(l.search);
+      if (l.search) {
+        showSkip(reach(l.search, !!immichBaseRef.current).skipped);
+        await searchImmich(l.search);
+      }
       else if (l.folder) {
         await showFolder(l.folder);
         // a new folder starts unfiltered; this is the same one, read again
@@ -3237,14 +3457,14 @@ export default function App() {
         if (reopened && l.before) setBefore(true);
       } else if (plan.refused) {
         await closePhoto();
-        setStatusRaw(`The engine stopped again while opening ${baseName(plan.refused)}. It was not reopened.`);
+        setStatus(t("app.status.engineStoppedAgain", { name: baseName(plan.refused) }));
       }
       if (plan.reopen) {
-        if (reopened) setStatusRaw("The engine restarted. The photo was reopened from its last save; undo history was cleared.");
-      } else if (!plan.refused) setStatusRaw("The engine restarted.");
+        if (reopened) setStatus(t("app.status.engineRestartedReopened"));
+      } else if (!plan.refused) setStatus(t("app.status.engineRestarted"));
     } catch (e) {
       if (stale()) return;
-      setStatusRaw(`The engine restarted, but the library could not be read again: ${e}`);
+      setStatus(t("app.status.engineRestartLibraryError", { error: e }));
     }
     lost.current = null;
     quietUntil.current = performance.now() + 3000;
@@ -3293,7 +3513,7 @@ export default function App() {
           addPathToLibrary(dir);
           return showFolder(dir);
         }).then((list) => { if (list?.[0]) void openFile(list[0].path); })
-          .catch((e) => setStatus(`sample photo: ${e}`));
+          .catch((e) => setStatus(t("app.status.samplePhotoError", { error: e })));
         return;
       }
       void restoreLast(lib);
@@ -3306,6 +3526,10 @@ export default function App() {
   // leaves its folder's grid, and a folder that cannot be read the grid of
   // the last one read that can, rather than an empty viewer
   const restoreLast = async (lib: Library) => {
+    // Browse immediately; only a rendered photo can replace this startup
+    // grid. An open can fail after setting current, or before its first frame.
+    autoGrid.current = true;
+    setGrid(true);
     const dirs = [...new Set([lib.current, ...(lib.recent ?? []), ...lib.folders])].filter((d): d is string => !!d);
     for (const dir of dirs) {
       const want = dir === lib.current && !lib.grid ? lib.image : null;
@@ -3315,7 +3539,11 @@ export default function App() {
       const tryOpen = (list: ImageEntry[]) => {
         // not over a photo picked while the folder is read
         const last = want && !opened.p && !currentRef.current ? pick(list) : undefined;
-        if (last) opened.p = openFile(last.path, last.imgid);
+        if (last) opened.p = openFile(last.path, last.imgid, false, () => {
+          if (shownGen.current !== gen || !isOpen(last, currentRef.current)) return;
+          autoGrid.current = true;
+          setGrid(false);
+        });
       };
       const shown = showFolder(dir, false, tryOpen);
       const gen = shownGen.current;
@@ -3325,11 +3553,7 @@ export default function App() {
       if (!list) continue;
       tryOpen(list);
       if (opened.p && await opened.p) return;
-      if (lib.current && dir !== lib.current) setStatus(`could not read ${lib.current}; showing ${dir}`);
-      if (!currentRef.current && !gridRef.current) {
-        autoGrid.current = true;
-        setGrid(true);
-      }
+      if (lib.current && dir !== lib.current) setStatus(t("app.status.couldNotReadFolder", { old: lib.current, current: dir }));
       return;
     }
   };
@@ -3370,6 +3594,9 @@ export default function App() {
   // follows once its open finishes and a quick second click would find it stale
   const pickAnchor = useRef<number | null>(null);
   const pickPhoto = (i: ImageEntry, e: React.MouseEvent) => {
+    // Secondary-button clicks belong to the context menu and must not change
+    // selection before showFileMenu captures its targets.
+    if (e.button !== 0) return;
     const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
     if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
@@ -3399,22 +3626,106 @@ export default function App() {
   const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
     patchImage(imgid, fields);
     try {
-      await commands.metaSet(imgid, fields as { [key in string]: Value });
+      const saved = commands.metaSet(imgid, fields as { [key in string]: Value });
+      pendingSearchMetadata.current.add(saved);
+      try { await saved; } finally { pendingSearchMetadata.current.delete(saved); }
     } catch (e) {
-      setStatus(`error: ${e}`);
+      setStatus(t("app.status.error", { error: e }));
     }
   };
 
   // Hide confirmed deletions immediately while the Trash job runs. The
   // open photo moves on to the next one first, so the engine is not left
   // writing a sidecar beside a file in the Trash
+  // the open photo, about to go from its folder: the next one that stays
+  // opens instead, or none
+  const leavePhoto = async (gone: (i: ImageEntry) => boolean) => {
+    const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
+    const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
+      .find((i) => !gone(i));
+    if (next) {
+      if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
+    } else await closePhoto();
+  };
+  // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
+  // what moving them there would do, for the confirmation
+  const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
+    if (!list.length || moveDialog) return;
+    const req: MoveRequest = {
+      sources: list.map((i) => (isRemote(i) && i.remote
+        ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
+        : { imgid: i.imgid, asset: null, assetPath: null })),
+      dest, map: list.some(isRemote) ? await pathMap() : null,
+    };
+    setMoveDialog({ list, req, copy, plan: null, error: null });
+    try {
+      const plan = await commands.movePlan(req);
+      setMoveDialog((d) => (d?.req === req ? { ...d, plan } : d));
+    } catch (e) {
+      setMoveDialog((d) => (d?.req === req ? { ...d, error: String(e) } : d));
+    }
+  };
+  // the confirmed move or copy, as a background job. a move hides the
+  // photos at once, leaving the open one first so the engine writes no
+  // sidecar beside a file that is going; the folder is read again for any
+  // that stayed
+  const confirmMove = async (copy: boolean, keepBoth: string[]) => {
+    const d = moveDialog;
+    setMoveDialog(null);
+    if (!d?.plan) return;
+    const { list, req, plan } = d;
+    const dest = req.dest, name = baseName(dest) || dest;
+    const files = new Set(list.filter((i) => !isRemote(i)).map((i) => i.path));
+    const gone = (i: ImageEntry) => !isRemote(i) && files.has(i.path);
+    const dir = folderRef.current;
+    const moving = !copy && files.size > 0;
+    if (moving) {
+      const cur = imagesRef.current.find((i) => isOpen(i));
+      pendingDeletes.current.add(gone);
+      updateImages(imagesRef.current);
+      try {
+        if (cur && gone(cur)) await leavePhoto(gone);
+      } catch (e) {
+        pendingDeletes.current.delete(gone);
+        if (dir && folderRef.current === dir && !immichRef.current) await showFolder(dir, true);
+        setStatus(t("app.status.moveError", { error: e }));
+        return;
+      }
+    }
+    const units = plan.units.filter((u) => u.clash !== "here").length;
+    const summarize = (r: MoveSummary) => {
+      const n = r.done.length;
+      const parts = [`${moving ? "Moved" : "Copied"} ${n === 1 ? r.done[0] : `${n} photos`} to ${name}`];
+      if (r.skipped.length) parts.push(`${r.skipped.length} skipped`);
+      if (r.cancelled) parts.push("stopped");
+      if (r.failed.length) parts.push(`${r.failed.length} failed (${r.failed[0].name}: ${r.failed[0].error})`);
+      if (r.warnings.length) parts.push(r.warnings[0]);
+      return { text: parts.join(", "), ok: !r.failed.length && !r.warnings.length,
+               action: { label: "Show", run: () => { void showFolder(dest); setGrid(true); } } };
+    };
+    const r = await runMove(moving ? `Moving to ${name}` : `Copying to ${name}`, units,
+                            (job) => commands.moveFiles(job, req, !moving, keepBoth), summarize,
+                            moving ? "Move failed" : "Copy failed");
+    pendingDeletes.current.delete(gone);
+    // what the filmstrip shows again: photos that stayed, or the new ones
+    const now = folderRef.current;
+    if (!now || immichRef.current) return;
+    const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
+    const arrived = now === dest || (includeSubRef.current && within(dest, now));
+    if (stayed || arrived) await showFolder(now, true);
+  };
   const deleteRejected = async (list: ImageEntry[]) => {
     if (!list.length) return;
-    const n = list.length, photos = n === 1 ? `"${list[0].filename}"` : `${n} rejected photos`;
+    const n = list.length;
+    // a network share has no Trash: those photos are deleted outright, so say so first
+    const flags = await commands.onNetworkShare(list.map((i) => i.path)).catch(() => []);
+    const network = list.filter((_, k) => flags[k]).length;
     // named, so a wrong selection shows before anything moves
-    const names = list.slice(0, 8).map((i) => i.filename).join("\n") + (n > 8 ? `\n…and ${n - 8} more` : "");
-    const ok = await ask(`Move ${photos} to the ${TRASH}? ${n === 1 ? "Its sidecar goes" : "Their sidecars go"} too.\n\n${names}`,
-                         { title: "Delete rejected photos", kind: "warning", okLabel: `Move to ${TRASH}` });
+    const names = list.slice(0, 8).map((i) => i.filename).join("\n") + (n > 8 ? "\n" + t("app.deleteRejected.more", { n: n - 8 }) : "");
+    const kind = network === 0 ? "trash" : network === n ? "allNetwork" : "someNetwork";
+    const ok = await ask(t(`app.deleteRejected.${kind}`, { n, name: list[0].filename, network, trash: TRASH, names }),
+                         { title: t("app.deleteRejected.title"), kind: "warning",
+                           okLabel: network === 0 ? t("app.deleteRejected.moveLabel", { trash: TRASH }) : t("app.deleteRejected.deleteLabel") });
     if (!ok) return;
     // an original takes its virtual copies with it; a copy goes alone
     const ids = new Set(list.map((i) => i.imgid)), files = new Set(list.filter((i) => !i.copy).map((i) => i.path));
@@ -3424,21 +3735,17 @@ export default function App() {
     pendingDeletes.current.add(gone);
     updateImages(imagesRef.current);
     try {
-      if (cur && gone(cur)) {
-        const shownNow = shownRef.current, at = shownNow.findIndex((i) => isOpen(i));
-        const next = [...shownNow.slice(at + 1), ...shownNow.slice(0, Math.max(0, at)).reverse()]
-          .find((i) => !gone(i));
-        if (next) {
-          if (!await openFile(next.path, next.imgid)) throw new Error("could not leave the open photo");
-        } else await closePhoto();
-      }
+      if (cur && gone(cur)) await leavePhoto(gone);
       await commands.trashFiles(list.map((i) => i.imgid));
-      setStatus(`moved ${n === 1 ? list[0].filename : `${n} photos`} to the ${TRASH}`);
+      const items = (count: number) => (n === 1 ? list[0].filename : t("app.status.photoCount", { count }));
+      setStatus(network === 0 ? t("app.status.movedToTrash", { items: items(n), trash: TRASH })
+        : network === n ? t("app.status.deletedFromNetwork", { items: items(n) })
+        : t("app.status.deletedMixed", { moved: items(n - network), deleted: items(network), trash: TRASH }));
     } catch (e) {
       // Re-read disk: a failed batch may already have moved some files.
       pendingDeletes.current.delete(gone);
       if (dir && folderRef.current === dir && !immichRef.current) await showFolder(dir, true);
-      setStatus(`delete: ${e}`);
+      setStatus(t("app.status.deleteError", { error: e }));
     } finally {
       pendingDeletes.current.delete(gone);
     }
@@ -3458,14 +3765,14 @@ export default function App() {
         updateImages([...all.slice(0, last + 1), copy, ...all.slice(last + 1)]);
         made = copy;
       } catch (e) {
-        setStatus(`virtual copy: ${e}`);
+        setStatus(t("app.status.virtualCopyError", { error: e }));
         break;
       }
     }
     if (!made) return;
     setSelection(new Set([made.imgid]));
     await openFile(made.path, made.imgid);
-    setStatus(`made virtual copy ${made.version} of ${made.filename}`);
+    setStatus(t("app.status.virtualCopyMade", { version: made.version, filename: made.filename }));
   };
   const createCopiesRef = useRef(createCopies);
   createCopiesRef.current = createCopies;
@@ -3481,15 +3788,16 @@ export default function App() {
       try {
         const trashed = await commands.removeVirtualCopy(c.imgid);
         gone.add(c.imgid);
-        if (trashed) problem = `the sidecar of ${c.filename} (copy ${c.version}) could not go to the ${TRASH}: ${trashed}`;
+        if (trashed) problem = t("app.status.sidecarTrashError", { filename: c.filename, version: c.version, trash: TRASH, error: trashed });
       } catch (e) {
-        problem = `remove virtual copy: ${e}`;
+        problem = t("app.status.virtualCopyRemoveError", { error: e });
         break;
       }
     }
     updateImages(imagesRef.current.filter((i) => !gone.has(i.imgid)));
-    setStatus(problem ?? (gone.size === 1 ? `removed virtual copy ${copies[0].version} of ${copies[0].filename}`
-      : `removed ${gone.size} virtual copies`));
+    setStatus(problem ?? (gone.size === 1
+      ? t("app.status.virtualCopyRemoved", { version: copies[0].version, filename: copies[0].filename })
+      : t("app.status.virtualCopiesRemoved", { count: gone.size })));
   };
 
   // no photo open: the last one was deleted
@@ -3531,7 +3839,7 @@ export default function App() {
       // TIFFs with the edit, beside each photo as Lightroom's "-Edit" files;
       // a result named from one is still named from its photo
       if (kind.send === "tiff" || (kind.send === "choice" && cfg.send === "tiff")) {
-        setStatus(`${cfg.name}: writing TIFFs…`);
+        setStatus(t("app.status.pluginWritingTiffs", { name: cfg.name }));
         send = [];
         for (const [path, t] of photos) {
           const r = await track(commands.exportImages(Date.now(),
@@ -3551,7 +3859,7 @@ export default function App() {
           look: cfg.look || null,
         });
         setWaiting((w) => [...w, { token, name: cfg.name, back: 0, total: 1, opened: false }]);
-        setStatus(`sent ${send.length} photos to ${cfg.name}`);
+        setStatus(t("app.status.pluginSentPhotos", { count: send.length, name: cfg.name }));
         return;
       }
       await commands.pluginWatch({
@@ -3566,9 +3874,9 @@ export default function App() {
         void commands.pluginCancel(token);
         throw e;
       }
-      setStatus(`sent ${send.length === 1 ? baseName(send[0]) : `${send.length} photos`} to ${cfg.name}`);
+      setStatus(t("app.status.pluginSentItems", { items: send.length === 1 ? baseName(send[0]) : t("app.status.photoCount", { count: send.length }), name: cfg.name }));
     } catch (e) {
-      setStatus(`${cfg.name}: ${e instanceof Error ? e.message : e}`);
+      setStatus(t("app.status.pluginFailedName", { name: cfg.name, message: e instanceof Error ? e.message : e }));
     }
   };
   // a file is back: shown beside its photo (open_folder puts it there), and
@@ -3596,16 +3904,13 @@ export default function App() {
         setWaiting((all) => all.filter((x) => x.token !== e.payload.token));
         if (!w) return;
         const { reason, message } = e.payload;
-        // Macro Studio's job (plugins.rs, plugin_job): a stack saved after
-        // the wait ends still comes back, the next time its folder is read
-        const later = "a stack saved there later still comes back";
         if (reason === "timeout")
-          setStatus(`${w.name}: stopped waiting after 3 hours; ${w.back} of ${w.total} came back`);
-        else if (reason === "startup") setStatus(`${w.name} did not start, or never took the photos`);
-        else if (reason === "stalled") setStatus(`${w.name} stopped responding; ${later}`);
-        else if (reason === "stopped") setStatus(`${w.name}: ${message || "stopped"}`);
-        else if (reason === "error" || reason === "protocol") setStatus(`${w.name}: ${message || "failed"}`);
-        else if (reason === "done" && !w.back) setStatus(`${w.name}: nothing was saved`);
+          setStatus(t("app.status.pluginTimeout", { name: w.name, back: w.back, total: w.total }));
+        else if (reason === "startup") setStatus(t("app.status.pluginStartup", { name: w.name }));
+        else if (reason === "stalled") setStatus(t("app.status.pluginStoppedResponding", { name: w.name }));
+        else if (reason === "stopped") setStatus(t("app.status.pluginFailedName", { name: w.name, message: message || t("app.status.stopped") }));
+        else if (reason === "error" || reason === "protocol") setStatus(t("app.status.pluginFailedName", { name: w.name, message: message || t("app.status.failed") }));
+        else if (reason === "done" && !w.back) setStatus(t("app.status.pluginNothingSaved", { name: w.name }));
       }),
     ];
     return () => { for (const off of offs) void off.then((f) => f()); };
@@ -3633,34 +3938,91 @@ export default function App() {
     commands.prefetch(ids).catch(() => {});
   };
 
+  // the open whose frames may paint: a closing photo's late frames are dropped
+  const frameOwner = useRef<object | null>(null);
+  // the new photo's grid or filmstrip thumbnail, fitted, in place of the last
+  // photo until its first frame arrives; blank when it has none
+  const showOpening = (id: number | null) => {
+    resetCanvases();
+    for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
+    const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
+    if (!sc) return;
+    sc.width = 0;
+    const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
+    if (!thumb?.width || w <= m || h <= m) return;
+    const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
+    sc.width = thumb.width;
+    sc.height = thumb.height;
+    sc.getContext("2d")!.drawImage(thumb, 0, 0);
+    placeCanvas(sc, thumb.width, thumb.height,
+      { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
+  };
   // `imgid` picks one of the file's versions (a virtual copy); without it,
   // the original. false when it did not open
-  const openFile = async (path: string, imgid: number | null = null, reload = false): Promise<boolean> => {
+  // opens run one at a time: a newer request replaces any still waiting, so
+  // only the latest click wins and two never interleave in the engine
+  const openGen = useRef(0);
+  const openChain = useRef<Promise<unknown>>(Promise.resolve());
+  const openFile = (path: string, imgid: number | null = null, reload = false,
+                    onFirstFrame?: () => void): Promise<boolean> => {
+    const gen = ++openGen.current;
+    const run = openChain.current.then(() => gen !== openGen.current && !reload
+      ? false : openFileNow(path, imgid, reload, onFirstFrame));
+    openChain.current = run.catch(() => false);
+    return run;
+  };
+  const openFileNow = async (path: string, imgid: number | null = null, reload = false,
+                             onFirstFrame?: () => void): Promise<boolean> => {
     if (pastingRef.current && !reload) return false;
     const id = imgid ?? imagesRef.current.find((i) => i.path === path && !i.copy)?.imgid ?? null;
     const cur = currentRef.current;
     if (!reload && session.current && cur && cur.path === path && (id === null || cur.imgid === id)) return true;
+    // a crop in progress is kept on the photo being left
+    if (!reload && croppingRef.current) leaveCrop(true);
+    // the old photo's pixels go before the first await, and its late frames
+    // are dropped: only the frames of this open may paint from here on
+    const token = {}, previousOwner = frameOwner.current;
+    frameOwner.current = token;
+    if (!reload) showOpening(id);
     if (!(await commands.pathExists(path))) {
-      setStatus(`file not found: ${baseName(path)}. it was moved or deleted outside Immage`);
+      // the photo that was open still is: its frames paint again, and the
+      // layers cleared above are drawn afresh
+      frameOwner.current = previousOwner;
+      if (!reload && session.current) {
+        baseStale.current = true;
+        overviewHash.current = null;
+        session.current.requestRender();
+      }
+      setStatus(t("app.status.fileNotFound", { path: baseName(path) }));
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
     }
+    const old = session.current;
+    let closed = false;
+    // the new session once opened, until session.current adopts it
+    let fresh: Session | undefined;
     try {
       if (session.current) {
         const o = session.current;
+        // Advanced modules only when Copy Settings ticks them: one more
+        // engine read on the way to the next photo
+        const advanced = loadCopyGroups().has("advanced") ? await o.copyAdvanced().catch(() => undefined) : undefined;
+        if (o.masks.length) await o.refreshMaskStates();
         previous.current = { values: { ...o.values }, look: { name: o.look, path: o.lookPath, amount: o.lookAmount },
-                             masks: structuredClone(o.masks) };
+                             masks: structuredClone(o.masks), advanced };
         await o.close();
+        closed = true;
       }
       setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
-      setStatus("opening…");
+      setStatus(t("app.status.opening"));
       const opening = { path, imgid: id };
       setCurrent(opening);
       currentRef.current = opening;
-      // masks, heal and zones belong to the last photo, so a new one opens on
-      // the adjustments; presets stay, for applying one photo after another
-      setRightMode((m) => (m === "presets" ? m : "adjust"));
+      // a photo opened (not a reload, paste or undo) starts on Adjust with only
+      // Basic open; presets stay, for applying one photo after another
+      if (reload) setRightMode((m) => (m === "presets" ? m : "adjust"));
+      else { setRightMode("adjust"); setOpenPanels(new Set(["basic"])); }
       // a new image opens fitted, as in Lightroom, with both layers cleared
       zoomRef.current = "fit";
       setZoomState("fit");
@@ -3673,22 +4035,16 @@ export default function App() {
       copyGen.current++;
       setCopyOn(false);
       overviewHash.current = null;
-      resetCanvases();
       baseStale.current = true;
-      for (const c of [baseCanvas.current, clipBase.current, copyCanvas.current, clipSharp.current]) if (c) c.width = 0;
-      // the photo's filmstrip thumbnail, fitted, until its first frame takes
-      // its place, rather than the last photo
-      const thumb = id !== null ? loader.current?.get(id) : undefined, sc = canvas.current;
-      if (thumb?.width && sc) {
-        const dpr = window.devicePixelRatio || 1, { w, h } = viewport(), m = 2 * MARGIN * dpr;
-        const z = Math.min((w - m) / thumb.width, (h - m) / thumb.height);
-        sc.width = thumb.width;
-        sc.height = thumb.height;
-        sc.getContext("2d")!.drawImage(thumb, 0, 0);
-        placeCanvas(sc, thumb.width, thumb.height,
-          { x: (w - z * thumb.width) / 2, y: (h - z * thumb.height) / 2, k: z }, dpr);
-      }
-      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, drawFrame, (e) => setStatus(`error: ${e}`))));
+      if (reload) showOpening(id);
+      const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
+        if (frameOwner.current !== token) return;
+        drawFrame(f);
+        const ready = onFirstFrame;
+        onFirstFrame = undefined;
+        ready?.();
+      }, (e) => setStatus(t("app.status.error", { error: e })))));
+      fresh = s;
       // the engine's id, for a photo opened by its file alone
       const opened = { path, imgid: s.imgid };
       setCurrent(opened);
@@ -3698,6 +4054,7 @@ export default function App() {
       setOpenCell(entry);
       saveLibrary({ image: path, version: imagesRef.current.find((i) => i.imgid === s.imgid)?.version ?? 0 });
       s.onThumb = (f) => {
+        if (frameOwner.current !== token) return;
         perf.drawStart(f.trace);
         try { showOverview(f); } finally { perf.drawEnd(); }
         baseLowRes.current = false;
@@ -3825,13 +4182,6 @@ export default function App() {
         s.setMany([["tm_mode", 1]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
-      // and a raw with the profile chosen in Preferences
-      const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && raw && profile !== 0 && s.values.profile !== profile) {
-        s.setMany(Object.entries(profileSelection(profile)));
-        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
-                    label: "profile", enabled: true });
-      }
       // and a raw with Preferences' exposure compensation, on an instance of
       // its own (exp_comp), so Exposure still reads 0 and adds to it
       const comp = loadExposureCompNew();
@@ -3856,10 +4206,24 @@ export default function App() {
         ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw()) : null;
       if (preset && presetVals) {
         s.setMany(Object.entries({ ...presetVals, ...plugin?.values }));
-        setStatus(`new photo: applied "${preset.name}"`);
+        setStatus(t("app.status.newPhotoPreset", { name: preset.name }));
         base.push({ op: "preset", name: preset.name, label: "new photos preset", enabled: true });
       } else if (plugin && Object.keys(plugin.values).length) {
         s.setMany(Object.entries(plugin.values));
+      }
+      // and a raw with the profile chosen in Preferences, over the preset's
+      // AgX Default (0) included: it puts back a profile the preset set
+      const profile = loadNewPhotosProfile();
+      if (!s.wasEdited && raw && s.values.profile !== profile) {
+        s.setMany(Object.entries(profileSelection(profile)));
+        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
+                    label: "profile", enabled: true });
+      }
+      // and its lens correction method, once the preset has set the corrections
+      const lensMethod = !s.wasEdited && raw ? newPhotoLensMethod(s, loadNewPhotosLensMethod()) : null;
+      if (lensMethod !== null) {
+        s.setMany([["lens_method", lensMethod]]);
+        base.push({ op: "lens", name: lensMethod ? "lensfun" : "embedded", label: "lens method", enabled: true });
       }
       if (back && plugin) {
         back.applied = true;
@@ -3884,7 +4248,24 @@ export default function App() {
       }
       return true;
     } catch (e) {
-      setStatus(`error: ${e}`);
+      // opened but never adopted (a throw before session.current = s): drop
+      // it, stopping its save timer and render loop. not close(): that asks
+      // for one more render of the photo that failed, and nothing was edited
+      if (fresh && session.current !== fresh) fresh.abandon();
+      // the engine closes the old photo before it opens the next, so a failed
+      // open leaves none: drop the old session rather than send it edits
+      if (closed && old && session.current === old) {
+        old.abandon();
+        session.current = null;
+        currentRef.current = null;
+        setCurrent(null);
+        setOpenCell(null);
+        setValues({});
+        resetCanvases();
+        for (const c of [canvas.current, baseCanvas.current, navThumb.current, clipBase.current, clipSharp.current]) if (c) c.width = 0;
+      }
+      // named the same whether or not an older photo was open
+      setStatus(t("app.status.openFailed", { filename: baseName(path), error: e }));
       return false;
     }
   };
@@ -3896,11 +4277,15 @@ export default function App() {
   type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
-                modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean } };
+                modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
+                // Advanced cards' instances, as their fields stood, and the
+                // user's instances (null before Advanced mode listed them)
+                advanced: Map<string, AdvancedState>; instances: InstanceEntry[] | null };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
-    modules: new Map(s.moduleStates), deleted: new Set(s.deleted),
+    modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
+    instances: s.instanceLayout(),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -3913,6 +4298,18 @@ export default function App() {
   // the History panel follows the stack, which is kept outside React
   const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
+  // Simple: per group, the Advanced edits its sliders cannot show, read
+  // again after each history change (a photo opened, undo, a paste)
+  const [advancedEditCounts, setAdvancedEditCounts] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    const s = session.current;
+    if (editMode !== "simple" || !s) { setAdvancedEditCounts(new Map()); return; }
+    let live = true;
+    void s.settled().then(() => commands.instances())
+      .then((list) => { if (live && session.current === s) setAdvancedEditCounts(advancedEdits(list)); })
+      .catch(() => { /* the photo closed meanwhile */ });
+    return () => { live = false; };
+  }, [editMode, historyRev]);
   const record = (ids: string[], label?: string) => {
     const s = session.current;
     if (!s || holdRecord.current) return;
@@ -3946,14 +4343,20 @@ export default function App() {
     if (target.lookAmount !== s.lookAmount) s.setLookAmount(target.lookAmount);
     setLookAmount(target.lookAmount);
     setMasksTo(target.masks);
+    // the instances themselves, which the pump makes or deletes before it
+    // sends any state for them
+    s.restoreInstances(target.instances);
     // after the values, which Session.pump sends first. an instance whose
     // reply is still to come is restored whatever it holds
     for (const key of s.touched) {
       const want = target.modules.get(key), now = s.moduleStates.get(key);
       if (now && JSON.stringify(want ?? null) === JSON.stringify(now)) continue;
-      const h = s.history.find((x) => instanceKey(x) === key);
+      // an Advanced card's instance may be missing from the history read at
+      // open; any other key is restored only from that history, as before
+      const h = s.history.find((x) => instanceKey(x) === key) ?? s.advanced.get(key);
       if (h) s.setModuleState(h, { restore: want ?? "opened" });
     }
+    s.restoreAdvanced(target.advanced);
     s.deleted = new Set(target.deleted);
     if (JSON.stringify(target.spots) !== JSON.stringify(s.spots)) {
       s.setSpots(target.spots);
@@ -3988,12 +4391,19 @@ export default function App() {
     syncMasks();
     if (!target.some((t) => t.name === maskSel)) setMaskSel(target[0]?.name ?? null);
   };
-  const copySettings = (on: Set<string>) => {
+  const copySettings = async (on: Set<string>) => {
     const s = session.current;
     if (!s) return;
-    clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks);
+    let advanced;
+    try {
+      advanced = on.has("advanced") ? await s.copyAdvanced() : undefined;
+      if (on.has("masks") && s.masks.length) await s.refreshMaskStates();
+    }
+    catch (e) { setStatus(t("app.status.copyError", { error: e })); return; }
+    if (session.current !== s) return;
+    clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
     setHasClip(true);
-    setStatus("settings copied");
+    setStatus(t("app.status.settingsCopied"));
   };
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
@@ -4011,24 +4421,28 @@ export default function App() {
     pasteUndoSession.current = session.current;
     session.current = null;
   };
+  // what Preferences gives a new photo, for a photo set up without the viewer
+  const newPhotoDefaults = () => {
+    const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
+    return { profile: loadNewPhotosProfile(), lensMethod: loadNewPhotosLensMethod(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
+      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
+  };
   const pasteSettings = async (previousClip?: Clip) => {
     const c = previousClip ?? clip.current, active = currentRef.current;
     if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
     const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
     const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
-    if (!targets.length) { setStatus("paste: no local photos selected"); return; }
+    if (!targets.length) { setStatus(t("app.status.pasteNoLocalPhotos")); return; }
     const frozen = structuredClone(c);
-    const preset = [...BUILTIN_PRESETS, ...presetsRef.current].find(p => p.id === newPhotosRef.current);
-    const defaults = { profile: loadNewPhotosProfile(), compensation: loadExposureCompNew(), auto: loadAutoToneNew(),
-      preset: preset ? { values: presetValues(preset), rawOnly: preset.rawOnly, nonRaw: loadNewPhotosNonRaw() } : null };
+    const defaults = newPhotoDefaults();
     const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
     pastingRef.current = true;
-    setPasting("Preparing paste…");
+    setPasting(t("app.status.pastePreparing"));
     let message = "";
     try {
       await pauseForPaste();
       const result = await runPaste(targets, frozen,
-        (done, total) => setPasting(`Pasting settings: ${done} / ${total}`), pasteSaved, s => preparePastePhoto(s, defaults));
+        (done, total) => setPasting(t("app.status.pasteProgress", { done, total })), pasteSaved, s => preparePastePhoto(s, defaults));
       if (result.token !== null) {
         discardPastes(undo.current.future);
         undo.current.future = [];
@@ -4037,13 +4451,13 @@ export default function App() {
         undo.current.past.push(before);
         if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
       }
-      message = result.error ? `paste: ${result.error}`
-        : keys(`settings pasted onto ${targets.length} photo${targets.length === 1 ? "" : "s"}${skipped ? `; ${skipped} remote photo(s) skipped` : ""}: ⌘Z undoes it`);
-    } catch (e) { message = `paste: ${e}`; }
+      message = result.error ? t("app.status.pasteError", { error: result.error })
+        : t("app.status.pasteSuccess", { count: targets.length, plural: targets.length === 1 ? "" : "s", skipped: skipped ? t("app.status.pasteSkipped", { count: skipped }) : "" });
+    } catch (e) { message = t("app.status.pasteError", { error: e }); }
     finally {
       // No normal navigation: preserve selection and both undo stacks.
       if (!session.current && !await openFile(active.path, active.imgid, true))
-        message += "; could not reopen the active photo";
+        message += t("app.status.pasteReopenError");
       pastingRef.current = false;
       setPasting(null);
       setHistoryRev(n => n + 1);
@@ -4054,7 +4468,52 @@ export default function App() {
   // has ticked
   const pastePrevious = () => {
     const p = previous.current;
-    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? []));
+    if (p) void pasteSettings(makeClip(loadCopyGroups(), p.values, p.look, p.masks ?? [], p.advanced));
+  };
+  // darktable's reset of its history module: the photo's whole history goes
+  // and it starts again as a new photo, with Preferences' defaults. one undo
+  // step, kept as a paste's is: a snapshot of the photo before and after
+  const startOver = async () => {
+    const active = currentRef.current;
+    if (!active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
+    const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
+    const [target] = pasteTargets(imagesRef.current, new Set<number>(), entry, isRemote).targets;
+    if (!target) { setStatus(t("app.status.discardRemoteHistory")); return; }
+    const defaults = newPhotoDefaults();
+    const before = snapshot(session.current, "Discard history");
+    pastingRef.current = true;
+    setPasting(t("app.status.discardHistoryProgress"));
+    let message = "";
+    try {
+      await pauseForPaste();
+      const { token } = await commands.pasteBatch("begin", null, [target.imgid]);
+      if (token == null) throw Error(t("app.status.historyEngineNoToken"));
+      try {
+        const r = await commands.historyDiscard(target.imgid);
+        pasteSaved({ imgid: target.imgid, edited: r.edited, error: null });
+        const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }), () => {}, () => {}, true);
+        try { await preparePastePhoto(s, defaults); }
+        finally { await s.close(); }
+        await commands.pasteBatch("commit", token, null);
+      } catch (e) {
+        const updates = await restorePaste(token, "abort").catch(() => []);
+        updates.forEach(pasteSaved);
+        await commands.pasteBatch("release", token, null).catch(() => {});
+        throw e;
+      }
+      const r = await commands.meta(target.imgid);
+      pasteSaved({ imgid: target.imgid, edited: r.image.edited, error: null });
+      discardPastes(pushBatchStep(undo.current, before, { token, recovery: false }));
+      message = t("app.status.historyDiscarded");
+    } catch (e) { message = t("app.status.historyDiscardError", { error: e }); }
+    finally {
+      if (!session.current && !await openFile(active.path, active.imgid, true))
+        message += t("app.status.pasteReopenPhotoError");
+      pastingRef.current = false;
+      setPasting(null);
+      setHistoryRev(n => n + 1);
+      setStatus(message);
+    }
   };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
@@ -4069,29 +4528,29 @@ export default function App() {
       const target = from[from.length - 1];
       // a paste is undone by reopening the photo, which would end the crop
       if (target.batch && croppingRef.current) {
-        setStatus(`finish cropping to ${back ? "undo" : "redo"} the paste`);
+        setStatus(t("app.status.finishCropHistory", { action: t(back ? "app.status.statusUndo" : "app.status.statusRedo"), label: target.label }));
         break;
       }
       const at = snapshot(s, target.label);
       if (target.batch) {
         const active = currentRef.current!;
         pastingRef.current = true;
-        setPasting(back ? "Undoing paste…" : "Redoing paste…");
-        let message = back ? "paste undone" : "paste redone";
+        setPasting(t(back ? "app.status.undoing" : "app.status.redoing", { label: target.label }));
+        let message = t(back ? "app.status.undoHistory" : "app.status.redoHistory", { label: target.label });
         let ok = false;
         try {
           await pauseForPaste();
           const updates = await restorePaste(target.batch.token, target.batch.recovery ? "abort" : back ? "undo" : "redo");
           updates.forEach(pasteSaved);
           const failures = updates.filter(i => i.error);
-          if (failures.length) throw Error(`${failures.length} photo(s) could not be restored; Undo/Redo retries`);
+          if (failures.length) throw Error(t("app.status.historyRestoreFailed", { count: failures.length }));
           from.pop();
           if (target.batch.recovery) discardPastes([target]);
           else { at.batch = target.batch; to.push(at); }
           ok = true;
-        } catch (e) { message = `paste: ${e}`; }
+        } catch (e) { message = t("app.status.pasteError", { error: e }); }
         finally {
-          if (!session.current && !await openFile(active.path, active.imgid, true)) message += "; could not reopen the active photo";
+          if (!session.current && !await openFile(active.path, active.imgid, true)) message += t("app.status.pasteReopenError");
           pastingRef.current = false;
           setPasting(null);
           setStatus(message);
@@ -4112,7 +4571,7 @@ export default function App() {
         const was = { ...s.values };
         restore(next);
         if (croppingRef.current) followCrop(was, { ...was, ...next.values });
-        setStatus(back ? "undo" : "redo");
+        setStatus(t(back ? "app.status.statusUndo" : "app.status.statusRedo"));
       }
     }
     u.key = "";
@@ -4132,10 +4591,20 @@ export default function App() {
       undo.current = { past: [], future: [], key: "", at: 0 };
       setHistoryBase(base);
       setHistoryRev((n) => n + 1);
-      setStatus("history compressed");
+      setStatus(t("app.status.historyCompressed"));
     } catch (e) {
-      setStatus(`error: ${e}`);
+      setStatus(t("app.status.error", { error: e }));
     }
+  };
+
+  // darktable's truncate (ctrl+click compress): the steps above the current
+  // one go, and those below can still be undone
+  const truncateHistory = () => {
+    const u = undo.current;
+    if (!u.future.length) return;
+    discardPastes(truncateRedo(u));
+    setHistoryRev((n) => n + 1);
+      setStatus(t("app.status.stepsDropped"));
   };
 
   // the History panel's actions on a row of the opened stack. a module with
@@ -4197,7 +4666,7 @@ export default function App() {
     return () => { if (!croppingRef.current) s.bypass("crop", false); };
   }, [negWhole, cropping, current]);   // eslint-disable-line react-hooks/exhaustive-deps
   const openNegative = () => {
-    const shown = layout.right && rightMode === "negative" && !croppingRef.current;
+    const shown = rightOpen && rightMode === "negative" && !croppingRef.current;
     if (!shown && session.current && session.current.values.neg_on !== 1 && loadNegWarn()) {
       setNegNoWarn(false);
       setNegWarning(true);
@@ -4317,7 +4786,7 @@ export default function App() {
   const filmView = !!current && layout.right && rightMode === "film";
   useEffect(() => {
     if (!filmView || sfStocks?.pack) return;
-    void commands.spektraStocks().then(setSfStocks).catch((e) => setStatus(`film data: ${e}`));
+    void commands.spektraStocks().then(setSfStocks).catch((e) => setStatus(t("app.status.filmDataError", { error: e })));
   }, [filmView]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (sfFetch?.state !== "running") return;
@@ -4435,14 +4904,14 @@ export default function App() {
       if (!changed || proofRef.current !== p) return;
       session.current?.redraw();
       if (baModeRef.current !== "off") captureBefore();
-    }).catch((e) => setStatus(`Soft proof: ${e}`));
+    }).catch((e) => setStatus(t("app.status.softProofError", { error: e })));
   };
   const toggleProofRef = useRef(() => {});
   toggleProofRef.current = () => {
     if (proof.mode !== "off") { changeProof({ ...proof, mode: "off" }); return; }
     if (!printSettings.profile) {
       showRight("print");
-      setStatus("Soft proof: choose a printer profile under Color Management");
+      setStatus(t("app.status.softProofProfile"));
       return;
     }
     changeProof({ mode: "proof", profile: printSettings.profile, intent: printSettings.intent });
@@ -4472,9 +4941,9 @@ export default function App() {
         storePrintSettings(next);
         return next;
       });
-    }).catch((e) => { if (live) { setPrintAvailable(true); setPrinters([]); setStatus(`Printers: ${e}`); } });
+    }).catch((e) => { if (live) { setPrintAvailable(true); setPrinters([]); setStatus(t("app.status.printersError", { error: e })); } });
     commands.printProfiles().then((p) => { if (live) setPrintProfiles(p); })
-      .catch((e) => setStatus(`Printer profiles: ${e}`));
+      .catch((e) => setStatus(t("app.status.printerProfilesError", { error: e })));
     return () => { live = false; };
   }, [printOpen]);
   // the chosen printer's papers; a paper it lacks becomes its own
@@ -4608,7 +5077,13 @@ export default function App() {
     // a fresh before; the views sharing the edit's size keep the one shown
     if (was === "off") { beforeMeta.current = null; captureBefore(); }
   };
-  const cycleBaMode = () => setBaMode(BA_MODES[(BA_MODES.indexOf(baModeRef.current) + 1) % BA_MODES.length]);
+  // Y cycles the comparison layouts; the toolbar button also includes the
+  // hold-for-before mode. The backslash shortcut remains the direct Before toggle.
+  const cycleBaMode = () => {
+    const modes: BaMode[] = ["off", "side", "vsplit", "hsplit"];
+    setBaMode(modes[(modes.indexOf(baModeRef.current) + 1) % modes.length]);
+  };
+  const cycleBaButtonMode = () => setBaMode(BA_MODES[(BA_MODES.indexOf(baModeRef.current) + 1) % BA_MODES.length]);
 
   // A/B compare (C), as Lightroom's Compare view: the open photo, live and
   // editable, on the left half; a candidate from the filmstrip on the right,
@@ -4680,7 +5155,7 @@ export default function App() {
     if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
       ?? list.slice(at + 1).find(local) ?? list.slice(0, at).reverse().find(local);
-    if (!pick) { setStatus("compare needs a second photo"); return; }
+    if (!pick) { setStatus(t("app.status.compareNeedsPhoto")); return; }
     setCompare(pick.imgid);
   };
   // the candidate opened some other way leaves nothing to compare; a swap
@@ -4713,7 +5188,7 @@ export default function App() {
         bitmap.close();
         setCandReady(true);
       } catch {
-        if (!gone) setStatus("no preview of that photo");
+        if (!gone) setStatus(t("app.status.noPhotoPreview"));
       }
     };
     void load();
@@ -4733,6 +5208,12 @@ export default function App() {
     session.current.showBefore(on ? keptBefore : null);
   };
   const leaveBefore = () => setBefore(false);
+  // a panel's eye held (PanelView, PeekButton): its controls at their defaults
+  const peekPanel = useCallback((ids: string[] | null) => {
+    if (!session.current) return;
+    baseStale.current = true;
+    session.current.peek(ids && new Set(ids));
+  }, []);
   // the key handler is installed once; it reaches the latest of this
   const setBaModeRef = useRef<(mode: BaMode) => void>(() => {});
   const cycleBaModeRef = useRef(() => {});
@@ -4740,12 +5221,14 @@ export default function App() {
   const toggleCompareRef = useRef(() => {});
   const pasteSettingsRef = useRef(() => {});
   const pastePreviousRef = useRef(() => {});
+  const startOverRef = useRef(() => {});
   setBaModeRef.current = setBaMode;
   cycleBaModeRef.current = cycleBaMode;
   setCompareRef.current = setCompare;
   toggleCompareRef.current = toggleCompare;
   pasteSettingsRef.current = () => pasteSettings();
   pastePreviousRef.current = () => pastePrevious();
+  startOverRef.current = () => void startOver();
 
   const changeMany = (entries: [string, number][], label?: string) => {
     const s = session.current;
@@ -4798,7 +5281,7 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <span>100%</span>
         <button className={`tool${loupePicking ? " on" : ""}`} disabled={!current || cropping || before || baMode !== "off"}
-          aria-label={`Pick ${id} loupe point`} aria-pressed={loupePicking} title="Pick a point on the photo"
+          aria-label={t("app.loupe.pick", { area: id })} aria-pressed={loupePicking} title={t("app.loupe.pickPoint")}
           onClick={() => setLoupePicking((v) => !v)}><Pipette size={16} /></button>
       </div>
       <div style={{ width: 160, height: 160, margin: "0 auto", display: "grid", placeItems: "center", background: "#121212", overflow: "hidden", position: "relative" }}>
@@ -4811,9 +5294,9 @@ export default function App() {
             display.getContext("2d")!.drawImage(source, 0, 0);
           }
         }} style={{ display: loupeShown ? "block" : "none" }} />
-        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? "Preparing preview…" : "Open a photo to preview detail"}</span>}
+        {!loupeShown && <span style={{ position: "absolute", padding: 8, textAlign: "center" }}>{current ? t("app.loupe.preparing") : t("app.loupe.openPhoto")}</span>}
       </div>
-      {loupePicking && <div role="status">Click a point on the photo · Escape to cancel</div>}
+      {loupePicking && <div role="status">{t("app.loupe.pickHelp")}</div>}
     </div>
   ) : undefined;
 
@@ -4828,10 +5311,24 @@ export default function App() {
   // all of the right panel's panels (or preset groups) shut, or all open
   const [presetGroupsOpen, setPresetGroupsOpen] = useState(true);
   const [presetFold, setPresetFold] = useState<{ open: boolean; n: number }>({ open: true, n: 0 });
-  const anyOpen = rightMode === "presets" ? presetGroupsOpen : openPanels.size > 0;
+  // the module search's pick: its group opens as a click on its title would
+  // (Focus mode closes the others), then the group acts on the pick
+  const [pick, setPick] = useState<AdvancedPick | null>(null);
+  const pickCount = useRef(0);
+  const searchPick = (h: { op: string; group: string }) => {
+    setOpenPanels((old) => focusMode ? new Set([h.group]) : new Set(old).add(h.group));
+    setPick({ op: h.op, group: h.group, nonce: ++pickCount.current });
+  };
+  const searchPicked = (nonce: number) => setPick((p) => p?.nonce === nonce ? null : p);
+  const [maskGroupsOpen, setMaskGroupsOpen] = useState(true);
+  const [maskFold, setMaskFold] = useState({ open: true, n: 0 });
+  const canFoldPanels = !cropping && ["adjust", "presets", "masks"].includes(rightMode);
+  const anyOpen = rightMode === "presets" ? presetGroupsOpen
+    : rightMode === "masks" ? maskGroupsOpen : rightMode === "adjust" && !cropping && openPanels.size > 0;
   const toggleAllPanels = () => {
-    if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
-    else setOpenPanels(openPanels.size ? new Set() : new Set(panels.filter((p) => !p.hidden).map((p) => p.id)));
+    if (rightMode === "masks") setMaskFold((f) => ({ open: !maskGroupsOpen, n: f.n + 1 }));
+    else if (rightMode === "presets") setPresetFold((f) => ({ open: !presetGroupsOpen, n: f.n + 1 }));
+    else setOpenPanels(openPanels.size ? new Set() : new Set([...panels.filter((p) => !p.hidden).map((p) => p.id), ...(editMode === "advanced" ? [TECHNICAL_ID] : [])]));
   };
 
   // click zooms to 100% on the clicked point, or back to fit; a drag pans,
@@ -5185,7 +5682,7 @@ export default function App() {
     if (!cropEntry) return;
     const [w, h] = cropEntry.map(Number);
     const a = customAspect(w, h);
-    if (!a) { setStatus("enter two numbers above 0"); return; }
+    if (!a) { setStatus(t("app.status.enterPositiveNumbers")); return; }
     setCropEntry(null);
     const preset = ASPECTS.find((x) => Array.isArray(x.ratio) && Array.isArray(a.ratio)
                                        && x.ratio[0] * a.ratio[1] === x.ratio[1] * a.ratio[0]);
@@ -5270,8 +5767,18 @@ export default function App() {
   useEffect(() => {
     // the open photo among those showing, for the keys and menu items that rate it
     const openPhoto = () => shownRef.current.find((i) => isOpen(i)) ?? null;
-    const rate = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
-    const label = (n: number) => () => { const cur = openPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
+    // the photo a rating key acts from. in the grid a selection the open photo
+    // is not part of takes the key (its last clicked photo, else its first):
+    // a click there opens its photo only once the open finishes, and a range
+    // picked meanwhile, or with a rejected open photo filtered out, was left out
+    const keyPhoto = () => {
+      const open = openPhoto(), sel = selectionRef.current;
+      if (!gridRef.current || !sel.size || (open && sel.has(open.imgid))) return open;
+      const list = shownRef.current;
+      return list.find((i) => i.imgid === pickAnchor.current && sel.has(i.imgid)) ?? list.find((i) => sel.has(i.imgid)) ?? open;
+    };
+    const rate = (n: number) => () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { rating: n, rejected: false }); };
+    const label = (n: number) => () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { labels: 1 << n }); };
     const actions: Record<ActionId, () => void> = {
       "perf-overlay": () => {
         setPerfHud(!perf.enabled);
@@ -5282,6 +5789,7 @@ export default function App() {
       "copy-settings": () => { if (session.current) setCopying(true); },
       "paste-settings": () => { pasteSettingsRef.current(); },
       "paste-previous": () => { pastePreviousRef.current(); },
+      "start-over": () => { startOverRef.current(); },
       "shortcuts": () => { setShortcutsOpen(true); },
       "virtual-copy": () => {
         const sel = selectionRef.current, all = imagesRef.current;
@@ -5292,20 +5800,21 @@ export default function App() {
         const sel = selectionRef.current;
         const list = hdrBrackets(imagesRef.current.filter((i) => sel.has(i.imgid)));
         if (list.length > 1) setHdrMerging(list);
-        else setStatus("HDR Merge: select two raw exposures or more");
+        else setStatus(t("app.status.hdrNeedsRaws"));
       },
       "pano-merge": () => {
         const sel = selectionRef.current;
         const list = panoFrames(imagesRef.current.filter((i) => sel.has(i.imgid)));
         if (list.length > 1) setPanoMerging(list);
-        else setStatus("Panorama Merge: select two raw photos or more");
+        else setStatus(t("app.status.panoramaNeedsRaws"));
       },
       "preferences": () => { setPrefsOpen(true); },
       "import": () => { setImportOpen(true); },
       "undo": () => { stepHistory(true); },
       "redo": () => { stepHistory(false); },
-      "zoom-in": () => { if (session.current && !croppingRef.current) stepZoom(1); },
-      "zoom-out": () => { if (session.current && !croppingRef.current) stepZoom(-1); },
+      // in the grid, the thumbnails' size rather than the photo hidden under it
+      "zoom-in": () => { if (gridRef.current) stepGridSize(1); else if (session.current && !croppingRef.current) stepZoom(1); },
+      "zoom-out": () => { if (gridRef.current) stepGridSize(-1); else if (session.current && !croppingRef.current) stepZoom(-1); },
       "rotate-left": () => { void turn("ccw"); },
       "rotate-right": () => { void turn("cw"); },
       "select-all": () => { setSelection(new Set(shownRef.current.map((i) => i.imgid))); },
@@ -5313,6 +5822,7 @@ export default function App() {
         if (previewRef.current) setPreview(false);
         else if (session.current) setPreview(true);
       },
+      "culling-preview": () => { if (gridRef.current) window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} })); },
       "info-overlay": () => { if (session.current) setInfoMode((m) => (m + 1) % 3); },
       "canvas": () => {
         if (!session.current) return;
@@ -5343,7 +5853,7 @@ export default function App() {
       "zoom-toggle": () => { setZoom(zoomRef.current === "fit" ? navZoom.current : "fit"); },
       "rate-0": rate(0), "rate-1": rate(1), "rate-2": rate(2), "rate-3": rate(3), "rate-4": rate(4), "rate-5": rate(5),
       "label-red": label(0), "label-yellow": label(1), "label-green": label(2), "label-blue": label(3),
-      "reject": () => { const cur = openPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
+      "reject": () => { const cur = keyPhoto(); if (cur) rateSelection(cur, { rejected: !cur.rejected }); },
       // menu-only items
       "add-folder": () => { void addFolderRef.current(); },
       "user-guide": () => { void openUrl("https://immage.photo/guide/"); },
@@ -5376,6 +5886,12 @@ export default function App() {
       if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
+      // Alt+1 to Alt+9 open the saved Find filters, by code as Option types characters on macOS
+      // (a text field or a dialog having the keyboard is handled above)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.repeat) {
+        const saved = savedForDigit(e.code);
+        if (saved) { e.preventDefault(); applySavedRef.current(saved); return; }
+      }
       const chord = chordAction(e);
       if (chord) {
         if (!chord.keep) e.preventDefault();
@@ -5483,7 +5999,7 @@ export default function App() {
         const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
         if (next) { e.preventDefault(); void openEntry(next); }
       }
-      else if (!cur) return;
+      else if (!keyPhoto()) return;
       else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
       else if (e.key >= "6" && e.key <= "9") run((["label-red", "label-yellow", "label-green", "label-blue"] as const)[Number(e.key) - 6]);
       else if (e.key === "x" || e.key === "X") run("reject");
@@ -5511,7 +6027,8 @@ export default function App() {
   // filters leave the raw out
   const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   partnersRef.current = partners;
-  const passing = images.filter((i) => passes(i, filter));
+  // results show through the filter their search used: an Immich-only search hides the folder lists
+  const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
   const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
@@ -5534,7 +6051,7 @@ export default function App() {
   // labels, rejects)
   const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
   const pending = !reading || needsRead(filter) ? []
-    : reading.files.slice(reading.done).filter((p) => !filter.kinds.length || filter.kinds.includes(fileKind(p)))
+    : reading.files.slice(reading.done).filter((p) => kindsInclude(filter.kinds, p))
         .filter((p) => !knownPaths?.has(p))
         // a raw's companions, stacked behind it
         .filter((p) => !rawNames?.has(pairKey(p)) || !isCompanion(p));
@@ -5593,7 +6110,7 @@ export default function App() {
         setMetaText(r.image.metadata);
         setKeywords(r.image.keywords);
       })
-      .catch((e) => setStatus(`error: ${e}`));
+      .catch((e) => setStatus(t("app.status.error", { error: e })));
     commands.keywords().then((k) => { if (!stale) setKnownKeywords(k); }).catch(() => {});
     return () => { stale = true; };
   }, [currentId]);
@@ -5632,7 +6149,7 @@ export default function App() {
       patchImage(imgid, { keywords: now });
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
-      setStatus(`error: ${e}`);
+      setStatus(t("app.status.error", { error: e }));
     }
   };
   // the open photo's text fields, as keywordsRef
@@ -5659,7 +6176,7 @@ export default function App() {
       await commands.metaSet(imgid, fields);
       if (session.current?.imgid === imgid) setMetaText((t) => (t ? { ...t, ...fields } : t));
     } catch (e) {
-      setStatus(`error: ${e}`);
+      setStatus(t("app.status.error", { error: e }));
     }
   };
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
@@ -5668,7 +6185,7 @@ export default function App() {
       setKeywords(await commands.keywordsSet(currentId, add, remove));
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
-      setStatus(`error: ${e}`);
+      setStatus(t("app.status.error", { error: e }));
     }
   };
 
@@ -5679,6 +6196,46 @@ export default function App() {
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
+  // the toolbar's Find button: the popup, or in the grid the column, shown if hidden, with the box focused
+  const toggleFind = () => {
+    if (!findLocked) { setFindOpen((o) => !o); return; }
+    if (!layout.right) toggleSide("right");
+    revealedRef.current = { ...revealedRef.current, right: true };
+    setRevealed(revealedRef.current);
+    setFindFocus((n) => n + 1);
+  };
+  useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
+  const renderFind = (locked: boolean) => (
+    <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
+              smart={smartAvailable(clipReady, !!immichBase)} analysis={clipReady}
+              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
+                onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
+                onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
+              } : undefined}
+              count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
+              notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
+              onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
+              saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                onManage={() => setManageSaved(true)} />}
+              savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
+                                               onUpdate={() => updateSaved(savedNow.id, find)}
+                                               onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
+              onSaveNew={() => setSaveDialog(true)}
+              anchor={() => findButton.current?.getBoundingClientRect()}
+              bounds={() => {
+                // the photo area: across the filmstrip, clear of a side panel shown over
+                // it (auto-hide), from the top of the viewer to the toolbar
+                const sr = stripSlot.current?.getBoundingClientRect();
+                if (!sr) return undefined;
+                const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
+                return {
+                  left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
+                  right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
+                  top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
+                  bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
+                };
+              }} locked={locked} focusToken={findFocus} pin={locked ? pinButton("right") : undefined} />
+  );
   const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
@@ -5719,10 +6276,16 @@ export default function App() {
 
   return (
     <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
-    {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label="Pasting settings"
+    {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label={t("app.action.pasting")}
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
       <div className="modal"><div className="modal-head"><h2>{pasting}</h2></div></div>
     </div>}
+    {grid && <GridCulling key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
+      anchor={pickAnchor.current}
+      thumbnail={id => loader.current?.get(id)}
+      prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
+      onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
+      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -5735,7 +6298,7 @@ export default function App() {
       <div className={`slot left-slot${layout.left ? "" : " closed"}${floating.left ? " floating" : ""}`
                       + `${floating.left && revealed.left ? " revealed" : ""}`}>
       <aside className="left" ref={leftAside} style={{ width: layout.leftWidth }}>
-        <div className="panel-head"><h1>Library</h1>{pinButton("left")}</div>
+        <div className="panel-head"><h1>{t("app.library.title")}</h1>{pinButton("left")}</div>
         <Navigator thumb={navThumb} zoom={zoom} placement={placement} disabled={!current}
                    onZoom={(z) => { if (z !== "fit") navZoom.current = z; setZoom(z); }}
                    onPan={(x, y, done) => {
@@ -5765,8 +6328,8 @@ export default function App() {
             kept as it was left */}
         <div className="panel folders-panel" data-tour="folders">
           <div className={`panel-title${foldersOpen ? " open" : ""}`} onClick={(e) => toggleLeft("folders", e.altKey)}>
-            <span>Folders</span>
-            <button className="refresh" title="read the folders and the open folder's photos again"
+            <span>{t("app.library.folders")}</span>
+            <button className="refresh" title={t("app.library.refreshFolders")}
                     onClick={(e) => {
                       e.stopPropagation();
                       setFolderRefresh((n) => n + 1);
@@ -5777,8 +6340,8 @@ export default function App() {
           </div>
           {foldersOpen && (
             <div className="folders-body">
-              <label className="sub-toggle" title="show the photos in a folder's subfolders too">
-                <span>Include subfolders</span>
+              <label className="sub-toggle" title={t("app.library.includeSubfoldersHint")}>
+                <span>{t("app.library.includeSubfolders")}</span>
                 <input type="checkbox" className="switch" checked={includeSub} onChange={(e) => {
                   const on = e.target.checked;
                   setIncludeSub(on);
@@ -5798,6 +6361,7 @@ export default function App() {
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
                           onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          onError={setStatus}
                           onRenameHost={(host, name) => {
                             const next = { ...hostNames, [host]: name };
                             if (!name) delete next[host];
@@ -5809,16 +6373,10 @@ export default function App() {
                             if (next.has(d)) next.delete(d); else next.add(d);
                             setExpandedTo(next);
                           }} />
-              <button className="folder add" onClick={addFolder}><span>+ Add folder…</span></button>
+              <button className="folder add" onClick={addFolder}><span>{t("app.library.addFolder")}</span></button>
             </div>
           )}
         </div>
-        {immichBase && (
-          <ImmichPanel open={leftOpen.has("immich")} onToggle={(alt) => toggleLeft("immich", alt)}
-                       active={!!immich} searching={!!immich?.busy} form={immichForm} onChange={updateImmich}
-                       onSearch={() => { window.clearTimeout(immichTimer.current); void searchImmich(immichFormRef.current); }}
-                       onMenu={showResultsMenu} />
-        )}
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
                              .map((h) => {
                                const st = session.current?.moduleStates.get(instanceKey(h));
@@ -5826,13 +6384,14 @@ export default function App() {
                              })}
                       actionOf={historyAction} onChange={historyChange}
                       steps={[...undo.current.past, ...[...undo.current.future].reverse()].map((x) => x.label)}
-                      at={undo.current.past.length} disabled={!current || cropping}
+                      at={undo.current.past.length} disabled={!current || cropping || !!pasting}
                       open={leftOpen.has("history")} onToggle={(alt) => toggleLeft("history", alt)}
                       onGo={(n) => {
                         const d = n - undo.current.past.length;
                         if (d) stepHistory(d < 0, Math.abs(d));
                       }}
-                      onCompress={() => void compressHistory()} />
+                      onCompress={() => void compressHistory()} onTruncate={truncateHistory}
+                      onStartOver={() => void startOver()} />
       </aside>
       </div>
 
@@ -5884,10 +6443,10 @@ export default function App() {
           )}
           {cellsPage && cellsPage.pages > 1 && (
             <div className="print-pager" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
-              <button aria-label="previous page" disabled={cellPageNo <= 0}
+              <button aria-label={t("app.print.previousPage")} disabled={cellPageNo <= 0}
                       onClick={() => setSheetPageNo(cellPageNo - 1)}>‹</button>
-              <span data-print-pager>Page {cellPageNo + 1} of {cellsPage.pages}</span>
-              <button aria-label="next page" disabled={cellPageNo >= cellsPage.pages - 1}
+              <span data-print-pager>{t("app.print.page", { page: cellPageNo + 1, total: cellsPage.pages })}</span>
+              <button aria-label={t("app.print.nextPage")} disabled={cellPageNo >= cellsPage.pages - 1}
                       onClick={() => setSheetPageNo(cellPageNo + 1)}>›</button>
             </div>
           )}
@@ -5998,7 +6557,7 @@ export default function App() {
             <div className="print-align" style={sheet.area}>
               {Array.from({ length: 9 }, (_, k) => (
                 <button key={k} className={k === printSettings.alignment ? "on" : ""}
-                        aria-label={`place the photo ${PRINT_PLACES[k]}`} title={`place the photo ${PRINT_PLACES[k]}`}
+                        aria-label={t("app.print.place", { place: t(`app.print.position.${k}`) })} title={t("app.print.place", { place: t(`app.print.position.${k}`) })}
                         onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
                         onClick={() => setPrintSettings({ ...printSettings, alignment: k })} />
               ))}
@@ -6035,8 +6594,8 @@ export default function App() {
               )}
               {baMode === "side" && <div className="side-gap" />}
               {baMode !== "overlay" && <>
-                <div className="split-label left">Before</div>
-                <div className={`split-label ${baMode === "hsplit" ? "bottom" : baMode === "side" ? "pane-left" : "right"}`}>After</div>
+                <div className="split-label left">{t("app.beforeAfter.before")}</div>
+                <div className={`split-label ${baMode === "hsplit" ? "bottom" : baMode === "side" ? "pane-left" : "right"}`}>{t("app.beforeAfter.after")}</div>
               </>}
             </>
           )}
@@ -6046,13 +6605,13 @@ export default function App() {
               <>
                 <div className="cand-pane" onPointerDown={(e) => e.stopPropagation()}>
                   <canvas ref={candCanvas} className={candReady ? "" : "loading"} />
-                  {!candReady && <span className="cand-wait">rendering…</span>}
+                  {!candReady && <span className="cand-wait">{t("app.compare.rendering")}</span>}
                 </div>
                 <div className="side-gap" />
                 <div className="split-label left">A · {fileName}{copyName(currentEntry)}</div>
                 <div className="split-label cand">
                   B · {cand?.filename ?? ""}{copyName(cand)}
-                  {cand && <button title="edit this one, and compare against the other"
+                  {cand && <button title={t("app.compare.editAndCompare")}
                                    onClick={() => {
                                      if (!currentEntry) return;
                                      swapping.current = true;
@@ -6068,53 +6627,56 @@ export default function App() {
                          onOrient={setCropPortrait}
                          aspect={pixelAspect(findAspect(cropAspect, cropChoices), cropPortrait, frameSize())} />
           )}
-          {(before || holding) && <div className="before-badge">Before</div>}
+          {(before || holding) && <div className="before-badge">{t("app.beforeAfter.before")}</div>}
           {current && proof.mode !== "off" && !printOpen && (
             <div className="proof-badge" data-proof-badge>
-              Soft Proof: {printProfiles.find((p) => p.file === proof.profile)?.name ?? "printer profile"}
-              {proof.mode === "gamut" ? ", gamut warning" : ""}</div>
+              {t("app.print.softProof")}: {printProfiles.find((p) => p.file === proof.profile)?.name ?? t("app.print.printerProfile")}
+              {proof.mode === "gamut" ? t("app.print.gamutWarning") : ""}</div>
           )}
           {modeFlash && <div className="mode-flash">{modeFlash}</div>}
-          {holdHint && <div className="hold-hint">Click and hold the photo to see the before</div>}
+          {holdHint && <div className="hold-hint">{t("app.beforeAfter.holdHint")}</div>}
           {line && (
             <svg className="straighten-line">
               <line x1={line.x0} y1={line.y0} x2={line.x1} y2={line.y1} />
             </svg>
           )}
-          <div className={`working${working ? " on" : ""}`} title="working…" aria-hidden={!working}><span /></div>
+          <div className={`working${working ? " on" : ""}`} title={t("app.status.working")} aria-hidden={!working}><span /></div>
           <div className="status">{status}{isEngineExit(status) && <button className="status-action"
             onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
-            onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button>}</div>
+            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
           <div className="activities">
+          {imageQuery && immich && <div className="activity"><span>{t("app.status.imageQuery", { query: imageQuery })}</span>
+            <button onClick={() => void searchImmich(immichFormRef.current)}>{t("app.status.clearImageQuery")}</button></div>}
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
             <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
                  onPointerUp={(e) => e.stopPropagation()}>
-              <span>The engine is not answering.</span>
-              <button onClick={hideEngineNotice}>Wait</button>
-              <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatusRaw(`error: ${e}`)); }}>Restart</button>
+              <span>{t("app.status.engineNotAnswering")}</span>
+              <button onClick={hideEngineNotice}>{t("app.status.wait")}</button>
+              <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatus(t("app.status.error", { error: e }))); }}>{t("app.status.restart")}</button>
             </div>
           )}
           {saveError && (
-            <div className="activity" data-save-error><span className="failed">Edits are not being saved. {saveError}</span></div>
+            <div className="activity" data-save-error><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
           )}
           {engineNotice?.kind === "failed" && (
-            <div className="activity"><span className="failed">The engine keeps stopping. Restart Immage to continue editing.</span>
-              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>Create Support Bundle…</button></div>
+            <div className="activity"><span className="failed">{t("app.status.engineKeepsStopping")}</span>
+              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></div>
           )}
           {(() => {
             // the folder's reading, then its thumbnails
-            if (immich?.busy) return <div className="activity"><span>Searching Immich…</span></div>;
+            if (immich?.busy) return <div className="activity"><span>{t("app.status.searching")}</span>
+              <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus(t("app.status.searchStopped")); }}>{t("app.status.stop")}</button></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
               // the viewer's own pointer handling (zoom on click) stays off it
               <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
                    onPointerUp={(e) => e.stopPropagation()}>
-                <span>Waiting for {w.name}{w.total > 1 ? ` · ${w.back} of ${w.total} back` : ""}…</span>
-                <button onClick={() => void commands.pluginCancel(w.token)}>Stop waiting</button>
+                <span>{t("app.status.waiting", { name: w.name, progress: w.total > 1 ? t("app.status.waitingProgress", { back: w.back, total: w.total }) : "" })}</span>
+                <button onClick={() => void commands.pluginCancel(w.token)}>{t("app.status.stopWaiting")}</button>
               </div>
             );
-            return reading ? <ActivityBar what="Reading photos" done={reading.done} total={reading.total} />
+            return reading ? <ActivityBar what={t("app.status.readingPhotos")} done={reading.done} total={reading.total} />
               : <ThumbProgress loader={loader.current!} />;
           })()}
           </div>
@@ -6136,12 +6698,17 @@ export default function App() {
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
             <Filmstrip images={cells} partners={partners} pending={pending}
-                       empty={immich ? (immich.busy ? "searching Immich…" : "no photos in Immich match the search")
+                       empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
-                       height={layout.stripHeight} grid={grid} selection={selection} onPick={pickPhoto}
+                       height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
+                       onPress={(i, e) => pressPhoto(e, {
+                         count: () => dragSet(i).length,
+                         from: () => [...new Set(dragSet(i).filter((p) => !isRemote(p)).map((p) => parentDir(p.path)))],
+                         drop: (to, copy) => void askMove(dragSet(i), to, copy),
+                       })}
                        candidate={compare}
                        onDouble={(i) => { setCompare(null); void openEntry(i); setGrid(false); }}
                        onOpenKnown={(k, double) => {
@@ -6152,45 +6719,48 @@ export default function App() {
                          setSelection(new Set());
                          void openFile(k.path);
                        }}
-                       more={immich?.next && !immich.busy ? () => void searchImmich(immich.search, true) : undefined}
+                       more={immich?.next ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar filter={filter} images={images} immich={immich ? { form: immichForm, update: updateImmich } : null} layout={layout} ref={toolbar} pin={pinButton("strip")}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked ? layout.right : findOpen}
+                 onToggleFind={toggleFind} findButtonRef={findButton}
+                 onFindMenu={immich ? showResultsMenu : undefined}
+                 savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                                    onManage={() => setManageSaved(true)} button={button} />}
+                 layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
-                   <button className="tool" title={keys("undo (⌘Z)")} disabled={!current} onClick={() => stepHistory(true)}>
+                   <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>
                      <UndoIcon /></button>
-                   <button className="tool" title={keys("redo (⇧⌘Z)")} disabled={!current} onClick={() => stepHistory(false)}>
+                   <button className="tool" title={keys(t("app.action.redo"))} disabled={!current} onClick={() => stepHistory(false)}>
                      <UndoIcon redo /></button>
                    <span className="sep" />
                    <button className={`tool view${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
-                           title={`before / after: ${baMode === "off" ? "off" : BA_NAMES[baMode].toLowerCase()}, click for the next view (Y)   full before: \\`}
-                           onClick={cycleBaMode}><BeforeAfterIcon /></button>
+                           title={t("app.beforeAfter.tooltip", { mode: t(`app.beforeAfter.mode.${baMode}`) })}
+                           onClick={cycleBaButtonMode}><BeforeAfterIcon /></button>
                    <button className={`tool view${compare !== null ? " on" : ""}`} disabled={!current || cropping}
-                           title="compare with another photo (C): click one in the filmstrip, or step with ← →"
+                           title={t("app.compare.hint")}
                            onClick={toggleCompare}><CompareIcon /></button>
                  </>}
-                 filterBounds={() => {
-                   // across the filmstrip, below the top of the photo area, and
-                   // clear of a side panel shown over it (auto-hide)
-                   const s = stripSlot.current?.getBoundingClientRect();
-                   if (!s) return undefined;
-                   const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
-                   return {
-                     left: l && l.width && l.right > 0 ? Math.max(s.left, l.right) : s.left,
-                     right: r && r.width && r.left < window.innerWidth ? Math.min(s.right, r.left) : s.right,
-                     top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
-                   };
-                 }}
-                 onFiltered={() => setGrid(true)}
-                 grid={grid} onGrid={cells.length > 0 || pending.length > 0 || grid ? () => setGrid(!grid) : undefined}
-                 zoomBar={<ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
-                                   onZoom={(z) => setZoom(z)}
-                                   onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
-                                   fit={() => fitScale()} />}
-                 onFilter={setFilter}
+                 grid={grid}
+                 // in the grid the zoom bar sizes the thumbnails; the photo's
+                 // stays mounted, hidden, so it still shows the photo's zoom after
+                 zoomBar={<>
+                   {grid && <GridZoomBar size={gridSize} min={GRID_SIZE_MIN} max={GRID_SIZE_MAX} standard={GRID_SIZE_DEFAULT}
+                                         onSize={chooseGridSize} />}
+                   <div style={grid ? { display: "none" } : { display: "contents" }}>
+                     <ZoomBar disabled={!current || !!sheet} register={(f) => { zoomShow.current = f; }}
+                              onZoom={(z) => setZoom(z)}
+                              onToggle={() => setZoom(zoomRef.current === "fit" ? 1 : "fit")}
+                              fit={() => fitScale()} />
+                   </div>
+                 </>}
                  onLayout={toggleSide} />
+        {findOpen && !findLocked && renderFind(false)}
+        {saveDialog && <SaveDialog initial="" onCancel={() => setSaveDialog(false)}
+                                   onSave={(name) => { setSavedId(addSaved(name, find).id); setSaveDialog(false); }} />}
+        {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
       </section>
 
       <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
@@ -6198,14 +6768,20 @@ export default function App() {
       <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
-        <div className="panel-head"><h1>{cropping ? "Crop" : RIGHT_TITLES[rightMode]}</h1>
+        {findLocked && renderFind(true)}
+        {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
+        <div style={{ display: findLocked ? "none" : "contents" }}>
+        <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
-            {(rightMode === "adjust" || rightMode === "presets") && !cropping && (
-              <button className="tool" onClick={toggleAllPanels}
-                      title={anyOpen ? keys("collapse all panels (⌥-click a panel to open it alone)") : "expand all panels"}>
+            <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
+                      onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
+                      data-tour="advanced-mode"
+                      title={t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced")}>
+                <ModulesIcon /></button>
+            <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
+                      title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
-            )}
             <ResetAll disabled={!current} onReset={resetAll} />
           </div></div>
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
@@ -6215,7 +6791,9 @@ export default function App() {
         <div className="panels" data-tour="panels" ref={panelsRef}
              onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
           {masksMode && !cropping && (
-            <MasksPanel masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
+            <MasksPanel fold={maskFold} onAnyOpen={setMaskGroupsOpen} masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
+                        advancedMode={editMode === "advanced"} session={session.current} sessionRevision={historyRev}
+                        onAdvancedEdit={record} onAdvancedEdits={openEditingMode} photos={shown}
                         brush={brush} overlay={maskShown} disabled={!current} mono={values.bw_mode === 1} photo={values}
                         renderSlider={(c, v, onChange, glow, module) => (
                           <div key={c.id}
@@ -6265,7 +6843,7 @@ export default function App() {
                         onRename={(from, to) => {
                           const s = session.current;
                           if (!s) return;
-                          if (s.masks.some((q) => q.name === to)) { setStatus(`there is already a mask named "${to}"`); return; }
+                          if (s.masks.some((q) => q.name === to)) { setStatus(t("app.status.masksAlreadyNamed", { name: to })); return; }
                           record(["mask:rename"]);
                           s.renameMask(from, to);
                           if (maskSel === from) setMaskSel(to);
@@ -6304,7 +6882,7 @@ export default function App() {
           )}
           {rightMode === "zones" && !cropping && (
             <div className="panel">
-              <div className="panel-title"><span>Zone System</span>
+              <div className="panel-title"><span>{t("app.panel.zoneSystem")}</span>
                 {values.bw_mode === 1 && <AdvancedToggle on={zonesAdvanced} onToggle={toggleZonesAdvanced} />}
               </div>
               {values.bw_mode === 1 ? (
@@ -6362,10 +6940,9 @@ export default function App() {
               
               ) : (
                 <section>
-                  <p className="zone-hint">The Zone System works on black and white: it places the tones a
-                    black and white photo is made of.</p>
+                  <p className="zone-hint">{t("app.panel.zoneHint")}</p>
                   <button className="btn small" disabled={!current}
-                          onClick={() => change(controlById.get("bw_mode")!, 1)}>Convert to Black &amp; White</button>
+                          onClick={() => change(controlById.get("bw_mode")!, 1)}>{t("app.panel.convertBW")}</button>
                 </section>
               )}
             </div>
@@ -6446,7 +7023,7 @@ export default function App() {
                             const now = session.current?.values ?? values;
                             storePresets(presets.map((q) => (q.id === p.id ? { ...q,
                               values: Object.fromEntries(Object.keys(q.values).map((id) => [id, now[id] ?? q.values[id]])) } : q)));
-                            setStatus(`updated "${p.name}"`);
+                            setStatus(t("app.status.presetUpdated", { name: p.name }));
                           }}
                           onCreate={() => setNewPreset("plain")}
                           onDelete={(p) => storePresets(presets.filter((q) => q.id !== p.id))}
@@ -6457,9 +7034,9 @@ export default function App() {
           )}
           {cropping && (
             <div className="panel crop-card">
-              <div className="panel-title"><span>Crop</span></div>
+              <div className="panel-title"><span>{t("app.panel.crop")}</span></div>
               <section>
-                <div className="row-label">Aspect</div>
+                <div className="row-label">{t("app.panel.aspect")}</div>
                 <div className="crop-aspect">
                   <select value={cropAspect} onChange={(e) => {
                     if (e.target.value !== "enter-custom") { chooseAspect(e.target.value, cropPortrait); return; }
@@ -6472,11 +7049,11 @@ export default function App() {
                     {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
                     {cropChoices.length > 0 && <option disabled>──────────</option>}
                     {cropChoices.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-                    <option value="enter-custom">Enter Custom…</option>
+                    <option value="enter-custom">{t("app.panel.enterCustom")}</option>
                   </select>
-                  <button className="btn" title="swap orientation (X)" disabled={cropAspect === "free"}
+                  <button className="btn" title={t("app.panel.swapOrientation")} disabled={cropAspect === "free"}
                           onClick={() => chooseAspect(cropAspect, !cropPortrait)}>
-                    {cropPortrait ? "Portrait" : "Landscape"}
+                    {cropPortrait ? t("app.panel.portrait") : t("app.panel.landscape")}
                   </button>
                 </div>
                 {cropEntry && (
@@ -6485,44 +7062,47 @@ export default function App() {
                          if (e.key === "Enter") setCustomAspect();
                          else if (e.key === "Escape") setCropEntry(null);
                        }}>
-                    <input type="number" min={0} step="any" aria-label="width" autoFocus value={cropEntry[0]}
+                    <input type="number" min={0} step="any" aria-label={t("app.panel.width")} autoFocus value={cropEntry[0]}
                            onChange={(e) => setCropEntry([e.target.value, cropEntry[1]])} />
                     <span>×</span>
-                    <input type="number" min={0} step="any" aria-label="height" value={cropEntry[1]}
+                    <input type="number" min={0} step="any" aria-label={t("app.panel.height")} value={cropEntry[1]}
                            onChange={(e) => setCropEntry([cropEntry[0], e.target.value])} />
-                    <button className="btn" onClick={setCustomAspect}>Set</button>
+                    <button className="btn" onClick={setCustomAspect}>{t("app.action.set")}</button>
                   </div>
                 )}
                 <div className="crop-angle">
                   <button className={`tool${straightening ? " on" : ""}`} disabled={!current}
-                          title={keys("straighten: drag along a line that should be level or upright (or hold ⇧ and drag)")}
+                          title={keys(t("app.straighten.hint"))}
                           onClick={() => setStraightening(!straighteningRef.current)}><RulerIcon /></button>
                   <Slider control={controlById.get("tf_rotate")!} value={values.tf_rotate ?? 0} neutral={0}
                           disabled={!current} values={values}
                           onChange={(v) => change(controlById.get("tf_rotate")!, v)} />
                   <button className="btn small" disabled={!current || uprightBusy || (values.tf_upright ?? 0) !== 0}
-                          title={(values.tf_upright ?? 0) !== 0 ? "Upright sets the angle: turn Upright off to level from here"
-                                                                : "level the photo from its straight lines"}
-                          onClick={() => void runAutoStraighten()}>Auto</button>
+                          title={t((values.tf_upright ?? 0) !== 0 ? "app.straighten.uprightHint" : "app.straighten.autoHint")}
+                          onClick={() => void runAutoStraighten()}>{t("app.action.auto")}</button>
                 </div>
                 {autoAngleNote && <div className="note-plain">{autoAngleNote}</div>}
-                <div className="row-label">Rotate &amp; Flip</div>
+                <div className="row-label">{t("app.panel.rotateFlip")}</div>
                 <div className="crop-turn">
-                  <button className="tool" title={keys("rotate left (⌘[)")} onClick={() => void turn("ccw")}><RotateIcon /></button>
-                  <button className="tool" title={keys("rotate right (⌘])")} onClick={() => void turn("cw")}><RotateIcon right /></button>
-                  <button className="tool" title="flip horizontal" onClick={() => void turn("h")}><FlipIcon /></button>
-                  <button className="tool" title="flip vertical" onClick={() => void turn("v")}><FlipIcon vertical /></button>
+                  <button className="tool" title={keys(t("app.action.rotateLeft"))} onClick={() => void turn("ccw")}><RotateIcon /></button>
+                  <button className="tool" title={keys(t("app.action.rotateRight"))} onClick={() => void turn("cw")}><RotateIcon right /></button>
+                  <button className="tool" title={t("app.panel.flipHorizontal")} onClick={() => void turn("h")}><FlipIcon /></button>
+                  <button className="tool" title={t("app.panel.flipVertical")} onClick={() => void turn("v")}><FlipIcon vertical /></button>
                 </div>
                 <div className="crop-buttons">
-                  <button className="btn" onClick={() => setCropRect(FULL)}>Reset</button>
-                  <button className="btn" onClick={() => leaveCrop(false)}>Cancel</button>
-                  <button className="btn primary" onClick={() => leaveCrop(true)}>Done</button>
+                  <button className="btn" onClick={() => setCropRect(FULL)}>{t("app.action.reset")}</button>
+                  <button className="btn" onClick={() => leaveCrop(false)}>{t("app.action.cancel")}</button>
+                  <button className="btn primary" onClick={() => leaveCrop(true)}>{t("app.action.done")}</button>
                 </div>
               </section>
             </div>
           )}
-          {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView sessionRevision={historyRev} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+          {rightMode === "adjust" && !cropping && editMode === "advanced" && (
+            <AdvancedSearch photo={!!current} onPick={searchPick}
+                            applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
+          )}
+          {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -6530,22 +7110,19 @@ export default function App() {
                        toneTools={p.id === "basic" ? (
                          <div className="tone-tools">
                            <button className="btn small" disabled={!current || values.neg_on === 1}
-                                   title={values.neg_on === 1 ? "set in Negative: a converted negative has no tone mapper for Auto to set"
-                                     : values.tm_mode === 1
-                                     ? "Exposure, AgX's range as darktable's auto tune levels sets it, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"
-                                     : "Exposure, then Contrast, Highlights, Shadows, Whites and Blacks from the photo"}
-                                   onClick={() => void runAutoTone()}>Auto</button>
+                                   title={t(values.neg_on === 1 ? "app.tone.negativeHint"
+                                     : values.tm_mode === 1 ? "app.tone.agxHint" : "app.tone.basicHint")}
+                                   onClick={() => void runAutoTone()}>{t("app.action.auto")}</button>
                          </div>
                        ) : undefined}
                        straightenTools={p.id === "transform" ? (
                          <div className="straighten-tools">
                            <button className={`btn small${straightening ? " on" : ""}`} disabled={!current}
-                                   title={keys("drag along a line that should be level or upright (or hold ⇧ and drag)")}
+                                   title={keys(t("app.straighten.hint"))}
                                    onClick={() => { setGuiding(false); setStraightening(!straighteningRef.current); }}>
-                             <RulerIcon />Straighten
+                             <RulerIcon />{t("app.straighten.action")}
                            </button>
-                           <span className="note-plain">{straightening ? "drag along a line that should be level or upright"
-                                                                       : "or hold ⇧ and drag on the photo"}</span>
+                           <span className="note-plain">{straightening ? t("app.straighten.dragHint") : t("app.straighten.shiftHint")}</span>
                          </div>
                        ) : undefined}
                        transformTools={p.id === "transform" ? (
@@ -6563,22 +7140,23 @@ export default function App() {
                            </div>
                            {guiding && (
                              <div className="upright-guided">
-                               <span className="note-plain">{`${values.tf_gn ?? 0} of ${MAX_GUIDES} guides`}</span>
-                               <button className="btn small" onClick={() => setGuiding(false)}>Done</button>
+                               <span className="note-plain">{t("app.straighten.guideCount", { count: values.tf_gn ?? 0, total: MAX_GUIDES })}</span>
+                               <button className="btn small" onClick={() => setGuiding(false)}>{t("app.action.done")}</button>
                              </div>
                            )}
                            {uprightNote && <div className="note-plain">{uprightNote}</div>}
                          </div>
                        ) : undefined}
                        denoiseTools={p.id === "detail" ? (
-                         session.current && !session.current.raw ? <div className="note-plain">raw photos only</div>
-                         : immich ? <div className="note-plain">photos in a folder on this computer only</div>
+                         session.current && !session.current.raw ? <div className="note-plain">{t("app.denoise.rawOnly")}</div>
+                         : currentEntry?.remote && !currentEntry.remote.localPath
+                           ? <div className="note-plain">{t("app.denoise.localOnly")}</div>
                          : (
                            <div className="denoise-tools">
                              <button className="btn small" disabled={!current || aiBusy || denoiseRunning}
-                                     title={denoiseRunning ? "a denoise is still running" : undefined}
-                                     onClick={() => setDenoising(true)}>Denoise…</button>
-                             <span className="note-plain">writes a denoised DNG beside the raw, with this edit</span>
+                                     title={denoiseRunning ? t("app.denoise.running") : undefined}
+                                     onClick={() => setDenoising(true)}>{t("app.denoise.action")}</button>
+                             <span className="note-plain">{t("app.denoise.sidecarHint")}</span>
                            </div>
                          )
                        ) : undefined}
@@ -6598,22 +7176,26 @@ export default function App() {
                          session.current.bypass("colorequal", true);
                        } : undefined} /></Profiler>
           ))}
+          {rightMode === "adjust" && !cropping && editMode === "advanced" && (
+            <AdvancedGroup id={TECHNICAL_ID} title={t("app.panel.technical")} photos={shown} session={session.current} revision={historyRev} record={record} pick={pick?.group === TECHNICAL_ID ? pick : null} onPicked={searchPicked} open={openPanels.has(TECHNICAL_ID)} onToggle={(solo) => togglePanel(TECHNICAL_ID, solo)} />
+          )}
         </div>
         {!cropping && current && rightMode === "film" && values.sf_on === 1 && (
           <PositiveFooter format={positiveFormat} exporting={positiveExporting} disabled={negBusy || !!negPick}
                           onFormat={(f) => { setPositiveFormat(f); storeNegativeExportFormat(f); }}
                           onExport={() => exportPositive("film")}
                           onTurnOff={sfTurnOff}
-                          turnOffLabel="Turn Off Film Simulation"
-                          turnOffTitle="the photo back on its tone mapper, with Basic's tools as they were" />
+                          turnOffLabel={t("app.film.turnOff")}
+                          turnOffTitle={t("app.film.turnOffTitle")} />
         )}
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
-                  data-action="copy-settings" title={keys("choose settings of this photo to copy (⇧⌘C)")}>Copy…</button>
+                  data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
           <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
-                  data-action="paste-settings" title={keys("paste the copied settings onto the selected photos (⇧⌘V)")}>Paste</button>
+                  data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
-                  title={keys("the previous photo's settings, the parts ticked in Copy Settings (⌥⌘V)")}>Previous</button>
+                  title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
+        </div>
         </div>
       </aside>
       </div>
@@ -6621,43 +7203,52 @@ export default function App() {
       <div />
       <nav className="rail" ref={rail}>
         {/* in the order of the work: bring photos in, edit them, send them out */}
-        <button className={`tool${importOpen ? " on" : ""}`} title={keys("import photos (⇧⌘I)")} data-tour="import"
+        <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
                 onClick={() => setImportOpen(true)}><ImportIcon /></button>
+        {/* the library: the grid of the folder's photos, and back to the filmstrip */}
+        <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
+                title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
+                onClick={() => { if (!croppingRef.current) setGrid(!grid); }}>
+          <LibraryIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
         {/* the tools work on the open photo, not its cell: one opened before
             its folder listed it, or from elsewhere, has none */}
-        <button className={`tool${layout.right && !cropping && rightMode === "adjust" ? " on" : ""}`} title="adjustments"
+        <button className={`tool${rightOpen && !cropping && rightMode === "adjust" ? " on" : ""}`} title={t("app.rail.adjustments")}
                 data-tour="adjust" onClick={() => showRight("adjust")}>
           <SlidersIcon /></button>
-        <button className={`tool${cropping ? " on" : ""}`} title="crop (R)" data-tour="crop" disabled={!current}
+        <button className={`tool${cropping ? " on" : ""}`} title={t("app.rail.crop")} data-tour="crop" disabled={!current}
                 onClick={() => (cropping ? leaveCrop(true) : enterCrop())}><CropIcon /></button>
-        <button className={`tool${layout.right && !cropping && masksMode ? " on" : ""}`} title="masks" data-tour="masks"
+        <button className={`tool${rightOpen && !cropping && masksMode ? " on" : ""}`} title={t("app.rail.masks")} data-tour="masks"
                 disabled={!current} onClick={() => showRight("masks")}><LayersIcon /></button>
-        <button className={`tool${layout.right && !cropping && healMode ? " on" : ""}`} title="heal and clone (Q)"
+        <button className={`tool${rightOpen && !cropping && healMode ? " on" : ""}`} title={t("app.rail.heal")}
                 data-tour="heal"
                 disabled={!current} onClick={() => showRight("heal")}><HealIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "zones" ? " on" : ""}`} title="zone system"
+        <button className={`tool${rightOpen && !cropping && rightMode === "zones" ? " on" : ""}`} title={t("app.rail.zones")}
                 data-tour="zones" disabled={!current} onClick={() => showRight("zones")}><ZonesIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "film" ? " on" : ""}`}
-                title="film simulation" data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "negative" ? " on" : ""}`}
-                title="film negative" data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "presets" ? " on" : ""}`} title="presets" data-tour="presets"
+        <button className={`tool${rightOpen && !cropping && rightMode === "film" ? " on" : ""}`}
+                title={t("app.rail.filmSimulation")} data-tour="film" disabled={!current} onClick={() => showRight("film")}><FilmSimIcon /></button>
+        <button className={`tool${rightOpen && !cropping && rightMode === "negative" ? " on" : ""}`}
+                title={t("app.rail.filmNegative")} data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
+        <button className={`tool${rightOpen && !cropping && rightMode === "presets" ? " on" : ""}`} title={t("app.rail.presets")} data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
         </div>
         <div className="rail-sep" />
-        <button className="tool" title={keys("export (⇧⌘E)")} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
-        <button className={`tool${layout.right && !cropping && rightMode === "print" ? " on" : ""}`} title={keys("print (⌘P)")}
+        <div className="rail-group" data-tour="send-out">
+        <button className="tool" title={keys(t("app.rail.export"))} data-tour="export" onClick={() => setExporting(true)}><ExportIcon /></button>
+        <button className={`tool${rightOpen && !cropping && rightMode === "print" ? " on" : ""}`} title={keys(t("app.rail.print"))}
                 data-tour="print" onClick={() => showRight("print")}><PrintIcon /></button>
+        </div>
         <div className="rail-fill" />
-        <button className="tool" title="quick start guide" onClick={() => setTouring(true)}><HelpIcon /></button>
-        <button className="tool" title={keys("keyboard shortcuts (⌘/)")} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
-        <button className="tool" title={keys("preferences (⌘,)")} data-tour="prefs" onClick={() => setPrefsOpen(true)}><GearIcon /></button>
+        <button className="tool" title={t("app.rail.guide")} onClick={() => setTouring(true)}><HelpIcon /></button>
+        <button className="tool" title={keys(t("app.rail.shortcuts"))} onClick={() => setShortcutsOpen(true)}><KeyboardIcon /></button>
+        <button className="tool" title={keys(t("app.rail.preferences"))} data-tour="prefs" onClick={() => setPrefsOpen(true)}><GearIcon /></button>
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
+    {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
+                               onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);
@@ -6668,6 +7259,18 @@ export default function App() {
       const copies = local.filter((i) => i.copy);
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
+                  onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
+                  rate={hit && !isRemote(hit) && local.length ? {
+                    rating: local.every((i) => i.rating === local[0].rating && !i.rejected) ? local[0].rating : null,
+                    labels: local.reduce((m, i) => m & i.labels, 31),
+                    rejected: local.every((i) => i.rejected),
+                    setRating: (n) => rateSelection(hit, { rating: n, rejected: false }),
+                    toggleLabel: (bit) => rateSelection(hit, { labels: bit }),
+                    toggleReject: () => rateSelection(hit, { rejected: !local.every((i) => i.rejected) }),
+                  } : null}
+                  onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
+                    detail: local.map(i => i.imgid),
+                  })) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
@@ -6691,25 +7294,26 @@ export default function App() {
       <PreferencesDialog openGenerated={openGenerated} onOpenGenerated={(on) => { storeOpenGenerated(on); setOpenGenerated(on); }} loupe={loupeEnabled} onLoupe={(on) => { storeLoupe(on); setLoupeEnabled(on); loupeEnabledRef.current = on; setLoupePicking(false); setLoupeShown(false); if (on && !gridRef.current) session.current?.requestLoupe(); }} presets={[...BUILTIN_PRESETS, ...presets]} newPhotos={newPhotos}
                          onNewPhotos={(id) => { setNewPhotos(id); storeNewPhotosPreset(id); }}
                          onSaveCurrent={current ? () => setNewPreset("newPhotos") : null}
-                         focus={prefsOpen === true ? undefined : prefsOpen}
+                         focus={prefsOpen === true ? undefined : prefsOpen} card={prefsCard}
                          plugins={plugins} onPlugins={setPlugins}
                          canvas={canvasColor} onCanvas={(v) => { setCanvasColor(v); storeCanvas(v); }}
                          overlayColor={overlayColor} onOverlayColor={(v) => { setOverlayColor(v); storeOverlayColor(v); }}
                          guideColor={guideColor} onGuideColor={(v) => { setGuideColor(v); storeGuideColor(v); }}
                          focusMode={focusMode} onFocusMode={(on) => { setFocusMode(on); storeFocusMode(on); }}
+                         editMode={editMode} onEditMode={chooseEditMode}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
                          stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);
-                           runGuiBenchmark().then(({ path }) => setStatus(`benchmark saved: ${path}`))
-                             .catch((e) => setStatus(`benchmark: ${e}`));
+                           runGuiBenchmark().then(({ path }) => setStatus(t("app.status.benchmarkSaved", { path })))
+                             .catch((e) => setStatus(t("app.status.benchmarkError", { error: e })));
                          } : null}
                          onGpuCheck={current ? () => {
                            setPrefsOpen(false);
-                           runGpuCheck().then(({ path, passed, total }) => setStatus(`GPU check saved: ${path} (${passed} of ${total} passed)`))
-                             .catch((e) => setStatus(`GPU check: ${e}`));
+                           runGpuCheck().then(({ path, passed, total }) => setStatus(t("app.status.gpuCheckSaved", { path, passed, total })))
+                             .catch((e) => setStatus(t("app.status.gpuCheckError", { error: e })));
                          } : null}
                          onTune={current ? () => { setPrefsOpen(false); setTunerOpen(true); } : null}
                          onRelaunch={async () => {
@@ -6717,7 +7321,7 @@ export default function App() {
                            await commands.engineQuit();
                            await relaunch();
                          }}
-                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); }} />
+                         onClose={() => { session.current?.refreshModuleChoices(); setPrefsOpen(false); setPrefsCard(undefined); }} />
     )}
     {tunerOpen && <PerformanceTuner run={runGuiBenchmark} photo={current?.path} raw={session.current?.raw} previewArea={viewport()}
       onOverlay={setPerfHud}
@@ -6744,7 +7348,7 @@ export default function App() {
                   onOpenSettings={openImmichPrefs} />
     )}
     {touring && <Tour onClose={endTour} />}
-    {dropping && <div className="drop-target"><span>drop a photo to edit it, or a folder to add it</span></div>}
+    {dropping && <div className="drop-target"><span>{t("app.dropTarget")}</span></div>}
     {copying && <CopyDialog onCopy={copySettings} onClose={() => setCopying(false)} />}
     {hdrMerging && <HdrDialog count={hdrMerging.length} onRun={(align) => runHdrMerge(hdrMerging, align)}
                               onClose={() => setHdrMerging(null)} />}
@@ -6756,27 +7360,22 @@ export default function App() {
     {negWarning && (
       <div className="modal-backdrop">
         <div className="modal neg-warn">
-          <div className="modal-head"><h2>Film Negative</h2></div>
+          <div className="modal-head"><h2>{t("app.negative.title")}</h2></div>
           <div className="modal-body">
-            <p>Converting a negative turns off the tools that work on the photo before it is inverted, or that
-              negadoctor's print takes the place of: Temp and Tint, Exposure, Whites, Blacks, Dehaze, Profile and
-              Auto, with the tone mapper. The Negative panel's own Exposure, White Point, Blacks and Neutral
-              Highlights stand in for them.</p>
-            <p>Contrast and Saturation move to color balance rgb, and Highlights and Shadows to shadows and
-              highlights, which work after the conversion. Turning the conversion off brings them all back as
-              they were.</p>
+            <p>{t("app.negative.warningTools")}</p>
+            <p>{t("app.negative.warningControls")}</p>
             <label className="row check">
               <input type="checkbox" checked={negNoWarn} onChange={(e) => setNegNoWarn(e.target.checked)} />
-              Don't warn me again
+              {t("app.negative.dontWarn")}
             </label>
           </div>
           <div className="modal-foot">
-            <button className="btn" onClick={() => setNegWarning(false)}>Cancel</button>
+            <button className="btn" onClick={() => setNegWarning(false)}>{t("app.action.cancel")}</button>
             <button className="btn primary" autoFocus onClick={() => {
               if (negNoWarn) storeNegWarn(false);
               setNegWarning(false);
               showRight("negative");
-            }}>Continue</button>
+            }}>{t("app.action.continue")}</button>
           </div>
         </div>
       </div>
@@ -6787,9 +7386,9 @@ export default function App() {
           <div className="modal-head"><h2>{exclusive.title}</h2></div>
           <div className="modal-body"><p>{exclusive.body}</p></div>
           <div className="modal-foot">
-            <button className="btn" onClick={() => setExclusive(null)}>Cancel</button>
+            <button className="btn" onClick={() => setExclusive(null)}>{t("app.action.cancel")}</button>
             <button className="btn primary" autoFocus onClick={() => { const go = exclusive.go; setExclusive(null); go(); }}>
-              Continue</button>
+              {t("app.action.continue")}</button>
           </div>
         </div>
       </div>
@@ -6822,9 +7421,9 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 };
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
-const LEFT_CARDS = ["metadata", "keywording", "folders", "immich", "history"] as const;
+const LEFT_CARDS = ["metadata", "keywording", "folders", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
-const RIGHT_TITLES: Record<RightMode, string> = { adjust: "Adjustments", presets: "Presets", masks: "Masks", heal: "Heal",
-                                                  zones: "Zone System", film: "Film Simulation", negative: "Negative",
-                                                  print: "Print" };
+const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
+                                                  zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),
+                                                  print: t("app.panel.print") };
 

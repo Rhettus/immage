@@ -9,6 +9,7 @@ import { commands, type Limits } from "./commands";
 import { Trash } from "lucide-react";
 import { PrefCard, PrefRow } from "./PrefsUI";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 type Which = keyof Limits;
 
@@ -21,13 +22,11 @@ export const SIZES: Record<Which, number[]> = {
   immichThumbs: [128 * MB, 256 * MB, 512 * MB, GB, 2 * GB],
   immichOriginals: [2 * GB, 5 * GB, 10 * GB, 20 * GB, 50 * GB],
 };
-const ROWS: [Which, string, string][] = [
-  ["thumbs", "Library thumbnails",
-   "so a folder seen before opens at once; a thumbnail is made again after an edit. past the limit, those not looked at longest go first. none is kept with under 5 GB free"],
-  ["immichThumbs", "Immich thumbnails",
-   "search results scrolled through. past the limit, those not looked at longest go first. none is kept with under 5 GB free"],
-  ["immichOriginals", "Immich originals",
-   "photos opened from Immich; one you have edited is kept whatever the limit, as its edit is beside it"],
+// the row's stable English name (the GUI checks find a row by it), its label and its help
+const ROWS: [Which, string, string, string][] = [
+  ["thumbs", "Library thumbnails", t("cache.thumbs"), t("cache.thumbs.hint")],
+  ["immichThumbs", "Immich thumbnails", t("cache.immichThumbs"), t("cache.immichThumbs.hint")],
+  ["immichOriginals", "Immich originals", t("cache.immichOriginals"), t("cache.immichOriginals.hint")],
 ];
 
 const LIMITS_KEY = "immage.cacheLimits";
@@ -45,7 +44,7 @@ export function applyCacheLimits(limits = loadLimits()) {
   commands.cacheLimits(limits).catch(() => {});
 }
 
-const size = (n: number) => (n >= GB ? `${+(n / GB).toFixed(1)} GB` : `${Math.round(n / MB)} MB`);
+const size = (n: number) => (n >= GB ? `${+(n / GB).toFixed(1)} ${t("unit.gb")}` : `${Math.round(n / MB)} ${t("unit.mb")}`);
 
 // a cache past nine tenths is full and letting its oldest entries go to
 // make room: cache.rs evicts down to that, so one in use sits above it
@@ -74,18 +73,18 @@ export function CachePrefs() {
   };
   // what the cache holds of its limit, then what it is for
   const tip = (which: Which, hint: string) =>
-    `${usage ? `${size(usage[which])} of ${size(limits[which])}` : "measuring…"}. ${hint}`;
+    `${usage ? t("cache.usage", { used: size(usage[which]), limit: size(limits[which]) }) : t("cache.measuring")}. ${hint}`;
   return (
-    <PrefCard title="Cache">
+    <PrefCard title={t("cache.title")}>
       <div className="cache-rows">
-        {ROWS.map(([which, label, hint]) => (
-          <PrefRow key={which} label={label} summary={usage ? `${size(usage[which])} of ${size(limits[which])}` : "Measuring…"} hint={hint}>
+        {ROWS.map(([which, id, label, hint]) => (
+          <PrefRow key={which} id={id} label={label} summary={usage ? t("cache.usage", { used: size(usage[which]), limit: size(limits[which]) }) : t("cache.measuring")} hint={hint}>
             <UsageBar used={usage?.[which] ?? null} limit={limits[which]} title={tip(which, hint)} />
             <select className="field cache-size" value={limits[which]} onChange={(e) => choose(which, Number(e.target.value))}>
               {[...new Set([...SIZES[which], limits[which]])].sort((a, b) => a - b)
                 .map((v) => <option key={v} value={v}>{size(v)}</option>)}
             </select>
-            <button className="tool" style={{ marginLeft: 8 }} disabled={!usage?.[which]} title={`clear ${label.toLowerCase()}`}
+            <button className="tool" style={{ marginLeft: 8 }} disabled={!usage?.[which]} title={t("cache.clear", { name: label })}
                     onClick={() => void commands.cacheClear(which).then(measure)}>
               <Trash className="icon" strokeWidth={1.8} /></button>
           </PrefRow>

@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, LensMenu, LookReply, MapView, MaskInfo, MasksReply, NewSpot, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -41,6 +41,59 @@ pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::
     serde_json::from_value::<MasksReply>(reply).map(|r| r.masks).map_err(|e| format!("masks: unexpected reply: {e}"))
 }
 
+// the camera white balance presets of the open photo for the Settings menu
+// (the engine's wb_presets), empty for a photo without any
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn wb_presets(state: State<'_, AppState>) -> Result<WbPresets, String> {
+    let reply = state.engine("wb_presets").request(json!({ "cmd": "wb_presets" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("wb_presets: unexpected reply: {e}"))
+}
+
+// the LUT 3D card's files: the 3D LUT folder of Preferences goes to the engine
+// first, which lists the files beside the instance's own. With `pick` it opens
+// a file dialog in that folder and answers for the file chosen (the engine
+// refuses one outside the folder), or null when the dialog is cancelled
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn lut_files(app: AppHandle, state: State<'_, AppState>, settings: State<'_, crate::settings::Settings>,
+                              priority: i64, pick: bool) -> Result<Option<LutFiles>, String> {
+    let folder = settings.get(crate::settings::LUT_FOLDER).unwrap_or_default();
+    // the engine already has the folder (Preferences hands it over with lut_folder, and the
+    // engine starts with it): the settings file lags a typed path by its batch delay, so
+    // sending it here would put a stale folder back
+    let mut req = json!({ "cmd": "lut_files", "priority": priority });
+    if pick {
+        // the folder the engine now has, which is the home folder when the
+        // preference is empty
+        let start = if folder.trim().is_empty() { std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default() } else { folder.trim().to_string() };
+        let Some(file) = crate::export_cmds::pick_file_in(&app, "select LUT file", &["png", "cube", "3dl"], Path::new(&start)).await? else {
+            return Ok(None);
+        };
+        req["pick"] = json!(file.to_string_lossy());
+    }
+    let reply = state.engine("lut_files").request(req)?;
+    serde_json::from_value(reply).map(Some).map_err(|e| format!("lut_files: unexpected reply: {e}"))
+}
+
+// Preferences' 3D LUT folder, handed to the engine at once so a photo that
+// uses a LUT renders from it (an empty one is darktable's default, the home
+// folder)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn lut_folder(state: State<'_, AppState>, folder: String) -> Result<(), String> {
+    state.engine("lut_folder").request(json!({ "cmd": "lut_folder", "folder": folder.trim() })).map(|_| ())
+}
+
+// the markers the Watermark card offers (the engine's `watermarks`), which a
+// refresh reads again
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn watermarks(state: State<'_, AppState>) -> Result<Watermarks, String> {
+    let reply = state.engine("watermarks").request(json!({ "cmd": "watermarks" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("watermarks: unexpected reply: {e}"))
+}
+
 // the Lensfun lenses Lens Corrections can use for the open photo, and the
 // one matched from its EXIF (the engine's _lens_menu)
 #[tauri::command]
@@ -48,6 +101,53 @@ pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::
 pub(crate) async fn lenses(state: State<'_, AppState>) -> Result<LensMenu, String> {
     let reply = state.engine("lenses").request(json!({ "cmd": "lenses" }))?;
     serde_json::from_value(reply).map_err(|e| format!("lenses: unexpected reply: {e}"))
+}
+
+// darktable's introspection of a module in the open photo's pipe: its
+// parameters' paths, types, ranges, defaults and enum values, flags and
+// groups (the engine's session_module_schema)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn module_schema(state: State<'_, AppState>, op: String) -> Result<ModuleSchema, String> {
+    let reply = state.engine("module_schema").request(json!({ "cmd": "module_schema", "op": op }))?;
+    serde_json::from_value(reply).map_err(|e| format!("module_schema: unexpected reply: {e}"))
+}
+
+// the open photo's instances of every module, in pipe order, each with the
+// `priority` that addresses it and the Immage tool that owns it, if any
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance>, String> {
+    let reply = state.engine("instances").request(json!({ "cmd": "instances" }))?;
+    serde_json::from_value::<InstancesReply>(reply).map(|r| r.instances).map_err(|e| format!("instances: unexpected reply: {e}"))
+}
+
+// Advanced mode's instance menu on instance `priority` of `op`: "new",
+// "duplicate", "rename" (`name`), "move" (next to instance `other`, after it
+// when `after`), "delete" and "restore" (undo of a delete)
+// Tauri exposes these optional fields as flat command arguments.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: String, priority: i64,
+                             name: Option<String>, other: Option<i64>, after: Option<bool>, mask: Option<String>)
+    -> Result<InstanceReply, String> {
+    let mut req = json!({ "cmd": "instance", "action": action, "op": op, "priority": priority });
+    if let Some(n) = name { req["name"] = json!(n); }
+    if let Some(o) = other { req["other"] = json!(o); }
+    if let Some(a) = after { req["after"] = json!(a); }
+    if let Some(m) = mask { req["mask"] = json!(m); }
+    let reply = state.engine("instance").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
+}
+
+// the presets darktable's own menu lists for an instance of a module in the
+// open photo (the engine's session_presets); `module_state` applies one
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64) -> Result<PresetsReply, String> {
+    let reply = state.engine("presets").request(json!({ "cmd": "presets", "op": op, "priority": priority }))?;
+    serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
 }
 
 // Upright's fit of rotate and perspective: { rotation, lensshift_v,
@@ -63,6 +163,19 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     }
     let reply = state.engine("upright").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
+}
+
+// the Color mapping card's acquire as source or target (the engine's
+// colormapping_acquire): the clusters of the module's input at n (1-5)
+// clusters. `hash` is the number the card then writes to cm_source or
+// cm_target; the means, deviations and weights are for its previews
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn colormapping_acquire(state: State<'_, AppState>, which: String, n: Number)
+    -> Result<ColormappingClusters, String> {
+    let reply = state.engine("colormapping_acquire")
+        .request(json!({ "cmd": "colormapping_acquire", "which": which, "n": n }))?;
+    serde_json::from_value(reply).map_err(|e| format!("colormapping_acquire: unexpected reply: {e}"))
 }
 
 // how much range components select over a width x height grid of the shown

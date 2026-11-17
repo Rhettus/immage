@@ -3,14 +3,16 @@
 
 import { ActivityBar } from "./ActivityBar";
 import { type ImageEntry, type Known, LABEL_COLORS, ThumbLoader, fetchThumb, isPrimaryRaw, knownKey, pairKey } from "./library";
-import { SlidersIcon } from "./icons";
+import { CullingIcon, SlidersIcon } from "./icons";
 import { baseName } from "./paths";
 import { captureDate, known, shutter } from "./MetadataPanel";
 import { end } from "./activity";
 import { isRemote } from "./immich";
 import { settings } from "./settings";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { SecondaryClickGuard } from "./secondaryClick";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n";
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -18,14 +20,16 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
-export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, more, onBackMenu }: {
+export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
+                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
   partners: Map<number, ImageEntry[]>;    // a stacked raw's JPEG or HEIF, by its imgid
   empty: string;                          // what an empty grid says
   grid: boolean;                          // spread over the editing area, in rows
+  gridSize?: number;                      // the grid's cell height, CSS pixels
+  onGridZoom?: (factor: number) => void;  // a pinch or ⌘ wheel over the grid
   selection: Set<number>;
   candidate: number | null;               // the photo compared with the open one
   onPick: (i: ImageEntry, e: React.MouseEvent) => void;
@@ -33,6 +37,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   onOpenKnown: (k: Known, double: boolean) => void;
   onMenu: (e: React.MouseEvent, imgid: number) => void;
   onMeta: (i: ImageEntry, fields: Partial<ImageEntry>) => void;
+  onPress?: (i: ImageEntry, e: React.PointerEvent<HTMLElement>) => void; // may become a drag (photoDrag.ts)
   more?: () => void;                      // there are more results: called as the end scrolls into view
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
 }) {
@@ -62,6 +67,63 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
     if (c.top < r.top) root.scrollTop -= r.top - c.top;
     else if (c.bottom > r.bottom) root.scrollTop += c.bottom - r.bottom;
   }, [current, grid]);
+  // a grid resized keeps one photo where it was: the one under the pointer
+  // for a pinch, otherwise the open photo when it shows, or the top left one.
+  // the column count changes as the size does, so without this the rows
+  // under the pointer would run off. a scroll the page makes itself (`set`)
+  // keeps the anchor; any other picks a new one, so it is there before the
+  // next resize
+  const anchor = useRef<{ el: Element; offset: number; set: number } | null>(null);
+  const takeAnchor = (x?: number, y?: number) => {
+    const root = strip.current;
+    if (!root) return;
+    const r = root.getBoundingClientRect();
+    const at = (px: number, py: number) => document.elementFromPoint(px, py)?.closest(".thumb");
+    let el: Element | null | undefined = x !== undefined && y !== undefined ? at(x, y) : null;
+    if (!el) {
+      const active = root.querySelector(".thumb.active");
+      const c = active?.getBoundingClientRect();
+      el = c && c.top >= r.top && c.bottom <= r.bottom ? active : at(r.left + 30, r.top + 30);
+    }
+    anchor.current = el && root.contains(el) ? { el, offset: el.getBoundingClientRect().top - r.top, set: -1 } : null;
+  };
+  const zoom = useRef(onGridZoom);
+  zoom.current = onGridZoom;
+  useEffect(() => {
+    const root = strip.current;
+    if (!root || !grid) return;
+    // about 4% per wheel notch, as the photo's zoom; capped, as macOS wheel
+    // acceleration can report several notches in one event. a plain wheel
+    // scrolls
+    const wheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !zoom.current) return;
+      e.preventDefault();
+      const delta = Math.max(-50, Math.min(50, e.deltaY));
+      takeAnchor(e.clientX, e.clientY);
+      zoom.current(Math.exp(-delta * 0.006));
+    };
+    const scroll = () => {
+      const a = anchor.current;
+      if (!a || Math.abs(root.scrollTop - a.set) > 1) takeAnchor();
+    };
+    takeAnchor();
+    root.addEventListener("wheel", wheel, { passive: false });
+    root.addEventListener("scroll", scroll, { passive: true });
+    return () => {
+      root.removeEventListener("wheel", wheel);
+      root.removeEventListener("scroll", scroll);
+    };
+  }, [grid]);
+  useLayoutEffect(() => {
+    const root = strip.current;
+    if (!root || !grid) return;
+    if (!anchor.current || !anchor.current.el.isConnected) takeAnchor();
+    const a = anchor.current;
+    if (!a) return;
+    const top = a.el.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    root.scrollTop += top - a.offset;
+    a.set = root.scrollTop;
+  }, [gridSize, grid]);
   // thumbnails scrolled into view jump the loader's queue
   useEffect(() => {
     const root = strip.current;
@@ -89,12 +151,12 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   }, [images, loader, grid]);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cellSize = grid ? 200 : Math.round((height - 12) * 1.15);
+  const cellSize = grid ? Math.round(gridSize) : Math.round((height - 12) * 1.15);
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
-  const on = useRef({ onPick, onDouble, onMenu, onMeta });
-  on.current = { onPick, onDouble, onMenu, onMeta };
+  const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress });
+  on.current = { onPick, onDouble, onMenu, onMeta, onPress };
   const openKnown = useRef(onOpenKnown);
   openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
@@ -103,7 +165,8 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
       : null;
   }
   return (
-    <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip} style={grid ? undefined : { height }}
+    <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip}
+         style={grid ? { "--grid-column": `${Math.round(gridSize * 1.15)}px` } as React.CSSProperties : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {images.map((i) => !("imgid" in i)
@@ -124,37 +187,45 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta">;
+export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress">;
 
 // one photo's filmstrip cell
 export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, active, selected, candidate, doubleOpens }: {
   entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
   types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
 }) {
+  const clickGuard = useRef(new SecondaryClickGuard());
   return (
     <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
                     + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
                     + `${candidate ? " candidate" : ""}`}
          style={cell}
-         title={i.filename} data-imgid={i.imgid} onClick={(e) => on.current!.onPick(i, e)}
+         title={i.filename} data-imgid={i.imgid} onClick={(e) => {
+           if (clickGuard.current.click(e.detail)) return;
+           on.current!.onPick(i, e);
+         }}
+         onPointerDown={(e) => {
+           if (clickGuard.current.pointerDown(e.button)) return;
+           if (!(e.target as Element).closest(".thumb-foot")) on.current!.onPress?.(i, e);
+         }}
          onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
-         onContextMenu={(e) => { e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
+         onContextMenu={(e) => { clickGuard.current.contextMenu(e.button); e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
         {/* altered, as darktable counts it, so its lighttable agrees */}
-        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{types}{copyName(i)}</span>
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}
       <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
-        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title="reject (X)"
+        {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title={t("library.filmstrip.reject")}
                 onClick={() => on.current!.onMeta(i, { rejected: !i.rejected })}>✕</button>}
         <span className="thumb-stars">
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} className={!i.rejected && i.rating >= n ? "on" : ""}
-                    title={isRemote(i) ? "Immich's rating: open the photo to change it" : `${n} star${n > 1 ? "s" : ""}`}
+                    title={isRemote(i) ? t("library.filmstrip.immichRating") : t("library.filmstrip.stars", { count: n })}
                     disabled={isRemote(i)}
                     onClick={() => on.current!.onMeta(i, { rating: i.rating === n ? 0 : n, rejected: false })}>★</button>
           ))}
@@ -163,6 +234,9 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
           {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
             ? <span key={k} className="dot" style={{ background: c }} /> : null))}
         </span>
+        {/* grid only (styles.css): the culling lightbox on this photo */}
+        {!isRemote(i) && <button className="thumb-cull" title={t("library.filmstrip.culling")}
+                onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: { imgid: i.imgid } }))}><CullingIcon /></button>}
       </div>
     </div>
   );
@@ -180,7 +254,7 @@ export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open,
          onDoubleClick={() => { if (doubleOpens) open.current!(i, true); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
-        {i.edited && <span className="thumb-edited" title="edited"><SlidersIcon /></span>}
+        {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>
@@ -224,8 +298,8 @@ export function ThumbProgress({ loader }: { loader: ThumbLoader }) {
     });
     return () => { off(); window.clearTimeout(timer); };
   }, [loader]);
-  const t = loader.progress();
-  return t.done < t.total ? <ActivityBar what="Loading thumbnails" done={t.done} total={t.total} /> : null;
+  const progress = loader.progress();
+  return progress.done < progress.total ? <ActivityBar what={t("library.filmstrip.loading")} done={progress.done} total={progress.total} /> : null;
 }
 
 // the image's thumbnail as the loader has it, redrawn when that changes

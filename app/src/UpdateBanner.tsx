@@ -4,6 +4,7 @@
 // a newer Immage on GitHub: a small card in the corner, over everything but
 // in nobody's way, with the release's notes, until it is installed or put off
 import { useState } from "react";
+import { t } from "./i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { installUpdate, later, relaunch, releaseUrl, skipVersion, useBannerShown, useUpdate } from "./updates";
 
@@ -22,10 +23,10 @@ export function UpdateBanner({ prepare }: { prepare: () => Promise<void> }) {
   return (
     <div className="update-banner" role="status">
       <div className="update-head">
-        <span>Immage {version} is available</span>
+        <span>{t("dialogs.update.available", { version })}</span>
         {body && (
           <button className="update-notes-toggle" onClick={() => setNotes(!notes)}>
-            {notes ? "Hide Notes" : "Release Notes"}
+            {notes ? t("dialogs.update.hideNotes") : t("dialogs.update.releaseNotes")}
           </button>
         )}
       </div>
@@ -34,36 +35,35 @@ export function UpdateBanner({ prepare }: { prepare: () => Promise<void> }) {
         <>
           <div className="progress"><div className="bar" style={{ width: state.total ? `${(100 * state.got) / state.total}%` : "100%" }} /></div>
           <div className="update-line">
-            downloading {(state.got / 1e6).toFixed(0)}{state.total ? ` of ${(state.total / 1e6).toFixed(0)}` : ""} MB
+            {t("dialogs.update.downloading", { got: (state.got / 1e6).toFixed(0), total: state.total ? t("dialogs.update.downloadingOf", { total: (state.total / 1e6).toFixed(0) }) : "" })}
           </div>
         </>
       )}
-      {state.kind === "installing" && <div className="update-line">saving the edit and installing…</div>}
+      {state.kind === "installing" && <div className="update-line">{t("dialogs.update.installing")}</div>}
       {state.kind === "failed" && (
         <div className="update-line error">
-          {state.engineGone ? "the update did not install, and the engine has stopped; relaunch to go on: " : "the update did not install: "}
-          {state.message}
-          {IS_LINUX && "; the AppImage can also be downloaded from the release page and put in place of this one"}
+          {state.engineGone ? t("dialogs.update.failedEngineStopped", { message: state.message }) : t("dialogs.update.failed", { message: state.message })}
+          {IS_LINUX && ` ${t("dialogs.update.appImageFallback")}`}
         </div>
       )}
       <div className="update-foot">
         {state.kind === "available" && (
           <>
-            <button className="btn" onClick={skipVersion}>Skip This Version</button>
-            <button className="btn" onClick={later}>Later</button>
+            <button className="btn" onClick={skipVersion}>{t("dialogs.update.skipVersion")}</button>
+            <button className="btn" onClick={later}>{t("dialogs.update.later")}</button>
             {canInstall
-              ? <button className="btn primary" onClick={() => void installUpdate(prepare)}>Install and Relaunch</button>
-              : <button className="btn primary" onClick={page}>Release Page</button>}
+              ? <button className="btn primary" onClick={() => void installUpdate(prepare)}>{t("dialogs.update.installRelaunch")}</button>
+              : <button className="btn primary" onClick={page}>{t("dialogs.update.releasePage")}</button>}
           </>
         )}
         {state.kind === "failed" && (
           <>
-            <button className="btn" onClick={page}>Release Page</button>
+            <button className="btn" onClick={page}>{t("dialogs.update.releasePage")}</button>
             {state.engineGone
-              ? <button className="btn primary" onClick={() => void relaunch()}>Relaunch</button>
+              ? <button className="btn primary" onClick={() => void relaunch()}>{t("dialogs.update.relaunch")}</button>
               : <>
-                  <button className="btn" onClick={later}>Later</button>
-                  <button className="btn primary" onClick={() => void installUpdate(prepare)}>Try Again</button>
+                  <button className="btn" onClick={later}>{t("dialogs.update.later")}</button>
+                  <button className="btn primary" onClick={() => void installUpdate(prepare)}>{t("dialogs.update.tryAgain")}</button>
                 </>}
           </>
         )}

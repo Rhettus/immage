@@ -28,32 +28,23 @@ export async function startup(t) {
   launchSplash = await splashSize(t);
   t.measure({ name: 'splash', observed: launchSplash ?? 'not recorded', expected: SPLASH });
   await until(() => t.driver.observe(() => document.fonts.status === 'loaded'), 'fonts');
-  // Wait for the first-run tour's actual hit target and animated layout before
-  // sending input. The pointer still goes through the real control.
-  const touring = await t.driver.observe(() => !!document.querySelector('.tour'));
-  if (touring) {
-    // a tiling window manager can resize the new window just after Skip
-    // settles, so a click can land where the button was; find it again
-    for (let attempt = 1; ; attempt++) {
-      let previous, matches = 0;
-      const p = await until(async () => {
-        const now = await t.driver.observe(read.button, 'Skip');
-        if (!now) return false;
-        if (previous && Math.abs(now.x - previous.x) < .5 && Math.abs(now.y - previous.y) < .5) matches++;
-        else matches = 0;
-        previous = now;
-        return matches >= 3 && now;
-      }, 'stable, clickable tour Skip button');
-      await t.driver.point(p.x, p.y);
-      try { await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed', 3000); break; }
-      catch (e) { if (attempt >= 3) throw e; }
-    }
-  }
+  // Dismiss the first-run tour before aiming later interactions.
+  await dismissTour(t);
   await t.evidence('opened');
   const initial = await settledPhoto(t);
   assert(initial.alpha > 250 && initial.luma > 1, 'fixture photo must be visibly rendered');
   await t.evidence('startup');
   t.measure({ name: 'startup', photo: summary(initial), environment: await t.driver.observe(read.environment) });
+}
+
+export async function dismissTour(t) {
+  const touring = await t.driver.observe(() => !!document.querySelector('.tour'));
+  if (touring) {
+    // Escape is the documented quick-start shortcut and avoids a coordinate
+    // dependency on the moving spotlight while the initial grid is loading.
+    await t.driver.keys('\uE00C');
+    await until(() => t.driver.observe(() => !document.querySelector('.tour')), 'tour closed with Escape');
+  }
 }
 
 export async function settledPhoto(t, predicate = () => true) {

@@ -3,13 +3,14 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "./i18n";
 
 // Preferences' building blocks: a titled card of settings, and a row with
 // the setting's name and a short explanation on the left, its control on
 // the right
-export function PrefCard({ title, children }: { title: string; children: React.ReactNode }) {
+export function PrefCard({ title, card, children }: { title: string; card?: string; children: React.ReactNode }) {
   return (
-    <section className="pref-card">
+    <section className="pref-card" data-pref-card={card}>
       <h4>{title}</h4>
       {children}
     </section>
@@ -59,7 +60,7 @@ function PrefHelp({ label, children }: { label: string; children: ReactNode }) {
   }, [!!position]);
   useEffect(() => () => clearTimeout(timer.current), []);
   return <>
-    <button ref={button} type="button" className="pref-help" aria-label={`Help for ${label || "this setting"}`}
+    <button ref={button} type="button" className="pref-help" aria-label={t("prefs.help", { label: label || t("prefs.help.this") })}
             aria-describedby={position ? id : undefined} onMouseEnter={show} onMouseLeave={leave}
             onFocus={show} onBlur={close} onClick={show}>?</button>
     {position && createPortal(<div ref={tip} id={id} role="tooltip" className="pref-help-tip"
@@ -67,12 +68,13 @@ function PrefHelp({ label, children }: { label: string; children: ReactNode }) {
   </>;
 }
 
-export function PrefRow({ label, hint, summary, title, children }: {
-  label: string; hint?: ReactNode; summary?: ReactNode; title?: string; children: ReactNode;
+// id: the row's stable name, English whatever the language (the GUI checks find a row by it); the label by default
+export function PrefRow({ id, label, hint, summary, title, children }: {
+  id?: string; label: string; hint?: ReactNode; summary?: ReactNode; title?: string; children: ReactNode;
 }) {
   const help = summary !== undefined ? hint : title;
   return (
-    <div className="pref-row" data-pref-label={label}>
+    <div className="pref-row" data-pref-label={id ?? label}>
       <div className="pref-label">
         <span className="pref-label-heading">{label}{help && <PrefHelp label={label}>{help}</PrefHelp>}</span>
         {(summary ?? hint) && <span className="pref-hint">{summary ?? hint}</span>}

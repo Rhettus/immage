@@ -34,6 +34,20 @@ pub fn list(dir: &Path) -> Vec<Entry> {
     plain(dir)
 }
 
+// the listing, or None when it has not returned within `wait`: read_dir() of
+// a share whose server has stopped answering holds for the kernel's timeout.
+// the listing goes on in its own thread, whose late answer is dropped
+pub fn list_within(dir: &Path, wait: std::time::Duration) -> Option<Vec<Entry>> {
+    let dir = dir.to_path_buf();
+    within(wait, move || list(&dir))
+}
+
+fn within<T: Send + 'static>(wait: std::time::Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || { let _ = tx.send(f()); });
+    rx.recv_timeout(wait).ok()
+}
+
 fn plain(dir: &Path) -> Vec<Entry> {
     let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
     rd.flatten().map(|e| {
@@ -175,6 +189,16 @@ mod tests {
     // cached, so run it both ways round, a minute apart:
     //   IMMAGE_LIST_DIR=<folder> cargo test --release list_timing -- --ignored --nocapture
     //   IMMAGE_LIST_DIR=<folder> IMMAGE_LIST_BULK_FIRST=1 cargo test ...
+    #[test]
+    fn within_gives_up_on_a_stalled_call() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        assert_eq!(within(Duration::from_millis(50), || { std::thread::sleep(Duration::from_secs(2)); 1 }), None);
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert_eq!(within(Duration::from_secs(5), || 7), Some(7));
+        assert!(list_within(Path::new("/"), Duration::from_secs(10)).is_some());
+    }
+
     #[test]
     #[ignore]
     fn list_timing() {

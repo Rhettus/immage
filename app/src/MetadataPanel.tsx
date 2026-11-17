@@ -5,6 +5,7 @@
 // text fields, rating and labels editable, its EXIF shown
 import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
+import { t } from "./i18n";
 import { LocationEditor } from "./LocationEditor";
 import { baseName } from "./paths";
 import { LABEL_COLORS, type Exif, type ImageEntry } from "./library";
@@ -14,7 +15,8 @@ export type TextFields = { title: string; description: string; rights: string; c
 
 // Lightroom's names for darktable's fields
 const EDITABLE: [keyof TextFields, string][] = [
-  ["title", "Title"], ["description", "Caption"], ["rights", "Copyright"], ["creator", "Creator"],
+  ["title", t("dialogs.metadata.field.title")], ["description", t("dialogs.metadata.field.caption")],
+  ["rights", t("dialogs.metadata.field.copyright")], ["creator", t("dialogs.metadata.field.creator")],
 ];
 
 type FullExif = Exif & {
@@ -65,55 +67,55 @@ export function MetadataPanel({ image, text, onText, onMeta, onLocationSaved, on
   const folder = image.path.slice(0, image.path.length - image.filename.length - 1);
   const mp = e.file_width * e.file_height / 1e6;
   const rows: [string, string][] = [
-    ["File Dimensions", e.file_width ? `${e.file_width} × ${e.file_height}` : ""],
-    ["Megapixels", mp ? `${mp.toFixed(1)} MP` : ""],
-    ["Subject Distance", known(e.focus_distance) && e.focus_distance > 0 ? `${+e.focus_distance.toFixed(2)} m` : ""],
-    ["Focal Length", known(e.focal_length) && e.focal_length > 0 ? `${+e.focal_length.toFixed(1)} mm` : ""],
-    ["Focal Length 35mm", known(e.crop_factor) && e.crop_factor > 0 && e.focal_length > 0
+    [t("dialogs.metadata.exif.fileDimensions"), e.file_width ? `${e.file_width} × ${e.file_height}` : ""],
+    [t("dialogs.metadata.exif.megapixels"), mp ? `${mp.toFixed(1)} MP` : ""],
+    [t("dialogs.metadata.exif.subjectDistance"), known(e.focus_distance) && e.focus_distance > 0 ? `${+e.focus_distance.toFixed(2)} m` : ""],
+    [t("dialogs.metadata.exif.focalLength"), known(e.focal_length) && e.focal_length > 0 ? `${+e.focal_length.toFixed(1)} mm` : ""],
+    [t("dialogs.metadata.exif.focalLength35mm"), known(e.crop_factor) && e.crop_factor > 0 && e.focal_length > 0
       ? `${Math.round(e.focal_length * e.crop_factor)} mm` : ""],
-    ["F-Stop", known(e.aperture) && e.aperture > 0 ? `ƒ / ${+e.aperture.toFixed(1)}` : ""],
-    ["Shutter Speed", shutter(e.exposure)],
-    ["ISO Speed Rating", known(e.iso) && e.iso > 0 ? `ISO ${Math.round(e.iso)}` : ""],
-    ["Exposure Bias", known(e.exposure_bias) && e.exposure_bias !== 0
+    [t("dialogs.metadata.exif.fStop"), known(e.aperture) && e.aperture > 0 ? `ƒ / ${+e.aperture.toFixed(1)}` : ""],
+    [t("dialogs.metadata.exif.shutterSpeed"), shutter(e.exposure)],
+    [t("dialogs.metadata.exif.isoSpeed"), known(e.iso) && e.iso > 0 ? `ISO ${Math.round(e.iso)}` : ""],
+    [t("dialogs.metadata.exif.exposureBias"), known(e.exposure_bias) && e.exposure_bias !== 0
       ? `${e.exposure_bias > 0 ? "+" : ""}${+e.exposure_bias.toFixed(2)} EV` : ""],
-    ["Flash", e.flash],
-    ["Exposure Program", e.exposure_program],
-    ["Metering Mode", e.metering_mode],
-    ["White Balance", e.white_balance],
-    ["Lens", e.lens === "n/a" ? "" : e.lens],
-    ["Model", e.model],
-    ["Make", e.maker],
+    [t("dialogs.metadata.exif.flash"), e.flash],
+    [t("dialogs.metadata.exif.exposureProgram"), e.exposure_program],
+    [t("dialogs.metadata.exif.meteringMode"), e.metering_mode],
+    [t("dialogs.metadata.exif.whiteBalance"), e.white_balance],
+    [t("dialogs.metadata.exif.lens"), e.lens === "n/a" ? "" : e.lens],
+    [t("dialogs.metadata.exif.model"), e.model],
+    [t("dialogs.metadata.exif.make"), e.maker],
   ];
   return (
     <div className="panel metadata">
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
-        <span>Metadata</span>
+        <span>{t("dialogs.metadata.title")}</span>
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
       {open && (
         <>
         <div className="meta-grid">
-          <span className="k">File Name</span><span className="v" title={image.filename}>{image.filename}</span>
-          <span className="k">Folder</span><span className="v" title={folder}>{baseName(folder)}</span>
-          <span className="k">Capture Date</span><span className="v">
+          <span className="k">{t("dialogs.metadata.fileName")}</span><span className="v" title={image.filename}>{image.filename}</span>
+          <span className="k">{t("dialogs.metadata.folder")}</span><span className="v" title={folder}>{baseName(folder)}</span>
+          <span className="k">{t("dialogs.metadata.captureDate")}</span><span className="v">
             {e.datetime ? captureDate(e.datetime) : ""}{" "}
             {image.imgid > 0 ? <button className="tool" onClick={onCaptureTime}
-              title="Adjust capture time for selected photos" aria-label="Adjust Capture Time"><Pencil size={13} /></button> : null}
+              title={t("dialogs.metadata.adjustCaptureTimeHint")} aria-label={t("dialogs.metadata.adjustCaptureTime")}><Pencil size={13} /></button> : null}
           </span>
           {EDITABLE.map(([field, label]) => (
             <TextRow key={`${image.imgid}-${field}`} label={label} value={text?.[field] ?? ""}
                      disabled={!text} onCommit={(v) => onText(field, v)} />
           ))}
-          <span className="k">Rating</span>
+          <span className="k">{t("dialogs.metadata.rating")}</span>
           <span className="v stars-edit">
             {[1, 2, 3, 4, 5].map((n) => (
               <button key={n} className={!image.rejected && image.rating >= n ? "on" : ""}
-                      title={`${n} star${n > 1 ? "s" : ""}`}
+                      title={t("dialogs.metadata.ratingStars", { count: n })}
                       onClick={() => onMeta({ rating: image.rating === n ? 0 : n, rejected: false })}>★</button>
             ))}
           </span>
-          <span className="k">Label</span>
+          <span className="k">{t("dialogs.metadata.label")}</span>
           <span className="v labels-edit">
             {LABEL_COLORS.map((c, k) => (
               <button key={c} className={`swatch${image.labels & (1 << k) ? " on" : ""}`} style={{ background: c }}

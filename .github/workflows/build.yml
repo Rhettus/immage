@@ -59,6 +59,8 @@ jobs:
         run: python3 -I scripts/test_release_assets.py
       - name: model pin checks
         run: python3 -I scripts/test_pin_models.py
+      - name: darktable translation import checks
+        run: python3 -I scripts/test_sync_darktable_locales.py
       - name: upstream copy checks
         run: python3 -I scripts/test_check_upstream_copies.py
       - name: gitleaks
@@ -99,17 +101,32 @@ jobs:
             verify/ai-mask-paste.test.mjs \
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
+            verify/locales.test.mjs \
+            verify/field-text.test.mjs \
             verify/contrast-equalizer.test.mjs \
+            verify/culling.test.mjs \
+            verify/culling-zoom.test.mjs \
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
+            verify/demosaic-options.test.mjs \
+            verify/curves.test.mjs \
             verify/detail-preview.test.mjs \
             verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
             verify/export-format.test.mjs \
+            verify/filter-rejected.test.mjs \
+            verify/find-model.test.mjs \
+            verify/find-layout.test.mjs \
+            verify/saved-filters.test.mjs \
+            verify/folder-edits.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
+            verify/gui-suites.test.mjs \
             verify/gpu-check.test.mjs \
+            verify/grid-size.test.mjs \
             verify/menus.test.mjs \
+            verify/mask-module-flags.test.mjs \
+            verify/mask-modules.test.mjs \
             verify/module-others.test.mjs \
             verify/perf-diagnostics.test.mjs \
             verify/performance-tuner.test.mjs \
@@ -117,9 +134,17 @@ jobs:
             verify/pixel-worker.test.mjs \
             verify/preview-handoff.test.mjs \
             verify/saturation-curve.test.mjs \
+            verify/secondary-click.test.mjs \
             verify/settings-store.test.mjs \
+            verify/startup-restore.test.mjs \
             verify/theme.test.mjs \
+            verify/search-identity.test.mjs \
+            verify/search-query-lifecycle.test.mjs \
+            verify/combined-search.test.mjs \
+            verify/local-search-ui.test.mjs \
+            verify/search-prefs.test.mjs \
             verify/typed-commands.test.mjs \
+            verify/undo-stack.test.mjs \
             verify/ui-updates.test.mjs \
             verify/upgrade-paths.test.mjs
       - run: npm audit --omit=dev --audit-level=high

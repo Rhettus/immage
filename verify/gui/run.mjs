@@ -52,7 +52,7 @@ const report = { id, runnerPid: process.pid, status: 'blocked', started: new Dat
   commit: git('rev-parse', 'HEAD'), dirty: !!git('status', '--porcelain'),
   host: hostname(), platform: process.platform, arch: process.arch,
   display: { wayland: process.env.WAYLAND_DISPLAY, x11: process.env.DISPLAY, backend: process.env.XDG_SESSION_TYPE },
-  coverage: 'Visible Linux app using system WebKit. Only selected cases are exercised; see case limitations and COVERAGE.md. New cases await live validation.',
+  coverage: 'Visible Linux app using system WebKit. Only selected cases are exercised; case status, subchecks, limitations and evidence are recorded below and in report.json.',
   selected, selectedCases, expectedViewport,
   actions: [], cases: [], errors: [] };
 const journal = new Journal(out);
@@ -88,7 +88,10 @@ async function finishReport() {
   journal.checkpoint(report);
   const md = [`# GUI verification: ${report.status}`, '', `Run: ${id}`, '',
     `Checkout: ${report.commit}${report.dirty ? ' (dirty)' : ''}`, '', report.coverage, '',
-    ...report.cases.map(c => `- ${c.name}: ${c.status}${c.error ? ` — ${c.error}` : ''}`),
+    ...report.cases.flatMap(c => [
+      `- ${c.name}: ${c.status}${c.error ? ` — ${c.error}` : ''}`,
+      ...c.subchecks.filter(check => check.status === 'failure').map(check => `  - failed subcheck ${check.name}: expected ${check.expected ?? 'pass'}; observed ${check.observed ?? 'failure'}`),
+    ]),
     ...report.errors.map(e => `- ${e}`), '', 'Evidence and action log: see report.json and case directories.', ''];
   await writeFile(join(out, 'report.md'), md.join('\n'));
   journal.event('finished', { status: report.status });
@@ -138,7 +141,20 @@ try {
   await mkdir(fixtures);
   for (const part of ['data', 'config', 'cache', 'state']) await mkdir(join(profile, part), { recursive: true });
   let copiedFixture = join(fixtures, basename(fixture));
-  if(fixtureName==='configured') await copyFile(fixture, copiedFixture);
+  if (selectedCases.includes('startup-restore')) {
+    copiedFixture = join(fixtures, 'stairs-to-mountain.jpg');
+    await copyFile(join(root, 'app/sample/stairs-to-mountain.jpg'), copiedFixture);
+  } else if (selectedCases.includes('photo-filter')) {
+    const ext = basename(fixture).match(/\.[^.]+$/)?.[0] ?? '';
+    copiedFixture = join(fixtures, `filter-fixture${ext}`);
+    await copyFile(fixture, copiedFixture);
+    for (const name of ['notes.txt', 'bad-image.jpg.xmp', 'partial.immage-part', 'document.pdf'])
+      await writeFile(join(fixtures, name), 'not a photo');
+  } else if (selectedCases.includes('dng-thumbnail')) {
+    copiedFixture = join(fixtures, 'fallback-preview.dng');
+    execFileSync('python3', [join(root, 'verify/gui/support/dng-fixture.py'), copiedFixture], { stdio: 'pipe' });
+    report.dngFixture = 'Generated DNG with unsupported main-image compression and a four-color embedded TIFF preview';
+  } else if(fixtureName==='configured') await copyFile(fixture, copiedFixture);
   else {
     execFileSync('python3',[join(root,'verify/gui/fixtures.py'),fixtures],{stdio:'pipe'});
     const generated=JSON.parse(await readFile(join(fixtures,'fixtures.json'),'utf8'));
@@ -172,10 +188,18 @@ try {
       await copyFile(copiedFixture, join(fixtures, name));
     report.batchFixtures = ['batch-target-1.jpg', 'batch-target-2.jpg', 'batch-untouched.jpg'];
   }
-  if (selectedCases.includes('filters')) {
-    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('filters requires a JPEG fixture');
-    for (const name of ['filters-peer-1.jpg', 'filters-peer-2.jpg']) await copyFile(copiedFixture, join(fixtures, name));
-    report.filterFixtures = ['filters-peer-1.jpg', 'filters-peer-2.jpg'];
+  if (selectedCases.includes('advanced-sync')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('advanced-sync requires a JPEG fixture');
+    await copyFile(copiedFixture, join(fixtures, 'advanced-target.jpg'));
+  }
+  // the Advanced file cards: a second photo for Composite's picker, and a LUT
+  // folder whose first file the photo's sidecar already uses (made by a
+  // separate headless engine in this run's own folders, before the app starts)
+  if (selectedCases.includes('advanced-file-cards')) {
+    if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('advanced-file-cards requires a JPEG fixture');
+    await copyFile(copiedFixture, join(fixtures, 'advanced-second.jpg'));
+    const { prepareLutFixture } = await import('./support/lut-fixture.mjs');
+    report.lutFixture = await prepareLutFixture({ engine, work: join(out, 'lut-prep'), folder: join(fixtures, 'luts'), photo: copiedFixture });
   }
   if (selectedCases.includes('jpeg-preset')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('jpeg-preset requires a JPEG fixture');
@@ -184,6 +208,51 @@ try {
   if (selectedCases.includes('shift-range')) {
     if (!/\.jpe?g$/i.test(copiedFixture)) throw Error('shift-range requires a JPEG fixture');
     for (let i = 1; i <= 8; i++) await copyFile(copiedFixture, join(fixtures, `shift-${i}.jpg`));
+  }
+  // grid zoom needs enough photos for the grid to scroll: copies of the fixture
+  if (selectedCases.includes('grid-zoom')) {
+    const { gridZoomFixtures } = await import('./specs/grid-zoom.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
+    report.gridZoomFixtures = gridZoomFixtures.length;
+  }
+  if (selectedCases.includes('library-menu-rate')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `rate-menu-${i}${ext}`));
+  }
+  if (selectedCases.includes('grid-culling') || selectedCases.includes('grid-culling-controls')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));
+    report.cullingFixtures = 3;
+  }
+  // find-live: copies of the fixture, one of which the case rates
+  if (selectedCases.includes('find-live') || selectedCases.includes('find-no-clip')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `find-${String(i).padStart(2, '0')}${ext}`));
+  }
+  // open-failure-recovery: two more good copies and a truncated one (made from
+  // the run's own copy, never the original), so a failed open sits between opens
+  if (selectedCases.includes('open-failure-recovery')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of ['open-b', 'open-c']) await copyFile(copiedFixture, join(fixtures, name + ext));
+    const whole = await readFile(copiedFixture);
+    // a raw loses its tail past 100 KB; a small JPEG is cut to its first 64 bytes, before the frame header, so no decoder can open it
+    const keep = /\.(jpe?g|png|tiff?)$/i.test(ext) ? 64 : 100 * 1024;
+    await writeFile(join(fixtures, `open-bad${ext}`), whole.subarray(0, Math.min(keep, Math.floor(whole.length / 2))));
+    report.openFailureFixtures = { good: ['open-b' + ext, 'open-c' + ext], truncated: `open-bad${ext}`, keptBytes: Math.min(keep, Math.floor(whole.length / 2)) };
+  }
+  // grid-culling-priority: many copies so thumbnails are still pending when the lightbox opens
+  if (selectedCases.includes('grid-culling-priority')) {
+    const { priorityFixtures } = await import('./specs/grid-culling.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (const name of priorityFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
+    report.cullingPriorityFixtures = priorityFixtures.length;
+  }
+  // moving photos by drag: copies beside the fixture, and folders to drop on
+  if (selectedCases.includes('move-photos') || selectedCases.includes('move-copy')) {
+    const { moveFixtures } = await import('./specs/move-photos.mjs');
+    report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
+      files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
   }
   // the guide's Library grid shot needs a folder of photos: copies of the fixture
   if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
@@ -243,6 +312,32 @@ try {
     for (const [name, text] of Object.entries(SEED.loose)) await writeFile(join(runtime, name), text);
     report.settingsStoreSeed = { localStorage: Object.keys(SEED.localStorage), loose: Object.keys(SEED.loose) };
   }
+  if (selectedCases.includes('startup-restore')) {
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    const library = { folders: [fixtures], current: fixtures, image: copiedFixture, version: 0,
+      expanded: [fixtures], hidden: [], sampled: true, grid: false, recent: [fixtures] };
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({
+      'immage.tour.done': '1', 'immage.library': JSON.stringify(library) }, null, 2));
+    report.startupRestoreSeed = library;
+  }
+  if (selectedCases.includes('dng-thumbnail')) {
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1' }, null, 2));
+  }
+  // new-photo-defaults: a second raw, and a profile seeded with Preferences'
+  // Profile = Standard and a New photos preset holding profile AgX Default
+  if (selectedCases.includes('new-photo-defaults')) {
+    await copyFile(copiedFixture, join(fixtures, 'second-raw' + (basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '')));
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.newPhotosProfile': '1', 'immage.newPhotosPreset': 'seed:agx-default', 'native.darktable-resources': 'small' }, null, 2));
+    await writeFile(join(runtime, 'presets.json'), JSON.stringify({ version: 3, presets: [{ id: 'seed:agx-default',
+      name: 'Seeded AgX', group: 'Import', rawOnly: true, values: { profile: 0, lens_profile: 1, lens_ca: 1 } }] }, null, 2));
+    report.newPhotoDefaultsSeed = 'Profile Standard (1); New photos preset with profile AgX Default (0)';
+  }
   const port = await freePort(); let nativePort = await freePort(); while (nativePort === port) nativePort = await freePort();
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
@@ -277,7 +372,7 @@ try {
   monitor = setInterval(sample, 2000);
   driver = new AppDriver(`http://127.0.0.1:${port}`, log);
   await until(async () => { if (launchError) throw launchError; return driver.request('GET', '/status'); }, 'Tauri driver', 15000);
-  await driver.open(binary, copiedFixture);
+  await driver.open(binary, selectedCases.includes('startup-restore') ? undefined : copiedFixture);
   report.capabilities = driver.capabilities;
   await driver.command('POST', '/timeouts', { script: 10000, pageLoad: 15000, implicit: 0 });
   console.log(`Visible app launched; evidence: ${out}`);
@@ -293,7 +388,14 @@ try {
       if (JSON.stringify(actual) !== JSON.stringify(report.viewportPreparation)) {
         report.viewportPreparation = actual; journal.checkpoint(report);
       }
-      return actual.width === expectedViewport.width && actual.height === expectedViewport.height;
+      let nativeWindowPreparation = null;
+      if (process.env.IMMAGE_GUI_NATIVE_GATE) {
+        try { nativeWindowPreparation = JSON.parse(await readFile(process.env.IMMAGE_GUI_NATIVE_GATE, 'utf8')); }
+        catch { return false; }
+        report.nativeWindowPreparation = nativeWindowPreparation;
+      }
+      return actual.width === expectedViewport.width && actual.height === expectedViewport.height
+        && (!process.env.IMMAGE_GUI_NATIVE_GATE || !!nativeWindowPreparation);
     }, `prepared viewport ${expectedViewport.width}x${expectedViewport.height}`, 30000); }
     catch (error) {
       // Retain app-only evidence if the known main URL/handle still match,
@@ -313,13 +415,16 @@ try {
     }
     report.preparingViewport = false; report.viewportPrepared = true; journal.checkpoint(report);
   };
+  // If requested, do not send even the startup Escape/file-open keys until
+  // the dedicated native window has reached the externally prepared size.
+  await prepareViewport();
   for (const name of selectedCases) {
     // Finish startup/tour/first photo before external sizing. Early sizing can
     // otherwise race the splash/main-window transition and initial layout.
     if (name !== 'startup') await prepareViewport();
     const run = implementationFor(name);
     if (resourceFailure) throw resourceFailure;
-    const c = { name, definition: cases[name], status: 'running', measurements: [], started: new Date().toISOString() };
+    const c = { name, definition: cases[name], status: 'running', measurements: [], subchecks: [], started: new Date().toISOString() };
     report.cases.push(c); journal.event('case-start', { name }); journal.checkpoint(report);
     const caseDir = join(out, name); await mkdir(caseDir);
     const t = { driver,
@@ -384,6 +489,8 @@ try {
       runtimeRead: async function (file) { try { return await readFile(this.runtimeFile(file), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } },
       // move one such file into this case's evidence folder (the profile is on the same filesystem)
       runtimeAside: async function (file, to) { const dest = join(caseDir, to); await rename(this.runtimeFile(file), dest); journal.event('runtime-file-moved', { case: name, file, to: dest }); return dest; },
+      // this run's own copied fixture folder and darktable config folder, for cases that add files to them
+      fixtureDir: fixtures, configDir: join(profile, 'data', 'app.immage', 'config'),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
       benchmarkReport: async filename => {
         // Read only the known report folder inside this run's isolated profile.
@@ -396,7 +503,12 @@ try {
         journal.event('benchmark-report', { case: name, file: join(caseDir, 'benchmark.json'), sha256: hash(bytes) });
         return { file: join(caseDir, 'benchmark.json'), report: JSON.parse(bytes) };
       },
-      measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); }, evidence: async label => {
+      measure: m => { c.measurements.push(m); journal.event('measurement', { case: name, ...m }); journal.checkpoint(report); },
+      subcheck: (check, passed, details = {}) => {
+        const result = { name: check, status: passed ? 'pass' : 'failure', ...details };
+        c.subchecks.push(result); journal.event('subcheck', { case: name, ...result }); journal.checkpoint(report);
+        return passed;
+      }, evidence: async label => {
       const withheld = await pathFree(driver);
       if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
       await driver.screenshot(join(caseDir, `${label}.png`));
@@ -404,7 +516,13 @@ try {
       await writeFile(join(caseDir,`${label}.png.json`),JSON.stringify({run:id,case:name,environment:{platform:process.platform,arch:process.arch,webview:report.drivers.installedWebKit,...environment}},null,2)+'\n');
       journal.event('screenshot', { case: name, label });
     } };
-    try { await run(t); if (resourceFailure) throw resourceFailure; c.status = 'pass'; }
+    try {
+      await run(t);
+      if (resourceFailure) throw resourceFailure;
+      const failed = c.subchecks.filter(check => check.status === 'failure');
+      if (failed.length) { c.status = 'failure'; c.error = `Failed subchecks: ${failed.map(check => check.name).join(', ')}`; }
+      else c.status = 'pass';
+    }
     catch (e) {
       c.status = e.name === 'Blocked' ? 'blocked' : 'failure'; c.error = e.stack;
       try { await t.evidence('failure'); } catch (capture) { c.captureError = capture.message; }
@@ -418,7 +536,11 @@ try {
   report.isolation = { engineLog, fixtureOriginalUnchanged: hash(await readFile(fixture)) === report.fixture.sha256 };
   if (!report.isolation.fixtureOriginalUnchanged) throw Error('Original fixture changed.');
   if (resourceFailure) throw resourceFailure;
-  report.status = 'pass';
+  const failedCases = report.cases.filter(c => c.status === 'failure');
+  if (failedCases.length) {
+    report.status = 'failure';
+    report.errors.push(`Failed cases: ${failedCases.map(c => c.name).join(', ')}`);
+  } else report.status = 'pass';
 } catch (error) {
   if (resourceFailure) report.errors.push(resourceFailure.message);
   if (report.status === 'running') report.status = error.name === 'Blocked' ? 'blocked' : 'failure';

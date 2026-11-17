@@ -16,6 +16,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useThemes } from "./themes";
 import { zoneAt } from "./zones";
 import { settings } from "./settings";
+import { t } from "./i18n";
+import { fieldText } from "./fieldText";
 
 // Lightroom's histogram regions, left to right, and how far a drag across
 // the whole histogram moves each
@@ -147,12 +149,10 @@ export function HistogramView({ histograms, values, disabled, exif, neutral, onC
         // lit in the color of the channels clipping there, as Lightroom's
         const color = clipColor(h, end);
         const share = end === "low" ? h?.shadowsClipped : h?.highlightsClipped;
-        const what = end === "low" ? "shadow" : "highlight";
         return (
           <button key={end} className={`clip clip-${end}${clip[end] ? " on" : ""}`} disabled={disabled}
                   style={color ? { "--clip": color } as React.CSSProperties : undefined}
-                  title={`${h ? `${((share ?? 0) * 100).toFixed(2)}% of pixels clip to ${end === "low" ? "black" : "white"}; ` : ""}`
-                         + `click to ${clip[end] ? "hide" : "show"} ${what} clipping on the photo (J for both)`}
+                  title={t("fields.scope.clippingHint", { stats: h ? t("fields.scope.clippingStats", { percent: ((share ?? 0) * 100).toFixed(2), color: t(end === "low" ? "fields.scope.black" : "fields.scope.white") }) : "", action: t(clip[end] ? "fields.scope.hide" : "fields.scope.show"), what: t(end === "low" ? "fields.scope.shadows" : "fields.scope.highlights") })}
                   onClick={() => onClip(end)}
                   onPointerEnter={() => onClipPeek(end)} onPointerLeave={() => onClipPeek(null)} />
         );
@@ -172,7 +172,7 @@ export function ScopeMenu({ scope: s, onChange }: {
   const seg = <T,>(options: [T, string][], value: T, set: (v: T) => void) => (
     <div className="segmented small">
       {options.map(([v, label]) => (
-        <button key={label} className={v === value ? "active" : ""} onClick={() => set(v)}>{label}</button>
+        <button key={label} className={v === value ? "active" : ""} onClick={() => set(v)}>{fieldText(label)}</button>
       ))}
     </div>
   );
@@ -180,23 +180,23 @@ export function ScopeMenu({ scope: s, onChange }: {
   const wave = s.mode === "waveform" || s.mode === "parade" || s.mode === "split";
   return (
     <div className={`scope-menu${open ? " open" : ""}`} ref={box}>
-      <button className="scope-button" title="choose the scope" onClick={() => setOpen(!open)}>
+      <button className="scope-button" title={t("fields.scope.choose")} onClick={() => setOpen(!open)}>
         <svg viewBox="0 0 24 24" className="icon" fill="none" stroke="currentColor" strokeWidth="1.8"
              strokeLinecap="round" strokeLinejoin="round">
           <path d="M4 20h16M6 16l3-6 3 3 3-7 3 10" /></svg>
       </button>
       {open && (
         <div className="tile-menu scope-list">
-          <span className="tool-kind">Scope</span>
+          <span className="tool-kind">{t("fields.scope.title")}</span>
           {SCOPE_MODES.map(([m, label]) => (
-            <button key={m} className={m === s.mode ? "on" : ""} onClick={() => onChange({ mode: m })}>{label}</button>
+            <button key={m} className={m === s.mode ? "on" : ""} onClick={() => onChange({ mode: m })}>{fieldText(label)}</button>
           ))}
           {s.mode === "histogram" && <>
-            <span className="tool-kind">Scale</span>
-            {seg([[false, "Linear"], [true, "Logarithmic"]], s.log, (log) => onChange({ log }))}
+            <span className="tool-kind">{t("fields.scope.scale")}</span>
+            {seg([[false, t("fields.scope.linear")], [true, t("fields.scope.logarithmic")]], s.log, (log) => onChange({ log }))}
           </>}
           {(s.mode === "histogram" || s.mode === "waveform" || s.mode === "split") && <>
-            <span className="tool-kind">Channels</span>
+            <span className="tool-kind">{t("fields.scope.channels")}</span>
             <div className="segmented small channels">
               {(["R", "G", "B"] as const).map((label, k) => (
                 <button key={label} className={`ch-${label.toLowerCase()}${s.channels[k] ? " active" : ""}`}
@@ -204,28 +204,28 @@ export function ScopeMenu({ scope: s, onChange }: {
                           const channels = [...s.channels] as ScopeSettings["channels"];
                           channels[k] = !channels[k];
                           onChange({ channels });
-                        }}>{label}</button>
+                        }}>{fieldText(label)}</button>
               ))}
             </div>
           </>}
           {wave && <>
-            <span className="tool-kind">Orientation</span>
-            {seg([[false, "Horizontal"], [true, "Vertical"]], s.vertical, (vertical) => onChange({ vertical }))}
+            <span className="tool-kind">{t("fields.scope.orientation")}</span>
+            {seg([[false, t("fields.scope.horizontal")], [true, t("fields.scope.vertical")]], s.vertical, (vertical) => onChange({ vertical }))}
           </>}
           {vector && <>
-            <span className="tool-kind">Color space</span>
+            <span className="tool-kind">{t("fields.scope.colorSpace")}</span>
             {seg<VecSpace>([["luv", "u*v*"], ["jzazbz", "AzBz"], ["ryb", "RYB"]], s.space, (space) => onChange({ space }))}
-            <span className="tool-kind">Scale</span>
-            {seg([[false, "Linear"], [true, "Logarithmic"]], s.vecLog, (vecLog) => onChange({ vecLog }))}
+            <span className="tool-kind">{t("fields.scope.scale")}</span>
+            {seg([[false, t("fields.scope.linear")], [true, t("fields.scope.logarithmic")]], s.vecLog, (vecLog) => onChange({ vecLog }))}
             {s.space === "ryb" && <>
-              <span className="tool-kind">Color harmony</span>
+              <span className="tool-kind">{t("fields.scope.harmony")}</span>
               <select value={s.harmony} onChange={(e) => onChange({ harmony: Number(e.target.value) })}>
                 {HARMONIES.map((m, k) => <option key={m.name} value={k}>{cap(m.name)}</option>)}
               </select>
               {s.harmony > 0 && <>
                 {seg(HARMONY_WIDTHS.map(([name], k) => [k, cap(name)] as [number, string]), s.harmonyWidth,
                      (harmonyWidth) => onChange({ harmonyWidth }))}
-                <span className="scope-hint">drag on the scope to turn the guides, double-click to reset</span>
+                <span className="scope-hint">{t("fields.scope.harmonyHint")}</span>
               </>}
             </>}
           </>}

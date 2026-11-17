@@ -32,7 +32,9 @@ export type Params = Record<string, number>;
 // the sensor frame before flip; orientation is darktable's
 // dt_image_orientation_t bits (flip y 1, flip x 2, swap xy 4); camera is
 // the one the camera recorded, which flip's -1 stands for
-export type ImageContext = { sensorWidth: number; sensorHeight: number; orientation: number; camera: number };
+// sensor: the engine's "bayer", "xtrans", "bayer4" or "mono" for a raw
+export type ImageContext = { sensorWidth: number; sensorHeight: number; orientation: number; camera: number;
+                             sensor?: string | null };
 
 const swapsAxes = (ctx: ImageContext) => (ctx.orientation & 4) !== 0;
 // an odd number of reflections mirrors the image, which reverses a rotation
@@ -47,11 +49,14 @@ export type Control = {
   kind?: "slider" | "toggle" | "choice";
   // a choice's options, shown as a segmented control: [label, value]
   options?: [string, number][];
+  // in place of `options`, the open photo's own (Demosaic's, by its sensor)
+  optionsFor?: (ctx: ImageContext, value: number) => [string, number][];
   // a choice's options as their buttons show them, when shorter
   optionLabels?: Record<number, string>;
   optionIcons?: Record<number, LucideIcon>;
   // the control sits beside its label on one row (Treatment)
   inline?: boolean;
+  wide?: boolean;     // the track under the label even when the label is short, like its neighbors
   // a choice too long for a row of pills, as a drop-down
   menu?: boolean;
   // the drop-down's options under headings, in place of `options`
@@ -132,8 +137,11 @@ export type Panel = {
   sections: Section[];
   tabs?: boolean;          // sections are shown one at a time
   hidden?: boolean;        // edited by a tool rather than listed (crop)
-  // shown only for these values (the B&W Mix stands in for HSL in black and white)
+  // shown only for these values (the B&W Mix stands in for HSL in black and
+  // white); Advanced shows every group whatever the photo's values
   showIf?: (v: Values) => boolean;
+  // the group's title in Advanced, where it holds modules rather than one mix
+  advancedTitle?: string;
   // buttons that set several controls at once, such as the B&W filters
   // a preset with a swatch shows as a colored circle, its label as a tooltip
   presets?: ControlPreset[];
@@ -380,7 +388,7 @@ const equalizerControls: Control[] = EQ_IDS.map((id, i) => ({
   id, label: "Contrast equalizer", min: 0, max: 1, step: 0.001,
   neutral: Math.floor(i / 6) < 3 ? 0.5 : 0, format: plain(3),
 }));
-const equalizerMap: ModuleMap = {
+export const equalizerMap: ModuleMap = {
   op: "atrous", keepOn: false,
   controls: EQ_IDS,
   enabled: (v) => EQ_IDS.some((id, i) => Math.abs((v[id] ?? (i < 18 ? 0.5 : 0)) - (i < 18 ? 0.5 : 0)) > 1e-6),
@@ -441,7 +449,7 @@ const satcurveControls: Control[] = SATCURVE_IDS.map((id) => id.endsWith("pn")
   ? { id, label: "Saturation curve", min: 2, max: MAX_NODES, step: 1, neutral: 2, format: plain(0) }
   : { id, label: "Saturation curve", min: 0, max: 1, step: 0.0001, neutral: SATCURVE_NEUTRAL[id], format: plain(4) });
 const satField = (ch: number, k: number, a: "x" | "y") => `channel[${ch}].curve[${k}].${a}`;
-const satcurveMap: ModuleMap = {
+export const satcurveMap: ModuleMap = {
   op: "satcurvergb", keepOn: false,
   controls: SATCURVE_IDS,
   fields: [0, 1].flatMap((ch) => [`channel[${ch}].curve_num_nodes`,
@@ -1438,11 +1446,17 @@ export const modules: ModuleMap[] = [
     // for its ISO and resolution by demosaic's reload_defaults(). a radius
     // of 0 would ask darktable to measure one, but only while the photo is
     // unedited (demosaic.c's autotune), so it is left at 0.5
+    // the method too: a method of the other sensor type (a paste, a preset)
+    // is written as the photo's default, which darktable would otherwise
+    // put in its place in commit_params without saying so
     op: "demosaic", keepOn: true,
-    controls: ["capture"],
-    fields: ["cs_enabled"],
-    read: (p) => ({ capture: p.cs_enabled ? 1 : 0 }),
-    write: (v) => ({ cs_enabled: v.capture }),
+    controls: ["capture", "demosaic_method"],
+    fields: ["cs_enabled", "demosaicing_method"],
+    read: (p) => ({ capture: p.cs_enabled ? 1 : 0, demosaic_method: p.demosaicing_method }),
+    write: (v, defaults, ctx) => ({
+      cs_enabled: v.capture,
+      demosaicing_method: methodFits(v.demosaic_method, ctx) ? v.demosaic_method : defaults.demosaicing_method,
+    }),
   },
   {
     // in darktable's default Y0U0V0 mode each wavelet band's threshold is
@@ -1468,16 +1482,25 @@ export const modules: ModuleMap[] = [
   },
   {
     op: "lens", keepOn: false,
-    controls: ["lens_profile", "lens_ca", "lens_pick"],
+    controls: ["lens_profile", "lens_ca", "lens_pick", "lens_method"],
     // lens_pick is the engine's own field: 0 for the lens matched from the
     // EXIF, else the hash of the Lensfun lens chosen in its place
-    fields: ["modify_flags", "has_been_set", "lens_pick"],
+    fields: ["modify_flags", "has_been_set", "lens_pick", "method", "lens_lensfun"],
     // flags: TCA 1, vignetting 2, distortion 4 (lens.cc). until has_been_set,
     // commit_params ignores the params for the defaults, as darktable's GUI
-    // sets it on the first change; the method stays the one the defaults
-    // picked for the photo
-    read: (p) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick }),
-    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1, lens_pick: v.lens_pick }),
+    // sets it on the first change. a lens module never set keeps darktable's
+    // embedded default for a photo with correction data, but Immage prefers
+    // the Lensfun profile when the database has one: Simple reads that as the
+    // method, so its first write carries it. a module already set keeps the
+    // method it stores, and an enabled one that was never set shows what it
+    // renders (the defaults object is the photo's untouched module). embedded
+    // metadata has no use for a database lens, so choosing it puts the pick
+    // back to Auto
+    read: (p, defaults) => ({ lens_profile: 1, lens_ca: p.modify_flags & 1 ? 1 : 0, lens_pick: p.lens_pick,
+                              lens_method: lensMethodRead(p, p === defaults) }),
+    write: (v) => ({ modify_flags: v.lens_ca ? 7 : 6, has_been_set: 1,
+                     lens_pick: v.lens_method === LENS_EMBEDDED ? 0 : v.lens_pick,
+                     ...(v.lens_method === undefined ? {} : { method: v.lens_method }) }),
     enabled: (v) => v.lens_profile === 1,
   },
   {
@@ -1581,11 +1604,51 @@ export const CONVERSIONS: Conversion[] = [
     greyed: SF_GREYED },
 ];
 export const conversionsOn = (v: Values) => CONVERSIONS.filter((c) => v[c.flag] === 1);
+// AgX renders: the tone mapper is AgX and no film simulation or negative
+// has turned it off, as they do (SF_OFF, NEG_OFF)
+export const agxRuns = (v: Values) => v.tm_mode === 1 && !conversionsOn(v).some((c) => c.off.has("agx"));
 // the module a conversion that is on runs a tool on, whatever the photo holds
 export const forcedChoice = (v: Values, control: string): number | undefined =>
   conversionsOn(v).find((c) => control in c.choices)?.choices[control];
 
 // --------------------------------------------------------------- the panels
+
+// Lens Corrections' Demosaic: darktable's methods for the photo's sensor
+// (demosaic.c), its default first as reload_defaults() picks it. dual,
+// passthrough and debug methods are Advanced's; a photo holding one shows it
+// by name until another is chosen
+const XTRANS_METHODS: [string, number][] = [
+  ["Markesteijn 1-pass", 1025], ["Markesteijn 3-pass", 1026], ["Frequency domain chroma", 1028], ["VNG", 1024],
+];
+const BAYER_METHODS: [string, number][] = [
+  ["RCD", 5], ["AMaZE", 1], ["LMMSE", 6], ["PPG", 0], ["VNG4", 2],
+];
+const OTHER_METHODS: [string, number][] = [
+  ["RCD (dual)", 2053], ["AMaZE (dual)", 2049], ["Markesteijn 3-pass (dual)", 3074],
+  ["Passthrough (monochrome)", 3], ["Photosite color (debug)", 4], ["Passthrough (monochrome)", 1027],
+  ["Photosite color (debug)", 1029], ["Monochrome", 7],
+];
+const methodName = (v: number) =>
+  [...XTRANS_METHODS, ...BAYER_METHODS, ...OTHER_METHODS].find(([, m]) => m === v)?.[0];
+const demosaicLabel = (v: number) => methodName(v) ?? String(v);
+// bayer4 and monochrome raws have one method, which darktable sets itself
+const methodFits = (v: number, ctx: ImageContext) =>
+  ctx.sensor === "xtrans" ? (v & 1024) !== 0 : ctx.sensor === "bayer" ? (v & 1024) === 0 : true;
+function demosaicOptions(ctx: ImageContext, value: number): [string, number][] {
+  if (!ctx.sensor) return [["Not a raw", value]];
+  const list = ctx.sensor === "xtrans" ? XTRANS_METHODS : ctx.sensor === "bayer" ? BAYER_METHODS : [];
+  return list.some(([, m]) => m === value) ? list
+    : [...list, [`${methodName(value) ?? "Custom"}${list.length ? " (Advanced)" : ""}`, value]];
+}
+
+const LENS_EMBEDDED = 0;
+const LENS_LENSFUN = 1;
+export const lensMethodRead = (p: Params, untouched: boolean) =>
+  untouched && !p.has_been_set && p.method === LENS_EMBEDDED && p.lens_lensfun ? LENS_LENSFUN : p.method;
+const LENS_METHODS: [string, number][] = [["Embedded metadata", 0], ["Lensfun database", 1]];
+const lensMethodLabel = (v: number) => LENS_METHODS.find(([, m]) => m === v)?.[0] ?? "Manual vignette only";
+const lensMethodOptions = (_ctx: ImageContext, value: number): [string, number][] =>
+  value === 2 ? [...LENS_METHODS, ["Manual vignette only", 2]] : LENS_METHODS;
 
 export const panels: Panel[] = [
   {
@@ -1675,7 +1738,7 @@ export const panels: Panel[] = [
     sections: HSL_TABS.map((t) => ({ title: t, controls: hslControls("hsl", t) })),
   },
   {
-    id: "bw", title: "B&W Mix", showIf: (v) => v.bw_mode === 1,
+    id: "bw", title: "B&W Mix", advancedTitle: "B&W", showIf: (v) => v.bw_mode === 1,
     presets: BW_FILTERS.map(([label, swatch, mix]) => ({
       label, swatch, values: Object.fromEntries(BANDS.map(([b], k) => [`bw_${b}`, mix[k]])),
     })),
@@ -1750,6 +1813,14 @@ export const panels: Panel[] = [
     id: "lens", title: "Lens Corrections",
     sections: [
       {
+        title: "Demosaic",
+        controls: [
+          { id: "demosaic_method", label: "Method", kind: "choice", menu: true, rawOnly: true,
+            options: [], optionsFor: demosaicOptions, min: 0, max: 4095, step: 1, format: demosaicLabel,
+            note: "how the raw's colors are filled in; the first is darktable's default for this sensor" },
+        ],
+      },
+      {
         title: "Profile",
         controls: [
           { ...toggle("lens_profile", "Enable Profile Corrections", 0),
@@ -1759,6 +1830,12 @@ export const panels: Panel[] = [
             step: 1, neutral: 0, format: (v) => (v ? "chosen" : "auto"),
             note: "the lens whose profile corrects the photo; Auto uses the one the file names" },
           toggle("lens_ca", "Remove Chromatic Aberration", 1),
+          // shown only for a photo that carries its own correction, where
+          // darktable starts on embedded metadata (the default method is
+          // the control's neutral)
+          { id: "lens_method", label: "Correction method", kind: "choice", menu: true, options: [],
+            optionsFor: lensMethodOptions, min: 0, max: 2, step: 1, format: lensMethodLabel,
+            note: "the corrections the camera wrote into the file, or the Lensfun database's for the lens" },
         ],
       },
       {
@@ -2223,6 +2300,23 @@ export const localControlById = new Map(LOCAL_CONTROLS.map((c) => [c.id, c]));
 export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) => [id, m] as const)));
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
+
+// Blendable modules which are safe to add under a mask. `anchor` is false
+// for modules that darktable runs before the mask carrier; those stay at
+// their native pipe position when the engine creates the named instance.
+// Keep this curated: geometry, raw stage, tone mapping, color profiles and
+// tools with Immage-owned data do not belong on mask cards.
+export const MASK_MODULES: { op: string; anchor: boolean }[] = [
+  ...["bilat", "bloom", "blurs", "censorize", "channelmixerrgb", "colorbalance", "colorbalancergb",
+      "colorchecker", "colorcontrast", "colorcorrection", "colorequal", "colorharmonizer", "colorize",
+      "colorzones", "contrastntexture", "diffuse", "dither", "exposure", "graduatednd",
+      "grain", "highpass", "lowlight", "lowpass", "lut3d", "monochrome", "overlay", "primaries",
+      "rgbcurve", "rgblevels", "satcurvergb", "shadhi", "soften", "splittoning", "tonecurve", "toneequal",
+      "velvia", "vignette",
+      "watermark"].map((op) => ({ op, anchor: true })),
+  ...["atrous", "bilateral", "cacorrectrgb", "denoiseprofile", "hazeremoval",
+      "nlmeans", "sharpen"].map((op) => ({ op, anchor: false })),
+];
 
 // Only modules that support local adjustments are offered for masks.
 export const MASK_MODULE_CHOICES: ModuleChoice[] = MODULE_CHOICES.flatMap((c) => {

@@ -168,7 +168,9 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
                drag.current = { kind: "target", start: p, k: hit, spot: spots[hit], points: [] };
                return;
              }
+             // the overlay shows from the press, so a click shows the spot it heals
              drag.current = { kind: "new", start: p, k: -1, points: [p] };
+             setStroke(drag.current.points);
            }}
            onPointerMove={(e) => {
              const p = at(e);
@@ -202,6 +204,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
              if (d.points.length < 2) onCreate({ type: "circle", x: d.start[0], y: d.start[1], r: size / 2, mode, feather, opacity });
              else onCreate({ type: "brush", points: d.points, size, mode, feather, opacity });
            }}
+           onPointerCancel={() => { drag.current = null; setStroke(null); }}
            onPointerLeave={() => setCursor(null)}>
         <rect className="mask-catch" x={0} y={0} width={W} height={H} />
         {show === "always" && spots.map((s, k) => {
@@ -219,7 +222,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
           </g>
         )}
         {/* the brush's edge, the inner circle where its feather starts, and its center */}
-        {cursor && !drag.current && (
+        {cursor && (!drag.current || drag.current.kind === "new") && (
           <g className="brush-cursor">
             <circle cx={cursor[0] * W} cy={cursor[1] * H} r={(tool.size / 2) * W} />
             {tool.feather > 0.02 && (

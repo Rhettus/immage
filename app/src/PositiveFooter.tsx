@@ -5,6 +5,7 @@
 // that scroll: the format Export to Library writes (the Generated positive
 // format preference), the export itself, and turning the conversion off
 import type { NegativeExportFormat } from "./Preferences";
+import { t } from "./i18n";
 
 export function PositiveFooter({ format, onFormat, onExport, exporting, onTurnOff, turnOffLabel, turnOffTitle,
                                  disabled }: {
@@ -16,17 +17,16 @@ export function PositiveFooter({ format, onFormat, onExport, exporting, onTurnOf
   return (
     <div className="positive-foot">
       <div className="positive-row">
-        <div className="segmented small" role="group" aria-label="Generated positive format">
+        <div className="segmented small" role="group" aria-label={t("fields.positive.format")}>
           {(["dng", "tiff"] as const).map((f) => (
             <button key={f} className={format === f ? "active" : ""} disabled={disabled || exporting}
-                    title={f === "dng" ? "DNG, 16-bit float" : "TIFF, 32-bit float"}
+                    title={t(f === "dng" ? "fields.positive.dngHint" : "fields.positive.tiffHint")}
                     onClick={() => onFormat(f)}>{f.toUpperCase()}</button>
           ))}
         </div>
         <button className="btn small" disabled={disabled || exporting} onClick={onExport}
-                title={`a separate positive ${format === "dng" ? "DNG" : "TIFF"} with this edit, beside the photo and `
-                  + "in the library, ready for the normal editing tools"}>
-          {exporting ? "Exporting…" : "Export to Library"}
+                title={t("fields.positive.exportHint", { format: format === "dng" ? "DNG" : "TIFF" })}>
+          {exporting ? t("fields.positive.exporting") : t("fields.positive.export")}
         </button>
       </div>
       <button className="btn small" disabled={disabled} onClick={onTurnOff} title={turnOffTitle}>{turnOffLabel}</button>

@@ -1,0 +1,30 @@
+[
+ {
+  "label": "1 empty / watermarks",
+  "reply": {
+   "dirs": [
+    "<DATADIR>/watermarks",
+    "<CONFIGDIR>/watermarks"
+   ],
+   "markers": [
+    {
+     "hash": 241915461495535.0,
+     "label": "darktable (svg)",
+     "path": "darktable.svg"
+    },
+    {
+     "hash": 167563026122367.0,
+     "label": "fixed-size-text (svg)",
+     "path": "fixed-size-text.svg"
+    },
+    {
+     "hash": 141771074637290.0,
+     "label": "hasselblad (svg)",
+     "path": "hasselblad.svg"
+    }
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

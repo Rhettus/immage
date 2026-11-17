@@ -6,7 +6,7 @@ right, and the rail down the right edge.
 
 **If you've used another editor:** there are no separate library and
 develop modes. The filmstrip and grid browse a folder, and the right side
-always edits the open photo. The rail stands in for a module picker.
+edits the open photo (in the grid it holds Find). The rail stands in for a module picker.
 
 <a href="images/workspace.png"><img src="images/workspace.png" width="960" alt="Immage editing a RAW photo, with Library on the left, the viewer and filmstrip in the middle, and Adjustments and the tool rail on the right"></a>
 
@@ -18,6 +18,7 @@ in, edit them, send them out.
 | Button | What it opens |
 | --- | --- |
 | **Import** | the importer (⇧⌘I). See [Import](import.md). |
+| **Library** | the grid view of the folder (G); click again to return to the filmstrip. In the grid, Find fills the right-hand panel. See [Library](library.md). |
 | **Adjustments** | the develop panels. See [Adjustments](adjustments.md). |
 | **Crop** | the crop tool (R); a second click applies it. See [Crop](crop.md). |
 | **Masks** | local adjustments. See [Masks](masks.md). |
@@ -36,6 +37,12 @@ Clicking the button of the panel that is already showing slides the right
 panel shut. Crop, Masks, Heal, Zone System, Film Simulation and Negative need
 a photo open.
 
+Every rail panel keeps the same header icons in the same order: pin,
+Simple/Advanced mode, expand/collapse all, and Reset all. The stacked-cards
+button switches the shared editing mode, including the controls in Masks.
+Expand/collapse all folds the groups in Adjustments, Presets and Masks;
+it stays visible but disabled in tools without this group-folding control.
+
 Each tool remembers how far you scrolled its panel, so going back to
 Adjustments returns you to the same place. A tool opens at its top the
 first time.
@@ -50,8 +57,11 @@ Down the left side, under the **Navigator**:
 - **Metadata**: title, caption, rating, label and the camera's settings
 - **Keywording**: the photo's keywords
 - **Folders**: the folders you have added, as a tree
-- **Immich**: search your Immich server, once it is set up
 - **History**: every step of the edit
+
+The toolbar's **Find** button opens search and filters, including Immich
+search once it is set up, and its ⌄ opens your saved filters. It is a popup
+over the photo; in the grid view Find is instead the right-hand panel.
 
 Click a card's title to fold or unfold it. See [Library](library.md) and
 [History, undo and copying settings](history-and-sync.md).
@@ -61,8 +71,9 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 **Zoom**
 
 - Click the photo to zoom to 100% at that point; click again to fit.
-- Scroll, or pinch, to zoom around the pointer, from fit up to 400%. The
-  zoom pauses at 100% on the way.
+- Scroll, or pinch on a touchpad, to zoom the photo around the pointer, from
+  fit up to 400%. The zoom pauses at 100% on the way. Pinching zooms only
+  the photo, never the rest of the window.
 - Z switches between fit and 100%.
 - Quality and Balanced process settled Fit views at up to 3072 pixels on the
   long edge to preserve fine detail when displayed smaller. Performance uses
@@ -93,13 +104,16 @@ the exposure and lens, and nothing.
 
 - \ shows the photo as it was before your edits, with a **Before** badge.
   Press it again to come back.
-- Y, or the before / after button in the toolbar, steps through
-  **Side by side**, **Split left / right**, **Split top / bottom** and
-  **Hold for before**, then off. In the split views, drag the divider.
-  With **Hold for before**, press and hold on the photo.
+- Y steps through **Side by side**, **Split left / right** and
+  **Split top / bottom**, then off. The toolbar button also includes
+  **Hold for before**; press and hold on the photo in that view. In the split
+  views, drag the divider.
 
 "Before" means the photo at its starting point, still with its crop and
 orientation.
+
+To see one panel's effect alone, press and hold the eye icon in that panel's
+title row (see [Adjustments](adjustments.md)).
 
 ![Split left / right before and after view of an edited photo](images/before-after-split.png)
 <!-- screenshot: Split left / right on an edited landscape, divider in the middle -->

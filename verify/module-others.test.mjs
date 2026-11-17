@@ -62,3 +62,23 @@ test('AgX and the equalizer both adjusted are both marked', () => {
   const state = { values: { mod_contrast: 2, contrast: 0.3, [eq]: 0.9 }, neutral: { contrast: 0, [eq]: 0.5 } };
   assert.deepEqual(adjusted(state, 'mod_contrast'), [0, 2]);
 });
+
+// Lens Corrections' Demosaic lists the methods of the photo's sensor, and a
+// method of the other sensor type is written as the photo's default
+test('demosaic method follows the sensor', async () => {
+  const M = await import('../app/src/manifest.ts');
+  const c = M.controlById.get('demosaic_method');
+  const map = M.modules.find((m) => m.op === 'demosaic');
+  const ctx = (sensor) => ({ sensorWidth: 1, sensorHeight: 1, orientation: 0, camera: 0, sensor });
+  const values = (sensor, v) => c.optionsFor(ctx(sensor), v).map(([, m]) => m);
+  assert.deepEqual(values('xtrans', 1025), [1025, 1026, 1028, 1024]);
+  assert.deepEqual(values('bayer', 5), [5, 1, 6, 0, 2]);
+  // an Advanced-only method shows by name until another is picked
+  assert.deepEqual(c.optionsFor(ctx('bayer'), 2053).at(-1), ['RCD (dual) (Advanced)', 2053]);
+  assert.deepEqual(c.optionsFor(ctx('bayer4'), 2), [['VNG4', 2]]);
+  const write = (sensor, v, def) => map.write({ capture: 0, demosaic_method: v }, { demosaicing_method: def }, ctx(sensor));
+  assert.equal(write('xtrans', 1026, 1025).demosaicing_method, 1026);
+  assert.equal(write('bayer', 1026, 5).demosaicing_method, 5);
+  assert.equal(write('xtrans', 1, 1025).demosaicing_method, 1025);
+  assert.equal(write('bayer', 1, 5).demosaicing_method, 1);
+});

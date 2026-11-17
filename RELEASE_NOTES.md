@@ -3,12 +3,97 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.46.0
+
+Improvements
+
+- Advanced mode: a Simple/Advanced switch (the stacked-cards button at the top
+  of Adjustments) gives you darktable's full set of modules. Search them, use
+  presets, add instances and masks, undo, and include them in Copy Settings.
+- Smart search finds photos by describing them, such as "sunset on a beach".
+  It runs on this computer and nothing is uploaded. To turn it on, open
+  Preferences > General, find the Smart search (CLIP) card, press Download or
+  repair for the CLIP model (about 608 MB), then choose Smart in Find. Until
+  then Find searches file names only. Show more like this finds photos that
+  look like one you pick. Analysis runs in the background and uses the CPU,
+  which the card warns about.
+- Culling preview in the grid: press F, use the toolbar magnifier, or choose
+  View > Culling Preview. Rate, label, reject and keyword (K) photos, scroll
+  to zoom, click for Fit/100%, Space-drag to pan, double-click to edit.
+- The photo right-click menu has Rating, Color Label, Reject and Keywords
+  entries with their shortcut keys shown, so you can rate and label photos
+  without the keyboard.
+- Grid mode is now Library, with its own icon on the rail that switches
+  between the filmstrip and the grid. Thumbnail size has a slider, trackpad
+  pinch or ⌘-scroll, and is remembered.
+- Find replaces Search photos and the Filters popup: search words, where to
+  search (This folder, All folders, or Immich) and every filter in one place,
+  shown as removable chips. Edit status (any, edited or unedited) is its own
+  filter, an icon beside the search box shows Smart search's background
+  analysis (queued photos, paused, or done) and pauses or resumes it, and File
+  type lists every extension (DNG, ORF, JPG and so on) under
+  All RAW. Saved filters open from Load filter in Find's footer or with Alt+1
+  to Alt+9 (Option on Mac).
+- Drag photos onto folders to move them, or hold ⌥ (Alt) to copy; sidecars go
+  with them. Right-click a folder for New Folder…, Show in Finder, or Remove
+  from List.
+- History can discard all edits and restart from New Photos defaults. Hold a
+  panel's eye button to see the photo without that panel's edits.
+- Y cycles through side-by-side and split before/after views. The toolbar
+  button also offers Hold for before.
+- The interface language follows the system's and can be changed in
+  Preferences > General. French is the first translation.
+- Lens Corrections adds raw demosaic methods and a Correction method choice
+  (Embedded metadata or Lensfun database). Turning it on uses the Lensfun
+  profile when the lens has one, and Preferences > Photos > New Photos sets
+  the method new raw photos start with. Heal shows its source as soon as you press.
+- The quick start guide is shorter and follows the work: Import from SD cards
+  and folders, the Library for folders already on your computer (or drag them
+  in), Edit, Advanced mode, then Export and Print together.
+- Preferences > Immich path settings are clearer: Destination as Immich sees
+  it, External library path and Folder on this computer. Blank fields show the
+  value they borrow from the import destination, a warning appears when the local folder is
+  missing or unreachable, and an example shows how a result opens or why it
+  downloads.
+
+Performance
+
+- Reopening an unchanged folder is faster.
+- A new Library workers setting in Preferences > Performance > Memory sets how
+  many thumbnails are built and photos moved or copied at once.
+- The window no longer freezes while checking an export destination or a
+  dropped folder on a slow network share.
 
 Bug fixes
 
-- Dropdowns in Filters open visibly and allow choosing rejected-photo and
-  Immich search options.
+- The Library column no longer stays scrolled past its end when a card such as
+  History folds or gets shorter, leaving blank space below the cards.
+- Delete Rejected Photos works on a network drive, and says the photos will be
+  deleted permanently.
+- A photo that fails to open no longer leaves the editor stuck, and clicking
+  several photos quickly opens only the last one.
+- In the grid, rating, label and reject keys act on the selected photos, and
+  changes made while a folder loads are kept.
+- Linux: opening a folder on a slow network share no longer pauses, and
+  touchpad pinch zooms the photo, not the window.
+- Windows: preferences are no longer sometimes lost at startup.
+- Startup shows the grid until the first preview is ready, and non-photo files
+  such as `.ACR` sidecars stay out of the grid.
+- Opening a photo from the grid no longer shows the previous photo while it
+  loads.
+- The Presets hover preview no longer gets stuck on one preset.
+- Basic's Auto works on a photo with Film Simulation or a converted negative.
+- DNG thumbnails use embedded previews, and an undecodable photo gets a smaller
+  preview instead of a blank thumbnail.
+- The profile chosen in Preferences > Photos > New Photos now applies to new
+  raw photos even when the New photos preset also holds a profile.
+- AI Denoise no longer fails while its model is still downloading, and works
+  on photos opened from Find results and Immich external libraries mapped to
+  this computer.
+- Invert on a mask that combines a color, luminance or parametric range with
+  drawn shapes now inverts the range: a shape that subtracts cuts its area
+  out of the inverted range instead of selecting everything around it, and
+  a shape that adds keeps to the inverted range.
 
 ## 0.45.0
 

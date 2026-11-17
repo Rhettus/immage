@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 type Item = { kind: "group"; label: string } | { kind: "option"; label: string; value: string; disabled: boolean };
 
 // popups that close on any pointerdown outside themselves: the menu must live inside
-const HOSTS = ".filter-pop, .icon-picker, .modal, .context-menu";
+const HOSTS = ".icon-picker, .modal, .context-menu";
 
 function itemsOf(sel: HTMLSelectElement): Item[] {
   const out: Item[] = [];
@@ -128,13 +128,9 @@ export default function SelectMenu() {
 
   if (!sel) return null;
   const items = itemsOf(sel);
-  const owner = sel.closest(HOSTS) as HTMLElement | null;
-  // The filter popup is transformed and clips overflow. Keep its menu in
-  // viewport coordinates; FilterPopup recognizes it when checking outside clicks.
-  const filterMenu = owner?.matches(".filter-pop") ?? false;
-  const host = filterMenu ? document.body : owner ?? document.body;
+  const host = (sel.closest(HOSTS) as HTMLElement | null) ?? document.body;
   return createPortal(
-    <div ref={box} className="context-menu select-menu" role="listbox" data-filter-menu={filterMenu ? "" : undefined}
+    <div ref={box} className="context-menu select-menu" role="listbox"
          style={pos ? { left: pos.left, top: pos.top, minWidth: pos.width, maxHeight: pos.maxHeight } : { visibility: "hidden" }}>
       {items.map((it, i) => it.kind === "group"
         ? <div key={i} className="menu-label">{it.label}</div>

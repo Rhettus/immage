@@ -32,8 +32,8 @@ pub struct PathMap {
     pub local: String,
 }
 
-#[derive(Deserialize, Default, Type)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(serde::Serialize, Deserialize, Clone, Default, Type)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct SearchArgs {
     // "smart" asks Immich's machine learning; "filename" matches the file
     // name or description
@@ -156,18 +156,60 @@ pub fn filter(a: &SearchArgs) -> Value {
     Value::Object(f)
 }
 
+// A path on the Immich server, split into its root and components. The server
+// is usually POSIX but may be Windows, and this computer may be either, so the
+// host's Path rules cannot judge it: "/photos" is not absolute on Windows.
+// Both separators are accepted. The root is "/", a drive ("C:", any case), or
+// "\\" for UNC; a relative path has none.
+fn server_path(p: &str) -> Option<(String, Vec<&str>)> {
+    let b = p.as_bytes();
+    let (root, rest) = if b.len() >= 2 && (p.starts_with("\\\\") || p.starts_with("//")) {
+        ("\\\\".to_string(), &p[2..])
+    } else if p.starts_with('/') || p.starts_with('\\') {
+        ("/".to_string(), &p[1..])
+    } else if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\') {
+        (p[..2].to_ascii_uppercase(), &p[3..])
+    } else {
+        return None;
+    };
+    let parts = rest.split(['/', '\\']).filter(|c| !c.is_empty()).collect();
+    Some((root, parts))
+}
+
 // a path as Immich has it, on this computer, when the file is there
 pub fn local_path(original: &str, map: &PathMap) -> Option<PathBuf> {
-    let from = map.immich.trim().trim_end_matches('/');
-    let to = map.local.trim();
-    if from.is_empty() || to.is_empty() {
+    let to = Path::new(map.local.trim());
+    let (from_root, from) = server_path(map.immich.trim())?;
+    if !to.is_absolute() || from.is_empty() {
         return None;
     }
-    let rest = original.strip_prefix(from)?;
-    // a whole folder name: /mnt/photos does not cover /mnt/photos2
-    let rest = rest.strip_prefix('/')?;
-    let p = Path::new(to).join(rest);
-    p.is_file().then_some(p)
+    // Component matching avoids string-prefix mistakes such as mapping
+    // /mnt/photos2 through /mnt/photos. Only ordinary names are accepted below
+    // the mapped root.
+    let (root, parts) = server_path(original.trim())?;
+    if root != from_root || parts.len() <= from.len() || parts[..from.len()] != from[..] {
+        return None;
+    }
+    let mut rest = PathBuf::new();
+    for c in &parts[from.len()..] {
+        if matches!(*c, "." | "..") {
+            return None;
+        }
+        rest.push(c);
+    }
+    if rest.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return None;
+    }
+
+    // Canonicalize both sides so a symlink inside the mapped tree cannot
+    // expose a file outside it. Existence alone does not establish that this
+    // file has the same contents as the Immich asset.
+    let root = std::fs::canonicalize(to).ok()?;
+    let candidate = std::fs::canonicalize(root.join(rest)).ok()?;
+    if !candidate.starts_with(&root) || !candidate.is_file() {
+        return None;
+    }
+    Some(candidate)
 }
 
 // asset ids name cache files, so nothing but a uuid's characters
@@ -353,6 +395,37 @@ impl Immich {
         std::fs::rename(&part, &file).map_err(|e| e.to_string())?;
         Ok((file, true))
     }
+
+    // what a move needs of an asset before downloading it (move_cmds.rs):
+    // its file name, size, and the SHA-1 of its content (base64) when the
+    // server has one. an external library's asset may carry a checksum of
+    // its path rather than its content, so only uploaded assets give one
+    pub fn original_info(&self, id: &str) -> Result<OriginalInfo, String> {
+        let r = status(self.http.get(self.url(&format!("/assets/{}", safe_id(id)?))).send()
+            .map_err(|e| e.to_string())?)?;
+        let a: Value = r.json().map_err(|e| format!("Immich: unexpected reply: {e}"))?;
+        let name = a["originalFileName"].as_str().map(|n| Path::new(n).file_name()
+            .map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()).filter(|n| !n.is_empty())
+            .unwrap_or_else(|| id.to_string());
+        let uploaded = a["libraryId"].is_null();
+        Ok(OriginalInfo {
+            name,
+            size: a["exifInfo"]["fileSizeInByte"].as_u64(),
+            checksum: a["checksum"].as_str().filter(|_| uploaded).map(str::to_string),
+        })
+    }
+
+    // the original's bytes, to stream into a file of the caller's
+    pub fn original_stream(&self, id: &str) -> Result<reqwest::blocking::Response, String> {
+        status(self.http.get(self.url(&format!("/assets/{}/original", safe_id(id)?))).send()
+            .map_err(|e| e.to_string())?)
+    }
+}
+
+pub struct OriginalInfo {
+    pub name: String,
+    pub size: Option<u64>,
+    pub checksum: Option<String>,
 }
 
 #[cfg(test)]
@@ -367,7 +440,7 @@ mod tests {
 
     fn test_dir(name: &str) -> PathBuf {
         // inside the build tree, not the system's temp folder
-        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(name);
+        let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -422,11 +495,69 @@ mod tests {
         std::fs::create_dir_all(dir.join("2026")).unwrap();
         std::fs::write(dir.join("2026/a.raf"), b"x").unwrap();
         let map = PathMap { immich: "/mnt/photos/".into(), local: dir.to_string_lossy().into() };
-        assert_eq!(local_path("/mnt/photos/2026/a.raf", &map), Some(dir.join("2026/a.raf")));
+        assert_eq!(local_path("/mnt/photos/2026/a.raf", &map), Some(std::fs::canonicalize(dir.join("2026/a.raf")).unwrap()));
         assert_eq!(local_path("/mnt/photos/2026/b.raf", &map), None);
         assert_eq!(local_path("/mnt/photos2/2026/a.raf", &map), None);
         assert_eq!(local_path("/mnt/photos/2026/a.raf", &PathMap::default()), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn paths_reject_traversal_and_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let dir = test_dir("immich-path-map-safety");
+        let root = dir.join("root");
+        let outside = dir.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.jpg"), b"not mapped").unwrap();
+        symlink(&outside, root.join("linked")).unwrap();
+        let map = PathMap { immich: "/mnt/photos".into(), local: root.to_string_lossy().into() };
+
+        assert_eq!(local_path("/mnt/photos/../outside/secret.jpg", &map), None);
+        assert_eq!(local_path("/mnt/photos/linked/secret.jpg", &map), None);
+        assert_eq!(local_path("/mnt/photos2/secret.jpg", &map), None);
+        assert_eq!(local_path("relative/file.jpg", &map), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn path_map_judges_server_paths_on_any_host() {
+        let dir = test_dir("immich-path-map-server");
+        std::fs::create_dir_all(dir.join("2026")).unwrap();
+        std::fs::write(dir.join("2026/a.raf"), b"x").unwrap();
+        let want = Some(std::fs::canonicalize(dir.join("2026/a.raf")).unwrap());
+        let local: String = dir.to_string_lossy().into();
+        let posix = PathMap { immich: "/photos/library".into(), local: local.clone() };
+        assert_eq!(local_path("/photos/library/2026/a.raf", &posix), want);
+        assert_eq!(local_path("/photos/other/2026/a.raf", &posix), None);
+        assert_eq!(local_path("/photos/library2/2026/a.raf", &posix), None);
+        assert_eq!(local_path("/photos/library", &posix), None);
+        assert_eq!(local_path("/photos/library/../2026/a.raf", &posix), None);
+        let win = PathMap { immich: "C:\\Photos".into(), local: local.clone() };
+        assert_eq!(local_path("C:\\Photos\\2026\\a.raf", &win), want);
+        assert_eq!(local_path("c:/Photos/2026/a.raf", &win), want);
+        assert_eq!(local_path("D:\\Photos\\2026\\a.raf", &win), None);
+        assert_eq!(local_path("C:\\Photos2\\2026\\a.raf", &win), None);
+        assert_eq!(local_path("/Photos/2026/a.raf", &win), None);
+        let unc = PathMap { immich: "\\\\nas\\share".into(), local };
+        assert_eq!(local_path("\\\\nas\\share\\2026\\a.raf", &unc), want);
+        assert_eq!(local_path("\\\\nas\\other\\2026\\a.raf", &unc), None);
+        for bad in ["", "photos", "/", "C:", "C:photos"] {
+            let map = PathMap { immich: bad.into(), local: dir.to_string_lossy().into() };
+            assert_eq!(local_path("/photos/2026/a.raf", &map), None, "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn path_map_requires_absolute_roots() {
+        let map = PathMap { immich: "mnt/photos".into(), local: "/tmp".into() };
+        assert_eq!(local_path("mnt/photos/a.jpg", &map), None);
+        let map = PathMap { immich: "/mnt/photos".into(), local: "photos".into() };
+        assert_eq!(local_path("/mnt/photos/a.jpg", &map), None);
     }
 
     #[test]

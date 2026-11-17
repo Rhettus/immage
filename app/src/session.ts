@@ -7,7 +7,7 @@
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
          mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, turnOrientation, turnRect, type ImageContext,
-         type ModuleMap, type Params, type Turn, type Values } from "./manifest";
+         MASK_MODULES, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
 import { planMerge, type MergePlan } from "./localMerge";
@@ -16,19 +16,32 @@ import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
+import { advancedCopies, pasteTarget, type AdvancedCopy } from "./advancedEdits";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type ModuleState, type Value } from "./commands";
+import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type Value } from "./commands";
+
+// one Advanced card's instance: its darktable fields as the client has them
+export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
+// a card instance menu action (engine session_instance()); `other` and
+// `after` place a move, `name` is a rename's ("" for darktable's own)
+export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore";
+                               op: string; priority: number; name?: string; other?: number; after?: boolean; mask?: string };
+export type InstanceEntry = { op: string; priority: number; name: string; mask?: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
+export const wbPresets = () => traced("wb_presets", () => commands.wbPresets());
 export const colorProfiles = () => traced("color_profiles", () => commands.colorProfiles());
 
-type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened" };
+type ModuleRequest = { enabled?: boolean; reset?: boolean; restore?: ModuleState | "opened"; preset?: string };
 
 // the instance a history item is for, and the ModuleMap op its sliders use:
 // Immage's own named instances carry their name, as manifest's "op#name"
-export const instanceKey = (h: HistoryItem) => `${h.op}#${h.priority}`;
+export const instanceKey = (h: { op: string; priority?: number | null }) => `${h.op}#${h.priority}`;
+// Existing Texture/Sharpening masks can own tagged instances of the same op.
+const maskOpKey = (i: Pick<Instance, "op" | "name" | "mask">) =>
+  i.op + (i.mask && i.name.startsWith(`${i.mask}#`) ? i.name.slice(i.mask.length) : "");
 export const mapOpOf = (h: HistoryItem) => h.label ? `${h.op}#${h.label}` : h.op;
 type ModuleInfo = GetReply["modules"][string];
 
@@ -133,6 +146,10 @@ export class Session {
   // own controls moves
   foreign = new Set<ModuleMap>();
   private info: Record<string, ModuleInfo> = {};
+  // the photo carries its own lens correction: darktable's lens module starts on embedded metadata
+  get lensEmbedded() { return this.info.lens?.defaults.method === 0; }
+  // Lensfun's database has a lens for the photo
+  get lensfunKnown() { return !!this.info.lens?.defaults.lens_lensfun; }
   private ctx: ImageContext = { sensorWidth: 1, sensorHeight: 1, orientation: 0, camera: 0 };
   private dirty = new Set<string>();
   // ops sent since the last full frame: a drag of Grain or Sharpening still
@@ -153,6 +170,15 @@ export class Session {
   // Lightroom's Before view: every control at the image's own default,
   // except those `keep` names (the crop), rendered but never saved
   private before: ((id: string) => boolean) | null = null;
+  // a panel's eye held: these controls render at their defaults, as in the
+  // Before view, while the sliders keep their values. masks, spots and the
+  // look stay on
+  private peeked: ReadonlySet<string> | null = null;
+  // what is on screen is not the edit (the Before view or a peek): nothing
+  // of it is saved or kept as the edit's frames
+  private get viewing() {
+    return !!this.before || !!this.peeked;
+  }
   // the look (a darktable style on extra module instances), by name, and
   // the file it came from when known; the Before view takes it off
   look: string | null = null;
@@ -168,6 +194,10 @@ export class Session {
   private maskOps = new Map<string, Set<string>>();
   private dirtyShapes = new Set<string>();
   private dirtyLocal = new Map<string, Set<string>>();
+  private dirtySimple = new Map<string, Map<string, Params>>();
+  private maskStatesPending = new Map<string, Record<string, ModuleState>>();
+  private maskStatesSource = new Map<string, string>();
+  private maskResetPending = new Set<string>();
   private deletedMasks: string[] = [];
   // names the engine knows a mask by, and renames it has yet to hear
   private sentMasks = new Set<string>();
@@ -252,6 +282,27 @@ export class Session {
   private reshape = false;
   onShapes: (() => void) | null = null;
 
+  // the photo's white balance is set in the white balance module with color
+  // calibration off: temperature on, its setting neither camera reference nor
+  // as shot to reference (wb.c's wb_setting 3 and 4), channelmixerrgb off.
+  // the panels note it; refreshWb keeps it current (see changed)
+  wbInModule = false;
+  private wbTimer: ReturnType<typeof setTimeout> | undefined;
+  async refreshWb() {
+    clearTimeout(this.wbTimer);
+    // a batch's background session shows no panels
+    if (this.dead || this.background) return;
+    let now = false;
+    try {
+      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting"], channelmixerrgb: ["illuminant"] }));
+      const t = r.modules.temperature, c = r.modules.channelmixerrgb;
+      now = !!t?.enabled && ![3, 4].includes(t.params.wb_setting) && !c?.enabled;
+    } catch { return; }
+    if (now === this.wbInModule || this.dead) return;
+    this.wbInModule = now;
+    this.onModules?.();
+  }
+
   constructor(
     private size: () => View,
     private onFrame: (f: Frame) => void,
@@ -280,6 +331,7 @@ export class Session {
       sensorHeight: opened.sensor_height,
       orientation: flip?.enabled && flip.params.orientation >= 0 ? flip.params.orientation : opened.orientation,
       camera: opened.orientation,
+      sensor: opened.sensor,
     };
     // a conversion (a negative, a film simulation) keeps its modules off
     // with their settings, for when it is turned back: their sliders are
@@ -308,6 +360,7 @@ export class Session {
     await s.loadMasks();
     s.chooseModules();
     s.spots = await traced("spots", () => commands.spots(null));
+    await s.refreshWb();
     s.requestRender();
     return s;
   }
@@ -498,6 +551,11 @@ export class Session {
     if (this.backgroundFailure) throw Error(this.backgroundFailure);
   }
 
+  async refreshMaskStates() {
+    await this.settled();
+    await this.loadMasks();
+  }
+
   bypass(op: string, on: boolean) {
     if (on) this.bypassed.add(op); else this.bypassed.delete(op);
     this.dirty.add(op);
@@ -573,12 +631,42 @@ export class Session {
       }
       for (const [id, v] of Object.entries(values)) values[id] = /^(l_detail_|ce_|sc_|sb_)/.test(id) ? v : Math.round(v * 100) / 100;
       const insts = Object.values(r.instances);
-      const hidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
-        && Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id]);
+      const inferredHidden = insts.length > 0 && insts.every((i) => !i.enabled) && !r.merged_in?.length
+        && (Object.entries(values).some(([id, v]) => id in neutral && v !== neutral[id])
+          || insts.some((i) => i.extra));
+      const existing = this.mask(r.name);
+      const hidden = existing ? !!existing.hidden : inferredHidden;
       this.maskOps.set(r.name, new Set(Object.keys(r.instances)));
       this.sentMasks.add(r.name);
+      const extra = Object.entries(r.instances).filter(([, i]) => i.extra).map(([op]) => op);
+      const disabledModules = this.mask(r.name)?.disabledModules ?? Object.entries(r.instances)
+        .filter(([op, i]) => !i.enabled && !r.merged_in?.some((group) => group.startsWith(`${op.split("#")[0]} `))
+          && !hidden && (i.extra || localMaps.some((map) => map.op === op && map.controls.some((id) => values[id] !== 0))))
+        .map(([op]) => op);
+      const enabledModules = this.mask(r.name)?.enabledModules ?? Object.entries(r.instances)
+        .filter(([op, i]) => i.enabled && (i.extra || !localMaps.some((map) => map.op === op))
+          && !hidden && !r.merged_in?.some((group) => group.startsWith(`${op.split("#")[0]} `))).map(([op]) => op);
+      const moduleStates = Object.fromEntries(Object.entries(r.instances).map(([op, inst]) => {
+        const previous = this.mask(r.name)?.moduleStates?.[op];
+        const state = inst.state;
+        const map = localMaps.find((x) => x.op === op);
+        const merged = !!r.merged_in?.some((group) => group.startsWith(`${op.split("#")[0]} `));
+        const mappedOn = map && (map.enabled ? map.enabled(values)
+          : map.controls.some((id) => values[id] !== (localControlById.get(id)?.neutral ?? 0)))
+          && choiceOn(map, { ...this.values, ...values });
+        const logical = hidden && previous ? previous.enabled
+          : hidden ? enabledModules.includes(op) || !disabledModules.includes(op)
+          : disabledModules.includes(op) ? false
+          : merged ? !!mappedOn : state.enabled;
+        return [op, { ...state, enabled: logical }];
+      }));
       return { name: r.name, shapes: r.shapes as Shape[], invert: r.invert, opacity: Math.round(r.opacity ?? 100),
-               ...(hidden ? { hidden } : {}), ...(r.refine ? { refine: r.refine } : {}), values };
+               ...(hidden ? { hidden } : {}), ...(r.refine ? { refine: r.refine } : {}),
+               ...(extra.length ? { extra: [...new Set(extra)] } : {}), values,
+               ...(disabledModules.length ? { disabledModules: [...new Set(disabledModules)] } : {}),
+               ...(enabledModules.length ? { enabledModules: [...new Set(enabledModules)] } : {}),
+               ...(Object.keys(moduleStates).length ? { moduleStates } : {}),
+               moduleEdits: Object.fromEntries(this.dirtySimple.get(r.name) ?? []) };
     });
   }
 
@@ -609,7 +697,20 @@ export class Session {
     const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
       || ((id === "mod_contrast" || id === "mod_saturation") && m.op === "colorbalancergb")).map((m) => m.op);
     if (!ops.length) return;
-    this.masks = this.masks.map((m) => (m.name === name ? { ...m, values: { ...m.values, [id]: v } } : m));
+    const mask = this.mask(name);
+    if (!mask || mask.values[id] === v) return;
+    const values = { ...mask.values, [id]: v };
+    const changed = this.dirtySimple.get(name) ?? new Map<string, Params>();
+    const moduleEdits = { ...mask.moduleEdits };
+    for (const op of ops) {
+      const map = localMaps.find((m) => m.op === op)!;
+      const before = map.write(mask.values, {}, this.ctx), after = map.write(values, {}, this.ctx);
+      const delta = Object.fromEntries(Object.entries(after).filter(([field, value]) => before[field] !== value));
+      changed.set(op, { ...changed.get(op), ...delta });
+      moduleEdits[op] = { ...moduleEdits[op], ...delta };
+    }
+    this.masks = this.masks.map((m) => m.name === name ? { ...m, values, moduleEdits } : m);
+    this.dirtySimple.set(name, changed);
     this.markLocal(name, ops);
   }
 
@@ -628,7 +729,49 @@ export class Session {
     // a module first adjusted while hidden was never sent, being off: showing
     // the mask goes over every module, and sendMaskQueues skips those that
     // stay off and it never had
-    this.markLocal(name, [...new Set([...(this.maskOps.get(name) ?? []), ...localMaps.map((l) => l.op)])]);
+    this.markLocal(name, [...new Set([...(this.maskOps.get(name) ?? []), ...localMaps.map((l) => l.op),
+      ...(this.mask(name)?.extra ?? [])])]);
+  }
+
+  // Add one allowlisted darktable module instance to this mask. The mask
+  // instance is created at the module's natural pipe position when needed.
+  addMaskModule(name: string, op: string) {
+    const mask = this.mask(name), entry = MASK_MODULES.find((m) => m.op === op);
+    if (!mask || !entry || this.maskOps.get(name)?.has(op)) return;
+    const have = this.maskOps.get(name) ?? new Set<string>();
+    have.add(op);
+    this.maskOps.set(name, have);
+    const enabled = new Set(mask.enabledModules ?? []);
+    enabled.add(op);
+    this.masks = this.masks.map((m) => m.name === name ? { ...m, enabledModules: [...enabled] } : m);
+    this.markLocal(name, [op]);
+  }
+
+  private setMaskModuleEnabled(name: string, op: string, enabled: boolean) {
+    const m = this.mask(name);
+    if (!m) return;
+    const disabled = new Set(m.disabledModules ?? []);
+    const enabledModules = new Set(m.enabledModules ?? []);
+    enabled ? disabled.delete(op) : disabled.add(op);
+    enabled ? enabledModules.add(op) : enabledModules.delete(op);
+    this.masks = this.masks.map((x) => x.name === name ? { ...x, disabledModules: [...disabled],
+      enabledModules: [...enabledModules] } : x);
+    this.markLocal(name, [op]);
+  }
+
+  removeMaskModule(name: string, op: string, priority?: number) {
+    const inst = this.instances.find((i) => i.owner === "mask" && i.mask === name && i.op === op
+      && (priority === undefined || i.priority === priority));
+    if (!inst) return;
+    const key = maskOpKey(inst);
+    this.maskOps.get(name)?.delete(key);
+    this.masks = this.masks.map((m) => m.name === name ? { ...m,
+      extra: (m.extra ?? []).filter((x) => x !== key),
+      disabledModules: (m.disabledModules ?? []).filter((x) => x !== key),
+      enabledModules: (m.enabledModules ?? []).filter((x) => x !== key),
+      moduleStates: Object.fromEntries(Object.entries(m.moduleStates ?? {}).filter(([x]) => x !== key)),
+      moduleEdits: Object.fromEntries(Object.entries(m.moduleEdits ?? {}).filter(([x]) => x !== key)) } : m);
+    this.instanceAction({ action: "delete", op, priority: inst.priority, mask: name });
   }
 
   setRefine(name: string, refine: Refine) {
@@ -645,6 +788,8 @@ export class Session {
     if (!m) return;
     if (adjustments) {
       this.masks = [...this.masks, { ...structuredClone(m), name: to }];
+      this.maskStatesPending.set(to, structuredClone(m.moduleStates ?? {}));
+      this.maskStatesSource.set(to, name);
       this.dirtyShapes.add(to);
       this.markLocal(to, [...(this.maskOps.get(name) ?? [])]);
       return;
@@ -667,8 +812,47 @@ export class Session {
     const m = this.mask(name);
     if (!m) return;
     const keep = Object.fromEntries(MASK_MODULE_CHOICES.map((c) => [c.control, m.values[c.control]]));
-    this.masks = this.masks.map((x) => (x.name === name ? { ...x, values: { ...neutralLocal(), ...keep } } : x));
+    this.masks = this.masks.map((x) => (x.name === name ? { ...x, values: { ...neutralLocal(), ...keep },
+      disabledModules: [...(this.maskOps.get(name) ?? [])], enabledModules: [] } : x));
+    this.maskResetPending.add(name);
     this.markLocal(name, [...(this.maskOps.get(name) ?? [])]);
+  }
+
+  // Copy Settings and undo carry opaque native module state, including fields
+  // that neither the mask sliders nor the Advanced card exposes.
+  setMaskStates(name: string, states: Record<string, ModuleState>, edits: Record<string, Params> = {}) {
+    const current = this.mask(name);
+    if (!current) return;
+    const next = structuredClone(states);
+    const old = current.moduleStates ?? {};
+    const removed = Object.keys(old).filter((op) => !(op in next));
+    for (const key of removed) {
+      this.maskOps.get(name)?.delete(key);
+      const [op] = key.split("#");
+      const i = this.instances.find((x) => x.owner === "mask" && x.mask === name && maskOpKey(x) === key);
+      if (i) this.instanceAction({ action: "delete", op, priority: i.priority, mask: name });
+    }
+    const ops = this.maskOps.get(name) ?? new Set<string>();
+    Object.keys(next).forEach((op) => ops.add(op));
+    this.maskOps.set(name, ops);
+    this.masks = this.masks.map((m) => m.name === name ? { ...m, moduleStates: next, moduleEdits: structuredClone(edits) } : m);
+    if (JSON.stringify(old) !== JSON.stringify(next) || JSON.stringify(current.moduleEdits ?? {}) !== JSON.stringify(edits)) {
+      this.maskStatesPending.set(name, next);
+      this.edited = true;
+      this.needRender = true;
+      void this.pump();
+    }
+  }
+
+  setMaskModuleFlags(name: string, disabledModules: string[], enabledModules: string[]) {
+    const current = this.mask(name);
+    if (!current) return;
+    if (JSON.stringify(current.disabledModules ?? []) === JSON.stringify(disabledModules)
+        && JSON.stringify(current.enabledModules ?? []) === JSON.stringify(enabledModules)) return;
+    this.masks = this.masks.map((m) => m.name === name ? { ...m, disabledModules: [...disabledModules],
+      enabledModules: [...enabledModules] } : m);
+    this.markLocal(name, [...new Set([...disabledModules, ...enabledModules,
+      ...(current.disabledModules ?? []), ...(current.enabledModules ?? [])])]);
   }
 
   // a mask under a new name; one the engine has not yet heard of is only
@@ -681,6 +865,10 @@ export class Session {
     };
     move(this.maskOps);
     move(this.dirtyLocal);
+    move(this.dirtySimple);
+    move(this.maskStatesPending);
+    move(this.maskStatesSource);
+    if (this.maskResetPending.delete(name)) this.maskResetPending.add(to);
     if (this.lifted === name) this.lifted = to;
     if (this.dirtyShapes.delete(name)) this.dirtyShapes.add(to);
     if (this.sentMasks.delete(name)) {
@@ -696,7 +884,11 @@ export class Session {
     this.masks = this.masks.filter((m) => m.name !== name);
     this.dirtyShapes.delete(name);
     this.dirtyLocal.delete(name);
+    this.dirtySimple.delete(name);
     this.maskOps.delete(name);
+    this.maskStatesPending.delete(name);
+    this.maskStatesSource.delete(name);
+    this.maskResetPending.delete(name);
     if (this.lifted === name) this.lifted = null;
     // one the engine never had needs no word to it
     if (this.sentMasks.has(name)) this.deletedMasks.push(name);
@@ -733,11 +925,13 @@ export class Session {
     do {
       for (const [name, to] of this.renames.splice(0)) {
         await traced("mask_rename", () => commands.maskRename(name, to));
+        this.instancesStale = true;
         sent = true;
       }
       for (const name of this.deletedMasks.splice(0)) {
         this.sentMasks.delete(name);
         await traced("mask_delete", () => commands.maskDelete(name));
+        this.instancesStale = true;
         sent = true;
       }
       for (const name of [...this.dirtyShapes]) {
@@ -782,6 +976,8 @@ export class Session {
     // stays for the next, which plans again
     const local = [...this.dirtyLocal];
     this.dirtyLocal.clear();
+    const simple = this.dirtySimple;
+    this.dirtySimple = new Map();
     for (const [name, ops] of local) {
       const m = this.mask(name);
       if (!m) continue;
@@ -790,15 +986,20 @@ export class Session {
         // an instance no control maps any more, such as sharpen from before
         // Sharpness moved to diffuse, is left as it is
         const map = localMaps.find((l) => l.op === op);
-        if (!map) continue;
+        const extra = m.extra?.includes(op) ?? false;
+        const maskOwned = have.has(op);
+        if (!map && !extra && !maskOwned) continue;
         // the Before view shows the image without its masks
         // a module the photo's tool no longer runs on (MODULE_CHOICES) stays
         // off
         // a mask sharing an instance keeps its own off, holding its settings
-        const holds = map.enabled ? map.enabled(m.values)
-          : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0));
+        const explicitOn = m.enabledModules?.includes(op) ?? false;
+        const holds = extra || explicitOn || (!map && maskOwned) || (map ? (map.enabled ? map.enabled(m.values)
+          : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0))) : false);
         const shares = plan.merged.get(name)?.has(op) ?? false;
-        const on = !shares && !this.before && !m.hidden && choiceOn(map, { ...this.values, ...m.values }) && holds;
+        const desiredOn = !m.disabledModules?.includes(op);
+        const on = !shares && !this.before && !m.hidden && desiredOn
+          && (!map || extra || explicitOn || choiceOn(map, { ...this.values, ...m.values })) && holds;
         // refinements live in an instance's blend parameters: a mask with
         // none yet gets one that is off to hold them, which the overlay's
         // mask_map then uses
@@ -806,12 +1007,20 @@ export class Session {
         if (!on && !(shares && holds) && !have.has(op) && !carrier) continue;
         // "op#tag" is the mask's instance named "<mask>#tag"
         const [real, tag] = op.split("#");
+        const hadParams = have.has(op);
+        const hadInstance = this.instances.some((i) => i.owner === "mask" && i.mask === name && maskOpKey(i) === op);
         this.draftKeep.add(real);
         await traced("set_params", () => commands.setParams({
-          op: real, params: map.write(m.values, {}, this.ctx), enabled: on,
+          op: real, params: map ? (hadParams ? simple.get(name)?.get(op) ?? {} : map.write(m.values, {}, this.ctx)) : {}, enabled: on,
           instance: tag ? `${name}#${tag}` : name, mask: name, invert: m.invert,
-          opacity: m.opacity ?? 100, refine: m.refine ?? null }));
+          opacity: m.opacity ?? 100, refine: m.refine ?? null,
+          anchored: MASK_MODULES.find((x) => x.op === op)?.anchor ?? true }));
+        for (const [key, card] of this.advanced) if (card.op === real) {
+          const inst = this.instances.find((i) => i.op === real && i.priority === card.priority);
+          if (inst?.owner === "mask" && inst.mask === name) this.advancedStale.add(key);
+        }
         have.add(op);
+        if (!hadInstance) this.instancesStale = true;
         sent = true;
       }
       this.maskOps.set(name, have);
@@ -892,12 +1101,25 @@ export class Session {
     void this.pump();
   }
 
-  // the values the engine is sent: in the Before view, the neutral ones
+  // a panel at its defaults while its eye is held, or back as edited (null)
+  peek(ids: ReadonlySet<string> | null) {
+    if (!ids?.size) ids = null;
+    const was = this.peeked;
+    if (!was && !ids) return;
+    this.peeked = ids;
+    for (const id of [...(was ?? []), ...(ids ?? [])])
+      for (const m of mapsWith(id)) this.dirty.add(m.op);
+    this.needRender = true;
+    void this.pump();
+  }
+
+  // the values the engine is sent: in the Before view and for a peeked
+  // panel, the neutral ones
   private sent(): Values {
-    const keep = this.before;
-    if (!keep) return this.values;
+    const keep = this.before, peeked = this.peeked;
+    if (!keep && !peeked) return this.values;
     return Object.fromEntries(Object.keys(this.values).map((id) =>
-      [id, keep(id) ? this.values[id] : this.neutral[id]]));
+      [id, (keep && !keep(id)) || peeked?.has(id) ? this.neutral[id] : this.values[id]]));
   }
 
   // edits not yet rendered
@@ -948,11 +1170,291 @@ export class Session {
 
   // a history item's instance switched, reset, or restored for undo
   // ("opened": as the photo opened)
-  setModuleState(h: HistoryItem, req: ModuleRequest) {
+  setModuleState(h: { op: string; priority?: number | null }, req: ModuleRequest) {
     if (h.priority == null) return;
     this.touched.add(instanceKey(h));
     this.modulePending.push({ key: instanceKey(h), op: h.op, priority: h.priority, req });
     void this.pump();
+  }
+
+  // Advanced mode's module cards: the open photo's instances (pipe order),
+  // and the settings of each card loaded, by instanceKey, as darktable's own
+  // introspection fields. kept here rather than in React so undo snapshots
+  // them like `values`, and edits reach the engine through the pump
+  instances: Instance[] = [];
+  advanced = new Map<string, AdvancedState>();
+  private advancedFields = new Map<string, string[]>();
+  private advancedDirty = new Map<string, { op: string; priority: number; params: Params }>();
+  // cards whose instance another edit changed (a Simple slider on the same
+  // module, a reset): read back once the engine has it
+  private advancedStale = new Set<string>();
+  private maskCardsStale = false;
+  private maskCardRefresh = new Map<string, Set<string>>();
+
+  // once per photo, however many groups ask
+  private instancesLoad: Promise<Instance[]> | null = null;
+  loadInstances() {
+    return this.instancesLoad ??= traced("instances", () => commands.instances()).then((list) => this.instances = list);
+  }
+
+  private maskCardEnabled(op: string, priority: number, enabled: boolean) {
+    const inst = this.instances.find((i) => i.op === op && i.priority === priority);
+    if (inst?.owner !== "mask" || !inst.mask) return enabled;
+    const mask = this.mask(inst.mask), key = maskOpKey(inst);
+    if (!mask) return enabled;
+    if (mask.disabledModules?.includes(key)) return false;
+    if (mask.enabledModules?.includes(key)) return true;
+    if (mask.hidden || this.before) return mask.moduleStates?.[key]?.enabled ?? enabled;
+    if (mask.extra?.includes(key)) return enabled;
+    const map = localMaps.find((m) => m.op === key);
+    if (!map) return enabled;
+    const holds = map.enabled ? map.enabled(mask.values)
+      : map.controls.some((id) => mask.values[id] !== (localControlById.get(id)?.neutral ?? 0));
+    return holds && choiceOn(map, { ...this.values, ...mask.values });
+  }
+
+  // a card's settings from the engine; fields are the schema's paths
+  async loadAdvanced(op: string, priority: number, fields: string[]) {
+    const key = `${op}#${priority}`;
+    this.advancedFields.set(key, fields);
+    const reply = await traced("get_params", () => commands.getParams({ [`${op}@${priority}`]: fields }));
+    const info = reply.modules[`${op}@${priority}`];
+    if (info) this.advanced.set(key, { op, priority, enabled: this.maskCardEnabled(op, priority, info.enabled),
+      params: { ...info.params }, defaults: { ...info.defaults } });
+    return this.advanced.get(key);
+  }
+
+  // a card read again from the engine once the edits sent have settled: an
+  // edit the engine refuses (Composite's photo that composites this one) leaves
+  // the card's state as the engine has it
+  async reloadAdvanced(op: string, priority: number) {
+    try {
+      await this.settled();
+      const fields = this.advancedFields.get(`${op}#${priority}`);
+      if (fields) { await this.loadAdvanced(op, priority, fields); this.onModules?.(); }
+    } catch { /* the error was reported when the edit failed */ }
+  }
+
+  // darktable fields of an instance, as one card edit sets them (editOf in
+  // advancedLayout.ts); an edit switches the module on, as in darktable
+  setFields(op: string, priority: number, params: Params, coalesce = false) {
+    this.setAdvanced(op, priority, params, true, coalesce);
+  }
+
+  setAdvancedEnabled(op: string, priority: number, on: boolean) {
+    this.setAdvanced(op, priority, {}, on);
+  }
+
+  // undo: put the cards back as a snapshot had them, after any module
+  // state it restores (the pump sends module_state first)
+  restoreAdvanced(target: Map<string, AdvancedState>) {
+    for (const [key, want] of target) {
+      const now = this.advanced.get(key);
+      if (!now) continue;
+      const params = Object.fromEntries(Object.entries(want.params).filter(([p, x]) => now.params[p] !== x));
+      if (Object.keys(params).length || want.enabled !== now.enabled)
+        this.setAdvanced(want.op, want.priority, params, want.enabled);
+    }
+  }
+
+  // cards that stay shown for this photo though their module is off and not
+  // in the history yet: added from Add module, or changed in this session
+  cardsShown = new Set<string>();
+
+  // Add module: the module's first instance, switched on, as darktable's
+  // module groups do when you enable one
+  addModule(op: string) {
+    this.cardsShown.add(`${op}#0`);
+    this.lastAdded = `${op}#0`;
+    this.setAdvanced(op, 0, {}, true);
+  }
+
+  // a shared card's module switch (the tone mappers): this instance off,
+  // the other module's first instance on; the old one keeps its settings
+  switchModule(op: string, priority: number, to: string) {
+    this.cardsShown.add(`${to}#0`);
+    this.lastAdded = `${to}#0`;
+    this.setAdvanced(op, priority, {}, false);
+    this.setAdvanced(to, 0, {}, true);
+  }
+
+  private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false) {
+    const key = `${op}#${priority}`;
+    const inst = this.instances.find((i) => i.op === op && i.priority === priority);
+    if (inst?.owner === "mask" && inst.mask) {
+      const maskOp = maskOpKey(inst);
+      const disabled = !!this.mask(inst.mask)?.disabledModules?.includes(maskOp);
+      if (disabled === enabled) this.setMaskModuleEnabled(inst.mask, maskOp, enabled);
+    }
+    this.cardsShown.add(key);
+    const card = this.advanced.get(key);
+    if (card) this.advanced.set(key, { ...card, enabled, params: { ...card.params, ...params } });
+    const queued = this.advancedDirty.get(key);
+    this.advancedDirty.set(key, { op, priority, params: { ...queued?.params, ...params } });
+    this.needRender = true;
+    this.submitEdits(coalesce);
+  }
+
+  // a card's instance reset to darktable's defaults: module_state, so the
+  // History panel's undo bookkeeping (modulesOpened) covers it. it stays on,
+  // as darktable's reset button leaves it (imageop.c, _gui_reset_callback);
+  // default_enabled would switch off exposure, which an auto preset turns on
+  resetAdvanced(op: string, priority: number) {
+    this.setModuleState({ op, priority }, { reset: true, enabled: true });
+  }
+
+  // darktable's presets of a card's instance, in darktable's menu order
+  loadPresets(op: string, priority: number) {
+    return traced("presets", () => commands.presets(op, priority)).then((r) => r.presets);
+  }
+
+  // apply a preset by its raw darktable name: module_state, so undo restores
+  // the instance as it was. the engine refuses it on an instance with a drawn
+  // mask or one a mask, look or shared tool owns; that reaches onError
+  applyPreset(op: string, priority: number, name: string) {
+    this.setModuleState({ op, priority }, { preset: name });
+  }
+
+  // the card instance menu's actions (the engine's `instance`), sent in order
+  // ahead of module states and card fields, so that an undo has made or
+  // deleted the instances before it restores their settings
+  private instancePending: InstanceAction[] = [];
+  // instances deleted this session: the engine keeps them, switched off, so
+  // undo brings one back with its priority (engine session_instance())
+  // (by key, with the name it had)
+  private instancesDeleted = new Map<string, string>();
+
+  instanceAction(a: InstanceAction) {
+    const key = `${a.op}#${a.priority}`;
+    if (a.action === "delete") {
+      if (this.instancesDeleted.has(key)) return;
+      const i = this.instances.find((x) => `${x.op}#${x.priority}` === key);
+      this.instancesDeleted.set(key, i?.hand_edited ? i.name : "");
+      const card = this.advanced.get(key);
+      if (card) this.advanced.set(key, { ...card, enabled: false });
+      // a card edit still queued would switch it back on after the delete
+      this.advancedDirty.delete(key);
+    }
+    if (a.action === "restore") this.instancesDeleted.delete(key);
+    this.instancePending.push(a);
+    this.needRender = true;
+    this.submitEdits(false);
+  }
+
+  // the user's own instances as undo keeps them: pipe order, and their names
+  instanceLayout(): InstanceEntry[] | null {
+    if (!this.instancesLoad) return null;
+    return this.instances.filter((i) => i.owner === null || i.owner === "mask")
+      .map((i) => ({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "",
+        ...(i.owner === "mask" && i.mask ? { mask: i.mask } : {}) }));
+  }
+
+  // undo: make, delete, rename and reorder instances to match `target`.
+  // a key the engine never made cannot come back; one made since is deleted
+  restoreInstances(target: InstanceEntry[] | null) {
+    const now = this.instanceLayout();
+    if (!target || !now) return;
+    const key = (i: { op: string; priority: number }) => `${i.op}#${i.priority}`;
+    const want = new Map(target.map((i) => [key(i), i]));
+    const have = new Map(now.map((i) => [key(i), i]));
+    // the names first read, before a delete records them
+    const renamed = target.filter((i) => !i.mask && (() => {
+      const name = have.get(key(i))?.name ?? this.instancesDeleted.get(key(i));
+      return name !== undefined && name !== i.name;
+    })());
+    for (const i of now) if (!want.has(key(i)) && i.priority > 0)
+      this.instanceAction({ action: "delete", op: i.op, priority: i.priority, ...(i.mask ? { mask: i.mask } : {}) });
+    for (const i of target) if (!have.has(key(i)) && this.instancesDeleted.has(key(i)))
+      this.instanceAction({ action: "restore", op: i.op, priority: i.priority, ...(i.mask ? { mask: i.mask } : {}) });
+    for (const i of renamed) this.instanceAction({ action: "rename", op: i.op, priority: i.priority, name: i.name });
+    // each module's instances in the target's order, one after another
+    const ops = new Set(target.filter((i) => !i.mask).map((i) => i.op));
+    for (const op of ops) {
+      const t = target.filter((i) => !i.mask && i.op === op).map((i) => i.priority);
+      const n = now.filter((i) => !i.mask && i.op === op && want.has(key(i))).map((i) => i.priority);
+      if (t.length < 2 || (t.length === n.length && t.every((p, k) => p === n[k]))) continue;
+      for (let k = 1; k < t.length; k++) this.instanceAction({ action: "move", op, priority: t[k], other: t[k - 1], after: true });
+    }
+  }
+
+  private async sendInstance(a: InstanceAction) {
+    let r: InstanceReply;
+    try {
+      r = await this.pumpTyped("instance", () =>
+        commands.instance(a.action, a.op, a.priority, a.name ?? null, a.other ?? null, a.after ?? null, a.mask ?? null));
+    } catch (e) {
+      // a refused action (an instance with a drawn mask to duplicate) leaves
+      // the photo as it was; the menu's state follows the engine's list again
+      if (a.action === "delete") this.instancesDeleted.delete(`${a.op}#${a.priority}`);
+      this.instances = (await commands.instances().catch(() => this.instances));
+      this.onError(String(e));
+      return;
+    }
+    this.instances = r.instances;
+    if (a.mask) this.maskCardsStale = true;
+    await this.loadNewCards();
+    if (a.action === "new" || a.action === "duplicate") this.lastAdded = `${a.op}#${r.priority}`;
+  }
+  // the instance the menu added last, whose card opens when it first shows
+  lastAdded: string | null = null;
+
+  // after a Simple slider sent its module: cards on that module read back
+  // a new instance's card reads the fields its module's other cards read
+  private async loadNewCards() {
+    for (const i of this.instances) {
+      const k = `${i.op}#${i.priority}`;
+      if (this.advanced.has(k)) continue;
+      const fields = [...this.advancedFields].find(([f]) => f.startsWith(`${i.op}#`))?.[1];
+      if (fields && (i.owner === null || i.owner === "mask")) await this.loadAdvanced(i.op, i.priority, fields);
+    }
+  }
+
+  private staleAdvanced(op: string) {
+    const [real, name] = op.split("#");
+    for (const [key, card] of this.advanced) if (card.op === real) this.advancedStale.add(key);
+    // a named instance the edit makes: its card needs the list read again
+    if (name && this.instancesLoad && !this.instances.some((i) => i.op === real && i.hand_edited && i.name === name))
+      this.instancesStale = true;
+  }
+  private instancesStale = false;
+
+  // Copy Settings' Advanced modules: the whole state of each instance the
+  // user changed that Simple's sliders do not show (advancedCopies)
+  async copyAdvanced(): Promise<AdvancedCopy[]> {
+    await this.settled();
+    const out: AdvancedCopy[] = [];
+    for (const i of advancedCopies(await commands.instances())) {
+      const r = await traced("module_state", () => commands.moduleState(i.op, i.priority, null, null, null, null));
+      out.push({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "", state: r.now });
+    }
+    return out;
+  }
+
+  // paste them: each restores the instance darktable's paste would pick
+  // (pasteTarget), else a new one after the module's last, named as the copy
+  async pasteAdvanced(copies: AdvancedCopy[]) {
+    if (!copies.length) return;
+    await this.settled();
+    let list = await commands.instances();
+    const used = new Set<string>();
+    for (const c of copies) {
+      let priority = pasteTarget(list, c, used)?.priority;
+      if (priority === undefined) {
+        const last = list.filter((i) => i.op === c.op).at(-1);
+        if (!last) continue;   // not a module of this photo's pipe
+        const r = await commands.instance("new", c.op, last.priority, null, null, null, null);
+        priority = r.priority;
+        list = r.instances;
+        if (c.name) list = (await commands.instance("rename", c.op, priority, c.name, null, null, null)).instances;
+        this.unsaved = true;
+      }
+      used.add(`${c.op}#${priority}`);
+      this.cardsShown.add(`${c.op}#${priority}`);
+      this.setModuleState({ op: c.op, priority }, { restore: c.state });
+    }
+    this.instances = list;
+    this.instancesLoad = null;
+    await this.settled();
   }
 
   // whether darktable set the module in a way its sliders cannot show
@@ -968,6 +1470,10 @@ export class Session {
     const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
     for (const m of mapsFor(op)) {
+      // a tool's other module (Blacks on exposure while it runs on the tone
+      // mapper) does not hold its sliders: read, it would claim the tool, as
+      // chooseModules avoids at open
+      if (!choiceOn(m, this.values)) continue;
       this.foreign.delete(m);
       const current = info.enabled ? m.read(info.params, info.defaults, this.ctx, this.values) : {};
       for (const id of m.controls) {
@@ -1208,6 +1714,11 @@ export class Session {
   // what the engine renders changed: no frame shown is known to show it.
   // the copy is put aside, for the engine to name if the image comes back
   private changed() {
+    // every path that edits the photo ends here (Simple and card edits, module
+    // switches, undo and redo, History jumps, paste), so the white balance note
+    // is checked once the edits pause; a pump in flight is long over by then
+    clearTimeout(this.wbTimer);
+    if (!this.background) this.wbTimer = setTimeout(() => void this.refreshWb(), 300);
     this.current.clear();
     if (this.copy) {
       this.putAside = this.copy;
@@ -1232,7 +1743,7 @@ export class Session {
   private static COPY_PIXELS = 64e6;
 
   requestCopy(scale: number, full: { w: number; h: number }) {
-    if (this.before || this.copy?.view.scale === scale || this.copyScale === scale) return;
+    if (this.viewing || this.copy?.view.scale === scale || this.copyScale === scale) return;
     if (Math.floor(full.w * scale) * Math.floor(full.h * scale) > Session.COPY_PIXELS) return;
     this.copyScale = scale;
     // the engine trims the box to the image at that scale
@@ -1246,7 +1757,7 @@ export class Session {
   // instant. the main pipe keeps its cache of the window shown
   private fitView: View | null = null;
   requestFit(view: View) {
-    if (this.before || this.current.has(this.frameKey(view, false))) return;
+    if (this.viewing || this.current.has(this.frameKey(view, false))) return;
     this.fitView = view;
     void this.pump();
   }
@@ -1313,7 +1824,7 @@ export class Session {
       // rendered again once editing pauses (App.tsx, scheduleBase)
       if (this.base && !this.base.stale && this.editPending) {
         const v = this.size();
-        if (!this.imagePending && !this.before && !v.draft && v.scale === this.base.copy) {
+        if (!this.imagePending && !this.viewing && !v.draft && v.scale === this.base.copy) {
           this.copyWait ??= begin();
           return;
         }
@@ -1334,12 +1845,14 @@ export class Session {
       while (this.dirty.size || this.needRender || this.needThumb || this.needCopy || this.needWarm || this.needLoupe
              || this.fitView || this.wantLook !== undefined
              || this.masksPending || this.wantLookAmount !== undefined || this.spotsPending
-             || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending) {
+             || this.reshapeDue || this.baselineEnd || this.modulePending.length || this.resetModulesPending
+             || this.advancedDirty.size || this.advancedStale.size || this.instancesStale || this.maskCardsStale
+             || this.maskStatesPending.size || this.maskResetPending.size || this.instancePending.length) {
         if (this.editFrame !== null) break;
         // before the change that ended it; a save it makes is the one due
         if (this.baselineEnd) {
           this.baselineEnd = false;
-          if (this.unsaved && !this.before) {
+          if (this.unsaved && !this.viewing) {
             window.clearTimeout(this.saveTimer);
             this.unsaved = false;
           }
@@ -1348,7 +1861,7 @@ export class Session {
         }
         // the engine saves on quitting, but never the Before view's settings:
         // it hears of the view before they go
-        if (this.before && !this.engineBefore) {
+        if (this.viewing && !this.engineBefore) {
           await this.pumpTyped("before_view", () => commands.beforeView(true));
           this.engineBefore = true;
           this.changed();
@@ -1366,7 +1879,7 @@ export class Session {
             seen.add(key);
             const legacy = ["filmicrgb", "filmic", "basecurve"].includes(h.op);
             const r = await this.pumpTyped("module_state", () =>
-              commands.moduleState(h.op, priority, legacy ? false : null, true, null));
+              commands.moduleState(h.op, priority, legacy ? false : null, true, null, null));
             this.touched.add(key);
             if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
             this.moduleStates.set(key, r.now);
@@ -1433,25 +1946,201 @@ export class Session {
           this.needRender = true;
           continue;
         }
+        // instances made, deleted or moved before any state for them is sent
+        if (this.instancePending.length && !this.dirty.size) {
+          await this.sendInstance(this.instancePending.shift()!);
+          this.changed();
+          this.onModules?.();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        if ((this.maskResetPending.size || this.maskStatesPending.size) && !this.dirty.size) {
+          let list = await commands.instances();
+          this.instances = list;
+          const mergePlan = planMerge(this.masks, this.values, !!this.before, this.ctx);
+          for (const name of this.maskResetPending) {
+            const m = this.mask(name);
+            for (const i of list.filter((x) => x.owner === "mask" && x.mask === name)) {
+              const result = await commands.moduleState(i.op, i.priority, false, true, null, null);
+              await commands.setParams({ op: i.op, priority: i.priority, params: {}, enabled: false,
+                mask: name, invert: m?.invert ?? false, opacity: m?.opacity ?? 100,
+                refine: m?.refine ?? null });
+              const states = m?.moduleStates ?? {};
+              const suffix = i.name.startsWith(name) ? i.name.slice(name.length) : "";
+              states[`${i.op}${suffix}`] = result.now;
+            }
+          }
+          this.maskResetPending.clear();
+          for (const [name, queuedStates] of this.maskStatesPending) {
+            const m = this.mask(name);
+            if (!m) continue;
+            let states = queuedStates;
+            const sourceName = this.maskStatesSource.get(name);
+            const sourceMask = sourceName ? this.mask(sourceName) : undefined;
+            if (sourceName && sourceMask) {
+              states = {};
+              for (const i of list.filter((x) => x.owner === "mask" && x.mask === sourceName)) {
+                const result = await commands.moduleState(i.op, i.priority, null, null, null, null);
+                const suffix = i.name.startsWith(sourceName) ? i.name.slice(sourceName.length) : "";
+                const key = `${i.op}${suffix}`;
+                const map = localMaps.find((x) => x.op === key);
+                const mappedOn = !!(map && (map.enabled ? map.enabled(sourceMask.values)
+                  : map.controls.some((id) => sourceMask.values[id] !== (localControlById.get(id)?.neutral ?? 0)))
+                  && choiceOn(map, { ...this.values, ...sourceMask.values }));
+                const enabled = sourceMask.disabledModules?.includes(key) ? false
+                  : sourceMask.hidden ? sourceMask.moduleStates?.[key]?.enabled ?? true
+                  : sourceMask.enabledModules?.includes(key) ? true
+                  : map ? !!mappedOn : result.now.enabled;
+                states[key] = { ...result.now, enabled };
+              }
+            }
+            for (const [instanceKey, state] of Object.entries(states)) {
+              const [op, tag] = instanceKey.split("#");
+              const map = localMaps.find((x) => x.op === instanceKey);
+              const explicitOn = m?.enabledModules?.includes(instanceKey) ?? false;
+              const mappedOn = !!(map && (map.enabled ? map.enabled(m.values)
+                : map.controls.some((id) => m.values[id] !== (localControlById.get(id)?.neutral ?? 0)))
+                && choiceOn(map, { ...this.values, ...m.values }));
+              const eligible = !map || explicitOn || m?.extra?.includes(instanceKey) || mappedOn;
+              const active = state.enabled && eligible && !m?.disabledModules?.includes(instanceKey)
+                && !m?.hidden && !this.before && !mergePlan.merged.get(name)?.has(instanceKey);
+              let i = list.find((x) => x.owner === "mask" && x.mask === name && x.op === op
+                && maskOpKey(x) === instanceKey);
+              const instance = tag ? `${name}#${tag}` : name;
+              if (!i) {
+                await commands.setParams({ op, params: {}, enabled: active, instance, mask: name,
+                  invert: m?.invert ?? false, opacity: m?.opacity ?? 100, refine: m?.refine ?? null,
+                  anchored: MASK_MODULES.find((x) => x.op === instanceKey)?.anchor ?? true });
+                list = await commands.instances();
+                i = list.find((x) => x.owner === "mask" && x.mask === name && x.op === op
+                  && maskOpKey(x) === instanceKey);
+              }
+              if (!i) continue;
+              const restore = { ...state, enabled: active, blend: null };
+              await commands.moduleState(op, i.priority, null, null, restore, null);
+              await commands.setParams({ op, priority: i.priority, params: sourceName ? {} : m.moduleEdits?.[instanceKey] ?? {}, enabled: active,
+                mask: name, invert: m?.invert ?? false, opacity: m?.opacity ?? 100,
+                refine: m?.refine ?? null });
+            }
+            if (m) this.masks = this.masks.map((x) => x.name === name ? { ...x, moduleStates: states } : x);
+          }
+          this.maskStatesPending.clear();
+          this.maskStatesSource.clear();
+          this.instances = list = await commands.instances();
+          this.instancesStale = true;
+          this.maskCardsStale = true;
+          this.changed();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
         // after the sliders' edits, so an undo's values cannot overwrite the
         // state it restores
         if (this.modulePending.length && !this.dirty.size) {
           const { key, op, priority, req } = this.modulePending.shift()!;
+          const maskInstance = this.instances.find((i) => i.op === op && i.priority === priority && i.owner === "mask");
           const restore = req.restore === "opened" ? this.modulesOpened.get(key) : req.restore;
           if (req.restore === "opened" && !restore) continue;
           const r = await this.pumpTyped("module_state", () =>
-            commands.moduleState(op, priority, req.enabled ?? null, req.reset ?? null, restore ?? null));
+            commands.moduleState(op, priority, req.enabled ?? null, req.reset ?? null, restore ?? null, req.preset ?? null));
+          if (maskInstance?.mask && (req.reset || req.restore)) {
+            const m = this.mask(maskInstance.mask);
+            await commands.setParams({ op, priority, params: {}, enabled: req.enabled ?? r.now.enabled,
+              mask: maskInstance.mask, invert: m?.invert ?? false, opacity: m?.opacity ?? 100,
+              refine: m?.refine ?? null });
+            this.instances = await commands.instances();
+            this.maskCardsStale = true;
+          }
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
-          const item = this.history.find((h) => instanceKey(h) === key);
-          if (item) {
-            const task = perf.begin("pump.task", { operation:"reread", blockingPump:true });
-            try { await this.reread(mapOpOf(item)); } finally { perf.finish(task); }
+          // darktable relabels an instance from its preset, and an undo
+          // restores the label with it
+          if (req.preset !== undefined || restore) {
+            this.instancesLoad = null;
+            await this.loadInstances();
           }
+          // an instance first set from an Advanced card is not in the
+          // history read at open; its first instance is what Simple maps
+          const item = this.history.find((h) => instanceKey(h) === key);
+          const mapOp = item ? mapOpOf(item) : priority === 0 ? op : null;
+          if (mapOp) {
+            const task = perf.begin("pump.task", { operation:"reread", blockingPump:true });
+            try { await this.reread(mapOp); } finally { perf.finish(task); }
+          }
+          if (this.advanced.has(key)) this.advancedStale.add(key);
           this.onModules?.();
           if (!this.before) { this.unsaved = true; this.scheduleSave(); }
           this.needRender = true;
+          continue;
+        }
+        // Advanced cards' edits: after the sliders' and module states, so an
+        // undo restores whole instances first and the cards' fields last
+        if (this.advancedDirty.size && !this.dirty.size) {
+          const sent = [...this.advancedDirty.values()];
+          this.advancedDirty.clear();
+          for (const { op, priority, params } of sent) {
+            const key = `${op}#${priority}`;
+            const enabled = this.advanced.get(key)?.enabled ?? true;
+            const inst = this.instances.find((i) => i.op === op && i.priority === priority);
+            if (inst?.owner === "mask" && inst.mask) {
+              const mask = this.mask(inst.mask), maskOp = maskOpKey(inst);
+              if (mask && !!mask.disabledModules?.includes(maskOp) === enabled)
+                this.setMaskModuleEnabled(inst.mask, maskOp, enabled);
+              const refresh = this.maskCardRefresh.get(inst.mask) ?? new Set<string>();
+              refresh.add(maskOp);
+              this.maskCardRefresh.set(inst.mask, refresh);
+              const map = localMaps.find((m) => m.op === maskOp);
+              const extra = !map || Object.keys(params).some((field) => !map.fields.includes(field));
+              if (extra) {
+                this.masks = this.masks.map((m) => m.name === inst.mask
+                  ? { ...m, extra: [...new Set([...(m.extra ?? []), maskOp])] } : m);
+                this.markLocal(inst.mask, [maskOp]);
+              }
+            }
+            this.draftKeep.add(op);
+            const wireEnabled = inst?.owner === "mask" && inst.mask
+              ? enabled && !this.mask(inst.mask)?.hidden && !this.before : enabled;
+            await this.pumpTyped("set_params", () => commands.setParams({ op, priority, params, enabled: wireEnabled }));
+            // Simple's sliders on the same instance read it again
+            if (priority === 0 && boundFields()[op]) await this.reread(op);
+            // a lens pick also sets the lens method and geometry, which the card reads back
+            if ("lens_pick" in params) this.advancedStale.add(key);
+            // an acquire or a cleared count changes the cluster arrays the previews draw
+            if ("cm_source" in params || "cm_target" in params) this.advancedStale.add(key);
+            // white balance's temperature and tint set the coefficients, and
+            // an edit of the coefficients moves them
+            if (op === "temperature") this.advancedStale.add(key);
+            if (inst?.owner === "mask") this.maskCardsStale = true;
+          }
+          this.changed();
+          this.onModules?.();
+          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          this.needRender = true;
+          continue;
+        }
+        if ((this.advancedStale.size || this.instancesStale || this.maskCardsStale) && !this.dirty.size && !this.advancedDirty.size) {
+          if (this.instancesStale) {
+            this.instancesStale = false;
+            this.instancesLoad = null;
+            await this.loadInstances();
+            await this.loadNewCards();
+          }
+          if (this.maskCardsStale) {
+            this.maskCardsStale = false;
+            await this.loadMasks();
+            this.onShapes?.();
+            for (const [name, ops] of this.maskCardRefresh) this.markLocal(name, [...ops]);
+            this.maskCardRefresh.clear();
+          }
+          const keys = [...this.advancedStale];
+          this.advancedStale.clear();
+          for (const key of keys) {
+            const card = this.advanced.get(key), fields = this.advancedFields.get(key);
+            if (card && fields) await this.loadAdvanced(card.op, card.priority, fields);
+          }
+          this.onModules?.();
           continue;
         }
         if (this.reshapeDue && !this.dirty.size) {
@@ -1492,10 +2181,10 @@ export class Session {
         if (!this.dirty.size && !this.needRender && this.fitView) {
           const view = this.fitView, key = this.frameKey(view, false);
           this.fitView = null;
-          if (this.before || this.current.has(key)) continue;
+          if (this.viewing || this.current.has(key)) continue;
           end(job);
           await this.idleRender(view, true, (f) => {
-            if (!this.before && !this.current.has(key)) this.keepFrame(key, f);
+            if (!this.viewing && !this.current.has(key)) this.keepFrame(key, f);
           }, this.heldFor(key));
           job = begin();
           continue;
@@ -1508,7 +2197,7 @@ export class Session {
           end(job);
           const aside = this.putAside?.view.scale === scale ? [this.putAside] : [];
           await this.idleRender({ ...this.copySize, scale, x: 0, y: 0 }, true, (f) => {
-            if (this.before) return;
+            if (this.viewing) return;
             this.putAside = null;
             this.copy = f;
             this.onCopy?.(f);
@@ -1526,11 +2215,12 @@ export class Session {
         // took 20 ms or more while the page drew (FINDINGS, "KDE on AMD")
         const edits = ops.map((op) => {
           this.draftKeep.add(op.split("#")[0]);
+          this.staleAdvanced(op);
           return this.moduleEdit(op);
         });
         if (ops.length) this.changed();
-        // the Before view is only for looking: nothing of it reaches the sidecar
-        if (ops.length && !this.before) { this.unsaved = true; this.scheduleSave(); }
+        // the Before view and a peek are only for looking: nothing of it reaches the sidecar
+        if (ops.length && !this.viewing) { this.unsaved = true; this.scheduleSave(); }
         this.needRender = false;
         // Batch edits use the same module maps and mask transport, without
         // rendering previews for photos that are not on screen.
@@ -1576,7 +2266,7 @@ export class Session {
         progress(job);
       }
       // and that it is over only once the edit is back in it
-      if (!this.before && this.engineBefore) {
+      if (!this.viewing && this.engineBefore) {
         await this.pumpTyped("before_view", () => commands.beforeView(false));
         this.engineBefore = false;
         this.changed();
@@ -1595,7 +2285,7 @@ export class Session {
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       // the engine holds the Before view's settings; save once it is gone
-      if (this.before) { this.scheduleSave(); return; }
+      if (this.viewing) { this.scheduleSave(); return; }
       this.unsaved = false;
       traced("save", () => commands.save()).then((r) => this.onSaved?.(r.edited))
         .catch((e) => this.onSaveError ? this.onSaveError(String(e)) : this.onError(String(e)));
@@ -1606,6 +2296,7 @@ export class Session {
   // what is stored, and that history read back to stand for the opened one
   async compressHistory() {
     if (this.before) this.showBefore(null);
+    this.peek(null);
     await this.settled();
     window.clearTimeout(this.saveTimer);
     this.unsaved = false;
@@ -1629,11 +2320,24 @@ export class Session {
     this.unsaved = false;
   }
 
+  async saveForPreview() {
+    if (!this.unsaved && !this.dirty.size && !this.modulePending.length) return;
+    this.flushEdits();
+    await this.settled();
+    if (this.before || this.viewing) return;
+    window.clearTimeout(this.saveTimer);
+    if (!this.unsaved) return;
+    const r = await traced("save", () => commands.save());
+    this.unsaved = false;
+    this.onSaved?.(r.edited);
+  }
+
   async close() {
     if (this.dead) return;
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
+    this.peek(null);
     await this.settled();
     if (!this.unsaved) return;
     this.unsaved = false;

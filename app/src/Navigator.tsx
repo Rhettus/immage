@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { useState } from "react";
 import { type Zoom, type Placement, ZOOMS } from "./zoom";
+import { t } from "./i18n";
 
 // the whole image, the zoom levels, and a rectangle over the part the
 // viewer shows; dragging the rectangle pans
@@ -27,7 +28,7 @@ export function Navigator({ thumb, zoom, placement: p, disabled, onZoom, onPan }
   return (
     <div className="navigator">
       <div className="nav-head">
-        <span>Navigator</span>
+        <span>{t("library.navigator.title")}</span>
         <span className="segmented small nav-zooms">
           {ZOOMS.map(([z, label]) => (
             <button key={label} className={z === zoom ? "active" : ""} disabled={disabled}

@@ -1,5 +1,10 @@
 # Release checks
 
+`python3 -I verify/metadata-pipeline.py` checks ORF metadata preparation
+headlessly: import/XMP parity at 1-4, 6 and 8 Library workers, the live
+preference change, cancellation, abandoned-worker caps and recovery. It uses
+temporary photos and FIFO sidecars.
+
 What to run before tagging a release ([releasing.md](../app/docs/dev/releasing.md)):
 every slider of every panel, and of a mask, moved through the app's own
 code and the engine, with the photo it renders measured; a saved edit
@@ -60,6 +65,28 @@ unblocked:
 
 ```bash
 python3 -I verify/import-stall.py
+```
+
+The 0.46.0 engine check (headless, no GUI) starts the engine with the app's
+`--thumb-threads` and `--configdir` arguments and checks the config folder is
+the one asked for, checks the `thumb_threads` range, and runs History's start
+over (`history_discard`) on a closed photo, with its undo and redo:
+
+```bash
+python3 -I verify/engine-0460.py
+```
+
+Advanced mask checks use copied photos and isolated engine state, without a
+GUI. The engine check covers ownership, local versus unmapped parameters,
+module removal and restoration, XMP reopening and darktable-cli export parity.
+The Session check also exercises card edits, hide and Before, duplication,
+Copy Settings and undo through the app's model:
+
+```bash
+python3 -I verify/advanced-masks-engine.py
+node verify/advanced-mask-session.test.mjs
+node verify/mask-modules.test.mjs
+node verify/mask-module-flags.test.mjs
 ```
 
 The export metadata check (headless, no GUI, needs the `exiv2` command) gives a
@@ -188,6 +215,15 @@ It checks exact selection, untouched groups, look/strength, native history
 undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
+
+The panel eye check (headless, real engine) holds a panel's eye through
+Session: the render matches that panel's controls set to their defaults, the
+other panels' edits stay, the slider values and the sidecar are unchanged, and
+letting go renders the edit again exactly:
+
+```bash
+node --test --test-isolation=none verify/panel-peek.test.mjs
+```
 
 The Negative panel's color-profile check uses installed profile menus and verifies
 the values through Session, Copy Settings, Reset and reopening the photo from its
@@ -356,6 +392,17 @@ these smoke checks supplement the pipeline tests below.
 
 ## Folder metadata and embedded thumbnails
 
+Check TIFF preview fallback when a DNG's RAW encoding cannot be decoded:
+
+```bash
+python3 -I verify/dng-thumbnails.py /path/to/photo.dng
+```
+
+This headless check generates DNG fixtures with unsupported compression and
+embedded TIFF previews, verifies pixels and all eight EXIF orientations, and
+checks that edited photos cannot fall back to an unedited preview. Optional
+photos are copied into temporary state; originals and sidecars stay untouched.
+
 Build and run the focused checks with an isolated scratch directory:
 
 ```bash
@@ -364,12 +411,14 @@ build/bin/immage-thumbnail-check /tmp/immage-thumbnail-check /path/to/camera.CR2
 ```
 
 The check generates TIFFs with two embedded JPEG sizes, rotated orientation,
-metadata beyond the prefix limit, and truncated data. It verifies metadata,
-compares extracted JPEG bytes with Exiv2's full-file previews, and decodes
-four thumbnail sizes. It also writes a small DNG and checks all eight camera
-orientations through the production denoise and HDR metadata helpers, including
-the imported orientation, DNG calibration tags and denoise marker. Optional
-RAW paths must contain an embedded preview.
+metadata both near the header and beyond the prefix limit, and truncated data.
+It generates ORF fixtures with IIRO, IIRS, MMOR and MMSR signatures, in both
+byte orders, and checks early and distant metadata. Extracted JPEG bytes are compared
+with Exiv2's full-file previews, then decoded at four thumbnail sizes. It also
+writes a small DNG and checks all eight camera orientations through the
+production denoise and HDR metadata helpers, including the imported orientation,
+DNG calibration tags and denoise marker. Optional RAW paths must contain an
+embedded preview.
 On Linux it also prints logical bytes read from `/proc/self/io`; these include
 buffering and other reads during each call and do not measure network traffic
 or physical disk reads. Camera fixtures are supplied locally and stay out of git.

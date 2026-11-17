@@ -2,6 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { useEffect, useRef, useState } from "react";
+import { t } from "./i18n";
 import { PROFILE_GROUPS } from "./manifest";
 import { loadNewPhotosProfile } from "./profileDefault";
 import { addAgxProfiles, deleteAgxProfiles, findAgxPresets, DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles,
@@ -47,7 +48,7 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
       if (!list) return;
       setFound(list);
       setChosen(new Set(list.map((_, i) => i)));
-      if (!list.length) setError(pick ? "No AgX preset in this file." : "No AgX presets of your own in darktable's presets.");
+      if (!list.length) setError(pick ? t("dialogs.agx.noPresetInFile") : t("dialogs.agx.noDarktablePresets"));
     } catch (e) { setError(String(e)); setFound(null); }
     finally { setBusy(false); }
   };
@@ -83,13 +84,13 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
       }
     }}>
     <div ref={box} className="modal" data-dialog={removing ? "agx-presets-delete" : "agx-presets"} role="dialog" aria-modal="true" aria-labelledby="agx-preset-title">
-      <div className="modal-head"><h2 id="agx-preset-title">{removing ? "Delete AgX Preset" : "Load AgX Preset"}</h2></div>
+      <div className="modal-head"><h2 id="agx-preset-title">{removing ? t("dialogs.agx.deleteTitle") : t("dialogs.agx.loadTitle")}</h2></div>
       <div className="modal-body">
-        {!ready && !removing && <p className="note-plain">Open a photo to load presets.</p>}
-        {removing && <p>Delete presets from My Presets. Photos already using them keep their adjustments.</p>}
-        {removing && !listed.length && <p>No user-loaded AgX presets.</p>}
+        {!ready && !removing && <p className="note-plain">{t("dialogs.agx.openPhoto")}</p>}
+        {removing && <p>{t("dialogs.agx.deleteDescription")}</p>}
+        {removing && !listed.length && <p>{t("dialogs.agx.noneLoaded")}</p>}
         {listed.length > 0 && <>
-          <p>{removing ? "Your presets:" : "Presets found:"}</p>
+          <p>{removing ? t("dialogs.agx.yourPresets") : t("dialogs.agx.presetsFound")}</p>
           {listed.map((p, i) => <label key={i} className="row">
             <input type="checkbox" disabled={busy} checked={chosen.has(i)}
                    onChange={(e) => setChosen((c) => { const n = new Set(c); if (e.target.checked) n.add(i); else n.delete(i); return n; })} />
@@ -97,10 +98,10 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
           </label>)}
         </>}
         {needsReplacement && <label className="row">
-          This preset is the default for new raw photos. Choose another default before deleting it.
+          {t("dialogs.agx.chooseReplacement")}
           <select className="field" data-action="agx-replacement-default" disabled={busy}
             value={replacementValid ? replacement! : ""} onChange={(e) => setReplacement(Number(e.target.value))}>
-            <option value="" disabled>Choose a default profile…</option>
+            <option value="" disabled>{t("dialogs.agx.chooseDefault")}</option>
             {replacements.filter(([, options]) => options.length).map(([name, options]) => <optgroup key={name} label={name}>
               {options.map(([name, value]) => <option key={value} value={value}>{name}</option>)}
             </optgroup>)}
@@ -111,11 +112,11 @@ function AgxPresetDialog({ mode, ready, onPick, onClose }: { mode: "load" | "del
       </div>
       <div className="modal-foot">
         {!removing && <>
-          <button className="btn" disabled={busy || !ready} onClick={() => void search()}>From darktable</button>
-          <button className="btn" disabled={busy || !ready} onClick={() => void choose()}>From file…</button>
+          <button className="btn" disabled={busy || !ready} onClick={() => void search()}>{t("dialogs.agx.fromDarktable")}</button>
+          <button className="btn" disabled={busy || !ready} onClick={() => void choose()}>{t("dialogs.agx.fromFile")}</button>
         </>}
-        <button className="btn" disabled={busy} onClick={onClose}>Close</button>
-        <button className="btn primary" disabled={busy || chosen.size === 0 || (needsReplacement && !replacementValid)} onClick={() => void apply()}>{removing ? "Delete" : "Add"}</button>
+        <button className="btn" disabled={busy} onClick={onClose}>{t("dialogs.agx.close")}</button>
+        <button className="btn primary" disabled={busy || chosen.size === 0 || (needsReplacement && !replacementValid)} onClick={() => void apply()}>{removing ? t("dialogs.agx.deleteAction") : t("dialogs.agx.addAction")}</button>
       </div>
     </div>
   </div>;

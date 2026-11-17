@@ -30,6 +30,10 @@ storage, so it survives a reset of that storage. To keep it with your presets,
 looks and keywords, use **Backup** under General (see [Backup](#backup)), or
 copy the file while Immage is closed.
 
+Immage loads this file before opening its windows, so saved preferences are
+available on the first screen. Changes such as the interface language and the
+Quick start guide's **Don't show again** choice are saved for the next launch.
+
 On the first start of this version, Immage copies settings from the web view's
 storage into `settings.json`. That storage is left as it was, so an older
 version of Immage still finds its own settings.
@@ -42,8 +46,24 @@ starts with default settings. To start with defaults on purpose, see
 
 ## General
 
+**Editing**
+
+- **Editing mode**: **Simple** (the default) shows Immage's sliders.
+  **Advanced** keeps Adjustments' groups and adds a Technical group and a
+  module search, for darktable's own modules. Changing it does not change the
+  photo or its edits. The Advanced mode button at the top of each right-hand rail panel
+  switches the same setting. See [Advanced mode](advanced-mode.md).
+
 **Workspace**
 
+- **Language**: the interface language, or **System default**. Immage
+  chooses the first supported language from the system’s language preferences
+  at startup, with English as the fallback. Choosing a language explicitly
+  overrides the system setting. Changes apply on the next launch; **Relaunch**
+  saves the current photo and restarts Immage. English and French are bundled.
+  Translations include menus, Preferences, editing fields, library tools,
+  status messages, dialogs, export and print settings. Remaining untranslated text falls back to English. Advanced
+  module terminology comes from the pinned darktable translation catalog.
 - **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
   `darktable-elegant-grey` palette) or **Light** with the swatches.
   The selected name and **Import theme…** action appear below the swatches;
@@ -139,6 +159,27 @@ starts with default settings. To start with defaults on purpose, see
   System .ORI of the same name show as one, and a rating, reject or delete
   takes them all.
 
+**Smart search (CLIP)** (below Library)
+
+The optional CLIP model that lets Find search by what is in a photo.
+
+- **CLIP model (optional)** downloads about 608 MB of matched model and tokenizer
+  files from Hugging Face only when you press **Download or repair**. Valid local
+  files are checked and reused. **Cancel** stops further download work after the
+  current network read returns; a stalled read times out after a minute.
+  Until the model is downloaded (and without an Immich connection), Find searches
+  file names only and **Show more like this** is not offered; both appear when the
+  download finishes or Preferences is closed.
+- **Model check** tests both CPU inference towers using a test prompt and a
+  synthetic image, with the time including model loading. It requires verified
+  model files and resumed background work. It does not upload photos or test
+  the relevance of search results. Model downloads have their own Cancel button
+  and are independent of Pause.
+
+While CLIP analyses your photos in the background, Immage's performance is
+impacted because the analysis uses the CPU. Pause background work under
+Preferences > Performance > Local photo cache to stop it.
+
 **Startup**
 
 - **Quick start guide**: the short tour when Immage opens.
@@ -152,7 +193,7 @@ file that you choose.
 parts that exist are offered:
 
 - **Preferences & library**: all of your settings, the same as in
-  `settings.json`.
+  `settings.json`, and your Find saved filters.
 - **Edit presets** and **Export presets**: your Develop and export presets.
 - **Looks**: the looks in your looks folder, counted with their size.
 - **Edit In plugins**: your plugin list.
@@ -388,9 +429,19 @@ scale**; zoomed-in frames still use the full webview resolution.
   waiting for the decode. Up to three are decoded at once. Each holds its
   raw in memory, about 50 MB for a 24-megapixel photo. One by default.
   Reading ahead pauses while an export runs and while the computer is
-  short of memory.
+  short of memory. In the grid's F lightbox, the same count prepares
+  screen-sized previews one at a time in the last navigation direction.
+  Off disables speculative preview loading; 100% detail remains on demand.
 - **Read ahead both ways**: as many photos behind the open one too, for
-  stepping back. Off by default.
+  stepping back, including previews in the grid lightbox. Off by default.
+- **Library workers**: how many library thumbnails, metadata tasks and
+  photo transfers run at the same time, from 1 to 8. Two by default.
+  These limits are separate, so this is not a shared total. Moves and copies
+  keep each photo and its sidecars together, including downloads from Immich.
+  More workers can help on fast disks or network drives (NAS); fewer may be
+  quicker on a spinning disk or when the drive is busy. Changes apply to
+  subsequent import batches and new move or copy jobs. A transfer job keeps
+  the worker limit it started with.
 
 **Cache**
 
@@ -405,6 +456,39 @@ empties one.
   kept whatever the limit, as its edit is beside it. 10 GB by default.
 
 The thumbnail caches keep nothing while the disk has under 5 GB free.
+
+**Local photo cache** (below Cache)
+
+The cache of what Immage knows about your photos, and the background analysis
+that follows the optional CLIP model (see Smart search (CLIP) in General).
+
+- **Metadata** shows cached photos, versions, metadata records and analyses.
+  **Clear** removes these disposable records; browsing and later startup checks
+  refill the cache. **Rebuild** also queues a fresh check of your saved folders.
+  Neither action changes your photos or sidecars. Model files are retained.
+- **Pause / Resume** controls new background file checks and analysis. Active
+  work finishes, and browsing remains available. The pause setting is remembered
+  after relaunch. A rebuild remains queued while paused. The analysis icon at
+  the end of Find's search box is the same pause: clicking it pauses or resumes
+  here too.
+- Each saved drive shows its last check state, including offline or incomplete
+  checks. An offline drive is never treated as evidence that photos were deleted.
+
+**CLIP analysis**, directly below **Background work**, shows the number of distinct
+photos analysed and the total analyses. A photo counts once however many
+analyses it has (older cache entries may include original analyses, which
+Find no longer uses). Directory
+status appears below in a fixed-height
+scrollable box, with one row per path and a right-aligned green (connected) or
+red (offline) dot. Hover a truncated path to see it in full; hover its dot for
+connection details or an error. The list can also be focused and scrolled with
+the keyboard.
+
+After downloading the optional CLIP package, background CPU analysis fills
+an embedding of each photo as edited. Reconciled paths receive bounded metadata imports
+before analysis, including folders you have not browsed. Pause stops new jobs;
+active jobs can finish. Clear cancels old jobs and removes their cached output.
+Rebuild checks your saved folders again before backfilling metadata and analysis.
 
 **Measuring**
 
@@ -462,7 +546,14 @@ photo's starting point: they don't mark it as edited.
 - **Profile**: the color look a raw starts with: one of AgX's looks
   (**AgX Default**, the default) or one of color balance rgb's
   (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
-  keep the camera's look.
+  keep the camera's look. It takes precedence over a profile saved in the
+  **Apply preset** preset.
+- **Lens correction method**: where a new raw's lens corrections take their
+  data from: the **Lensfun database** (the default) or the **Embedded
+  metadata** in the raw file. It is set after the preset, so it wins over a
+  method the preset holds. If Lensfun has no lens for the photo, darktable's
+  own choice stays. It only applies when the photo's lens corrections are on,
+  and photos already edited keep their method.
 - **Exposure compensation** and **Amount**: brightens or darkens every new
   raw by an amount in EV, for a camera whose raws come out too dark or too
   light; +1 is common. Exposure in Basic still starts at 0 and adds to it,
@@ -533,6 +624,17 @@ beside each tool's name in the panels; its **Set as default** writes the
 choice here (see [darktable modules](darktable.md)). Existing mask adjustments keep their modules;
 unused tools and new masks take these choices.
 
+A third **Advanced modules** section chooses which darktable modules Advanced
+editing mode offers in Add module, the module search and the tone mapper switch,
+with a switch per module, a filter, Show all and Hide all per group, and
+**Essentials only**. A photo that uses a hidden module still shows its card. See
+[Advanced mode](advanced-mode.md#hiding-modules).
+
+The Advanced modules section also has the **3D LUT folder**: where the LUT 3D
+card's file button opens and the only place it takes files from. A photo
+keeps the LUT's path relative to this folder. Empty uses your home folder,
+as darktable does.
+
 Clarity and Texture use **contrast & texture** by default, in place of a
 single slider: the module's Coarse, Medium and Fine details, Base detail
 level, Halo control, Noise bias, Shadows and Highlights sliders, using
@@ -552,7 +654,9 @@ chromatic aberrations: darktable deprecates its older defringe module.
 
 ## Immich
 
-The server, API key, duplicate checking and path map. See
+The server, API key, duplicate checking (Destination as Immich sees it) and
+how search results open from this computer (External library path and Folder
+on this computer, with warnings and an example). See
 [Immich](immich.md) for setting it up step by step.
 
 ## Plugins

@@ -29,9 +29,10 @@ is no process version to choose: the tone mapper, AgX, plays that part.
   goes further.
 
 **Panels:** click a panel's title to open it. With **Focus mode** on (the
-default), opening one closes the others; ⌥-click opens one alongside. The
-buttons in the panel's head collapse or expand them all, and **Reset all**
-takes the photo back to its starting point (⌘Z undoes it).
+default), opening one closes the others; ⌥-click opens one alongside.
+Opening a photo shows Adjustments with only Basic open. The buttons in the
+panel's head collapse or expand them all, and **Reset all** takes the photo
+back to its starting point (⌘Z undoes it).
 
 **Preset rows:** some sections have a row of swatches or buttons, such as
 the B&W filters or the grain amounts. Hover over one to preview it on the
@@ -85,6 +86,14 @@ for **B&W Mix**.
 
 - **Temp**: 2000-25000 K. **Tint**: -150 to +150. Both start **As Shot**,
   and double-click goes back to it.
+- A note under the section, "white balance comes from the white balance
+  module, with color calibration off", means the photo's white balance is set
+  by the white balance module (as in Advanced mode, or an edit from darktable
+  with a setting such as As shot or a camera preset) and not by color
+  calibration. Temp and Tint turn color calibration on, which adapts the colors
+  again on top of it. For darktable's usual setup, choose Camera reference or
+  As shot to reference in the Advanced white balance card, or turn color
+  calibration on.
 - The eyedropper (W) picks a neutral spot: click something that should be
   gray. It refuses a clipped or black spot. Esc cancels.
 - The **WB** menu has **As Shot**, **Auto**, **Daylight**, **Cloudy**,
@@ -104,13 +113,14 @@ for **B&W Mix**.
   against clear sky, keeps its blacks too, rather than its sky being
   darkened. A flat photo gets only a moderate Contrast boost, since
   Whites and Blacks already widen its tones. Under AgX it also sets AgX's
-  range.
+  range, except with Film Simulation or a converted negative, which turn
+  AgX off.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
   +100. Whites moves the top of the tone mapper's curve, and under AgX
   also brightens or darkens the brightest tones ahead of it; Blacks moves
   the black point, and works the same at any Exposure.
-- **Highlight Brilliance** (AgX only, among Basic's advanced settings),
+- **Highlight Brilliance** (AgX only, among Basic's More controls),
   0% to 200%, sets how much of that brightening Whites adds; 100% is the
   usual amount.
   Lower it when bright areas such as snow or clouds clip as you raise
@@ -128,13 +138,29 @@ Clarity and Texture run on **contrast & texture** by default, where each
 shows **Medium details** and **Fine details** (-1 to 5) instead of a single
 slider; choose local contrast or diffuse or sharpen in Preferences › Modules
 for the slider.
-Each panel with advanced settings has a sliders icon in its title row. It is
-off by default and blends into the title; click it to show the panel's
-advanced settings inline, and click again to hide them. Each panel remembers
-its setting. A dot on the icon means a hidden setting has been changed.
+Each panel with more controls has a sliders icon, **More controls**, in its
+title row. It is off by default and blends into the title; click it to show the
+panel's extra settings inline, and click again to hide them. Each panel
+remembers its setting. A dot on the icon means a hidden setting has been
+changed. The icon is only in Simple [editing mode](advanced-mode.md).
+
+To see what one panel does, press and hold the eye icon in its title row,
+beside the arrow that folds the panel (and right of More controls, where the
+panel has it):
+the photo shows that panel's controls at their defaults, and letting go
+brings your adjustments back. The sliders stay where they are, and nothing
+changes in the photo's edit. Other panels, masks, healing and the look stay
+on. With the icon focused, holding Space or Enter does the same. The eye is
+dimmed while the panel has no adjustments, and it is only in Simple editing
+mode. Tone Curve's eye includes the point curve, Effects' the vignette's
+center, and Transform's Upright. Module choices (such as which module runs
+Contrast) and the crop are kept.
 For Clarity and Texture these are Coarse details (-1 to 5), Base detail level
 (1–15), Halo control (-10 to 10), Noise bias (0–1), and Shadows and Highlights
 (-5 to 5). Clarity and Texture use separate instances, including on masks.
+Each set of detail sliders sits in a shaded box headed Clarity or Texture,
+with the sliders named without that prefix; Base detail level and the
+settings after it are set a little apart from the three detail bands.
 
 ## Contrast equalizer
 
@@ -285,7 +311,12 @@ there opens the DNG. The DNG starts with the raw's edit as it was when
 you clicked Denoise, and the first time it opens, Profiled Denoise's
 Luminance and Color go to 0, since the AI took the noise out. It is a
 photo of its own and sits after the raw in the folder; the raw itself
-isn't changed. Raws only, in a folder on this computer, one at a time.
+isn't changed. Raws only, one at a time, for photos in a folder on this
+computer. That includes photos opened from Find results and Immich photos
+that open from a mapped external library, whose DNG lands in the library's
+folder, where Immich finds it at its next library scan. An Immich photo
+that was downloaded has no folder to write to, so AI Denoise is not offered
+for it; map the library or download the photo to a folder first.
 To try another Amount, run it again on the raw; the next DNG is
 `<name>_raw-denoise_1.dng`.
 
@@ -304,6 +335,23 @@ Raw-only sliders are grayed out on a JPEG.
 
 ## Lens Corrections
 
+**Demosaic** (raws only) picks how darktable rebuilds full color from the
+sensor's single-color pixels. **Method** lists the methods for the photo's
+sensor, with darktable's default for it first, which a new photo starts on:
+
+- Fujifilm X-Trans: **Markesteijn 1-pass** (default), **Markesteijn 3-pass**
+  (finer detail and fewer color artifacts, slower to render), **Frequency
+  domain chroma** and **VNG**.
+- Other color raws (Bayer): **RCD** (default), **AMaZE**, **LMMSE** (for
+  high-ISO photos), **PPG** and **VNG4**.
+
+Raws with a single method (monochrome sensors, four-color Bayer) show only
+it. A method chosen in Advanced mode that Simple does not list (the dual
+methods, passthrough) shows by name until you pick another. The method
+follows the photo's edits, so undo, copy and paste, presets and Reset
+include it; pasted onto a photo with the other kind of sensor, it becomes
+that photo's default.
+
 **Defringe** removes color fringes using darktable's chromatic aberrations:
 **Amount** sets strength and **Radius** sets its reach. Amount 0 switches it
 off. This is separate from Remove Chromatic Aberration. A mask's Defringe
@@ -316,6 +364,18 @@ uses the same module.
   a lensfun database installed on the system is used instead (update it with
   `lensfun-update-data`). A camera or lens still missing from the database
   gets no correction.
+- **Correction method**: shown only for a photo whose file carries its own
+  correction data. When the lensfun database has a profile for the camera and
+  lens, a photo you have not corrected yet starts on **Lensfun database**, and
+  enabling Lens Corrections uses it; darktable alone would use **Embedded
+  metadata**. Choose **Embedded metadata** to use the file's correction
+  instead; it is kept for that photo. A photo you already corrected keeps its
+  method, and a photo with no lensfun profile stays on embedded. It is the
+  same setting as the Correction method in the Advanced mode's Lens
+  correction card, so a change made in either place shows in the other.
+  Choosing **Embedded metadata** puts the **Lens** picker back to Auto, and
+  picking a lens switches the method to Lensfun. Reset returns to the
+  preferred method.
 - **Lens**: **Auto** uses the lens matched from the photo's EXIF, shown
   beside it. Open the drop-down to pick another from the lensfun lenses that
   fit the camera (all of them when the camera is not in the database). Type in

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { withNodeLocales } from './vite-locales.mjs';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
 registerHooks({
@@ -23,7 +24,8 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    return { format: 'module', source: transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
+    const source = withNodeLocales(url, readFileSync(path, 'utf8'));
+    return { format: 'module', source: transformSync(path, source, { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
   },
 });
 const T = await import('../app/src/exportTokens.ts');
@@ -31,6 +33,7 @@ const P = await import('../app/src/paths.ts');
 const F = await import('../app/src/filter.ts');
 const L = await import('../app/src/library.ts');
 const K = await import('../app/src/keys.ts');
+const PN = await import('../app/src/presetName.ts');
 
 const exif = (o = {}) => ({ maker: 'Canon', model: 'EOS R5', lens: 'RF 50mm F1.8', exposure: 1 / 250, aperture: 2.79,
   iso: 400.4, focal_length: 50, exposure_bias: 0, focus_distance: 0, datetime: '2024:03:05 14:07:09', ...o });
@@ -275,6 +278,22 @@ test('passes: dates and exposure', () => {
   assert.ok(!F.passes(i, f({ iso: ['800'] })));
   assert.ok(!F.passes(img({ exif: { iso: 0 } }), f({ iso: ['0'] })));
 });
+test('passesSearch reacts to current rating, label and reject metadata', () => {
+  const i = img({ rating: 4, labels: 1, rejected: false });
+  const threeStars = f({ minRating: 3 });
+  assert.ok(F.passesSearch(i, threeStars), 'a four-star result meets the selected threshold');
+  assert.ok(!F.passesSearch({ ...i, rating: 2 }, threeStars), 'a re-rated result below the threshold disappears');
+  assert.ok(!F.passesSearch({ ...i, labels: 0 }, f({ labels: 1 })), 'removing the selected label hides the result');
+  assert.ok(!F.passesSearch({ ...i, rejected: true }, f({ rejected: 'hide' })), 'rejecting the result hides it when rejects are hidden');
+  assert.ok(F.passesSearch({ ...i, rejected: true }, f({ rejected: 'only' })), 'a rejected result appears when only rejects are shown');
+});
+test('passesSearch uses capture time only, never the file modification fallback', () => {
+  const modifiedOnly = img({ exif: { datetime: '', file_datetime: '2024:03:05 01:00:00' } });
+  assert.ok(!F.passesSearch(modifiedOnly, f({ takenFrom: '2024-03-05' })));
+  const precise = img({ exif: { datetime: '2024:03:05 14:07:09', capture_time_raw: '2024:03:05 14:07:09.123456789', file_datetime: '2030:01:01 00:00:00' } });
+  assert.ok(F.passesSearch(precise, f({ takenFrom: '2024-03-05', takenTo: '2024-03-05' })));
+  assert.ok(!F.passesSearch(precise, f({ takenFrom: '2030-01-01' })));
+});
 test('exposureLabel, popupCount, needsRead, bodyLabel', () => {
   assert.equal(F.exposureLabel('iso', 0), ''); assert.equal(F.exposureLabel('aperture', 2.79), 'f/2.8');
   assert.equal(F.exposureLabel('aperture', 4), 'f/4'); assert.equal(F.exposureLabel('focal', 24.4), '24 mm');
@@ -297,7 +316,7 @@ test('facets: counts, order, nesting', () => {
     img({ imgid: 4, filename: 'd.nef', exif: { iso: 0 } }),
   ];
   const r = F.facets(imgs);
-  assert.deepEqual(r.kinds, [['RAW', 2], ['JPEG', 1], ['PNG', 1]]);
+  assert.deepEqual(r.kinds, [['RAW', 2], ['CR3', 1], ['NEF', 1], ['JPG', 1], ['PNG', 1]]);
   assert.deepEqual(r.keywords, [['a', 2], ['a|b', 2], ['a|c', 1]]);
   assert.deepEqual(r.months, [['2024-03', 2], ['2024-01', 1], ['2023-12', 1]]);
   assert.deepEqual(r.iso, [['100', 1], ['400', 1], ['800', 1]]);
@@ -311,4 +330,11 @@ test('facetsWithin narrows by the rest of the filter, not the list shown', () =>
   const flt = f({ cameras: ['Canon A'] });
   assert.deepEqual(F.facetsWithin(imgs, flt, {}).lenses, [['L1', 1]]);
   assert.deepEqual(F.facetsWithin(imgs, flt, { cameras: [] }).lenses, [['L1', 1], ['L2', 1]]);
+});
+
+test('presetLabel shows darktable preset names for the menu', () => {
+  assert.equal(PN.presetLabel('_builtin_magic lantern defaults'), 'magic lantern defaults');
+  assert.equal(PN.presetLabel('_builtin_film|neutral'), 'film › neutral');
+  assert.equal(PN.presetLabel('my look | warm'), 'my look › warm');
+  assert.equal(PN.presetLabel('plain'), 'plain');
 });

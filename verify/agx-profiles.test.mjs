@@ -134,3 +134,13 @@ test('deleting the new-raw default requires an explicit surviving replacement', 
   await P.deleteAgxProfiles([other], 0);
   assert.equal(defaults.loadNewPhotosProfile(), 0, 'builtin default allowed when explicitly chosen');
 });
+
+// Basic's Auto measures AgX's range only where AgX renders: a film
+// simulation or a converted negative turns the tone mapper off
+test('agxRuns: AgX, not under film simulation or negative', () => {
+  assert.equal(M.agxRuns({ tm_mode: 1 }), true);
+  assert.equal(M.agxRuns({ tm_mode: 0 }), false);
+  assert.equal(M.agxRuns({ tm_mode: 1, sf_on: 1 }), false);
+  assert.equal(M.agxRuns({ tm_mode: 1, neg_on: 1 }), false);
+  assert.equal(M.agxRuns({ tm_mode: 1, sf_on: 0, neg_on: 0 }), true);
+});

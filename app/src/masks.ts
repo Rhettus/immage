@@ -5,8 +5,8 @@
 // own adjustment sliders. shapes live in the shown image's units (0-1
 // across its width and height; radii and brush sizes as fractions of its
 // width), which the engine turns into darktable's drawn masks
-import type { Refine } from "./commands";
-import { LOCAL_CONTROLS, type Values } from "./manifest";
+import type { ModuleState, Refine } from "./commands";
+import { LOCAL_CONTROLS, type Params, type Values } from "./manifest";
 
 type Mode = { mode?: "add" | "subtract" };
 export type Ellipse = { type: "ellipse"; x: number; y: number; rx: number; ry: number; angle: number;
@@ -116,7 +116,10 @@ export const aiRefine = (kind: string): Refine | null =>
 // opacity 0-100, how strongly the adjustments apply; missing is 100.
 // a hidden mask keeps its settings with its adjustments off
 export type Mask = { name: string; shapes: Shape[]; invert: boolean; opacity?: number; hidden?: boolean;
-                     refine?: Refine; values: Values };
+                     refine?: Refine; values: Values; extra?: string[]; disabledModules?: string[];
+                     enabledModules?: string[]; moduleStates?: Record<string, ModuleState>;
+                     // Local field writes newer than the native snapshots, also carried by undo.
+                     moduleEdits?: Record<string, Params> };
 
 export const neutralLocal = (): Values => Object.fromEntries(LOCAL_CONTROLS.map((c) => [c.id, c.neutral ?? 0]));
 
@@ -304,9 +307,16 @@ export function maskAt(m: Mask, u: number, v: number, W: number, H: number, rang
     const c = coverage(s, u, v, W, H);
     a = s.mode === "subtract" ? a * (1 - c) : Math.max(a, c);
   }
-  if (ranges && m.shapes.some(isRange)) a *= rangeAt(ranges, u, v);
+  if (ranges && m.shapes.some(isRange)) return combineRanged(m.invert, a, rangeAt(ranges, u, v));
   return m.invert ? 1 - a : a;
 }
+
+// the shapes' value `a` with the ranges' `r`. an inverted mask with ranges is
+// the shapes, inverted, inside the inverted ranges, (1 - a) * (1 - r), as the
+// engine builds it (_apply_ranges in masks.c): a shape shown as taking away then
+// cuts its area out of the inverted range. otherwise a * r, or 1 - a without
+// ranges
+const combineRanged = (invert: boolean, a: number, r: number) => (invert ? (1 - a) * (1 - r) : a * r);
 
 // ------------------------------------------------- the overlay, kept
 // each shape's coverage of an overlay's grid, kept between redraws, so a
@@ -457,7 +467,8 @@ export function overlayPixels(m: Mask, w: number, W: number, H: number, ranges: 
       const c = covs[n][k] / 255;
       a = sub[n] ? a * (1 - c) : Math.max(a, c);
     }
-    if (ranged) a *= rangeAt(ranges!, x0 + ((i + 0.5) / w) * (x1 - x0), y0 + ((j + 0.5) / h) * (y1 - y0));
+    if (ranged)
+      return combineRanged(m.invert, a, rangeAt(ranges!, x0 + ((i + 0.5) / w) * (x1 - x0), y0 + ((j + 0.5) / h) * (y1 - y0)));
     return m.invert ? 1 - a : a;
   }, color);
 }

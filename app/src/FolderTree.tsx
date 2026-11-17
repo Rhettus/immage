@@ -6,10 +6,15 @@
 // whenever it is reopened, so folders made since (by an import) show.
 // with folders on more than one drive, each drive is a heading over its
 // folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type SubFolder, type Volume } from "./commands";
+import { FILE_MANAGER } from "./ExportDialog";
+import { useMenuClose } from "./FileMenu";
 import { NameEdit } from "./MasksPanel";
 import { baseName } from "./paths";
+import { usePhotoDrag } from "./photoDrag";
+import { t } from "./i18n";
 
 // the drive a folder is on (folder_volumes, volumes.rs)
 export type { Volume };
@@ -21,7 +26,7 @@ const chevron = (
 );
 
 export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
-                             onToggle, onFold, onOpen, onRemove, onRenameHost }: {
+                             onToggle, onFold, onOpen, onRemove, onRenameHost, onError }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
   hostNames: Record<string, string>;   // the user's names for servers, by host
@@ -39,9 +44,44 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
   onRenameHost: (host: string, name: string) => void;  // "" goes back to the host
+  onError: (message: string) => void;
 }) {
   const [editingHost, setEditingHost] = useState<string | null>(null);
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
+  // a folder's right-click menu, and the folder a new subfolder is being
+  // named in (its row, first among the subfolders, until Enter or Esc)
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string; offline: boolean } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const [creating, setCreating] = useState<string | null>(null);
+  const creatingRef = useRef<string | null>(null);
+  const [made, setMade] = useState(0);   // bumped to read the open folders again after one is made
+  const newFolder = (parent: string) => {
+    if (!expanded.has(parent)) onToggle(parent);
+    creatingRef.current = parent;
+    setCreating(parent);
+  };
+  // Enter and the blur that follows it both end the edit: the first one counts
+  const named = (name: string | null) => {
+    const parent = creatingRef.current;
+    creatingRef.current = null;
+    setCreating(null);
+    if (!parent || !name) return;
+    commands.createFolder(parent, name).then(() => setMade((n) => n + 1), (e) => onError(`New Folder: ${e}`));
+  };
+  // a photo dragged over a folder (photoDrag.ts): the folder takes the drop,
+  // and one that is shut opens after a moment's rest on it, so its
+  // subfolders can take it instead. the photos' own folder opens too: it
+  // refuses the drop, but its subfolders take it
+  const drag = usePhotoDrag();
+  const opens = useRef(new Map<string, boolean>());
+  const toggle = useRef(onToggle);
+  toggle.current = onToggle;
+  const rest = drag?.rest ?? null;
+  useEffect(() => {
+    if (!rest || expanded.has(rest) || !opens.current.get(rest)) return;
+    const t = window.setTimeout(() => toggle.current(rest), 500);
+    return () => window.clearTimeout(t);
+  }, [rest, expanded]);
   // the open folders' subfolders, read when a folder opens or on refresh
   useEffect(() => {
     let stale = false;
@@ -58,7 +98,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
       }).catch(() => { /* keep prior children; reopening or refresh retries */ });
     }
     return () => { stale = true; };
-  }, [expanded, refresh]);
+  }, [expanded, refresh, made]);
 
   // the photo's folder is scrolled to once per photo folder, when its row
   // first shows: its parents' subfolders are read after it opens
@@ -73,23 +113,44 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     const open = expanded.has(path);
     const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
     const holdsPhoto = path === photo && path !== current;
+    opens.current.set(path, hasChildren && !offline);
+    // the photos' own folder, or a drive not answering, takes no drop
+    const refuse = offline || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
+    const target = drag !== null && drag.over === path;
     return (
       <li key={path}>
-        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`}
-             title={offline ? `${path}\nnot connected` : path}
+        <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
+                        + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
+             data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
+             title={offline ? t("library.folders.pathOffline", { path }) : path}
              ref={path === photo ? reveal : undefined}
-             style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}>
+             style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}
+             onContextMenu={(e) => {
+               e.preventDefault();
+               e.stopPropagation();
+               setMenu({ x: e.clientX, y: e.clientY, path, offline });
+             }}>
           <button className={`twisty${open ? " open" : ""}${hasChildren ? "" : " none"}`} tabIndex={-1}
                   onClick={(e) => { e.stopPropagation(); if (hasChildren) onToggle(path); }}>
             {chevron}
           </button>
           {icon}<span className="name">{name}</span>
-          {holdsPhoto && <span className="photo-dot" title="the open photo is in this folder" />}
-          <button className="remove" title="remove from the list"
+          {holdsPhoto && <span className="photo-dot" title={t("library.folders.openPhoto")} />}
+          <button className="remove" title={t("library.folders.removeFromList")}
                   onClick={(e) => { e.stopPropagation(); onRemove(path); }}>×</button>
         </div>
-        {kids && kids.length > 0 && (
-          <ul>{kids.map((k) => row(k.path, k.name, depth + 1, k.has_children))}</ul>
+        {(creating === path || (kids && kids.length > 0)) && (
+          <ul>
+            {creating === path && (
+              <li>
+                <div className="folder-row" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+                  <span className="twisty none">{chevron}</span>
+                  {icon}<NameEdit shown={t("library.folders.newFolder")} onDone={named} />
+                </div>
+              </li>
+            )}
+            {kids?.map((k) => row(k.path, k.name, depth + 1, k.has_children))}
+          </ul>
         )}
       </li>
     );
@@ -105,8 +166,15 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     const mount = volumes.get(r)?.mount ?? "";
     drives.set(mount, [...(drives.get(mount) ?? []), r]);
   }
-  if (drives.size < 2) return <ul className="folders">{roots.map((r) => rootRow(r, 0))}</ul>;
-  return (
+  const folderMenu = menu && (
+    <FolderMenu {...menu} onClose={closeMenu}
+                onNew={() => newFolder(menu.path)} onRemove={() => onRemove(menu.path)} />
+  );
+  if (drives.size < 2) return <>
+    <ul className="folders">{roots.map((r) => rootRow(r, 0))}</ul>
+    {folderMenu}
+  </>;
+  return (<>
     <ul className="folders">
       {[...drives].map(([mount, list]) => {
         const v = volumes.get(list[0]);
@@ -115,7 +183,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
         const host = v?.host ? hostNames[v.host] || v.host : null;
         return (
           <li key={`drive:${mount}`}>
-            <div className="folder-volume" title={v?.host ? `${mount}\non ${host}${host !== v.host ? ` (${v.host})` : ""}` : mount}
+            <div className="folder-volume" title={v?.host ? `${mount}\n${t("fields.drive.onHost", { host })}${host !== v.host ? ` (${v.host})` : ""}` : mount}
                  onClick={() => onFold(mount)}>
               <span className={`twisty${open ? " open" : ""}`}>{chevron}</span>
               {v?.network ? networkIcon : driveIcon}
@@ -125,16 +193,38 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                     setEditingHost(null);
                     if (to !== null && to !== host) onRenameHost(v.host!, to === v.host ? "" : to);
                   }} />
-                : <span className="host" title="double-click to rename"
+                : <span className="host" title={t("library.folders.renameHost")}
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
               <span className={`drive-dot${v?.online === false ? " off" : ""}`}
-                    title={v?.online === false ? "not answering" : "connected"} />
+                    title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>
         );
       })}
     </ul>
+    {folderMenu}
+  </>);
+}
+
+// a folder's right-click menu: a new subfolder in it, the folder in the
+// file manager, and taking it off the list, as its × does
+function FolderMenu({ x, y, path, offline, onNew, onRemove, onClose }: {
+  x: number; y: number; path: string; offline: boolean;
+  onNew: () => void; onRemove: () => void; onClose: () => void;
+}) {
+  const ref = useMenuClose(onClose);
+  const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - 130);
+  const why = offline ? t("library.folders.notConnected") : undefined;
+  return (
+    <div ref={ref} className="context-menu" style={{ left, top }}>
+      <button disabled={offline} title={why} onClick={() => { onClose(); onNew(); }}>{t("library.folders.newFolderMenu")}</button>
+      <div className="menu-sep" />
+      <button disabled={offline} title={why}
+              onClick={() => { onClose(); void revealItemInDir(path).catch(() => {}); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>
+      <div className="menu-sep" />
+      <button onClick={() => { onClose(); onRemove(); }}>{t("library.folders.removeFromList")}</button>
+    </div>
   );
 }

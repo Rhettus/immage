@@ -1,3 +1,4 @@
+import { t as tr } from "./i18n";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { useState } from "react";
@@ -23,11 +24,11 @@ export function useAdvanced(key: string): [boolean, () => void] {
   return [on, toggle];
 }
 
-// a dot while the hidden advanced settings are off neutral
+// a dot while the hidden controls are off neutral
 export function AdvancedToggle({ on, edited, onToggle, disabled }: { on: boolean; edited?: boolean; onToggle: () => void; disabled?: boolean }) {
   return (
     <button type="button" className={`advanced-toggle${on ? " on" : ""}`} data-advanced-toggle aria-pressed={on}
-            disabled={disabled} title={on ? "hide advanced settings" : "show advanced settings"}
+            disabled={disabled} title={on ? tr("interface.hideControls") : tr("interface.showControls")}
             onClick={(e) => { e.stopPropagation(); onToggle(); }}>
       <SlidersHorizontal size={14} strokeWidth={2} />
       {edited && !on && <i className="advanced-dot" />}

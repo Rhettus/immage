@@ -214,13 +214,20 @@ fn export_stem(item: &ExportItem) -> String {
 // so that the dialog can ask what to do before exporting
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<ExistingFile> {
-    let dir = export_dir(&dir, subfolder.as_deref());
-    let ext = extension(&format);
-    items.iter().map(|item| {
-        let path = dir.join(format!("{}.{ext}", export_stem(item)));
-        ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
-    }).collect()
+pub(crate) async fn export_existing(items: Vec<ExportItem>, dir: String, subfolder: Option<String>, format: String) -> Vec<ExistingFile> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = export_dir(&dir, subfolder.as_deref());
+        // a folder that does not answer is not waited on; the empty list tells the page,
+        // which treats a short list as "not answering" and stops the export
+        if !crate::volumes::answering(&dir) {
+            return Vec::new();
+        }
+        let ext = extension(&format);
+        items.iter().map(|item| {
+            let path = dir.join(format!("{}.{ext}", export_stem(item)));
+            ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
+        }).collect()
+    }).await.unwrap_or_default()
 }
 
 // the target for one image, or None when an existing file is to be left alone
@@ -405,6 +412,33 @@ pub(crate) async fn pick_files(app: &AppHandle, title: &str, exts: &[&str], mult
             dialog.blocking_pick_file().into_iter().collect()
         };
         picked.into_iter().filter_map(|f| f.into_path().ok()).collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// one file, the dialog opening in `dir`; none when it is cancelled
+pub(crate) async fn pick_file_in(app: &AppHandle, title: &str, exts: &[&str], dir: &Path) -> Result<Option<PathBuf>, String> {
+    let handle = app.clone();
+    let (title, dir) = (title.to_string(), dir.to_path_buf());
+    let exts = exts.iter().map(|e| e.to_string()).collect::<Vec<_>>();
+    tauri::async_runtime::spawn_blocking(move || {
+        let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+        handle.dialog().file().add_filter(title, &exts).set_directory(dir)
+            .blocking_pick_file().and_then(|f| f.into_path().ok())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// a folder, the dialog opening in `start` when it is one; none when cancelled
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn pick_folder(app: AppHandle, start: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file();
+        if Path::new(&start).is_dir() { dialog = dialog.set_directory(&start); }
+        dialog.blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned())
     })
     .await
     .map_err(|e| e.to_string())

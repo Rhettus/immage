@@ -6,7 +6,7 @@
 // presets, typed in bindings.rs. a reply type here is what the engine's JSON
 // is read into; tests/engine-replies holds real replies that bindings.rs's
 // tests read into them
-use crate::typed_session::Refine;
+use crate::typed_session::{ModuleState, Refine};
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use specta::Type;
@@ -35,6 +35,9 @@ pub struct MaskInfo {
 #[derive(Serialize, Deserialize, Type)]
 pub struct MaskInstance {
     pub enabled: bool,
+    #[serde(default)]
+    pub extra: bool,
+    pub state: ModuleState,
     pub params: BTreeMap<String, Number>,
 }
 
@@ -138,6 +141,17 @@ pub struct UprightReply {
     pub fit: Option<String>,
 }
 
+// `colormapping_acquire`: the clusters found. mean and var are a, b pairs
+// for the five slots, weight one per slot (the first n are used)
+#[derive(Serialize, Deserialize, Type)]
+pub struct ColormappingClusters {
+    pub hash: Number,
+    pub n: i64,
+    pub mean: Vec<Number>,
+    pub var: Vec<Number>,
+    pub weight: Vec<Number>,
+}
+
 // `depth`'s map: `data` 0 (nearest) to 255 by rows
 #[derive(Serialize, Deserialize, Type)]
 pub struct DepthMap {
@@ -197,6 +211,52 @@ pub struct LensMenu {
     pub auto: String,
     pub pick: i64,
     pub lenses: Vec<Lens>,
+}
+
+// a camera white balance preset: its menu value, and the finetune range
+#[derive(Serialize, Deserialize, Type)]
+pub struct WbPreset {
+    pub name: String,
+    pub value: i64,
+    pub tune_min: i64,
+    pub tune_max: i64,
+    pub tune_default: i64,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct WbPresets {
+    pub presets: Vec<WbPreset>,
+}
+
+// a file a card's chooser lists: its path or name as the module stores it,
+// the label shown for it (a marker's "name (ext)"; none for a LUT) and the
+// hash the engine's `lut_file` and `wm_marker` fields take
+#[derive(Serialize, Deserialize, Type)]
+pub struct ChosenFile {
+    pub path: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    pub hash: f64,
+}
+
+// `lut_files`: the LUT folder (empty when not set), the instance's file (or
+// the one just picked) with its hash and whether it exists, and the files in
+// its folder
+#[derive(Serialize, Deserialize, Type)]
+pub struct LutFiles {
+    pub folder: String,
+    pub current: String,
+    pub current_hash: f64,
+    pub exists: bool,
+    pub files: Vec<ChosenFile>,
+}
+
+// `watermarks`: the markers of the data folder and the user's, and those two
+// folders
+#[derive(Serialize, Deserialize, Type)]
+pub struct Watermarks {
+    pub markers: Vec<ChosenFile>,
+    pub dirs: Vec<String>,
 }
 
 // `look`'s reply: the look in use, by name
@@ -278,4 +338,135 @@ pub struct FilmFetch {
     pub progress: Number,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started: Option<bool>,
+}
+
+// `module_schema`'s reply: what darktable's introspection says of a module
+// (see session_module_schema in engine/session.c)
+#[derive(Serialize, Deserialize, Type)]
+pub struct ModuleSchema {
+    pub op: String,
+    pub name: String,
+    pub version: i64,
+    pub params_size: i64,
+    pub groups: Vec<String>,
+    pub flags: SchemaFlags,
+    pub fields: Vec<SchemaField>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaFlags {
+    pub one_instance: bool,
+    pub deprecated: bool,
+    pub hidden: bool,
+    pub supports_blending: bool,
+    pub no_masks: bool,
+    pub no_history: bool,
+    pub no_switch: bool,
+}
+
+// a leaf of a module's params, by the path `set` and `get` take. a scalar has
+// `min`, `max` (none: unbounded) and `default`, an enum its `values`; an
+// array (`type` "array", or "string" for characters) gives its `dims` and
+// `element` type, and for structs the `members` of one element by relative path
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaField {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub min: Option<Number>,
+    #[serde(default)]
+    pub max: Option<Number>,
+    #[serde(default)]
+    pub default: Option<Number>,
+    #[serde(default)]
+    pub enum_type: Option<String>,
+    #[serde(default)]
+    pub values: Option<Vec<SchemaEnumValue>>,
+    #[serde(default)]
+    pub dims: Option<Vec<i64>>,
+    #[serde(default)]
+    pub element: Option<String>,
+    #[serde(default)]
+    pub defaults: Option<Vec<Option<Number>>>,
+    // arrays of up to 64 structs: one object per element, row-major, of the
+    // number members' defaults keyed by their relative paths
+    #[serde(default)]
+    pub member_defaults: Option<Vec<std::collections::BTreeMap<String, Option<Number>>>>,
+    #[serde(default)]
+    pub members: Option<Vec<SchemaField>>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct SchemaEnumValue {
+    pub name: String,
+    pub value: i64,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+// `instances`' reply, which the page gets as the list
+#[derive(Deserialize)]
+pub struct InstancesReply {
+    pub instances: Vec<Instance>,
+}
+
+// one instance of a module in the open photo's pipe, in pipe order.
+// `priority` addresses it in `set_params` and `get_params` ("op@N"); `owner`
+// is the Immage tool that manages it ("mask", "shared" or "look"), none for
+// the user's own
+#[derive(Serialize, Deserialize, Type)]
+pub struct Instance {
+    pub op: String,
+    pub priority: i64,
+    pub name: String,
+    pub hand_edited: bool,
+    // what darktable's header shows after the module's name: `name`, else
+    // darktable's own label (a matching preset's, or the instance's number)
+    pub label: String,
+    pub enabled: bool,
+    pub default_enabled: bool,
+    // its settings or switch differ from darktable's defaults for this photo
+    pub changed: bool,
+    // darktable's copy of history takes it (not per-camera, hidden or deprecated)
+    pub copyable: bool,
+    // it has a drawn mask, whose shapes belong to this photo
+    pub masked: bool,
+    // false when darktable hides the module's switch: it cannot apply to
+    // this photo, or must stay on
+    pub switchable: bool,
+    // the photo's history (to its end) changes this instance
+    pub in_history: bool,
+    pub iop_order: i64,
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub mask: Option<String>,
+}
+
+// `instance`'s reply: the instance acted on (a new one's priority), and the
+// instance list after the action
+#[derive(Serialize, Deserialize, Type)]
+pub struct InstanceReply {
+    pub priority: i64,
+    pub instances: Vec<Instance>,
+}
+
+// `presets`' reply: darktable's preset menu for one instance, in its order.
+// `name` keeps the "|" levels of its submenus; `builtin` is darktable's own
+// (write-protected), `applicable` false for a preset of another module
+// version, `active` when the instance's settings match it
+#[derive(Serialize, Deserialize, Type)]
+pub struct PresetsReply {
+    pub presets: Vec<DtPreset>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct DtPreset {
+    pub name: String,
+    pub description: String,
+    pub builtin: bool,
+    pub applicable: bool,
+    pub active: bool,
 }

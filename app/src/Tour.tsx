@@ -10,51 +10,52 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { keys } from "./keys";
 import { settings } from "./settings";
+import { t } from "./i18n";
 
 type Callout = { target: string; title: string; body: string };
-type Step = { target?: string; title: string; body: string; callouts?: Callout[] };
+// `also`: further parts of the window lit with the target, each with its
+// own arrow from the note (the Library button and the Folders panel)
+type Step = { target?: string; also?: string[]; title: string; body: string; callouts?: Callout[] };
 
 const STEPS: Step[] = [
-  { title: "Welcome to Immage",
-    body: "A quick look at the whole workflow: bringing photos in, editing them and sending them out. It takes about a minute; Esc skips it." },
-  { target: "import", title: "Import",
-    body: keys("Copy photos off a card or a folder. Ones already in the destination, or in Immich, are marked, and the new ones open here when it is done. ⇧⌘I.") },
-  { target: "folders", title: "Your folders",
-    body: "Folders you add, or import into, stay listed; open one to see its subfolders. Edits are saved next to each photo as an XMP sidecar." },
-  { target: "immich", title: "Immich",
-    body: "Search your Immich library by words, people, places or albums, and edit what it finds as if it were local. It shows once your server is set up in Preferences." },
-  { target: "filmstrip", title: "Pick a photo",
-    body: "The filmstrip shows the folder. Click a photo, or use the arrow keys; 1 to 5 rate it and X rejects it." },
-  { target: "viewer", title: "Look closely",
-    body: "Click to zoom to 100% at that point and click again to fit. Scroll to zoom, drag to pan; press \\ for before, and Y steps through the before and after views." },
-  { target: "edit", title: "Edit",
-    body: keys("The editing tools sit together on the right; each opens its own panel. ⌘Z undoes any of them."),
+  { title: t("dialogs.tour.welcome.title"),
+    body: t("dialogs.tour.welcome.body") },
+  { target: "import", title: t("dialogs.tour.import.title"),
+    body: keys(t("dialogs.tour.import.body")) },
+  { target: "library", also: ["folders"], title: t("dialogs.tour.library.title"),
+    body: t("dialogs.tour.library.body") },
+  { target: "edit", title: t("dialogs.tour.edit.title"),
+    body: keys(t("dialogs.tour.edit.body")),
     callouts: [
-      { target: "adjust", title: "Adjustments",
-        body: "The familiar develop panels. Drag a slider or scroll over it; double-click resets it." },
-      { target: "crop", title: "Crop",
-        body: "Aspect ratios, straighten and rotate. R opens it, Enter applies." },
-      { target: "masks", title: "Masks",
-        body: "Brush, gradients, ranges and AI selections: adjust just one part." },
-      { target: "heal", title: "Heal",
-        body: "Click a spot or paint over a line to remove it. Q opens it." },
-      { target: "zones", title: "Zone System",
-        body: "Black and white tones as zones 0–X: see where each falls, then place or adjust it." },
-      { target: "film", title: "Film Simulation",
-        body: "Render the photo as a film, developed and printed or scanned, from measured film and paper data." },
-      { target: "negative", title: "Negative",
-        body: "Turn a photo of a film negative into a positive, picked from its border." },
-      { target: "presets", title: "Presets",
-        body: "Live previews of presets and film looks; save your own." },
+      { target: "adjust", title: t("dialogs.tour.adjust.title"),
+        body: t("dialogs.tour.adjust.body") },
+      { target: "crop", title: t("dialogs.tour.crop.title"),
+        body: t("dialogs.tour.crop.body") },
+      { target: "masks", title: t("dialogs.tour.masks.title"),
+        body: t("dialogs.tour.masks.body") },
+      { target: "heal", title: t("dialogs.tour.heal.title"),
+        body: t("dialogs.tour.heal.body") },
+      { target: "zones", title: t("dialogs.tour.zones.title"),
+        body: t("dialogs.tour.zones.body") },
+      { target: "film", title: t("dialogs.tour.film.title"),
+        body: t("dialogs.tour.film.body") },
+      { target: "negative", title: t("dialogs.tour.negative.title"),
+        body: t("dialogs.tour.negative.body") },
+      { target: "presets", title: t("dialogs.tour.presets.title"),
+        body: t("dialogs.tour.presets.body") },
     ] },
-  { target: "history", title: "History",
-    body: keys("Every edit as a step, newest at the top. Click one to go back to it; ⌘Z and ⇧⌘Z step through them.") },
-  { target: "export", title: "Export",
-    body: keys("Export the photo, or every photo shown, to a folder or straight into an Immich album, with borders and file names of your choosing. ⇧⌘E.") },
-  { target: "print", title: "Print",
-    body: keys("Print the photo, or save it as a PDF, with a printer profile; soft proof it first to see the print on screen (S). ⌘P.") },
-  { target: "prefs", title: "Preferences",
-    body: keys("What new photos start with (profile and a preset), and your Immich server. ⌘, opens them.") },
+  { target: "advanced-mode", title: t("dialogs.tour.advanced.title"),
+    body: t("dialogs.tour.advanced.body") },
+  { target: "send-out", title: t("dialogs.tour.sendOut.title"),
+    body: t("dialogs.tour.sendOut.body"),
+    callouts: [
+      { target: "export", title: t("dialogs.tour.export.title"),
+        body: keys(t("dialogs.tour.export.body")) },
+      { target: "print", title: t("dialogs.tour.print.title"),
+        body: keys(t("dialogs.tour.print.body")) },
+    ] },
+  { target: "prefs", title: t("dialogs.tour.preferences.title"),
+    body: keys(t("dialogs.tour.preferences.body")) },
 ];
 
 const PAD = 8; // around the spotlight, in pixels
@@ -65,6 +66,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
   const close = () => { setTourSeen(hide); onClose(); };
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [callRects, setCallRects] = useState<(DOMRect | null)[]>([]);
+  const [alsoRects, setAlsoRects] = useState<DOMRect[]>([]);
   const s = STEPS[step];
 
   // where the spotlight goes: its target as it is now on screen; a step
@@ -78,6 +80,12 @@ export function Tour({ onClose }: { onClose: () => void }) {
       setCallRects((s.callouts ?? []).map((c) => {
         const r = document.querySelector(`[data-tour="${c.target}"]`)?.getBoundingClientRect();
         return r && r.width > 4 ? r : null;
+      }));
+      setAlsoRects((s.also ?? []).flatMap((a) => {
+        const r = document.querySelector(`[data-tour="${a}"]`)?.getBoundingClientRect();
+        if (!r || r.width <= 4 || r.height <= 4) return [];
+        const top = Math.max(r.top, 0), bottom = Math.min(r.bottom, window.innerHeight - 8);
+        return bottom - top > 4 ? [new DOMRect(r.left, top, r.width, bottom - top)] : [];
       }));
       const r = el?.getBoundingClientRect();
       if (!r || r.width <= 4 || r.height <= 4) { setRect(null); return; }
@@ -137,12 +145,22 @@ export function Tour({ onClose }: { onClose: () => void }) {
     card.top = Math.min(vh - CARD_H - 12, Math.max(12, card.top));
   }
 
+  // with more than one part lit, the dimming is one layer with a hole for
+  // each: the spotlight's own shadow would cover the others
+  const extra = rect ? alsoRects.map(padded) : [];
   return (
     <div className="tour" onPointerDown={(e) => e.stopPropagation()}>
-      <div className={`tour-spot${rect ? " ring" : ""}`} style={spot} />
+      {extra.length > 0 && (
+        <svg className="tour-dim" width={vw} height={vh}>
+          <path fillRule="evenodd" d={`M0,0H${vw}V${vh}H0Z ${[spot, ...extra].map(roundRect).join(" ")}`} />
+        </svg>
+      )}
+      <div className={`tour-spot${rect ? " ring" : ""}${extra.length ? " multi" : ""}`} style={spot} />
+      {extra.map((b, k) => <div key={`also-${step}-${k}`} className="tour-spot ring multi" style={b} />)}
       {rect && !notes && (
         <svg key={`arrow-${step}`} className="tour-arrows" width={vw} height={vh}>
           <SketchArrow {...cardArrow(card, CARD_W, CARD_H, spot)} seed={step} />
+          {extra.map((b, k) => <SketchArrow key={k} {...cardArrow(card, CARD_W, CARD_H, b)} seed={step + k + 1} />)}
         </svg>
       )}
       {notes && (
@@ -161,22 +179,22 @@ export function Tour({ onClose }: { onClose: () => void }) {
       )}
       <div className="tour-card" style={{ left: card.left, top: card.top, width: CARD_W }}>
         <div key={step} className="tour-text">
-          <div className="tour-count">{step + 1} of {STEPS.length}</div>
+          <div className="tour-count">{t("dialogs.tour.counter", { current: step + 1, total: STEPS.length })}</div>
           <h3>{s.title}</h3>
           <p>{s.body}</p>
         </div>
         <label className="tour-hide">
           <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
-          Don't show on startup
+          {t("dialogs.tour.dontShow")}
         </label>
         <div className="tour-foot">
           <div className="tour-dots">
             {STEPS.map((_, k) => <span key={k} className={k === step ? "on" : ""} onClick={() => setStep(k)} />)}
           </div>
-          <button className="btn small" onClick={close}>Skip</button>
-          {step > 0 && <button className="btn small" onClick={() => go(step - 1)}>Back</button>}
+          <button className="btn small" onClick={close}>{t("dialogs.tour.skip")}</button>
+          {step > 0 && <button className="btn small" onClick={() => go(step - 1)}>{t("dialogs.tour.back")}</button>}
           <button className="btn small primary" onClick={() => go(step + 1)}>
-            {step === STEPS.length - 1 ? "Done" : "Next"}</button>
+            {step === STEPS.length - 1 ? t("dialogs.common.done") : t("dialogs.tour.next")}</button>
         </div>
       </div>
     </div>
@@ -205,6 +223,15 @@ function layoutCallouts(callouts: Callout[], rects: (DOMRect | null)[], group: D
     return item;
   });
   return { left: right - CALLOUT_W, items };
+}
+
+// a lit part's box with the spotlight's margin, and that box as a rounded
+// hole in the dimming
+const padded = (r: DOMRect) => ({ left: r.left - PAD, top: r.top - PAD, width: r.width + 2 * PAD, height: r.height + 2 * PAD });
+function roundRect(b: { left: number; top: number; width: number; height: number }) {
+  const r = Math.min(12, b.width / 2, b.height / 2), x = b.left, y = b.top, w = b.width, h = b.height;
+  return `M${x + r},${y}H${x + w - r}A${r},${r} 0 0 1 ${x + w},${y + r}V${y + h - r}A${r},${r} 0 0 1 ${x + w - r},${y + h}` +
+    `H${x + r}A${r},${r} 0 0 1 ${x},${y + h - r}V${y + r}A${r},${r} 0 0 1 ${x + r},${y}Z`;
 }
 
 // the arrow from a step's card to its spotlight: from the card's side that

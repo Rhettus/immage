@@ -193,3 +193,80 @@ export function channelCurve(points: Point[]): (x: number) => number {
   const f = monotone(channelPointsToLinear(points));
   return (x) => toDisplay(Math.min(1, Math.max(0, f(toLinear(x)))));
 }
+
+// darktable's three curve interpolations (curve_tools.c): 0 cubic spline
+// (natural, zero second derivative at both ends), 1 "centripetal" (a Hermite
+// spline with finite-difference tangents, not a true centripetal one) and 2
+// monotone hermite. ported as written, quirks included, so the drawn curve is
+// the applied one: monotone_hermite_set limits tangents in one forward pass,
+// each step seeing the previous step's result. before the first node and
+// after the last the curve holds their y, as CurveDataSample samples the
+// table the module applies; inside, the output is clamped to 0..1
+export function curveFn(type: number, points: Point[]): (x: number) => number {
+  const n = points.length;
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  // darktable returns no tangents for fewer than two nodes or unordered x,
+  // which leaves the value at 0
+  if (n < 2 || xs.some((x, i) => i < n - 1 && xs[i + 1] <= x)) return () => 0;
+  // the interval holding x; outside the ends the last segment is used
+  const seg = (x: number) => {
+    for (let i = 0; i < n - 1; i++) if (x < xs[i + 1]) return i;
+    return n - 2;
+  };
+  if (type === 0) {
+    // natural spline: solve the tridiagonal system for the second derivatives
+    const ypp = new Array<number>(n).fill(0);
+    if (n > 2) {
+      const sub: number[] = [], diag: number[] = [], sup: number[] = [], rhs: number[] = [];
+      for (let i = 1; i < n - 1; i++) {
+        sub.push((xs[i] - xs[i - 1]) / 6);
+        diag.push((xs[i + 1] - xs[i - 1]) / 3);
+        sup.push((xs[i + 1] - xs[i]) / 6);
+        rhs.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) - (ys[i] - ys[i - 1]) / (xs[i] - xs[i - 1]));
+      }
+      for (let i = 1; i < diag.length; i++) {
+        const w = sub[i] / diag[i - 1];
+        diag[i] -= w * sup[i - 1];
+        rhs[i] -= w * rhs[i - 1];
+      }
+      for (let i = diag.length - 1; i >= 0; i--)
+        ypp[i + 1] = (rhs[i] - (i + 1 < diag.length ? sup[i] * ypp[i + 2] : 0)) / diag[i];
+    }
+    return (x) => {
+      if (x < xs[0]) return clamp(ys[0]);
+      if (x > xs[n - 1]) return clamp(ys[n - 1]);
+      const i = seg(x), dt = x - xs[i], h = xs[i + 1] - xs[i];
+      return clamp(ys[i] + dt * ((ys[i + 1] - ys[i]) / h - (ypp[i + 1] / 6 + ypp[i] / 3) * h
+        + dt * (0.5 * ypp[i] + dt * ((ypp[i + 1] - ypp[i]) / (6 * h)))));
+    };
+  }
+  const m = new Array<number>(n + 1).fill(0);
+  if (type === 1) {
+    m[0] = (ys[1] - ys[0]) / (xs[1] - xs[0]);
+    for (let i = 1; i < n - 1; i++) m[i] = (ys[i + 1] - ys[i - 1]) / (xs[i + 1] - xs[i - 1]);
+    m[n - 1] = (ys[n - 1] - ys[n - 2]) / (xs[n - 1] - xs[n - 2]);
+  } else if (type === 2) {
+    const delta = new Array<number>(n).fill(0);
+    for (let i = 0; i < n - 1; i++) delta[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+    delta[n - 1] = delta[n - 2];
+    m[0] = delta[0];
+    m[n - 1] = delta[n - 1];
+    for (let i = 1; i < n - 1; i++) m[i] = (delta[i - 1] + delta[i]) * 0.5;
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(delta[i]) < 2.3509887e-38) { m[i] = 0; m[i + 1] = 0; continue; }
+      const a = m[i] / delta[i], b = m[i + 1] / delta[i], tau = a * a + b * b;
+      if (tau > 9) {
+        m[i] = 3 * a * delta[i] / Math.sqrt(tau);
+        m[i + 1] = 3 * b * delta[i] / Math.sqrt(tau);
+      }
+    }
+  } else return () => 0;
+  return (x) => {
+    if (x < xs[0]) return clamp(ys[0]);
+    if (x > xs[n - 1]) return clamp(ys[n - 1]);
+    const i = seg(x), h = xs[i + 1] - xs[i], t = (x - xs[i]) / h, t2 = t * t, t3 = t * t2;
+    return clamp((2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i]
+      + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1]);
+  };
+}

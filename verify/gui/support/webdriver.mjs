@@ -30,7 +30,7 @@ export class AppDriver {
   command(method, path, body) { return this.request(method, `/session/${this.session}${path}`, body); }
   async open(binary, fixture) {
     const result = await this.request('POST', '/session', { capabilities: {
-      alwaysMatch: { 'tauri:options': { application: binary, args: [fixture] } },
+      alwaysMatch: { 'tauri:options': { application: binary, args: fixture ? [fixture] : [] } },
     } });
     this.session = result.sessionId;
     this.capabilities = result.capabilities;
@@ -61,6 +61,18 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  // a right-button click, for controls that act on a context press. WebKitWebDriver
+  // leaves later left-button drags without their press after one (observed with the
+  // color look up table patch grid; a drag then moves the pointer only), so a case
+  // that right-clicks runs after the cases that drag, or in a launch of its own
+  async rightClick(x, y) {
+    await this.guard();
+    this.log({ action: 'right-click', x, y });
+    await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+      { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) },
+      { type: 'pointerDown', button: 2 }, { type: 'pointerUp', button: 2 }] }] });
+    await this.command('DELETE', '/actions');
+  }
   async move(x, y) {
     await this.guard();
     this.log({ action: 'move', x, y });
@@ -68,7 +80,7 @@ export class AppDriver {
       actions: [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) }] }] });
   }
   async modifiedPoint(modifier, x, y) {
-    if (!['\uE008', '\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
+    if (!['\uE008', '\uE009', '\uE00A', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
     await this.guard();
     this.log({ action: 'modified-click', modifier, x, y });
     try {
@@ -124,6 +136,37 @@ export class AppDriver {
       ] });
     } finally { await this.command('DELETE', '/actions'); }
   }
+  // after hold(): goes on to `to` with the button still down, and lets go there
+  async dropAt(to, from) {
+    await this.guard();
+    this.log({ action: 'drop-at', to });
+    const start = from ?? to;
+    try {
+      await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+        ...Array.from({ length: 6 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+          x: Math.round(start.x + (to.x - start.x) * (i + 1) / 6), y: Math.round(start.y + (to.y - start.y) * (i + 1) / 6) })),
+        { type: 'pointerUp', button: 0 }] }] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
+  // a drag with a modifier held from before the press until after the release
+  // (Alt: drop photos as a copy)
+  async modifiedDrag(modifier, from, to) {
+    if (!['', '', '', ''].includes(modifier)) throw Error('Unsupported drag modifier');
+    await this.guard();
+    this.log({ action: 'modified-drag', modifier, from, to });
+    const moves = Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+      x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) }));
+    const pointer = [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
+      { type: 'pointerDown', button: 0 }, ...moves, { type: 'pointerUp', button: 0 }];
+    try {
+      await this.command('POST', '/actions', { actions: [
+        // one key tick per pointer tick, the key let go a tick after the release
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: modifier },
+          ...pointer.slice(1).map(() => ({ type: 'pause', duration: 0 })), { type: 'keyUp', value: modifier }] },
+        { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: pointer },
+      ] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
   async release() {
     this.log({ action: 'release' });
     try {
@@ -160,6 +203,23 @@ export class AppDriver {
       await this.command('POST', '/actions', { actions: [{ type: 'wheel', id, actions: [
         { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX, deltaY, duration: 180 },
       ] }] });
+    } finally { await this.command('DELETE', '/actions'); }
+  }
+  // a wheel turned with a modifier held (Ctrl: a pinch reaches the page as a
+  // ctrl wheel), the key down across the whole scroll
+  async modifiedWheel(modifier, x, y, deltaY) {
+    if (!['\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported wheel modifier');
+    await this.guard();
+    this.log({ action: 'modified-wheel', modifier, x, y, deltaY });
+    const id = `wheel-${this.wheels = (this.wheels ?? 0) + 1}`;
+    try {
+      await this.command('POST', '/actions', { actions: [
+        { type: 'key', id: 'keyboard', actions: [{ type: 'keyDown', value: modifier },
+          { type: 'pause', duration: 0 }, { type: 'keyUp', value: modifier }] },
+        { type: 'wheel', id, actions: [{ type: 'pause', duration: 0 },
+          { type: 'scroll', origin: 'viewport', x: Math.round(x), y: Math.round(y), deltaX: 0, deltaY, duration: 180 },
+          { type: 'pause', duration: 0 }] },
+      ] });
     } finally { await this.command('DELETE', '/actions'); }
   }
   async close() { if (this.session) await this.command('DELETE', ''); }

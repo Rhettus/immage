@@ -221,12 +221,24 @@ const COMMANDS = {
   mask_shapes: ({ name, shapes }) => request({ cmd: "mask", name, shapes }),
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),
   mask_delete: ({ name }) => request({ cmd: "mask_delete", name }),
+  instances: async () => (await request({ cmd: "instances" })).instances,
+  instance: async ({ action, op, priority, name, other, after, mask }) => {
+    const req = { cmd: "instance", action, op, priority };
+    if (name != null) req.name = name;
+    if (other != null) req.other = other;
+    if (after != null) req.after = after;
+    if (mask != null) req.mask = mask;
+    const { ok, ms, ...r } = await request(req);
+    return r;
+  },
   combine: ({ name, members, ranges }) => request({ cmd: "combine", name, members, ranges: ranges ?? null }),
-  set_params: ({ edit: { op, params, enabled, after, before, instance, mask, invert, opacity, refine } }) => {
+  set_params: ({ edit: { op, params, enabled, after, before, instance, priority, mask, anchored, invert, opacity, refine } }) => {
     const req = { cmd: "set", op, params, enabled };
     if (after != null) req.after = after;
     if (before != null) req.before = before;
     if (instance != null) req.instance = instance;
+    if (priority != null) req.priority = priority;
+    if (anchored != null) req.anchored = anchored;
     if (mask != null) {
       req.mask = mask;
       req.invert = invert ?? false;

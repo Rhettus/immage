@@ -12,11 +12,13 @@ const ls = (dir, ext) => (existsSync(root + dir) ? readdirSync(root + dir) : [])
   .filter((f) => f.endsWith(ext)).map((f) => dir + f);
 
 // the engine's command names, in file order (duplicates kept). Reads the
-// `_commands[]` table when main.c has one, else the `!g_strcmp0(cmd, "...")`
-// chain in _handle() and _read_requests()
+// `_commands[]` table and any additional `_read_requests()` routes when main.c
+// has one, else the `!g_strcmp0(cmd, "...")` chain in both functions
 export function engineCommands(src) {
   const table = src.match(/^static const eng_cmd_t _commands\[\] =[^\n]*\n([\s\S]*?)^\};/m);
-  if (table) return [...table[1].matchAll(/^\s*\{\s*"([a-z_0-9]+)"\s*,/gm)].map((m) => m[1]);
+  const tableNames = table
+    ? [...table[1].matchAll(/^\s*\{\s*"([a-z_0-9]+)"\s*,/gm)].map((m) => m[1])
+    : [];
   // _read_requests() repeats the names it routes to threads (and a few
   // `&& json_object_has_member` variants); only names _handle() lacks are new
   const body = (start) => {
@@ -25,13 +27,62 @@ export function engineCommands(src) {
     return src.slice(at, src.indexOf('\n}\n', at));
   };
   const re = /!g_strcmp0\(\s*cmd\s*,\s*"([a-z_0-9]+)"\s*\)(\s*&&)?/g;
+  const readRequests = [...body('static gpointer _read_requests(').matchAll(re)].map((m) => m[1]);
+  if (table) return [...tableNames, ...new Set(readRequests.filter((n) => !tableNames.includes(n)))];
+
   const names = [];
   const guarded = [];
   for (const m of body('static void _handle(').matchAll(re)) (m[2] ? guarded : names).push(m[1]);
   for (const n of guarded) if (!names.includes(n)) names.push(n);
-  for (const m of body('static gpointer _read_requests(').matchAll(re)) if (!names.includes(m[1])) names.push(m[1]);
+  for (const n of readRequests) if (!names.includes(n)) names.push(n);
   return names;
 }
+
+test('engineCommands includes reader-routed commands alongside the table', () => {
+  const src = `
+static const eng_cmd_t _commands[] =
+{
+  { "version", _cmd_version, 0 },
+};
+static gpointer _read_requests(void *data)
+{
+  if(!g_strcmp0(cmd, "version")) { }
+  else if(!g_strcmp0(cmd, "clip_embed") && json_object_has_member(req, "tag")) { }
+  else if(!g_strcmp0(cmd, "clip_embed") && json_object_has_member(req, "tag")) { }
+}
+`;
+  assert.deepEqual(engineCommands(src), ['version', 'clip_embed']);
+});
+
+test('engineCommands preserves duplicate table entries', () => {
+  const src = `
+static const eng_cmd_t _commands[] =
+{
+  { "version", _cmd_version, 0 },
+  { "version", _cmd_version, 0 },
+};
+static gpointer _read_requests(void *data)
+{
+  if(!g_strcmp0(cmd, "version")) { }
+}
+`;
+  assert.deepEqual(engineCommands(src), ['version', 'version']);
+});
+
+test('engineCommands keeps the legacy handler and reader path', () => {
+  const src = `
+static void _handle(JsonObject *req, FILE *out)
+{
+  if(!g_strcmp0(cmd, "version")) { }
+  else if(!g_strcmp0(cmd, "guarded") && json_object_has_member(req, "tag")) { }
+}
+static gpointer _read_requests(void *data)
+{
+  if(!g_strcmp0(cmd, "reader_only")) { }
+}
+`;
+  assert.deepEqual(engineCommands(src), ['version', 'guarded', 'reader_only']);
+});
 
 // command names a source file sends: {"cmd": "name"}, { cmd: "name" } and the
 // like in Rust, JS and Python, plus the two names Rust picks with an if

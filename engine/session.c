@@ -64,6 +64,8 @@ void session_close_session(void)
   _s.before = FALSE;
   _s.fresh = FALSE;
   _s.baseline = FALSE;
+  g_list_free(_s.deleted);
+  _s.deleted = NULL;
 }
 
 // the photos each background export is to render, by job: imgid to its
@@ -257,6 +259,23 @@ static gboolean _prune_off(const dt_imgid_t imgid)
     g_array_free(drop, TRUE);
   }
   g_hash_table_destroy(done);
+  // the instances Advanced mode deleted go whole, whatever darktable starts
+  // on: an instance past the first is made only by its own entries
+  for(GList *l = _s.deleted; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    sqlite3_stmt *stmt;
+    DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
+                                "DELETE FROM main.history"
+                                " WHERE imgid = ?1 AND operation = ?2 AND multi_priority = ?3",
+                                -1, &stmt, NULL);
+    DT_DEBUG_SQLITE3_BIND_INT(stmt, 1, imgid);
+    DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 2, m->op, -1, SQLITE_TRANSIENT);
+    DT_DEBUG_SQLITE3_BIND_INT(stmt, 3, m->multi_priority);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    pruned += sqlite3_changes(dt_database_get(darktable.db));
+  }
   // with the last mask deleted, the entry deleting it carries no shapes,
   // and compress would keep the last one that did
   if(!_s.dev.forms)
@@ -493,6 +512,12 @@ gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *na
     case DT_INTROSPECTION_TYPE_ENUM:   *(int *)p = (int)num; break;
     case DT_INTROSPECTION_TYPE_UINT:   *(unsigned int *)p = (unsigned int)num; break;
     case DT_INTROSPECTION_TYPE_BOOL:   *(gboolean *)p = num != 0.0; break;
+    // the small ints clamp to their type, as a cast past it would wrap
+    // (rawprepare's black levels and white point are uint16)
+    case DT_INTROSPECTION_TYPE_SHORT:  *(short *)p = (short)CLAMP(num, G_MINSHORT, G_MAXSHORT); break;
+    case DT_INTROSPECTION_TYPE_USHORT: *(unsigned short *)p = (unsigned short)CLAMP(num, 0, G_MAXUSHORT); break;
+    case DT_INTROSPECTION_TYPE_INT8:   *(int8_t *)p = (int8_t)CLAMP(num, G_MININT8, G_MAXINT8); break;
+    case DT_INTROSPECTION_TYPE_UINT8:  *(uint8_t *)p = (uint8_t)CLAMP(num, 0, G_MAXUINT8); break;
     default:
       *err = g_strdup_printf("'%s.%s' is not a settable scalar", mod->op, name);
       return FALSE;
@@ -533,8 +558,12 @@ static gboolean _write_details(dt_iop_module_t *mod, const double num, char **er
 // of the Lensfun lens chosen in its place. the params keep the lens's name
 // and its geometry, as the module's own lens menu sets them, and the method
 // is Lensfun's: a raw that carries its own correction defaults to the
-// embedded one, which has no use for a lens of the database
+// embedded one, which has no use for a lens of the database. 0 restores the
+// default params' three, unless the lens is already the matched one
 #define LENS_PICK "lens_pick"
+// read-only: 1 when Lensfun has a profile for the camera and the lens the
+// default params name, so the Simple panel prefers the Lensfun method
+#define LENS_LENSFUN "lens_lensfun"
 #define LENS_METHOD_LENSFUN 1
 
 static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **err)
@@ -549,6 +578,9 @@ static gboolean _write_lens_pick(dt_iop_module_t *mod, const double num, char **
   if(!lens || !auto_lens || !geom || !auto_geom || !method || !auto_method) return FALSE;
   if(num <= 0.0)
   {
+    // Auto written over Auto leaves the method as the card or Advanced set it;
+    // Simple writes the whole lens map on every edit
+    if(!g_strcmp0(lens, auto_lens)) return TRUE;
     g_strlcpy(lens, auto_lens, 128);
     *geom = *auto_geom;
     *method = *auto_method;
@@ -651,7 +683,19 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
   if(!g_strcmp0(name, BLEND_DETAILS)) return _write_details(mod, num, err);
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens")) return _write_lens_pick(mod, num, err);
-  return session_write_field_in(mod, mod->params, name, num, err);
+  if(files_is_field(mod, name)) return files_write(mod, name, num, err);
+  if(cmap_is_field(mod, name)) return cmap_write(mod, name, num, err);
+  if(!g_strcmp0(name, "imgid") && !g_strcmp0(mod->op, "overlay")) return files_overlay_write(mod, num, err);
+  if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_write(mod, name, num, err);
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_setting_write(mod, name, num, err);
+  const gboolean ok = session_write_field_in(mod, mod->params, name, num, err);
+  // temperature.c: gui_changed, a direct edit of a coefficient is user modified
+  if(ok && !g_strcmp0(mod->op, "temperature")
+     && (!strcmp(name, "red") || !strcmp(name, "green") || !strcmp(name, "blue") || !strcmp(name, "various")))
+    wb_mark_user(mod);
+  return ok;
 }
 
 // read from the live params, or from the defaults the image was given
@@ -665,6 +709,21 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
   {
     const dt_develop_blend_params_t *bp = from_defaults ? mod->default_blendop_params : mod->blend_params;
     *num = bp ? bp->details : 0.0;
+    return TRUE;
+  }
+  if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_read(mod, name, from_defaults, num, err);
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+    return wb_setting_read(mod, name, from_defaults, num, err);
+  if(files_is_field(mod, name)) return files_read(mod, name, from_defaults, num, err);
+  if(cmap_is_field(mod, name)) return cmap_read(mod, name, from_defaults, num, err);
+  if(!g_strcmp0(name, LENS_LENSFUN) && !g_strcmp0(mod->op, "lens"))
+  {
+    dt_introspection_field_t *lf = NULL;
+    const char *auto_lens = session_field_in(mod, mod->default_params, "lens", &lf, err);
+    if(!auto_lens) return FALSE;
+    const dt_image_t *img = &_s.dev.image_storage;
+    *num = lenses_has_profile(img->exif_maker, img->exif_model, auto_lens) ? 1.0 : 0.0;
     return TRUE;
   }
   if(!g_strcmp0(name, LENS_PICK) && !g_strcmp0(mod->op, "lens"))
@@ -687,6 +746,10 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
     case DT_INTROSPECTION_TYPE_ENUM:   *num = *(const int *)p; break;
     case DT_INTROSPECTION_TYPE_UINT:   *num = *(const unsigned int *)p; break;
     case DT_INTROSPECTION_TYPE_BOOL:   *num = *(const gboolean *)p ? 1.0 : 0.0; break;
+    case DT_INTROSPECTION_TYPE_SHORT:  *num = *(const short *)p; break;
+    case DT_INTROSPECTION_TYPE_USHORT: *num = *(const unsigned short *)p; break;
+    case DT_INTROSPECTION_TYPE_INT8:   *num = *(const int8_t *)p; break;
+    case DT_INTROSPECTION_TYPE_UINT8:  *num = *(const uint8_t *)p; break;
     default:
       *err = g_strdup_printf("'%s.%s' is not a readable scalar", mod->op, name);
       return FALSE;
@@ -764,17 +827,33 @@ static gboolean _place(dt_iop_module_t *mod, const char *after, const char *befo
   return TRUE;
 }
 
+// the instance of `op` with multi_priority `priority`; 0 is the first
+dt_iop_module_t *session_module_at(const char *op, const int priority, char **err)
+{
+  if(!priority) return session_module(op, err);
+  dt_iop_module_t *mod = op && priority > 0 ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
+  if(!mod) *err = g_strdup_printf("module '%s' has no instance at priority %d", op ? op : "(none)", priority);
+  return mod;
+}
+
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
-                     const char *instance, const char *mask, const gboolean invert,
-                     const double opacity, JsonObject *refine, char **err)
+                     const char *instance, const char *mask, const gboolean anchored, const gboolean invert,
+                     const double opacity, JsonObject *refine, const int priority, char **err)
 {
   const int gen = _s.iop_gen;
+  // `priority`, an instance's multi_priority as `instances` lists it, is the
+  // other way to name one that exists; 0 is the first instance, as before
+  if(instance && priority)
+  {
+    *err = g_strdup("give an instance name or a priority, not both");
+    return FALSE;
+  }
   // an instance placed by `after` or `before` is not also put after the
   // mask anchor, which would leave it behind modules it must precede
-  dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, !after && !before, err)
-                                  : session_module(op, err);
+  dt_iop_module_t *mod = instance ? masks_named_instance(op, instance, anchored && !after && !before, err)
+                                  : session_module_at(op, priority, err);
   if(!mod) return FALSE;
   // kept to tell a request that changes nothing (masks_named_instance() bumps
   // iop_gen for a new instance, which always gets its history item)
@@ -842,7 +921,7 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
 
 // an instance's whole state, params and blend params in base64, as
 // `module_state` replies it and takes it back for undo
-static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
+void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const gboolean include_blend)
 {
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "enabled");
@@ -851,7 +930,7 @@ static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
   json_builder_set_member_name(b, "params");
   json_builder_add_string_value(b, params);
   g_free(params);
-  gchar *blend = mod->blend_params
+  gchar *blend = include_blend && mod->blend_params
     ? g_base64_encode((const guchar *)mod->blend_params, sizeof(dt_develop_blend_params_t)) : NULL;
   json_builder_set_member_name(b, "blend");
   if(blend) json_builder_add_string_value(b, blend); else json_builder_add_null_value(b);
@@ -859,7 +938,7 @@ static void _module_state_json(JsonBuilder *b, const dt_iop_module_t *mod)
   json_builder_end_object(b);
 }
 
-// a blob of _module_state_json() back into `dst`, if it is the right size
+// a blob of session_module_state_json() back into `dst`, if it is the right size
 static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 {
   if(!text) return FALSE;
@@ -871,15 +950,190 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
   return fits;
 }
 
+// darktable's module preset menu for one instance (gui/presets.c, _iop_query,
+// _iop_bind, _iop_is_disabled, _iop_is_active), as `presets` in `b`: the
+// rows for this photo's camera, lens and exposure, built-in ones last unless
+// `modules/default_presets_first`, and the built-ins left out when
+// `plugins/darkroom/hide_default_presets` is set. a name keeps its "|" levels
+gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = session_module_at(op, priority, err);
+  if(!mod) return FALSE;
+  const dt_image_t *image = &_s.dev.image_storage;
+  const gboolean default_first = dt_conf_get_bool("modules/default_presets_first");
+  const gboolean hide_default = dt_conf_get_bool("plugins/darkroom/hide_default_presets");
+  char *format_filter = dt_presets_get_filter(image);
+  // clang-format off
+  gchar *query = g_strdup_printf
+    ("SELECT name, op_params, writeprotect, description, blendop_params, "
+     "  op_version, enabled"
+     " FROM data.presets"
+     " WHERE operation=?1"
+     "   AND (filter=0"
+     "          OR"
+     "       (((?2 LIKE model AND ?3 LIKE maker) OR (?4 LIKE model AND ?5 LIKE maker))"
+     "        AND ?6 LIKE lens"
+     "        AND ?7 BETWEEN iso_min AND iso_max"
+     "        AND ?8 BETWEEN exposure_min AND exposure_max"
+     "        AND ?9 BETWEEN aperture_min AND aperture_max"
+     "        AND ?10 BETWEEN focal_length_min AND focal_length_max"
+     "        AND (%s)))"
+     " ORDER BY writeprotect %s, LOWER(name), rowid",
+     format_filter, default_first ? "DESC" : "ASC");
+  // clang-format on
+  g_free(format_filter);
+  sqlite3_stmt *stmt;
+  DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db), query, -1, &stmt, NULL);
+  g_free(query);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 1, mod->op, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 2, image->exif_model, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 3, image->exif_maker, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 4, image->camera_alias, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 5, image->camera_maker, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 6, image->exif_lens, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 7, image->exif_iso);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 8, image->exif_exposure);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 9, image->exif_aperture);
+  DT_DEBUG_SQLITE3_BIND_DOUBLE(stmt, 10, image->exif_focal_length);
+
+  json_builder_set_member_name(b, "presets");
+  json_builder_begin_array(b);
+  while(sqlite3_step(stmt) == SQLITE_ROW)
+  {
+    const gboolean builtin = sqlite3_column_int(stmt, 2) != 0;
+    if(hide_default && builtin) continue;
+    const void *op_params = sqlite3_column_blob(stmt, 1);
+    const int op_params_size = sqlite3_column_bytes(stmt, 1);
+    const void *blend = sqlite3_column_blob(stmt, 4);
+    const int blend_size = sqlite3_column_bytes(stmt, 4);
+    const int enabled = sqlite3_column_int(stmt, 6);
+    // darktable's own match: a preset with no params is the defaults
+    const gboolean active = mod->enabled && enabled
+      && (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
+                              : !memcmp(mod->params, op_params, MIN(op_params_size, mod->params_size)))
+      && dt_presets_module_blend_match(mod, blend, blend_size);
+    const char *name = (const char *)sqlite3_column_text(stmt, 0);
+    const char *description = (const char *)sqlite3_column_text(stmt, 3);
+    json_builder_begin_object(b);
+    json_builder_set_member_name(b, "name");
+    json_builder_add_string_value(b, name ? name : "");
+    json_builder_set_member_name(b, "description");
+    json_builder_add_string_value(b, description ? description : "");
+    json_builder_set_member_name(b, "builtin");
+    json_builder_add_boolean_value(b, builtin);
+    json_builder_set_member_name(b, "applicable");
+    json_builder_add_boolean_value(b, sqlite3_column_int(stmt, 5) == mod->version());
+    json_builder_set_member_name(b, "active");
+    json_builder_add_boolean_value(b, active);
+    json_builder_end_object(b);
+  }
+  sqlite3_finalize(stmt);
+  json_builder_end_array(b);
+  return TRUE;
+}
+
+// dt_gui_presets_apply_preset (gui/presets.c) on the session's instance: the
+// preset's params (the defaults when its size does not fit), switch, blend
+// params and label. darktable's version also raises GUI signals, stores the
+// "last preset" and adds its history item through darktable.develop, which
+// is not this engine's develop; the caller records the history item
+static gboolean _apply_preset(dt_iop_module_t *mod, const char *name, char **err)
+{
+  if(masks_instance_owner(mod))
+  {
+    *err = g_strdup_printf("instance %d of '%s' belongs to %s", mod->multi_priority, mod->op,
+                           masks_instance_owner(mod));
+    return FALSE;
+  }
+  // a preset replaces the blend params, which would orphan the drawn mask
+  if(mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
+  {
+    *err = g_strdup("a preset cannot replace a drawn mask here");
+    return FALSE;
+  }
+  sqlite3_stmt *stmt;
+  // clang-format off
+  DT_DEBUG_SQLITE3_PREPARE_V2(
+    dt_database_get(darktable.db),
+    "SELECT op_params, enabled, blendop_params, blendop_version, multi_name, multi_name_hand_edited"
+    " FROM data.presets"
+    " WHERE operation = ?1 AND op_version = ?2 AND name = ?3",
+    -1, &stmt, NULL);
+  // clang-format on
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 1, mod->op, -1, SQLITE_TRANSIENT);
+  DT_DEBUG_SQLITE3_BIND_INT(stmt, 2, mod->version());
+  DT_DEBUG_SQLITE3_BIND_TEXT(stmt, 3, name, -1, SQLITE_TRANSIENT);
+  if(sqlite3_step(stmt) != SQLITE_ROW)
+  {
+    sqlite3_finalize(stmt);
+    *err = g_strdup_printf("module '%s' has no preset '%s' for its version", mod->op, name);
+    return FALSE;
+  }
+  const void *op_params = sqlite3_column_blob(stmt, 0);
+  const int op_length = sqlite3_column_bytes(stmt, 0);
+  const int enabled = sqlite3_column_int(stmt, 1);
+  const void *bl_params = sqlite3_column_blob(stmt, 2);
+  const int bl_length = sqlite3_column_bytes(stmt, 2);
+  const int bl_version = sqlite3_column_int(stmt, 3);
+  const char *multi_name = (const char *)sqlite3_column_text(stmt, 4);
+  const int multi_hand = sqlite3_column_int(stmt, 5);
+
+  // read with the mask ignored: a drawn mask's forms would be added to
+  // module->dev (this engine's), and then refused below, leaving them behind
+  dt_develop_blend_params_t bp;
+  gboolean use_default_blend = FALSE;
+#ifdef IMMAGE_STYLE_BLEND_READER
+  const dt_develop_blend_params_t locked = *mod->blend_params;
+  use_default_blend = dt_develop_blend_params_read(mod, bl_params, bl_length, bl_version, &bp, -1, TRUE, NULL);
+#else
+  if(bl_params && bl_version == dt_develop_blend_version() && bl_length == sizeof(dt_develop_blend_params_t))
+    memcpy(&bp, bl_params, sizeof(bp));
+  else
+    use_default_blend = !bl_params
+      || dt_develop_blend_legacy_params(mod, bl_params, bl_version, &bp, dt_develop_blend_version(), bl_length);
+#endif
+  if(!use_default_blend && ((bp.mask_mode & (DEVELOP_MASK_MASK | DEVELOP_MASK_RASTER))
+                            || dt_is_valid_maskid(bp.mask_id)))
+  {
+    sqlite3_finalize(stmt);
+    *err = g_strdup_printf("preset '%s' has a mask, which cannot be applied here yet", name);
+    return FALSE;
+  }
+
+  if(op_params && op_length == mod->params_size) memcpy(mod->params, op_params, op_length);
+  else memcpy(mod->params, mod->default_params, mod->params_size);
+  mod->enabled = enabled;
+  if(use_default_blend) dt_iop_commit_blend_params(mod, mod->default_blendop_params, NULL);
+  else
+  {
+#ifdef IMMAGE_STYLE_BLEND_READER
+    dt_develop_blend_keep_locked_mask(mod, &bp, &locked);
+#endif
+    dt_iop_commit_blend_params(mod, &bp, NULL);
+  }
+  // darktable's dt_iop_update_multi_name(), without its GUI header and its
+  // own history item: a hand-edited name stays, unless auto naming is off
+  if(!mod->multi_name_hand_edited && dt_conf_get_bool("darkroom/ui/auto_module_name_update"))
+  {
+    char *label = g_strstrip(g_strdup(multi_name && *multi_name ? multi_name : name));
+    g_strlcpy(mod->multi_name, label, sizeof(mod->multi_name));
+    mod->multi_name_hand_edited = multi_hand;
+    g_free(label);
+  }
+  sqlite3_finalize(stmt);
+  return TRUE;
+}
+
 // the History panel's switch and delete for one instance of the history,
 // found by op and multi_priority: `enabled` switches it, `reset` puts it
 // back to its defaults, on or off as darktable starts it, and `restore`
 // to a state an earlier reply gave (undo). modules without a switch and
-// masked modules permit reset/restore, but not an independent switch. replies the state
-// before and after
+// masked modules permit reset/restore, but not an independent switch. `preset`
+// applies a darktable preset by name (_apply_preset); it excludes the other three.
+// none of them reads the state (Copy Settings). replies the state before and after
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
-                              JsonBuilder *b, char **err)
+                              const char *preset, JsonBuilder *b, char **err)
 {
   dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
   if(!mod)
@@ -887,20 +1141,36 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     *err = g_strdup_printf("module '%s' %d not in the pipe", op ? op : "(none)", priority);
     return FALSE;
   }
-  if(!reset && !restore
+  if(preset && (reset || restore || has_enabled))
+  {
+    *err = g_strdup("a preset cannot be combined with reset, restore or enabled");
+    return FALSE;
+  }
+  if(has_enabled && !reset && !restore && !preset
      && (mod->hide_enable_button || (mod->blend_params && mod->blend_params->mask_id > 0)))
   {
     *err = g_strdup_printf("module '%s' cannot be switched here", op);
     return FALSE;
   }
   json_builder_set_member_name(b, "was");
-  _module_state_json(b, mod);
+  session_module_state_json(b, mod, TRUE);
   void *was = g_malloc(mod->params_size);
   memcpy(was, mod->params, mod->params_size);
   dt_develop_blend_params_t was_blend = { 0 };
   if(mod->blend_params) memcpy(&was_blend, mod->blend_params, sizeof(was_blend));
   const gboolean was_enabled = mod->enabled;
-  if(restore)
+  char was_name[sizeof(mod->multi_name)];
+  g_strlcpy(was_name, mod->multi_name, sizeof(was_name));
+  const gboolean was_hand = mod->multi_name_hand_edited;
+  if(preset)
+  {
+    if(!_apply_preset(mod, preset, err))
+    {
+      g_free(was);
+      return FALSE;
+    }
+  }
+  else if(restore)
   {
     if(!_unbase64_into(json_object_get_string_member_with_default(restore, "params", NULL),
                        mod->params, mod->params_size))
@@ -921,6 +1191,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
   }
   else if(has_enabled) mod->enabled = enabled;
   const gboolean same = mod->enabled == was_enabled && !memcmp(was, mod->params, mod->params_size)
+    && !strcmp(was_name, mod->multi_name) && was_hand == mod->multi_name_hand_edited
     && (!mod->blend_params || !memcmp(&was_blend, mod->blend_params, sizeof(was_blend)));
   g_free(was);
   if(!same)
@@ -929,7 +1200,7 @@ gboolean session_module_state(const char *op, const int priority, const gboolean
     session_changed(DT_DEV_PIPE_TOP_CHANGED);
   }
   json_builder_set_member_name(b, "now");
-  _module_state_json(b, mod);
+  session_module_state_json(b, mod, TRUE);
   return TRUE;
 }
 
@@ -1154,7 +1425,9 @@ dt_iop_module_t *session_find_named(const char *op, const char *name)
 }
 
 // a key "op#name" reads the instance so named; one not made yet reads as
-// the first instance's defaults, switched off
+// the first instance's defaults, switched off. a key "op@N" reads the
+// instance whose multi_priority is N (as `instances` lists it, and as `set`
+// takes `priority`), an error when there is none; "op" is the first one
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
 {
   json_builder_set_member_name(b, "modules");
@@ -1162,13 +1435,15 @@ gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
   GList *names = json_object_get_members(ops);
   for(GList *n = names; n; n = g_list_next(n))
   {
-    const char *key = n->data, *hash = strchr(key, '#');
-    gchar *op = hash ? g_strndup(key, hash - key) : g_strdup(key);
-    dt_iop_module_t *named = hash ? session_find_named(op, hash + 1) : NULL;
-    dt_iop_module_t *mod = named ? named : session_module(op, err);
+    const char *key = n->data, *mark = strpbrk(key, "#@");
+    const gboolean by_name = mark && *mark == '#';
+    gchar *op = mark ? g_strndup(key, mark - key) : g_strdup(key);
+    dt_iop_module_t *named = by_name ? session_find_named(op, mark + 1) : NULL;
+    dt_iop_module_t *mod = named ? named
+      : mark && !by_name ? session_module_at(op, atoi(mark + 1), err) : session_module(op, err);
     g_free(op);
     if(!mod) { g_list_free(names); return FALSE; }
-    const gboolean missing = hash && !named;
+    const gboolean missing = by_name && !named;
     json_builder_set_member_name(b, n->data);
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "enabled");
@@ -1194,6 +1469,524 @@ gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err)
   }
   g_list_free(names);
   json_builder_end_object(b);
+  return TRUE;
+}
+
+// `instances`: the open photo's modules in pipe order, one entry per
+// instance. `priority` is its multi_priority, which `set` and `get` address
+// it by; `name` is the user's label for it ("" when it has none); `owner`
+// names the Immage tool that manages it (a mask's own, a shared or a look's
+// instance, masks_instance_owner()), null for the user's own, so a client
+// can leave the others to their tools
+void session_instances(JsonBuilder *b)
+{
+  json_builder_set_member_name(b, "instances");
+  json_builder_begin_array(b);
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+  {
+    const dt_iop_module_t *m = l->data;
+    if(g_list_find(_s.deleted, m)) continue;
+    json_builder_begin_object(b);
+    engine_add_string(b, "op", m->op);
+    engine_add_int(b, "priority", m->multi_priority);
+    engine_add_string(b, "name", m->multi_name_hand_edited ? m->multi_name : "");
+    engine_add_bool(b, "hand_edited", m->multi_name_hand_edited);
+    // what darktable's module header shows after the module's name: the
+    // user's label, else darktable's own (a matching preset's, or a later
+    // instance's number), translated as session_history_item() does
+    const gboolean labeled = m->multi_name[0] && g_strcmp0(m->multi_name, "0");
+    gchar *label = !labeled ? g_strdup("") : m->multi_name_hand_edited ? g_strdup(m->multi_name)
+                   : dt_util_localize_segmented_name(m->multi_name, FALSE);
+    engine_add_string(b, "label", label);
+    g_free(label);
+    engine_add_bool(b, "enabled", m->enabled);
+    engine_add_bool(b, "default_enabled", m->default_enabled);
+    // its settings or switch differ from darktable's defaults for this
+    // photo: an auto-applied module left alone is not an edit
+    engine_add_bool(b, "changed", m->enabled != m->default_enabled
+                    || (m->params_size && memcmp(m->params, m->default_params, m->params_size)));
+    // darktable's copy of history leaves it out (dt_history_module_skip_copy:
+    // per-camera, hidden or deprecated modules), so Copy Settings does too
+    engine_add_bool(b, "copyable", !dt_history_module_skip_copy(m->flags()));
+    // a drawn mask's shapes belong to this photo
+    engine_add_bool(b, "masked", m->blend_params && m->blend_params->mask_id > 0);
+    // darktable hides the switch of a module that cannot apply to this
+    // photo (raw-only modules on a JPEG, white balance on a monochrome)
+    engine_add_bool(b, "switchable", !m->hide_enable_button);
+    // the history, up to its end, has an entry for it: Advanced shows a
+    // card for a module the user once changed, switched off or not
+    gboolean in_history = FALSE;
+    int n = 0;
+    for(const GList *h = _s.dev.history; h && n < _s.dev.history_end && !in_history; h = g_list_next(h), n++)
+      in_history = ((const dt_dev_history_item_t *)h->data)->module == m;
+    engine_add_bool(b, "in_history", in_history);
+    engine_add_int(b, "iop_order", m->iop_order);
+    const char *owner = masks_instance_owner(m);
+    json_builder_set_member_name(b, "owner");
+    if(owner) json_builder_add_string_value(b, owner); else json_builder_add_null_value(b);
+    json_builder_set_member_name(b, "mask");
+    dt_masks_form_t *group = !g_strcmp0(owner, "mask") ? masks_instance_group(m) : NULL;
+    const char *mask_name = group ? masks_mask_name(group->name) : NULL;
+    if(mask_name) json_builder_add_string_value(b, mask_name); else json_builder_add_null_value(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+}
+
+// a history item for `m` as it stands, and the pipes told: `structure` when
+// the instance list or order changed, which every pipe rebuilds its nodes for
+static void _instance_changed(dt_iop_module_t *m, const gboolean structure)
+{
+  dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+  if(structure) _s.iop_gen++;
+  session_changed(structure ? DT_DEV_PIPE_REMOVE : DT_DEV_PIPE_TOP_CHANGED);
+}
+
+// `instance`: Advanced mode's instance menu, darktable's multi-instance
+// actions (imageop.c, _gui_copy_callback and its neighbours) without its GUI.
+//   "new": a new instance after instance `priority`, at the defaults, on
+//   "duplicate": the same with that instance's settings
+//   "rename": `name` as its label; "" goes back to darktable's number
+//   "move": next to the instance at priority `other` of the same module,
+//     after it when `after`, else before
+//   "delete": switched off and gone from `instances`; the next save drops
+//     its entries. the first instance is the one Simple's tools drive and
+//     darktable renumbers when it goes, so it is switched off instead
+//   "restore": a deleted instance back (undo), as it was when deleted
+// an Immage tool's own instance (masks_instance_owner()) is left to it.
+// the reply has the instance's `priority` and the new `instances` list
+gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const char *mask,
+                          const int other, const gboolean after, JsonBuilder *b, char **err)
+{
+  if(!action || !op)
+  {
+    *err = g_strdup("instance needs an action and an op");
+    return FALSE;
+  }
+  const gboolean restore = !g_strcmp0(action, "restore");
+  dt_iop_module_t *mod = session_module_at(op, priority, err);
+  if(!mod) return FALSE;
+  GList *gone = g_list_find(_s.deleted, mod);
+  if((gone != NULL) != restore)
+  {
+    *err = g_strdup_printf("instance %d of '%s' is %s", priority, op, gone ? "deleted" : "not deleted");
+    return FALSE;
+  }
+  const char *owner = masks_instance_owner(mod);
+  dt_masks_form_t *mask_group = !g_strcmp0(owner, "mask") ? masks_instance_group(mod) : NULL;
+  const char *instance_mask = mask_group ? masks_mask_name(mask_group->name) : NULL;
+  const gboolean scoped_mask_action = (!g_strcmp0(action, "delete") || restore) && mask && instance_mask
+    && !g_strcmp0(mask, instance_mask);
+  if(owner && !scoped_mask_action)
+  {
+    *err = g_strdup_printf("instance %d of '%s' belongs to %s", priority, op, masks_instance_owner(mod));
+    return FALSE;
+  }
+  if(mask && !scoped_mask_action)
+  {
+    *err = g_strdup("mask does not own this instance");
+    return FALSE;
+  }
+  dt_iop_module_t *result = mod;
+  const gboolean copy = !g_strcmp0(action, "duplicate");
+  if(copy || !g_strcmp0(action, "new"))
+  {
+    if(mod->flags() & IOP_FLAGS_ONE_INSTANCE)
+    {
+      *err = g_strdup_printf("'%s' allows one instance", op);
+      return FALSE;
+    }
+    // darktable shares a drawn mask's shapes with the copy through its GUI's
+    // develop (masks.c, dt_masks_iop_use_same_as), which is not the engine's
+    if(copy && mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
+    {
+      *err = g_strdup("an instance with a drawn mask cannot be duplicated here yet");
+      return FALSE;
+    }
+    dt_iop_module_t *m = dt_dev_module_duplicate_ext(&_s.dev, mod, TRUE);
+    if(!m)
+    {
+      *err = g_strdup_printf("cannot add an instance of '%s'", op);
+      return FALSE;
+    }
+    // as dt_iop_gui_duplicate(): the image's defaults (denoise's noise
+    // profile) come from reload_defaults, which duplicating does not run
+    dt_iop_reload_defaults(m);
+    memcpy(m->params, copy ? mod->params : m->default_params, m->params_size);
+    if(m->blend_params)
+      memcpy(m->blend_params, copy ? mod->blend_params : m->default_blendop_params,
+             sizeof(dt_develop_blend_params_t));
+    m->enabled = TRUE;
+    _instance_changed(m, TRUE);
+    result = m;
+  }
+  else if(!g_strcmp0(action, "rename"))
+  {
+    gchar *label = g_strstrip(g_strdup(name ? name : ""));
+    char was[sizeof(mod->multi_name)];
+    g_strlcpy(was, mod->multi_name, sizeof(was));
+    const gboolean was_hand = mod->multi_name_hand_edited;
+    // an empty name is darktable's own again (develop.c, the history item's
+    // automatic name): the instance's number, none for the first
+    if(*label) g_strlcpy(mod->multi_name, label, sizeof(mod->multi_name));
+    else if(mod->multi_priority > 0) g_snprintf(mod->multi_name, sizeof(mod->multi_name), "%d", mod->multi_priority);
+    else mod->multi_name[0] = '\0';
+    mod->multi_name_hand_edited = *label != '\0';
+    g_free(label);
+    // a name Immage's masks or looks use would hand the instance to them
+    if(masks_instance_owner(mod))
+    {
+      g_strlcpy(mod->multi_name, was, sizeof(mod->multi_name));
+      mod->multi_name_hand_edited = was_hand;
+      *err = g_strdup("that name is one Immage keeps for masks and looks");
+      return FALSE;
+    }
+    if(g_strcmp0(was, mod->multi_name) || was_hand != mod->multi_name_hand_edited)
+      _instance_changed(mod, FALSE);
+  }
+  else if(!g_strcmp0(action, "move"))
+  {
+    dt_iop_module_t *to = session_module_at(op, other, err);
+    if(!to) return FALSE;
+    if(to == mod || g_list_find(_s.deleted, to))
+    {
+      *err = g_strdup_printf("cannot move instance %d of '%s' next to instance %d", priority, op, other);
+      return FALSE;
+    }
+    const gboolean there = after ? mod->iop_order > to->iop_order : mod->iop_order < to->iop_order;
+    // already next to it on that side when no other instance of `op` is
+    // between: dt_ioppr_move_iop_after() refuses a module it already follows
+    gboolean between = FALSE;
+    for(GList *l = _s.dev.iop; there && l; l = g_list_next(l))
+    {
+      const dt_iop_module_t *s = l->data;
+      if(s == mod || s == to || g_strcmp0(s->op, op)) continue;
+      const int lo = MIN(mod->iop_order, to->iop_order), hi = MAX(mod->iop_order, to->iop_order);
+      if(s->iop_order > lo && s->iop_order < hi) between = TRUE;
+    }
+    if(!there || between)
+    {
+      const gboolean can = after ? dt_ioppr_check_can_move_after_iop(_s.dev.iop, mod, to)
+                                 : dt_ioppr_check_can_move_before_iop(_s.dev.iop, mod, to);
+      if(!can || !(after ? dt_ioppr_move_iop_after(&_s.dev, mod, to) : dt_ioppr_move_iop_before(&_s.dev, mod, to)))
+      {
+        *err = g_strdup_printf("cannot move instance %d of '%s' %s instance %d", priority, op,
+                               after ? "after" : "before", other);
+        return FALSE;
+      }
+      _instance_changed(mod, TRUE);
+    }
+  }
+  else if(!g_strcmp0(action, "delete"))
+  {
+    if(priority == 0)
+    {
+      *err = g_strdup_printf("the first instance of '%s' can be switched off, not deleted", op);
+      return FALSE;
+    }
+    mod->enabled = FALSE;
+    _s.deleted = g_list_prepend(_s.deleted, mod);
+    _instance_changed(mod, FALSE);
+  }
+  else if(restore)
+  {
+    // its settings are back with the client's own `set`, as undo sends them
+    _s.deleted = g_list_delete_link(_s.deleted, gone);
+  }
+  else
+  {
+    *err = g_strdup_printf("unknown instance action '%s'", action);
+    return FALSE;
+  }
+  engine_add_int(b, "priority", result->multi_priority);
+  session_instances(b);
+  return TRUE;
+}
+
+static const char *_type_name(const dt_introspection_type_t t)
+{
+  switch(t)
+  {
+    case DT_INTROSPECTION_TYPE_FLOAT:        return "float";
+    case DT_INTROSPECTION_TYPE_DOUBLE:       return "double";
+    case DT_INTROSPECTION_TYPE_FLOATCOMPLEX: return "complex";
+    case DT_INTROSPECTION_TYPE_CHAR:         return "char";
+    case DT_INTROSPECTION_TYPE_INT8:         return "int8";
+    case DT_INTROSPECTION_TYPE_UINT8:        return "uint8";
+    case DT_INTROSPECTION_TYPE_SHORT:        return "short";
+    case DT_INTROSPECTION_TYPE_USHORT:       return "ushort";
+    case DT_INTROSPECTION_TYPE_INT:          return "int";
+    case DT_INTROSPECTION_TYPE_UINT:         return "uint";
+    case DT_INTROSPECTION_TYPE_LONG:         return "long";
+    case DT_INTROSPECTION_TYPE_ULONG:        return "ulong";
+    case DT_INTROSPECTION_TYPE_BOOL:         return "bool";
+    case DT_INTROSPECTION_TYPE_ARRAY:        return "array";
+    case DT_INTROSPECTION_TYPE_ENUM:         return "enum";
+    case DT_INTROSPECTION_TYPE_STRUCT:       return "struct";
+    case DT_INTROSPECTION_TYPE_UNION:        return "union";
+    default:                                 return "opaque";
+  }
+}
+
+// a bound as a number, null for the type's own limit, which a field without
+// a declared range gets
+static void _add_bound(JsonBuilder *b, const char *name, const double v)
+{
+  json_builder_set_member_name(b, name);
+  if(fabs(v) >= 2147483647.0) json_builder_add_null_value(b);
+  else json_builder_add_double_value(b, v);
+}
+
+// min and max of a scalar field
+static void _add_range(JsonBuilder *b, const dt_introspection_field_t *f)
+{
+  double lo = 0.0, hi = 0.0;
+  switch(f->header.type)
+  {
+    case DT_INTROSPECTION_TYPE_FLOAT:  lo = f->Float.Min;  hi = f->Float.Max;  break;
+    case DT_INTROSPECTION_TYPE_DOUBLE: lo = f->Double.Min; hi = f->Double.Max; break;
+    case DT_INTROSPECTION_TYPE_CHAR:   lo = f->Char.Min;   hi = f->Char.Max;   break;
+    case DT_INTROSPECTION_TYPE_INT8:   lo = f->Int8.Min;   hi = f->Int8.Max;   break;
+    case DT_INTROSPECTION_TYPE_UINT8:  lo = f->UInt8.Min;  hi = f->UInt8.Max;  break;
+    case DT_INTROSPECTION_TYPE_SHORT:  lo = f->Short.Min;  hi = f->Short.Max;  break;
+    case DT_INTROSPECTION_TYPE_USHORT: lo = f->UShort.Min; hi = f->UShort.Max; break;
+    case DT_INTROSPECTION_TYPE_INT:    lo = f->Int.Min;    hi = f->Int.Max;    break;
+    case DT_INTROSPECTION_TYPE_UINT:   lo = f->UInt.Min;   hi = f->UInt.Max;   break;
+    case DT_INTROSPECTION_TYPE_LONG:   lo = f->Long.Min;   hi = f->Long.Max;   break;
+    case DT_INTROSPECTION_TYPE_ULONG:  lo = f->ULong.Min;  hi = f->ULong.Max;  break;
+    default: return;
+  }
+  _add_bound(b, "min", lo);
+  _add_bound(b, "max", hi);
+}
+
+static gboolean _is_number(const dt_introspection_type_t t)
+{
+  return t == DT_INTROSPECTION_TYPE_FLOAT || t == DT_INTROSPECTION_TYPE_DOUBLE
+         || t == DT_INTROSPECTION_TYPE_CHAR || t == DT_INTROSPECTION_TYPE_INT8
+         || t == DT_INTROSPECTION_TYPE_UINT8 || t == DT_INTROSPECTION_TYPE_SHORT
+         || t == DT_INTROSPECTION_TYPE_USHORT || t == DT_INTROSPECTION_TYPE_INT
+         || t == DT_INTROSPECTION_TYPE_UINT || t == DT_INTROSPECTION_TYPE_LONG
+         || t == DT_INTROSPECTION_TYPE_ULONG || t == DT_INTROSPECTION_TYPE_BOOL
+         || t == DT_INTROSPECTION_TYPE_ENUM;
+}
+
+// the default of each number member of struct `f` at `path`, as members of
+// the open object keyed by the member path relative to the struct; members
+// that are arrays or strings are left out, as they are in `defaults` of a
+// number array above 64 elements
+static void _struct_defaults(JsonBuilder *b, dt_iop_module_t *mod, const dt_introspection_field_t *f,
+                             const char *path)
+{
+  for(size_t i = 0; i < f->Struct.entries; i++)
+  {
+    const dt_introspection_field_t *c = f->Struct.fields[i];
+    gchar *sub = g_strdup_printf("%s.%s", path, c->header.field_name);
+    if(c->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+      _struct_defaults(b, mod, c, sub);
+    else if(_is_number(c->header.type))
+    {
+      char *err = NULL;
+      double num = 0.0;
+      // keyed relative to the element, the same paths `members` lists
+      json_builder_set_member_name(b, sub + strlen(path) + 1);
+      if(session_read_field(mod, sub, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+      else json_builder_add_null_value(b);
+      g_free(err);
+    }
+    g_free(sub);
+  }
+}
+
+// the fields under `f`, as one object per leaf, in the order of the struct.
+// `prefix` is the path so far: the leaf "exposure" of exposure's params, or
+// "tonecurve_nodes[0]" and so on for a client that walks an array. an array
+// is one entry that gives `dims` (nested arrays outermost first) and its
+// `element`, never one entry per element; an array of structs also lists
+// `members` with paths relative to an element ("x" of "curve[1][3].x"). a
+// number array of up to 64 elements has its defaults, read by
+// session_read_field() (what `get` returns), and an array of up to 64 structs
+// has `member_defaults` as one object per element, in row-major order, keyed by the
+// number members' relative paths; a char array is a "string"
+static void _schema_fields(JsonBuilder *b, dt_iop_module_t *mod, const dt_introspection_field_t *f,
+                           const char *prefix)
+{
+  if(f->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+  {
+    for(size_t i = 0; i < f->Struct.entries; i++)
+    {
+      const dt_introspection_field_t *c = f->Struct.fields[i];
+      gchar *path = *prefix ? g_strdup_printf("%s.%s", prefix, c->header.field_name)
+                            : g_strdup(c->header.field_name);
+      _schema_fields(b, mod, c, path);
+      g_free(path);
+    }
+    return;
+  }
+
+  json_builder_begin_object(b);
+  engine_add_string(b, "path", prefix);
+  const dt_introspection_type_t t = f->header.type;
+  if(t == DT_INTROSPECTION_TYPE_ARRAY)
+  {
+    const dt_introspection_field_t *e = f;
+    json_builder_set_member_name(b, "dims");
+    json_builder_begin_array(b);
+    size_t total = 1;
+    while(e->header.type == DT_INTROSPECTION_TYPE_ARRAY)
+    {
+      json_builder_add_int_value(b, e->Array.count);
+      total *= e->Array.count;
+      e = e->Array.field;
+    }
+    json_builder_end_array(b);
+    const gboolean text = f->Array.type == DT_INTROSPECTION_TYPE_CHAR;
+    engine_add_string(b, "type", text ? "string" : "array");
+    engine_add_string(b, "element", _type_name(e->header.type));
+    if(f->header.description) engine_add_string(b, "description", f->header.description);
+    if(_is_number(e->header.type) && !text)
+    {
+      _add_range(b, e);
+      if(e->header.type == DT_INTROSPECTION_TYPE_ENUM) engine_add_string(b, "enum_type", e->header.type_name);
+      if(f->Array.field == e && total <= 64)
+      {
+        json_builder_set_member_name(b, "defaults");
+        json_builder_begin_array(b);
+        for(size_t i = 0; i < total; i++)
+        {
+          gchar *path = g_strdup_printf("%s[%zu]", prefix, i);
+          char *err = NULL;
+          double num = 0.0;
+          if(session_read_field(mod, path, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+          else json_builder_add_null_value(b);
+          g_free(err);
+          g_free(path);
+        }
+        json_builder_end_array(b);
+      }
+    }
+    if(e->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+    {
+      if(total <= 64)
+      {
+        json_builder_set_member_name(b, "member_defaults");
+        json_builder_begin_array(b);
+        for(size_t i = 0; i < total; i++)
+        {
+          // row-major index list, so "curve[1][3]" as session_read_field() takes it
+          gchar *path = g_strdup(prefix);
+          size_t rest = total;
+          for(const dt_introspection_field_t *d = f; d->header.type == DT_INTROSPECTION_TYPE_ARRAY;
+              d = d->Array.field)
+          {
+            rest /= d->Array.count;
+            gchar *next = g_strdup_printf("%s[%zu]", path, (i / rest) % d->Array.count);
+            g_free(path);
+            path = next;
+          }
+          json_builder_begin_object(b);
+          _struct_defaults(b, mod, e, path);
+          json_builder_end_object(b);
+          g_free(path);
+        }
+        json_builder_end_array(b);
+      }
+      json_builder_set_member_name(b, "members");
+      json_builder_begin_array(b);
+      _schema_fields(b, mod, e, "");
+      json_builder_end_array(b);
+    }
+    json_builder_end_object(b);
+    return;
+  }
+
+  engine_add_string(b, "type", _type_name(t));
+  if(f->header.description) engine_add_string(b, "description", f->header.description);
+  if(_is_number(t))
+  {
+    _add_range(b, f);
+    char *err = NULL;
+    double num = 0.0;
+    json_builder_set_member_name(b, "default");
+    if(*prefix && session_read_field(mod, prefix, TRUE, &num, &err)) json_builder_add_double_value(b, num);
+    else json_builder_add_null_value(b);
+    g_free(err);
+  }
+  if(t == DT_INTROSPECTION_TYPE_ENUM)
+  {
+    engine_add_string(b, "enum_type", f->header.type_name);
+    json_builder_set_member_name(b, "values");
+    json_builder_begin_array(b);
+    for(size_t i = 0; i < f->Enum.entries; i++)
+    {
+      const dt_introspection_type_enum_tuple_t *v = &f->Enum.values[i];
+      json_builder_begin_object(b);
+      engine_add_string(b, "name", v->name);
+      engine_add_int(b, "value", v->value);
+      if(v->description) engine_add_string(b, "description", v->description);
+      json_builder_end_object(b);
+    }
+    json_builder_end_array(b);
+  }
+  json_builder_end_object(b);
+}
+
+static const struct { int bit; const char *name; } _GROUPS[] =
+{
+  { IOP_GROUP_BASIC, "basic" }, { IOP_GROUP_TONE, "tone" }, { IOP_GROUP_COLOR, "color" },
+  { IOP_GROUP_CORRECT, "correct" }, { IOP_GROUP_EFFECT, "effect" },
+  { IOP_GROUP_TECHNICAL, "technical" }, { IOP_GROUP_GRADING, "grading" },
+  { IOP_GROUP_EFFECTS, "effects" },
+};
+
+// `module_schema {op}`: what darktable's introspection says of a module, so
+// a client can draw its parameters without a map of its own. it needs an
+// open photo, and the module in its pipe (any instance: the layout is the
+// module's, the `default` values are that instance's default_params, which
+// for a few modules depend on the photo, as denoise's noise profile does); a
+// module with no introspection (liquify) replies `fields: []`. `fields` are
+// the params' leaves in struct order, each with the `path` `set` and `get`
+// take: `type` (float, int, uint, bool, enum, string, array, ...), `min` and
+// `max` (null: unbounded), `default`, `description` (darktable's $DESCRIPTION
+// comment) and, for an enum, its `values` ({ name, value, description }).
+// see _schema_fields() for arrays. `version` is the params' version,
+// `groups` the default module groups (darktable's names), `flags` the
+// module's
+gboolean session_module_schema(const char *op, JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *mod = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, -1) : NULL;
+  if(!mod)
+  {
+    *err = g_strdup_printf("module '%s' not in the pipe", op ? op : "(none)");
+    return FALSE;
+  }
+  const int flags = mod->flags();
+  engine_add_string(b, "op", mod->op);
+  engine_add_string(b, "name", dt_iop_get_localized_name(mod->op));
+  engine_add_int(b, "version", mod->version());
+  engine_add_int(b, "params_size", mod->params_size);
+  json_builder_set_member_name(b, "groups");
+  json_builder_begin_array(b);
+  const int groups = mod->default_group();
+  for(guint i = 0; i < G_N_ELEMENTS(_GROUPS); i++)
+    if(groups & _GROUPS[i].bit) json_builder_add_string_value(b, _GROUPS[i].name);
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "flags");
+  json_builder_begin_object(b);
+  engine_add_bool(b, "one_instance", flags & IOP_FLAGS_ONE_INSTANCE);
+  engine_add_bool(b, "deprecated", flags & IOP_FLAGS_DEPRECATED);
+  engine_add_bool(b, "hidden", flags & IOP_FLAGS_HIDDEN);
+  engine_add_bool(b, "supports_blending", flags & IOP_FLAGS_SUPPORTS_BLENDING);
+  engine_add_bool(b, "no_masks", flags & IOP_FLAGS_NO_MASKS);
+  engine_add_bool(b, "no_history", flags & IOP_FLAGS_NO_HISTORY_STACK);
+  engine_add_bool(b, "no_switch", mod->hide_enable_button);
+  json_builder_end_object(b);
+  json_builder_set_member_name(b, "fields");
+  json_builder_begin_array(b);
+  const dt_introspection_t *intro = mod->so->have_introspection ? mod->get_introspection() : NULL;
+  if(intro && intro->field) _schema_fields(b, mod, intro->field, "");
+  json_builder_end_array(b);
   return TRUE;
 }
 
@@ -1579,6 +2372,8 @@ gboolean session_save(char **err)
   // the database only: this session's own history stays in memory, as
   // reloading it calls into the GUI (dt_dev_reload_history_items())
   _compress_history(_s.imgid);
+  // the overlay table the Composite card's cycle check reads follows the saved edit
+  files_overlay_sync(_s.imgid);
   // whether the photo is altered is darktable's history hash, which the
   // sidecar carries (exif.cc), so darktable's lighttable agrees with the
   // client. hashed after the compress, which renumbers the history
@@ -1774,6 +2569,25 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
     json_builder_end_object(b);
   }
   json_builder_end_array(b);
+  return TRUE;
+}
+
+// the History panel's start over, darktable's reset of the history module
+// (libs/history.c, gui_reset): the photo's whole history goes, and the
+// auto-applied presets with it, so it opens again as a new photo. the
+// client closes it first and takes a paste_batch snapshot for undo
+gboolean session_history_discard(const dt_imgid_t imgid, JsonBuilder *b, char **err)
+{
+  if(!dt_is_valid_imgid(imgid) || library_is_snapshot(imgid))
+  { *err = g_strdup_printf("photo %d cannot be reset", imgid); return FALSE; }
+  if(_s.open && _s.imgid == imgid) { *err = g_strdup("close the photo first"); return FALSE; }
+  _hold_open(imgid);
+  dt_history_delete_on_image_ext(imgid, FALSE, TRUE);
+  dt_tag_detach_by_string("darktable|changed", imgid, FALSE, FALSE);
+  const gboolean failed = library_write_sidecar(imgid);
+  dt_mipmap_cache_remove(imgid);
+  if(failed) { *err = g_strdup("could not write the XMP sidecar"); return FALSE; }
+  engine_add_bool(b, "edited", dt_image_altered(imgid));
   return TRUE;
 }
 

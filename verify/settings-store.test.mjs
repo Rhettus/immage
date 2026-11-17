@@ -49,6 +49,33 @@ async function load({ file = {}, ls = null, fail = false } = {}) {
 }
 const sets = calls => calls.filter(c => c.cmd === 'settings_set');
 
+test('native windows wait until the settings store and app state are managed', () => {
+  const whole = readFileSync(new URL('../app/src-tauri/src/main.rs', import.meta.url), 'utf8');
+  // the code itself: main.rs's own test module quotes these anchors as text
+  const source = whole.split('#[cfg(test)]')[0];
+  const at = (re, what) => {
+    const m = re.exec(source);
+    assert.ok(m, `main.rs no longer contains ${what} (${re}); update this test to the new startup code`);
+    return m.index;
+  };
+  assert.match(source, /fn defer_window_creation[\s\S]*?window\.create = false;/);
+  const deferred = at(/\bdefer_window_creation\(&mut context\)/, 'the call that disables automatic window creation');
+  const builder = at(/tauri::Builder::default\(\)/, 'the Tauri builder');
+  const setup = at(/\.setup\(/, 'the setup closure');
+  const windows = at(/WebviewWindowBuilder::from_config\(/, 'the window creation in setup');
+  assert.ok(deferred < builder, 'automatic creation is disabled before Tauri builds');
+  assert.ok(setup < windows, 'windows are created inside setup');
+  // every state registered in setup, however many are added, comes before the first page
+  const managed = [...source.matchAll(/\bapp\.manage\(/g)].map(m => m.index);
+  assert.ok(managed.length >= 2, 'expected app.manage(...) calls for the settings store and the app state');
+  for (const index of managed) {
+    const line = source.slice(0, index).split('\n').length;
+    assert.ok(index < windows, `app.manage at main.rs:${line} runs after windows are created`);
+  }
+  assert.match(source, /app\.manage\(settings\)/, 'the settings store is registered');
+  assert.match(source, /app\.manage\(AppState\b/, 'the application state is registered');
+});
+
 test('get, set, remove and keys', async () => {
   const { settings } = await load({ file: { a: '1', 'immage.settings-migrated': '1' } });
   assert.equal(settings.get('a'), '1');

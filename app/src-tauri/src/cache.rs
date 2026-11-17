@@ -308,16 +308,23 @@ fn thumb_name(photo: &Path, version: i64, size: u32) -> Option<String> {
 // thumbnails are checked without a stat each, which on a network share is
 // a round trip per file. a file of a listed folder that is not here was
 // not there
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Listed {
     dirs: HashSet<PathBuf>,
     // None: a file the listing could not say of (a link), stat'ed instead
     stamps: HashMap<PathBuf, Option<String>>,
+    sidecar_versions: HashMap<PathBuf, Vec<i64>>,
+    // files prestat() gave up waiting for: neither known nor to be stat'ed
+    // on the way to showing the folder
+    unreached: HashSet<PathBuf>,
+    // folders whose listing did not return in time (listing::list_within)
+    pub stalled: Vec<PathBuf>,
 }
 
 enum Seen {
     Gone,
     Unknown,
+    Unreached,
     Stamp(String),
 }
 
@@ -325,8 +332,31 @@ impl Listed {
     // a folder's files, as listing.rs found them: all of them, so one not
     // among them was not there
     pub fn add(&mut self, dir: &Path, files: impl IntoIterator<Item = (PathBuf, Option<String>)>) {
-        self.stamps.extend(files);
+        for (path, stamp) in files {
+            if let Some(base) = path.to_str().and_then(|s| s.strip_suffix(".xmp")).map(Path::new) {
+                if let (Some(stem), Some(ext)) = (base.file_stem().and_then(|s| s.to_str()), base.extension().and_then(|s| s.to_str())) {
+                    if let Some((original, number)) = stem.rsplit_once('_') {
+                        if number.len() >= 2 && number.bytes().all(|c| c.is_ascii_digit()) {
+                            if let Ok(version) = number.parse::<i64>() {
+                                let photo = base.with_file_name(format!("{original}.{ext}"));
+                                if (1..1_000_000).contains(&version) && sidecar(&photo, version) == path {
+                                    self.sidecar_versions.entry(photo).or_default().push(version);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            self.stamps.insert(path, stamp);
+        }
         self.dirs.insert(dir.to_path_buf());
+    }
+
+    pub fn versions(&self, photo: &Path) -> Option<Vec<i64>> {
+        if !self.dirs.contains(photo.parent()?) { return None; }
+        let mut versions = self.sidecar_versions.get(photo).cloned().unwrap_or_default();
+        versions.push(0); versions.sort_unstable(); versions.dedup();
+        Some(versions)
     }
 
     fn seen(&self, path: &Path) -> Seen {
@@ -335,6 +365,7 @@ impl Listed {
         }
         match self.stamps.get(path) {
             None => Seen::Gone,
+            Some(None) if self.unreached.contains(path) => Seen::Unreached,
             Some(None) => Seen::Unknown,
             Some(Some(s)) => Seen::Stamp(s.clone()),
         }
@@ -346,6 +377,13 @@ impl Listed {
 // stamps are as the folder was listed: refresh() a photo whose edit this
 // app has just saved
 pub fn listed_thumb_name(listed: &Mutex<Listed>, photo: &Path, version: i64, size: u32) -> Option<String> {
+    Some(named(photo, version, size, listed_fingerprints(listed, photo, version)?))
+}
+
+// The photo and version sidecar fingerprints from the same batched listing
+// used by thumbnail lookup, with individual stats only when the listing
+// could not provide a stamp.
+pub fn listed_fingerprints(listed: &Mutex<Listed>, photo: &Path, version: i64) -> Option<(String, String)> {
     let side = sidecar(photo, version);
     let (file, side_seen) = {
         let l = listed.lock().unwrap();
@@ -353,15 +391,101 @@ pub fn listed_thumb_name(listed: &Mutex<Listed>, photo: &Path, version: i64, siz
     };
     let file = match file {
         Seen::Gone => return None,
-        Seen::Unknown => stamp(&std::fs::metadata(photo).ok()?),
+        Seen::Unknown | Seen::Unreached => stamp(&std::fs::metadata(photo).ok()?),
         Seen::Stamp(s) => s,
     };
     let side = match side_seen {
         Seen::Gone => "-".into(),
-        Seen::Unknown => std::fs::metadata(&side).map_or_else(|_| "-".into(), |m| stamp(&m)),
+        Seen::Unknown | Seen::Unreached => std::fs::metadata(&side).map_or_else(|_| "-".into(), |m| stamp(&m)),
         Seen::Stamp(s) => s,
     };
-    Some(named(photo, version, size, (file, side)))
+    Some((file, side))
+}
+
+pub fn listed_metadata_fingerprints(listed: &Mutex<Listed>, photo: &Path, version: i64) -> Option<(String, String)> {
+    fn known_stamp(listed: &Mutex<Listed>, path: &Path) -> Option<String> {
+        let seen = listed.lock().ok()?.seen(path);
+        match seen {
+            Seen::Gone => Some("-".into()),
+            Seen::Stamp(s) => Some(s),
+            // no stat on the way to showing a folder: the caller decides
+            // (metadata_unreached)
+            Seen::Unreached => None,
+            Seen::Unknown => match std::fs::metadata(path) {
+                Ok(m) => Some(stamp(&m)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some("-".into()),
+                Err(_) => None,
+            }
+        }
+    }
+    let original = known_stamp(listed, photo)?;
+    if original == "-" { return None; }
+    let xmp = sidecar(photo, version);
+    let side = known_stamp(listed, &xmp)?;
+    let data = known_stamp(listed, &xmp.with_extension("dtdata"))?;
+    let mut h = Sha256::new();
+    h.update(format!("{original}\0{side}\0{data}"));
+    let edited = format!("{:x}", h.finalize());
+    Some((original, edited))
+}
+
+// whether a file the photo's cached row depends on (the photo, its sidecar
+// or that sidecar's data) is one prestat() did not get an answer for in time
+pub fn metadata_unreached(listed: &Mutex<Listed>, photo: &Path, version: i64) -> bool {
+    let Ok(l) = listed.lock() else { return false };
+    let xmp = sidecar(photo, version);
+    let data = xmp.with_extension("dtdata");
+    [photo, xmp.as_path(), data.as_path()].iter().any(|p| matches!(l.seen(p), Seen::Unreached))
+}
+
+// Stat the files a listing could not give a stamp for (Linux), side by side
+// on a few threads, so a network share's round trips overlap, and for no
+// longer than `wait` in all: a stalled stat then holds the folder for that
+// long, not for the kernel's timeout. what did not answer is marked
+// unreached and its late answer is still taken. a file that is not there is
+// removed, as if never listed
+pub fn prestat(listed: &Arc<Mutex<Listed>>, wait: Duration) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let todo: Arc<Vec<PathBuf>> = Arc::new(match listed.lock() {
+        Ok(l) => l.stamps.iter().filter(|(_, s)| s.is_none()).map(|(p, _)| p.clone()).collect(),
+        Err(_) => return,
+    });
+    if todo.is_empty() { return; }
+    let next = Arc::new(AtomicUsize::new(0));
+    let workers = todo.len().min(8);
+    let (tx, rx) = std::sync::mpsc::channel();
+    for _ in 0..workers {
+        let (todo, next, listed, tx) = (todo.clone(), next.clone(), listed.clone(), tx.clone());
+        std::thread::spawn(move || {
+            loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                let Some(path) = todo.get(i) else { break };
+                let found = std::fs::metadata(path);
+                let Ok(mut l) = listed.lock() else { break };
+                match found {
+                    Ok(m) => { l.stamps.insert(path.clone(), Some(stamp(&m))); l.unreached.remove(path); }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => { l.stamps.remove(path); }
+                    Err(_) => {}
+                }
+            }
+            let _ = tx.send(());
+        });
+    }
+    drop(tx);
+    let end = Instant::now() + wait;
+    let mut finished = 0;
+    while finished < workers {
+        let left = end.saturating_duration_since(Instant::now());
+        if rx.recv_timeout(left).is_err() { break; }
+        finished += 1;
+    }
+    if finished < workers || next.load(Ordering::SeqCst) < todo.len() {
+        next.store(todo.len(), Ordering::SeqCst);
+        if let Ok(mut l) = listed.lock() {
+            let pending: Vec<PathBuf> = todo.iter().filter(|p| matches!(l.stamps.get(*p), Some(None))).cloned().collect();
+            l.unreached.extend(pending);
+        }
+    }
 }
 
 // the photo's thumbnail name as it is now, kept for the next
@@ -576,6 +700,47 @@ mod tests {
         assert_eq!(sidecar(&photo, 2), dir.join("IMG_1_02.CR3.xmp"));
         assert!(thumb_name(&dir.join("gone.CR3"), 0, 240).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // stats left to prestat() give the stamps a direct stat does; a file
+    // that is gone is gone; a file not answered for is unreached, and its
+    // fingerprints are left to the caller instead of being stat'ed
+    #[test]
+    fn prestat_fills_stamps_and_marks_the_unanswered() {
+        let dir = test_dir("cache-prestat");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, gone, late) = (dir.join("A.jpg"), dir.join("B.jpg"), dir.join("C.jpg"));
+        std::fs::write(&a, b"jpeg").unwrap();
+        let listed = Arc::new(Mutex::new(Listed::default()));
+        listed.lock().unwrap().add(&dir, [(a.clone(), None), (gone.clone(), None)]);
+        prestat(&listed, Duration::from_secs(5));
+        let direct = stamp(&std::fs::metadata(&a).unwrap());
+        assert_eq!(listed_fingerprints(&listed, &a, 0).unwrap().0, direct);
+        assert!(listed_fingerprints(&listed, &gone, 0).is_none());
+        assert_eq!(listed_metadata_fingerprints(&listed, &a, 0).unwrap().0, direct);
+        // a file the wait ran out on
+        {
+            let mut l = listed.lock().unwrap();
+            l.stamps.insert(late.clone(), None);
+            l.unreached.insert(late.clone());
+        }
+        assert!(listed_metadata_fingerprints(&listed, &late, 0).is_none());
+        assert!(metadata_unreached(&listed, &late, 0));
+        assert!(!metadata_unreached(&listed, &a, 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn listed_versions_exclude_transient_snapshot_versions() {
+        let dir = test_dir("cache-listed-versions");
+        let photo = dir.join("IMG_1.CR3");
+        let mut listed = Listed::default();
+        listed.add(&dir, [
+            (sidecar(&photo, 0), Some("original".into())),
+            (sidecar(&photo, 2), Some("copy".into())),
+            (sidecar(&photo, 1_000_000), Some("snapshot".into())),
+        ]);
+        assert_eq!(listed.versions(&photo), Some(vec![0, 2]));
     }
 
     // a name from the folder's listing is the one a stat gives, so the

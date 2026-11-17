@@ -46,7 +46,9 @@ For a folder:
   **Skip it**. **Ask me** offers **Use Unique Name**, **Overwrite**, **Skip**
   or **Cancel**, and can apply your answer to every clash. An existing file
   is replaced only once the new one is complete, so an export that fails,
-  such as on a full disk, leaves it as it was.
+  such as on a full disk, leaves it as it was. If the destination folder is
+  on a drive or share that is not answering, **Ask me** stops the export
+  before anything is written.
 - **Show in Finder when done**.
 
 For Immich, choose an album, or **New album…**. A photo Immich already has

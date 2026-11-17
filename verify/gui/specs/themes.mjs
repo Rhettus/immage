@@ -37,7 +37,7 @@ async function preferences(t) {
   });
   assert(layout.hittable && layout.aligned && layout.separated && layout.contained, 'theme swatches align right with actions below');
   assert.deepEqual(layout.labels.filter(label => label !== 'Scroll amount'), [
-    'Theme', 'Canvas', 'Overlay color', 'Overlay opacity', 'Guide color',
+    'Theme', 'Language', 'Canvas', 'Overlay color', 'Overlay opacity', 'Guide color',
     'Focus mode', 'Auto-hide panels', 'Scroll adjusts sliders', 'Open generated photos',
     'Generated positive format', 'Warn before converting a negative',
   ]);
@@ -86,8 +86,10 @@ async function exposureWithEvidence(t, theme) {
 export async function themes(t) {
   const baseline = await settledPhoto(t);
   await preferences(t);
+  // The isolated profile is seeded with the developer's settings (Darktable Grey); settings-store covers the default.
+  await click(t, `[role="group"][aria-label="Theme"] button[aria-label="Dark"]`);
   let selected = await observation(t, 'Dark', palettes.Dark, baseline);
-  assert.equal(selected.selected, 'true', 'Dark is the first-launch default');
+  assert.equal(selected.selected, 'true', 'Dark swatch is selected');
   assert.equal(selected.id, 'dark');
   assert.deepEqual(selected.graph, palettes.Dark.graph);
   assert.equal(selected.photoHash, baseline.hash, 'theme does not change photo pixels');

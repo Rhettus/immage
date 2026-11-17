@@ -42,9 +42,8 @@ engine, set `DT_ORT_LIBRARY` to its installed ONNX Runtime library if that libra
 is outside the engine's normal search path. The report records this selection.
 
 Exposure includes startup as its prerequisite. A comma list runs several cases
-in one launch, after startup. The runner launches a new driver
-and app, dismisses the tour through
-its Skip button, and uses the app's supported file argument to open the copy.
+in one launch, after startup. The runner launches a new driver and app, dismisses
+the tour with Escape, and uses the app's supported file argument to open the copy.
 XDG data/config/cache/state variables isolate the release app's storage and its
 webview profile. A successful run also checks that `engine.log` was created in
 that profile and verifies the original fixture's checksum. Any content security
@@ -59,16 +58,47 @@ its `data-render-quality="final"` marker, drags Exposure to approximately +1 and
 reset. Reset must restore pixels within a mean difference of 1/255. It does not
 use approved screenshot references yet; PNGs are diagnostic evidence.
 
-Before launching on a tiling desktop, prepare an empty workspace so the app
-gets sufficient space. Workspace switching is outside the runner's app-only
-boundary; prepare it manually or authorize that one-time desktop action.
-The runner leaves the compositor configuration untouched.
+Before launching on a tiling desktop, prepare an empty workspace and maximize
+the test app so it gets sufficient space. Workspace switching and maximization
+are outside the runner's app-only boundary; prepare them externally. Pass
+`--viewport WIDTHxHEIGHT` when the run needs a particular logical viewport.
+The runner waits for that size after launch and before its first test input, and
+records the observed geometry. The runner leaves compositor configuration
+untouched.
 
 A kernel `flock` keyed by user and display serializes runs across worktrees.
 Missing tools/display/config or a busy lock yield a blocked report and exit 1.
 Failed assertions also exit 1. Signals clean up only the run's own process group;
 reports and copied fixtures remain available. No automatic retries or reference
 acceptance are provided.
+
+## Local search and Find cases
+
+`--case local-search` (or `--suite search`) checks filename search without an
+Immich server or CLIP model, through the Find popup: Search in offers This
+folder and All folders only, Filename mode, the words typed and Enter pressed
+(there is no Search button). Use the bundled sample JPEG as the configured
+fixture; the runner copies it into isolated app state. The case waits for a
+cached local result and thumbnail, closes the popup with Show, rates only that
+disposable copy, retains a rating filter, and returns to its folder. It passed
+live through Find on 2026-11-16 (run `2026-11-16T11-10-07.333Z_565a37b_8773884c`). Local per-run GUI approval rules still apply.
+
+`--case find-no-clip` (the `find` suite also runs it) checks the grid's locked Find
+column in the isolated profile, which has no CLIP model: no Smart/Filename
+switch, the file-name placeholder, narrowing by a file-name fragment, the CLIP tip
+(its Set up button opens Preferences > General at the local photo cache card;
+dismissing hides it, also after re-entering the grid), the head row's controls on
+one centre line, and no Show more like this in the photo menu. `find-live` also
+covers the rail Library button and the toolbar magnifier. Neither has run live yet.
+
+`--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
+the locked right-hand column Find becomes in the grid: no Show N, grip or close,
+Escape only leaves its box), `find-sizes` (in the filmstrip view, where Find is
+the popup: Minimize, Dock and Fill, dragging the grip,
+remembered places, double-click reset) and `find-saved` (Save filter…, changed
+and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
+`find-01` to `find-03`. All three, and the `filters` and `camera-body` cases that now
+open Find (Dock size), passed live on 2026-11-16.
 
 ## Positive hot-pixel fixture
 
@@ -339,9 +369,10 @@ node --input-type=module -e 'import { availableMemory } from "./verify/gui/suppo
 ## Expanded selections and fixtures
 
 List cases without starting an app with `node verify/gui/run.mjs --list`.
-Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, and `inventory`.
+Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, `search`, `find`, and `inventory`.
 `--suite all` selects every declaration, but mixes incompatible prerequisites;
-it is not a turnkey full-coverage run. Prefer one case and its required fixture:
+it excludes the standalone `startup-restore` and `dng-thumbnail` cases and is
+not a turnkey full-coverage run. Prefer one case and its required fixture:
 
 ```sh
 # GUI commands: obtain fresh approval for each command first.
@@ -420,6 +451,67 @@ selection/active photo, Exposure, look/amount, rendered pixels and both saved
 sidecars, then reopens the second target and the unselected photo. Inspection
 is read-only and limited to the app and this run's fixture sidecars. No system
 clipboard or native dialog is used. This case is written, not live-validated.
+
+## Moving photos by drag
+
+`--case move-photos,move-copy` works with any fixture. Before launch the runner
+lays out the run's own fixture folder: `move-a`, `move-b` and `move-c` as copies
+of the fixture, `dest/inner/` to drop into, and `clash/` with an identical
+`move-c` and a `move-b` that has one byte more. `move-photos` covers the
+following:
+
+- spring-opening a shut folder under the drag
+- Esc during a drag
+- a refused drop on the photos' own folder
+- Cancel in the confirmation
+- a move into `dest/inner`, after which it checks the moved file's SHA-256,
+  the rated sidecar, and that no part files remain
+
+`move-copy` drops two selected photos with Alt held. It checks the copy
+confirmation (identical and clashing photos), uses Keep both for all, and
+checks the numbered copy. Everything stays inside the run's fixture folder.
+The confirmation is drawn by the app, so no native dialog is involved.
+
+## Recent library and culling workflows
+
+The focused cases added for the 0.46.0 library changes are `move-photos`,
+`move-copy`, `photo-filter`, `dng-thumbnail`, `startup-restore`, and
+`grid-culling`, and `library-workers`. They use copied fixtures and an isolated profile. The DNG case
+generates an unsupported main-image compression with an embedded TIFF preview;
+the photo-filter case adds non-photo decoys beside the copied image; the
+startup-restore case seeds only the test profile with a saved folder and photo
+and launches without a file argument. `grid-culling` creates three extra photo
+copies and drives fitted and full-resolution previews, navigation, Space-drag
+panning, rating/reject/label shortcuts, keyword selection and Recent keywords,
+the selected-photo context action, and double-click editing through actual
+WebDriver input. Its context-menu selection subcheck is recorded as a failure:
+WebKitWebDriver right-clicks a selected tile, but the app opens keywording for
+one photo. The report records the target and selection before and after the
+secondary click; manual confirmation is needed to separate app behavior from
+the system WebKit driver. `library-workers` checks the 2-worker default, saves
+6→2→6, then the following move-copy case passes with six workers selected.
+The headless DNG verifier covers all EXIF orientations and edited-photo
+behavior; the GUI DNG case verifies the visible fallback thumbnail only.
+
+For a floating Hyprland test window, maximize each newly opened ws9 app window
+only when its client is not already maximized. The maximize dispatch is a
+toggle; do not send it repeatedly to an already maximized window. Confirm the
+window geometry before interacting. The automation wrapper should restore the
+original workspace and ws9 layout on exit.
+
+`grid-zoom` remains a separate case: Ctrl+- easing is covered, while Ctrl+wheel
+is blocked by WebKitWebDriver dropping the modifier from its wheel action. Do
+not count that skipped half as GUI coverage.
+
+## Folder menu
+
+`--case folder-menu` works with any fixture and needs no layout. It
+right-clicks the fixture's row in Folders and checks the three items. It
+creates `Picks` in the run's fixture folder and `Picks/Inner` inside it,
+checks both on disk, has a second `Picks` refused, and removes `Inner` from
+the list while it stays on disk. Show in the file manager is checked as
+offered only: clicking it would open another application. The case
+right-clicks, so run it after any drag case or in a launch of its own.
 
 ## Scaling benchmark collection
 
@@ -559,6 +651,8 @@ another case in the same launch is an ordering effect, so rerun it alone:
 
 - `menus` makes a virtual copy and leaves it open, so run it last or alone
   (`color-range` restarts the app on the original file and then finds no mask).
+- `negative` and `negative-profile-memory` each leave the negative photo
+  converted, so whichever runs second in a launch fails: give them a launch each.
 - `panel-scroll` needs a launch of its own (it asserts Presets opens at its
   top the first time); `native-reset` must not follow `module-options`, which
   leaves another Contrast backend selected.

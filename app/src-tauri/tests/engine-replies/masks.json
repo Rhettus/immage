@@ -57,8 +57,14 @@
      "instances": {
       "exposure": {
        "enabled": true,
+       "extra": false,
        "params": {
         "exposure": 0.5
+       },
+       "state": {
+        "blend": null,
+        "enabled": true,
+        "params": "AAAAAAAAAAAAAAA/AABIQgAAgMAAAAAAAAAAAA=="
        }
       }
      },

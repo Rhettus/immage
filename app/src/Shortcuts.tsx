@@ -6,116 +6,120 @@
 // (the menus in menu.ts list these shortcuts too)
 import { useEffect } from "react";
 import { cmd, keys } from "./keys";
+import { t } from "./i18n";
 
 type Group = { title: string; keys: [string, string][] };
 
 const GROUPS: Group[] = [
   {
-    title: "General",
+    title: t("dialogs.shortcuts.group.general"),
     keys: [
-      ["⇧⌘I", "Import photos"],
-      ["⇧⌘E", "Export"],
-      ["⌘P", "Print"],
-      ["S", "Soft proof, against the Print panel's printer profile"],
-      ["⌘,", "Preferences"],
-      ["⌘/", "Keyboard shortcuts"],
-      ["⇧⌘P", "Performance overlay"],
-      ["⌘Z", "Undo"],
-      ["⇧⌘Z", "Redo"],
-      ["⇧⌘C", "Copy settings"],
-      ["⇧⌘V", "Paste settings"],
-      ["⌥⌘V", "Paste the previous photo's settings"],
-      ["⌘'", "Create virtual copy, of every selected photo"],
-      ["⌃H", "HDR Merge, of the selected raws"],
-      ["⌃M", "Panorama Merge, of the selected raws"],
+["⇧⌘I", t("dialogs.shortcuts.general.entry1")],
+["⇧⌘E", t("dialogs.shortcuts.general.entry2")],
+["⌘P", t("dialogs.shortcuts.general.entry3")],
+["S", t("dialogs.shortcuts.general.entry4")],
+["⌘,", t("dialogs.shortcuts.general.entry5")],
+["⌘/", t("dialogs.shortcuts.general.entry6")],
+["⇧⌘P", t("dialogs.shortcuts.general.entry7")],
+["⌘Z", t("dialogs.shortcuts.general.entry8")],
+["⇧⌘Z", t("dialogs.shortcuts.general.entry9")],
+["⇧⌘C", t("dialogs.shortcuts.general.entry10")],
+["⇧⌘V", t("dialogs.shortcuts.general.entry11")],
+["⌥⌘V", t("dialogs.shortcuts.general.entry12")],
+["⌘'", t("dialogs.shortcuts.general.entry13")],
+["⌃H", t("dialogs.shortcuts.general.entry14")],
+["⌃M", t("dialogs.shortcuts.general.entry15")],
     ],
   },
   {
-    title: "View",
+    title: t("dialogs.shortcuts.group.view"),
     keys: [
-      ["F", "Full screen preview (F or Esc leaves)"],
-      ["L", "Next canvas: dark, neutral gray, white"],
-      ["Tab", "Hide or show the side panels"],
-      ["⇧Tab", "Hide or show the side panels and filmstrip"],
-      ["Z", "Fit or the navigator's zoom (100% until another is picked)"],
-      ["⌘= ⌘-", "Zoom in or out: fit, fill, 1:1, 2:1, 3:1, 4:1"],
-      ["Click", "Zoom to 100% there, or back to fit"],
-      ["Scroll", "Zoom around the pointer (a brush in hand: its size)"],
-      ["\\", "Before"],
-      ["Y", "Next before / after view: side by side, split left / right, split top / bottom, hold for before"],
-      ["C", "Compare with another photo (← → step it, Esc leaves)"],
-      ["J", "Show or hide shadow and highlight clipping"],
-      ["H", "Next scope: histogram, waveform, RGB parade, vectorscope, waveform + vectorscope (⇧H back)"],
-      ["I", "Cycle the info over the photo: file and capture, exposure and lens, none"],
+["F", t("dialogs.shortcuts.view.entry1")],
+["K", t("dialogs.shortcuts.view.entry2")],
+["L", t("dialogs.shortcuts.view.entry3")],
+["Tab", t("dialogs.shortcuts.view.entry4")],
+["⇧Tab", t("dialogs.shortcuts.view.entry5")],
+["Z", t("dialogs.shortcuts.view.entry6")],
+["⌘= ⌘-", t("dialogs.shortcuts.view.entry7")],
+["Click", t("dialogs.shortcuts.view.entry8")],
+["Scroll", t("dialogs.shortcuts.view.entry9")],
+["\\\\", t("dialogs.shortcuts.view.entry10")],
+["Y", t("dialogs.shortcuts.view.entry11")],
+["C", t("dialogs.shortcuts.view.entry12")],
+["J", t("dialogs.shortcuts.view.entry13")],
+["H", t("dialogs.shortcuts.view.entry14")],
+["I", t("dialogs.shortcuts.view.entry15")],
     ],
   },
   {
-    title: "Photos",
+    title: t("dialogs.shortcuts.group.photos"),
     keys: [
-      ["← →", "Previous or next photo"],
-      ["0 – 5", "Rating, for every selected photo"],
-      ["6 – 9", "Red, yellow, green or blue label, for every selected photo"],
-      ["X", "Reject"],
-      ["⌘-click", "In the filmstrip: add a photo to the selection, or take it out"],
-      ["⇧-click", "In the filmstrip: select the run from the open photo"],
-      ["G", "Grid view of the folder (G or Esc goes back)"],
+["← →", t("dialogs.shortcuts.photos.entry1")],
+["0 – 5", t("dialogs.shortcuts.photos.entry2")],
+["6 – 9", t("dialogs.shortcuts.photos.entry3")],
+["X", t("dialogs.shortcuts.photos.entry4")],
+["⌘-click", t("dialogs.shortcuts.photos.entry5")],
+["⇧-click", t("dialogs.shortcuts.photos.entry6")],
+["G", t("dialogs.shortcuts.photos.entry7")],
+["⌘= ⌘-", t("dialogs.shortcuts.photos.entry8")],
+["Pinch, ⌘-scroll", t("dialogs.shortcuts.photos.entry9")],
     ],
   },
   {
-    title: "Adjustments",
+    title: t("dialogs.shortcuts.group.adjustments"),
     keys: [
-      ["W", "White balance picker (Esc cancels)"],
-      ["Double-click", "A slider or its name: reset it"],
-      ["Double-click", "A slider's value: type one"],
-      ["⇧-drag", "A slider: a tenth of the movement, for fine changes"],
-      ["Scroll", "Over a slider: nudge it, when Preferences allows"],
-      ["⌥-click", "A panel's title: open it alone (in focus mode, alongside the others)"],
+["W", t("dialogs.shortcuts.adjustments.entry1")],
+["Double-click", t("dialogs.shortcuts.adjustments.entry2")],
+["Double-click", t("dialogs.shortcuts.adjustments.entry3")],
+["⇧-drag", t("dialogs.shortcuts.adjustments.entry4")],
+["Scroll", t("dialogs.shortcuts.adjustments.entry5")],
+["⌥-click", t("dialogs.shortcuts.adjustments.entry6")],
     ],
   },
   {
-    title: "Crop",
+    title: t("dialogs.shortcuts.group.crop"),
     keys: [
-      ["R", "Crop tool; R or Enter applies"],
-      ["Esc", "Leave the crop tool without applying"],
-      ["X", "Swap the aspect between landscape and portrait"],
-      ["⇧-drag", "Straighten: along what should be level or upright"],
-      ["⌘[", "Rotate left"],
-      ["⌘]", "Rotate right"],
+["R", t("dialogs.shortcuts.crop.entry1")],
+["Esc", t("dialogs.shortcuts.crop.entry2")],
+["X", t("dialogs.shortcuts.crop.entry3")],
+["⇧-drag", t("dialogs.shortcuts.crop.entry4")],
+["⌘[", t("dialogs.shortcuts.crop.entry5")],
+["⌘]", t("dialogs.shortcuts.crop.entry6")],
     ],
   },
   {
-    title: "Masks",
+    title: t("dialogs.shortcuts.group.masks"),
     keys: [
-      ["K", "Brush"],
-      ["M", "Linear gradient"],
-      ["⇧M", "Radial gradient"],
-      ["⇧J", "Color range"],
-      ["⇧Q", "Luminance range"],
-      ["[ ]", "Brush size"],
-      ["Scroll", "With the brush: its size; ⇧ its feather"],
-      ["⌥-drag", "Brush away"],
-      ["O", "Show or hide the overlay"],
-      ["Esc", "Put the tool down"],
+["K", t("dialogs.shortcuts.masks.entry1")],
+["M", t("dialogs.shortcuts.masks.entry2")],
+["⇧M", t("dialogs.shortcuts.masks.entry3")],
+["⇧J", t("dialogs.shortcuts.masks.entry4")],
+["⇧Q", t("dialogs.shortcuts.masks.entry5")],
+["[ ]", t("dialogs.shortcuts.masks.entry6")],
+["Scroll", t("dialogs.shortcuts.masks.entry7")],
+["⌥-drag", t("dialogs.shortcuts.masks.entry8")],
+["O", t("dialogs.shortcuts.masks.entry9")],
+["Esc", t("dialogs.shortcuts.masks.entry10")],
     ],
   },
   {
-    title: "Zone System",
+    title: t("dialogs.shortcuts.group.zonesystem"),
     keys: [
-      ["O", "Show or hide the pinned zones' overlay"],
-      ["← →", "Move the pinned zones (with the zones focused)"],
-      ["⇧← ⇧→", "Grow or shrink the run of zones"],
-      ["Esc", "Unpin"],
+["O", t("dialogs.shortcuts.zonesystem.entry1")],
+["← →", t("dialogs.shortcuts.zonesystem.entry2")],
+["⇧← ⇧→", t("dialogs.shortcuts.zonesystem.entry3")],
+["Esc", t("dialogs.shortcuts.zonesystem.entry4")],
     ],
   },
   {
-    title: "Heal and Clone",
+    title: t("dialogs.shortcuts.group.healandclone"),
     keys: [
-      ["Q", "Heal and clone"],
-      ["[ ]", "Brush size"],
-      ["Scroll", "Brush size; ⇧ its feather"],
-      ["A", "Visualize spots"],
-      ["Delete", "Remove the selected spot"],
-      ["Esc", "Deselect the spot"],
+["Q", t("dialogs.shortcuts.healandclone.entry1")],
+["[ ]", t("dialogs.shortcuts.healandclone.entry2")],
+["Scroll", t("dialogs.shortcuts.healandclone.entry3")],
+["A", t("dialogs.shortcuts.healandclone.entry4")],
+["Delete", t("dialogs.shortcuts.healandclone.entry5")],
+["Esc", t("dialogs.shortcuts.healandclone.entry6")],
     ],
   },
 ];
@@ -135,7 +139,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal shortcuts">
-        <div className="modal-head"><h2>Keyboard Shortcuts</h2></div>
+        <div className="modal-head"><h2>{t("dialogs.shortcuts.title")}</h2></div>
         <div className="modal-body shortcut-groups">
           {GROUPS.map((g) => (
             <section key={g.title}>
@@ -148,7 +152,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
             </section>
           ))}
         </div>
-        <div className="modal-foot"><button className="btn primary" onClick={onClose}>Done</button></div>
+        <div className="modal-foot"><button className="btn primary" onClick={onClose}>{t("dialogs.common.done")}</button></div>
       </div>
     </div>
   );

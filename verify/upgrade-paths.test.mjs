@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withNodeLocales } from './vite-locales.mjs';
 const require = createRequire(new URL('../app/package.json', import.meta.url));
 const { transformSync } = await import(require.resolve('rolldown/experimental'));
 registerHooks({
@@ -25,7 +26,8 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    return { format: 'module', source: transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
+    const source = withNodeLocales(url, readFileSync(path, 'utf8'));
+    return { format: 'module', source: transformSync(path, source, { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
   },
 });
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/upgrade/${name}`, import.meta.url), 'utf8'));
@@ -157,7 +159,7 @@ test('a v0.40.0 folder snapshot entry (without imgid, serial, version, keywords)
   assert.equal(F.passes(known[2], { ...F.NO_FILTER, takenFrom: '2023-11-11', takenTo: '2023-11-11' }), true);
   assert.equal(F.passes(known[2], { ...F.NO_FILTER, rejected: 'only' }), true);
   const f = F.facets(known.map((i, n) => ({ ...i, imgid: n })));
-  assert.deepEqual(f.kinds, [['RAW', 1], ['JPEG', 1], ['TIFF', 1]]);
+  assert.deepEqual(f.kinds, [['RAW', 1], ['CR3', 1], ['JPG', 1], ['TIFF', 1]]);
   assert.deepEqual(f.months, [['2024-03', 2], ['2023-11', 1]]);
   assert.deepEqual(f.bodies, [['', 3]]);
   // RAW+JPEG pairing still stacks them

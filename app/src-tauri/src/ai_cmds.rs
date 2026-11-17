@@ -259,7 +259,7 @@ type Unpack<'a> = &'a dyn Fn(&Path, &Path) -> Result<(), String>;
 fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir: &Path, id: &str,
                  version: &str) -> Result<(), String> {
     let dl = dir.join("_dl");
-    std::fs::create_dir_all(&dl).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dl).map_err(|e| format!("{}: {e}", dl.display()))?;
     // "5.7.0+1252~g0967d3653e" is release 5.7.0's. a checkout without
     // darktable's release-* tags (a clone of a fork that does not carry
     // them) reports no darktable version, as on the Windows build; then
@@ -288,7 +288,7 @@ fn install_model(progress: &dyn Fn(Value), unpack: Unpack, site: &ModelSite, dir
             format!("the downloaded model '{id}' failed its checksum")
         });
     }
-    std::fs::rename(&part, &archive).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, &archive).map_err(|e| format!("{}: {e}", part.display()))?;
     progress(json!({ "id": id, "stage": "installing" }));
     let unpacked = unpack(&archive, dir);
     let _ = std::fs::remove_file(&archive);
@@ -350,7 +350,7 @@ const EXTRA_MODELS: &[ExtraModel] = &[ExtraModel {
 
 fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result<(), String> {
     let dest = dir.join(m.id);
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
     progress(json!({ "id": m.id, "stage": "downloading", "mb": m.mb }));
     let part = dest.join("model.onnx.part");
     fetch(m.url, &part, Some(m.size))?;
@@ -358,11 +358,31 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
         let _ = std::fs::remove_file(&part);
         return Err(format!("the downloaded model '{}' failed its checksum", m.id));
     }
-    std::fs::rename(&part, dest.join("model.onnx")).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, dest.join("model.onnx")).map_err(|e| format!("{}: {e}", part.display()))?;
     // written last: the registry finds the model only once it is whole
-    std::fs::write(dest.join("config.json"), m.config).map_err(|e| e.to_string())?;
+    std::fs::write(dest.join("config.json"), m.config).map_err(|e| format!("{}: {e}", dest.display()))?;
     progress(json!({ "id": m.id, "stage": "ready" }));
     Ok(())
+}
+
+// one install at a time: AI Denoise's dialog fetches its model for the
+// preview while Run asks for it again, and two installs of one model share
+// its .part file, so the second found it renamed away ("No such file or
+// directory"). the one waiting finds the model installed by the first
+static INSTALLING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn installed(dir: &Path, id: &str) -> bool {
+    dir.join(id).join("config.json").exists()
+}
+
+// run `install` once the lock is ours, unless the install that held it
+// meanwhile already put the model there
+fn install_once(dir: &Path, id: &str, install: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let _one = INSTALLING.lock().unwrap_or_else(|e| e.into_inner());
+    if installed(dir, id) {
+        return Ok(());
+    }
+    install()
 }
 
 // make sure an AI model is installed, downloading it on first use
@@ -370,12 +390,12 @@ fn install_extra(progress: &dyn Fn(Value), dir: &Path, m: &ExtraModel) -> Result
 #[specta::specta]
 pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dir = state.models_dir.clone();
-    if dir.join(&id).join("config.json").exists() {
+    if installed(&dir, &id) {
         return Ok(());
     }
     if let Some(m) = EXTRA_MODELS.iter().find(|m| m.id == id) {
         return tauri::async_runtime::spawn_blocking(move || {
-            install_extra(&|v| { let _ = app.emit("ai-model", v); }, &dir, m)
+            install_once(&dir, m.id, || install_extra(&|v| { let _ = app.emit("ai-model", v); }, &dir, m))
         })
             .await
             .map_err(|e| e.to_string())?;
@@ -383,12 +403,14 @@ pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, 
     let reply = state.engine("ai_model_ensure").request(json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
-        let unpack = |archive: &Path, into: &Path| {
-            app.state::<AppState>().engine("ai_model_unpack")
-                .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
-                .map(|_| ())
-        };
-        install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
+        install_once(&dir, &id, || {
+            let unpack = |archive: &Path, into: &Path| {
+                app.state::<AppState>().engine("ai_model_unpack")
+                    .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
+                    .map(|_| ())
+            };
+            install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
+        })
     })
         .await
         .map_err(|e| e.to_string())?
@@ -436,14 +458,34 @@ pub(crate) async fn ai_depth(state: State<'_, AppState>, size: u32) -> Result<De
     serde_json::from_value(reply).map_err(|e| format!("ai_depth: unexpected reply: {e}"))
 }
 
+// the DNG goes beside the raw, so a raw in the Immich download cache (evicted
+// later, never sent back) is refused, and so is a folder that does not answer.
+// the page shows these two codes as translated text (runDenoise in App.tsx)
+fn denoise_destination(path: &str, cache: &Path) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.starts_with(cache) {
+        return Err("cached-original".into());
+    }
+    if let Some(dir) = path.parent() {
+        if !crate::volumes::answering(dir) {
+            return Err(format!("not-answering:{}", dir.display()));
+        }
+    }
+    Ok(())
+}
+
 // AI Denoise of the open raw at `strength` (0-1): a new DNG beside it with
 // its edit, which the folder view then shows after it, as an Edit In
 // result. replies { path, original, image }; the engine takes the edit,
 // then denoises on a thread of its own
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>, strength: Number)
+pub(crate) async fn ai_denoise(state: State<'_, AppState>, plugins: State<'_, plugins::Plugins>,
+                               caches: State<'_, crate::cache::Caches>, path: String, strength: Number)
     -> Result<GeneratedReply, String> {
+    let cache = caches.immich_originals.dir().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || denoise_destination(&path, &cache))
+        .await.map_err(|e| e.to_string())??;
     let reply = on_engine_thread(&state, json!({ "cmd": "ai_denoise", "strength": strength })).await?;
     let (Some(original), Some(result)) = (reply["original"].as_str(), reply["path"].as_str()) else {
         return Err("the engine gave no DNG".into());
@@ -492,6 +534,15 @@ pub(crate) async fn ai_accel(state: State<'_, AppState>) -> Result<Vec<AccelProv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn denoise_refuses_only_the_immich_cache() {
+        let cache = Path::new("/c/immich-originals");
+        assert_eq!(denoise_destination("/c/immich-originals/a.dng", cache), Err("cached-original".into()));
+        assert_eq!(denoise_destination("/c/immich-originals/sub/a.dng", cache), Err("cached-original".into()));
+        assert!(denoise_destination("/c/immich-originals-2/a.dng", cache).is_ok());
+        assert!(denoise_destination("/c/other/a.dng", cache).is_ok());
+    }
     use crate::engine::Engine;
     use crate::repo_root;
     use std::path::PathBuf;
@@ -505,6 +556,41 @@ mod tests {
         // numerically, so 5.10 above 5.7
         assert_eq!(model_release(&index, "immage").unwrap(), "v5.10");
         assert!(model_release(&index, "5.8.0").is_err());
+    }
+
+    #[test]
+    fn a_second_install_waits_and_finds_the_model_installed() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+        let dir = std::env::temp_dir().join(format!("immage-install-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let runs = AtomicUsize::new(0);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let (runs, dir) = (&runs, &dir);
+            let first = scope.spawn(move || install_once(dir, "m", || {
+                runs.fetch_add(1, Ordering::SeqCst);
+                entered_tx.send(()).unwrap();
+                go_rx.recv().unwrap();
+                std::fs::create_dir_all(dir.join("m")).unwrap();
+                std::fs::write(dir.join("m").join("config.json"), "{}").unwrap();
+                Ok(())
+            }));
+            // the first holds the lock, mid-install, with nothing installed yet
+            entered_rx.recv().unwrap();
+            let second = scope.spawn(move || install_once(dir, "m", || {
+                runs.fetch_add(1, Ordering::SeqCst);
+                Err("a second install must not run".to_string())
+            }));
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert!(!second.is_finished(), "the second install did not wait for the first");
+            go_tx.send(()).unwrap();
+            assert_eq!(first.join().unwrap(), Ok(()));
+            assert_eq!(second.join().unwrap(), Ok(()));
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

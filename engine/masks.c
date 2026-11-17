@@ -83,6 +83,7 @@ static dt_masks_form_t *_combined_group(const char *name)
 // mask's: the instances blending in scene-referred RGB, where the ranges
 // were measured, take that one, and the rest the shapes alone
 #define _RANGES_PREFIX "immage ranges: "
+#define _CHANNELS_PREFIX "immage channels: "
 
 static dt_masks_form_t *_group_named(const char *full)
 {
@@ -106,6 +107,15 @@ static dt_masks_form_t *_ranges_group(const dt_masks_form_t *root)
 {
   char full[sizeof(root->name)];
   g_snprintf(full, sizeof(full), "%s%s", _RANGES_PREFIX, root->name);
+  return _group_named(full);
+}
+
+// the group of the range channels of `root`, nested in its ranges group so
+// that an inverted mask can invert them as one (_apply_ranges), or NULL
+static dt_masks_form_t *_channels_group(const dt_masks_form_t *root)
+{
+  char full[sizeof(root->name)];
+  g_snprintf(full, sizeof(full), "%s%s", _CHANNELS_PREFIX, root->name);
   return _group_named(full);
 }
 
@@ -141,6 +151,16 @@ dt_masks_form_t *masks_instance_group(const dt_iop_module_t *m)
   return NULL;
 }
 
+// which Immage tool owns instance `m`, so a client that lists instances can
+// leave it to that tool: "mask" for a mask's own instance, "shared" for one
+// several masks share, "look" for a look's, NULL for a user's
+const char *masks_instance_owner(const dt_iop_module_t *m)
+{
+  if(looks_is_look(m)) return "look";
+  if(m->multi_name_hand_edited && g_str_has_prefix(m->multi_name, _SHARED_PREFIX)) return "shared";
+  return masks_instance_group(m) ? "mask" : NULL;
+}
+
 // whether mask `root` holds anything to fold: an empty one is its marker
 static gboolean _has_members(const dt_masks_form_t *root)
 {
@@ -171,6 +191,7 @@ static GHashTable *_mask_forms(const dt_masks_form_t *root)
   GHashTable *set = g_hash_table_new(NULL, NULL);
   _reach(root, set, 0);
   _reach(_ranges_group(root), set, 0);
+  _reach(_channels_group(root), set, 0);
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
@@ -284,7 +305,23 @@ dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gb
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     dt_iop_module_t *m = l->data;
-    if(!g_strcmp0(m->op, op) && m->multi_name_hand_edited && !g_strcmp0(m->multi_name, name)) return m;
+    if(!g_strcmp0(m->op, op) && m->multi_name_hand_edited && !g_strcmp0(m->multi_name, name))
+    {
+      // Removing a mask card marks the instance for deletion on save. If the
+      // user adds that module again before saving, reuse the held module but
+      // clear its tombstone and start from image defaults; otherwise it stays
+      // absent from `instances` and its old parameters silently return.
+      GList *gone = g_list_find(_s.deleted, m);
+      if(gone && !g_strcmp0(masks_instance_owner(m), "mask"))
+      {
+        _s.deleted = g_list_delete_link(_s.deleted, gone);
+        memcpy(m->params, m->default_params, m->params_size);
+        if(m->blend_params)
+          memcpy(m->blend_params, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
+        m->enabled = FALSE;
+      }
+      return m;
+    }
   }
   dt_iop_module_t *base = dt_iop_get_module_by_op_priority(_s.dev.iop, op, 0);
   dt_iop_module_t *m = base ? dt_dev_module_duplicate_ext(&_s.dev, base, TRUE) : NULL;
@@ -741,8 +778,22 @@ static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
   // points in the forms, this one's included (masks.c, _id_taken)
   grp->points = NULL;
   grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_PRODUCT));
+  // the channels multiply together in a group of their own, a member of
+  // this one beside the shapes: inverting a mask with ranges inverts each of
+  // the two, as one (_apply_ranges), never the channels one by one
+  dt_masks_form_t *chg = _channels_group(root);
+  if(!chg)
+  {
+    chg = dt_masks_create(DT_MASKS_GROUP);
+    g_snprintf(chg->name, sizeof(chg->name), "%s%s", _CHANNELS_PREFIX, root->name);
+    _s.dev.forms = g_list_append(_s.dev.forms, chg);
+  }
+  g_list_free_full(chg->points, free);
+  chg->points = NULL;
+  chg->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, chg, DT_MASKS_STATE_FLEXI_PRODUCT));
   if(_has_members(root))
     _member(grp, root->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+  _member(grp, chg->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
   const dt_iop_gui_blendif_channel_t *chans = dt_develop_blendif_channels_for_csp(DEVELOP_BLEND_CS_RGB_SCENE);
   for(int c = 0; chans && chans[c].label; c++)
   {
@@ -758,7 +809,7 @@ static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
     f->points = g_list_append(NULL, p);
     dt_masks_assign_unique_name(&_s.dev, f);
     _s.dev.forms = g_list_append(_s.dev.forms, f);
-    _member(grp, f->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+    _member(chg, f->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
   }
 }
 
@@ -772,7 +823,14 @@ static gboolean _instance_inverted(const dt_iop_module_t *m)
   if(bp->mask_combine & (DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS)) return TRUE;
   const dt_masks_form_t *g = dt_masks_get_from_id(&_s.dev, bp->mask_id);
   const dt_masks_point_group_t *mk = g && (g->type & DT_MASKS_GROUP) ? dt_masks_group_marker(g) : NULL;
-  return mk && (mk->state & DT_MASKS_STATE_OP_INVERT);
+  if(mk && (mk->state & DT_MASKS_STATE_OP_INVERT)) return TRUE;
+  // a ranges group inverts through its members (_apply_ranges)
+  if(g && (g->type & DT_MASKS_GROUP) && g_str_has_prefix(g->name, _RANGES_PREFIX))
+    for(const GList *l = g->points; l; l = g_list_next(l))
+      if(!dt_masks_point_is_marker(l->data)
+         && (((const dt_masks_point_group_t *)l->data)->state & DT_MASKS_STATE_INVERSE))
+        return TRUE;
+  return FALSE;
 }
 
 // the dt_dev_pixelpipe_cache_invalidate_later of every pipe the engine runs
@@ -1816,6 +1874,67 @@ static void _channels_json(JsonBuilder *b, const GPtrArray *chans)
 // every client mask: its shapes, whether it is inverted, and for each
 // instance it drives, whether it is on and the asked-for fields
 // ({ op: [field, ...] } in `fields`; a tagged instance is "op#tag")
+static void _mask_introspected_bytes(const dt_introspection_field_t *f, gboolean *bytes, const size_t size,
+                                     const size_t adjustment)
+{
+  if(!f) return;
+  if(f->header.type == DT_INTROSPECTION_TYPE_STRUCT)
+  {
+    for(size_t i = 0; i < f->Struct.entries; i++)
+      _mask_introspected_bytes(f->Struct.fields[i], bytes, size, adjustment);
+    return;
+  }
+  if(f->header.type == DT_INTROSPECTION_TYPE_UNION)
+  {
+    for(size_t i = 0; i < f->Union.entries; i++)
+      _mask_introspected_bytes(f->Union.fields[i], bytes, size, adjustment);
+    return;
+  }
+  if(f->header.type == DT_INTROSPECTION_TYPE_ARRAY)
+  {
+    const dt_introspection_field_t *element = f->Array.field;
+    for(size_t i = 0; element && i < f->Array.count; i++)
+      _mask_introspected_bytes(element, bytes, size, adjustment + i * element->header.size);
+    return;
+  }
+  const size_t start = f->header.offset + adjustment;
+  if(start >= size) return;
+  const size_t end = MIN(size, start + f->header.size);
+  for(size_t i = start; i < end; i++) bytes[i] = TRUE;
+}
+
+static gboolean _mask_instance_extra(dt_iop_module_t *mod, JsonArray *want)
+{
+  // No local field list means there is no Simple representation for this op.
+  if(!want) return TRUE;
+  if(!mod->params_size || !memcmp(mod->params, mod->default_params, mod->params_size)) return FALSE;
+  const dt_introspection_t *intro = mod->so->have_introspection ? mod->get_introspection() : NULL;
+  if(!intro || !intro->field) return TRUE;
+  gboolean *covered = g_new0(gboolean, mod->params_size);
+  gboolean *introspected = g_new0(gboolean, mod->params_size);
+  _mask_introspected_bytes(intro->field, introspected, mod->params_size, 0);
+  for(guint i = 0; i < json_array_get_length(want); i++)
+  {
+    const char *path = json_array_get_string_element(want, i);
+    dt_introspection_field_t *f = NULL;
+    char *err = NULL;
+    void *p = session_field_in(mod, mod->default_params, path, &f, &err);
+    g_free(err);
+    if(!p || !f) continue;
+    const ptrdiff_t at = (uint8_t *)p - (uint8_t *)mod->default_params;
+    if(at < 0 || (size_t)at >= mod->params_size) continue;
+    const size_t end = MIN(mod->params_size, (size_t)at + f->header.size);
+    for(size_t j = (size_t)at; j < end; j++) covered[j] = TRUE;
+  }
+  gboolean extra = FALSE;
+  const uint8_t *params = mod->params, *defaults = mod->default_params;
+  for(size_t i = 0; i < mod->params_size; i++)
+    if(introspected[i] && !covered[i] && params[i] != defaults[i]) { extra = TRUE; break; }
+  g_free(covered);
+  g_free(introspected);
+  return extra;
+}
+
 gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
 {
   json_builder_set_member_name(b, "masks");
@@ -1937,6 +2056,7 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
     for(GList *m = _s.dev.iop; m; m = g_list_next(m))
     {
       dt_iop_module_t *mod = m->data;
+      if(g_list_find(_s.deleted, mod)) continue;
       const char *tag = _mask_instance_tag(mod, name);
       if(!tag) continue;
       // an instance that is on, else one that is off: a hidden mask has
@@ -1955,6 +2075,10 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err)
       json_builder_begin_object(b);
       json_builder_set_member_name(b, "enabled");
       json_builder_add_boolean_value(b, mod->enabled);
+      json_builder_set_member_name(b, "extra");
+      json_builder_add_boolean_value(b, _mask_instance_extra(mod, want));
+      json_builder_set_member_name(b, "state");
+      session_module_state_json(b, mod, FALSE);
       json_builder_set_member_name(b, "params");
       json_builder_begin_object(b);
       for(guint i = 0; want && i < json_array_get_length(want); i++)
@@ -2028,6 +2152,8 @@ gboolean masks_mask_delete(const char *name, char **err)
   // unnamed, nothing keeps the group or its ranges' (_free_unreached)
   dt_masks_form_t *ranged = _ranges_group(grp);
   if(ranged) ranged->name[0] = '\0';
+  dt_masks_form_t *channels = _channels_group(grp);
+  if(channels) channels->name[0] = '\0';
   grp->name[0] = '\0';
   _free_unreached(old);
   for(guint i = 0; i < users->len; i++)
@@ -2055,6 +2181,7 @@ gboolean masks_mask_rename(const char *name, const char *to, char **err)
     return FALSE;
   }
   dt_masks_form_t *ranged = _ranges_group(grp);
+  dt_masks_form_t *channels = _channels_group(grp);
   GHashTable *forms = _mask_forms(grp);
   gchar *full = g_strdup(grp->name);
   const size_t n = strlen(full);
@@ -2076,6 +2203,7 @@ gboolean masks_mask_rename(const char *name, const char *to, char **err)
   g_hash_table_destroy(forms);
   g_free(full);
   if(ranged) g_snprintf(ranged->name, sizeof(ranged->name), "%s%s", _RANGES_PREFIX, grp->name);
+  if(channels) g_snprintf(channels->name, sizeof(channels->name), "%s%s", _CHANNELS_PREFIX, grp->name);
   gboolean recorded = FALSE;
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
@@ -2129,6 +2257,11 @@ static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_m
     {
       if(pc->module->iop_order >= negadoctor->iop_order) break;
     }
+    else if(stage == _STAGE_COLORMAPPING)
+    {
+      // the anchor is the module itself: its input, not its output
+      if(pc->module->iop_order >= anchor->iop_order) break;
+    }
     else if(pc->module->iop_order > anchor->iop_order)
       break;
     if(pc->enabled) piece = pc;
@@ -2155,6 +2288,7 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
     ? dt_iop_get_module_by_op_priority(_s.dev.iop, "negadoctor", 0) : NULL;
   if(stage == _STAGE_ASHIFT) anchor = ashift;
   if(stage == _STAGE_NEGADOCTOR) anchor = negadoctor;
+  if(stage == _STAGE_COLORMAPPING) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "colormapping", 0);
   if(!anchor || !session_ppipe_ready(err))
   {
     if(!*err) *err = g_strdup("no anchor module to sample at");
@@ -2231,6 +2365,40 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   // read that way. the conversion is kept until the next one
   static float *converted = NULL;
   static dt_iop_buffer_dsc_t converted_dsc;
+  if(stage == _STAGE_COLORMAPPING)
+  {
+    // colormapping.c works on Lab (default_colorspace), which the pipe
+    // converts its input to; read it as that
+    if(dsc->cst == IOP_CS_RGB)
+    {
+      if(converted) dt_free_align(converted);
+      converted = dt_alloc_align_float((size_t)4 * roi.width * roi.height);
+      if(!converted)
+      {
+        *err = g_strdup("out of memory for the working-space image");
+        return FALSE;
+      }
+      dt_iop_colorspace_type_t cst = IOP_CS_RGB;
+      dt_ioppr_transform_image_colorspace(piece->module, data, converted, roi.width, roi.height, IOP_CS_RGB,
+                                          IOP_CS_LAB, &cst, dt_ioppr_get_pipe_work_profile_info(&_s.ppipe));
+      converted_dsc = *dsc;
+      converted_dsc.cst = IOP_CS_LAB;
+      data = converted;
+      dsc = &converted_dsc;
+    }
+    if(dsc->cst != IOP_CS_LAB)
+    {
+      *err = g_strdup("the image is not in Lab at color mapping's input");
+      return FALSE;
+    }
+    w->data = data;
+    w->roi = roi;
+    w->pw = pw;
+    w->ph = ph;
+    w->piece = piece;
+    w->dsc = dsc;
+    return TRUE;
+  }
   if(stage != _STAGE_ASHIFT && dsc->cst == IOP_CS_LAB)
   {
     if(converted) dt_free_align(converted);
@@ -2273,6 +2441,12 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
 gboolean masks_working(_working_t *w, char **err)
 {
   return _working_at(w, _STAGE_ANCHOR, err);
+}
+
+// color mapping's input, in Lab: what its acquire buttons analyze
+gboolean masks_working_colormapping(_working_t *w, char **err)
+{
+  return _working_at(w, _STAGE_COLORMAPPING, err);
 }
 
 // points of the shown image (pairs, 0-1) as pixels of the working buffer
@@ -2779,7 +2953,7 @@ static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gbool
 {
   dt_develop_blend_params_t *bp = m->blend_params;
   const dt_develop_blend_colorspace_t cst = dt_develop_blend_default_module_blend_colorspace(m);
-  const dt_masks_form_t *ranges = cst == DEVELOP_BLEND_CS_RGB_SCENE ? _ranges_group(root) : NULL;
+  dt_masks_form_t *ranges = cst == DEVELOP_BLEND_CS_RGB_SCENE ? _ranges_group(root) : NULL;
   bp->blend_cst = cst;
   // the module's own parametric mask would multiply into the group's again
   // (blend.c), as darktable's conversion clears it (_clear_toplevel_blendif)
@@ -2789,7 +2963,23 @@ static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gbool
   bp->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
   bp->mask_id = (ranges ? ranges : root)->formid;
   bp->mask_combine &= ~(DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS | DEVELOP_COMBINE_INCL);
-  if(invert) bp->mask_combine |= DEVELOP_COMBINE_MASKS_POS;
+  // an older edit's ranges group lists its channels flat, and inverting
+  // each would not invert their product: it inverts whole until reshaped
+  if(ranges && _channels_group(root))
+  {
+    // the shapes as the panel shows them, inside the inverted ranges:
+    // (1 - S) * (1 - r). inverting the whole S * r instead would turn a
+    // subtracted shape into everything outside it. each member of the
+    // ranges group, a product, inverts itself (masks/group.c)
+    for(GList *l = ranges->points; l; l = g_list_next(l))
+    {
+      dt_masks_point_group_t *pt = l->data;
+      if(dt_masks_point_is_marker(pt)) continue;
+      if(invert) pt->state |= DT_MASKS_STATE_INVERSE;
+      else pt->state &= ~DT_MASKS_STATE_INVERSE;
+    }
+  }
+  else if(invert) bp->mask_combine |= DEVELOP_COMBINE_MASKS_POS;
 }
 
 // darktable's per-channel factor (blendif_rgb_jzczhz.c), for range_map
@@ -3220,5 +3410,8 @@ gboolean masks_attach_mask(dt_iop_module_t *m, const char *name, const gboolean 
     return FALSE;
   }
   _apply_ranges(m, grp, invert);
+  // a ranges group takes the inversion on its members, which no piece's
+  // cache hash sees (as in masks_mask)
+  masks_invalidate_from(m->iop_order, "invert ");
   return TRUE;
 }

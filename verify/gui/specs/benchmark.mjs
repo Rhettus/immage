@@ -44,7 +44,8 @@ export async function guiBenchmark(t, screenDrafts = null) {
   const run = '[data-pref-label="GUI benchmark"] .pref-control button';
   await tabTo(t, run);
   const target = await t.driver.observe(inspect, run);
-  assert(target?.visible && target.hit && !target.disabled, 'focused Run button must be visible and enabled');
+  // 'visible' can read false for a fraction of a pixel at the scroller's edge; the centre must receive hit testing
+  assert(target?.hit && !target.disabled, `focused Run button must be visible and enabled ${JSON.stringify(target)}`);
   await t.evidence('benchmark-settings');
   await t.driver.keys('\uE007');
   // Poll only read-only DOM observations. Error status aborts immediately;
@@ -59,7 +60,15 @@ export async function guiBenchmark(t, screenDrafts = null) {
   const { file, report } = await t.benchmarkReport(filename);
   // Keep the raw artifact even if validation rejects this measurement.
   validateBenchmark(report, before, after, screenDrafts);
-  const restored = await settledPhoto(t, p => p.hash === baseline.hash);
+  await t.evidence('benchmark-after');
+  let restored;
+  try { restored = await settledPhoto(t, p => p.hash === baseline.hash); }
+  catch (error) {
+    const now = await settledPhoto(t);
+    const { rgba: a, ...n } = now, { rgba: b, ...o } = baseline;
+    let err = 0; if (a.length === b.length) { for (let i = 0; i < a.length; i++) err += Math.abs(a[i] - b[i]); err /= a.length; }
+    throw Error(`${error.message}; baseline ${JSON.stringify(o)} now ${JSON.stringify(n)} meanError ${err}`);
+  }
   assert.equal(restored.width, baseline.width, 'benchmark restores fit frame width');
   assert.equal(restored.height, baseline.height, 'benchmark restores fit frame height');
   t.measure({ name: 'gui-benchmark', file, before, after, frames: report.samples.length,

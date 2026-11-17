@@ -5,11 +5,12 @@ import { colorProfiles } from "./specs/color-profiles.mjs";
 import { maskFold } from './specs/mask-fold.mjs';
 import { maskHiddenEdit } from './specs/mask-hidden-edit.mjs';
 import { maskMenu } from './specs/mask-menu.mjs';
+import { maskInvertRange } from './specs/mask-invert-range.mjs';
 import { negativeProfileMemory } from './specs/negative-profile-memory.mjs';
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure, splash } from './specs/smoke.mjs';
-import { sliderInput, sliderClick, history, rail, sliders, panelScroll } from './specs/controls.mjs';
+import { sliderInput, sliderClick, history, rail, sliders, panelScroll, leftScroll } from './specs/controls.mjs';
 import { moduleOptions, preferencesHelp } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
@@ -25,7 +26,7 @@ import { zoomReady, fitDetail } from './specs/zoom.mjs';
 import { demo } from './specs/demo.mjs';
 import { overlayOpacity } from './specs/overlay.mjs';
 import { shiftRange } from './specs/shift-range.mjs';
-import { lensProfile, lensPick } from './specs/lens.mjs';
+import { lensProfile, lensPick, demosaicMethod } from './specs/lens.mjs';
 import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
@@ -34,14 +35,71 @@ import { menus, menusGuards } from './specs/menus.mjs';
 import * as release0450 from './specs/release-0450.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 import { settingsStore } from './specs/settings-store.mjs';
+import { editingMode } from './specs/editing-mode.mjs';
+import { advancedExposure } from './specs/advanced-exposure.mjs';
+import { advancedInstances } from './specs/advanced-instances.mjs';
+import { advancedMaskCards } from './specs/advanced-mask-cards.mjs';
+import { advancedPresets } from './specs/advanced-presets.mjs';
+import { advancedTonemapper } from './specs/advanced-tonemapper.mjs';
+import { advancedGroups } from './specs/advanced-groups.mjs';
+import { advancedSearch } from './specs/advanced-search.mjs';
+import { advancedHidden } from './specs/advanced-hidden.mjs';
+import { advancedSync } from './specs/advanced-sync.mjs';
+import { advancedEditors } from './specs/advanced-editors.mjs';
+import { advancedColorCards } from './specs/advanced-color-cards.mjs';
+import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
+import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
+import { advancedFileCards } from './specs/advanced-file-cards.mjs';
+import { panelPeek } from './specs/panel-peek.mjs';
+import { eyeOrder } from './specs/eye-order.mjs';
+import { gridZoom } from './specs/grid-zoom.mjs';
+import { movePhotos, moveCopy } from './specs/move-photos.mjs';
+import { folderMenu } from './specs/folder-menu.mjs';
+import { libraryMenuRate } from './specs/library-menu-rate.mjs';
+import { immichPrefs } from './specs/immich-prefs.mjs';
+import { detailGroup } from './specs/detail-group.mjs';
+import { gridCulling, gridCullingControls, gridCullingPriority } from './specs/grid-culling.mjs';
+import { openFailureRecovery } from './specs/open-failure.mjs';
+import { photoFilter } from './specs/photo-filter.mjs';
+import { startupRestore } from './specs/startup-restore.mjs';
+import { dngThumbnail } from './specs/dng-thumbnail.mjs';
+import { libraryWorkers } from './specs/library-workers.mjs';
+import { localSearch } from './specs/local-search.mjs';
+import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
+import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
+  'left-scroll': leftScroll,
+  'panel-peek': panelPeek,
+  'eye-order': eyeOrder,
+  'grid-zoom': gridZoom,
+  'grid-culling': gridCulling,
+  'grid-culling-controls': gridCullingControls,
+  'grid-culling-priority': gridCullingPriority,
+  'open-failure-recovery': openFailureRecovery,
+  'photo-filter': photoFilter,
+  'startup-restore': startupRestore,
+  'dng-thumbnail': dngThumbnail,
+  'library-workers': libraryWorkers,
+  'local-search': localSearch,
+  'new-photo-defaults': newPhotoDefaults,
+  'find-live': findLive,
+  'find-no-clip': findNoClip,
+  'find-sizes': findSizes,
+  'find-saved': findSaved,
+  'move-photos': movePhotos,
+  'move-copy': moveCopy,
+  'folder-menu': folderMenu,
+  'library-menu-rate': libraryMenuRate,
+  'immich-prefs': immichPrefs,
+  'detail-group': detailGroup,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,
   'mask-fold': maskFold,
   'mask-hidden-edit': maskHiddenEdit,
   'mask-menu': maskMenu,
+  'mask-invert-range': maskInvertRange,
   'negative-profile-memory': negativeProfileMemory,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),
@@ -53,9 +111,9 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'preferences-matrix':dialogs.preferencesMatrix,'slider-wheel':dialogs.sliderWheel,'export-options':dialogs.exportOptions,
   filters:dialogs.filters,presets:dialogs.presets,shortcuts:dialogs.shortcuts,
   'histogram-endpoints':regressions.histogramEndpoints,'preview-alignment':regressions.previewAlignment,
-  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
+  'loupe-grid':regressions.loupeGrid,'mask-loupe':regressions.maskLoupe,'grain-hover':regressions.grainHover,'presets-hover-release':regressions.presetsHoverRelease,'detail-without-loupe':regressions.detailWithoutLoupe,'detail-fit-drag':regressions.detailFitDrag,'camera-body':regressions.cameraBody,
   'rejected-deletion':regressions.rejectedDeletion,'folder-race':regressions.folderRace,panorama,'immich-workflow':immichWorkflow,
-  'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,
+  'overlay-opacity':overlayOpacity,'shift-range':shiftRange,'lens-profile':lensProfile,'lens-pick':lensPick,'demosaic':demosaicMethod,
   'site-shots':siteShots,
   demo,
   themes,
@@ -73,6 +131,21 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'heal-show-spots': release0450.healShowSpots,
   'jpeg-preset': release0450.jpegPreset,
   'brush-dot': release0450.brushDot,
+  'editing-mode': editingMode,
+  'advanced-exposure': advancedExposure,
+  'advanced-instances': advancedInstances,
+  'advanced-mask-cards': advancedMaskCards,
+  'advanced-presets': advancedPresets,
+  'advanced-tonemapper': advancedTonemapper,
+  'advanced-groups': advancedGroups,
+  'advanced-search': advancedSearch,
+  'advanced-hidden': advancedHidden,
+  'advanced-sync': advancedSync,
+  'advanced-editors': advancedEditors,
+  'advanced-color-cards': advancedColorCards,
+  'advanced-curve-cards': advancedCurveCards,
+  'advanced-raw-cards': advancedRawCards,
+  'advanced-file-cards': advancedFileCards,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

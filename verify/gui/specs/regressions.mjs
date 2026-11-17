@@ -37,12 +37,12 @@ export async function loupeGrid(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
  const toggle='[data-pref-label="Detail loupe"] input[type=checkbox]';if(!(await reveal(t,toggle)).checked)await click(t,toggle);
  await textButton(t,'.prefs-foot','Done');await panel(t,'detail');await requireLoupe(t);
- await click(t,'.grid-toggle');
+ await click(t,'.library-toggle');
  const count=()=>t.driver.observe(()=>Number(document.documentElement.dataset.loupeFrames??0));
  // Observe an idle interval so a pending preview can drain before comparing.
  await pause(1000);const before=await count();assert(before>0,'loupe must render before grid assertion');await pause(1500);const after=await count();
  assert.equal(after,before,'grid must not deliver more loupe frames after draining');await t.evidence('loupe-grid-paused');
- await click(t,'.grid-toggle');
+ await click(t,'.library-toggle');
 }
 export async function maskLoupe(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
@@ -117,13 +117,16 @@ export async function detailFitDrag(t){
 }
 export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');
- await click(t,'.kind-button');
- const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.filter-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
+ await click(t,'.find-button');
+ await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
+ // the category list is in the Dock size
+ if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
+ const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
  await t.driver.point(category.x,category.y);
- const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.filter-ticks .name')].map(e=>e.textContent)),'body options');
+ const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.find-pop .filter-ticks .name')].map(e=>e.textContent)),'body options');
  assert(names.some(s=>s.includes('BODY-A'))&&names.some(s=>s.includes('BODY-B')),'same model serials independently listed');
  assert(names.some(s=>/without|missing|none|unknown|not recorded/i.test(s)),'missing serial category listed');
- for(const name of names){await textButton(t,'.filter-ticks',name);await t.evidence(`body-${names.indexOf(name)}`);await textButton(t,'.filter-ticks',name);}
+ for(const name of names){await textButton(t,'.find-pop .filter-ticks',name);await t.evidence(`body-${names.indexOf(name)}`);await textButton(t,'.find-pop .filter-ticks',name);}
  await t.driver.keys('\uE00C');
 }
 export async function rejectedDeletion(t){
@@ -150,14 +153,14 @@ export async function folderRace(t){
 export async function grainHover(t){
  // collapse the library panel and the filmstrip with their toolbar buttons, so the photo is large
  // the toolbar slides while a panel closes: wait until it stops before the next click,
- // or the click lands on its neighbour (Grid)
+ // or the click lands on its neighbour (Library)
  const still=async sel=>{let last;await until(async()=>{const b=await t.driver.observe(x=>JSON.stringify(document.querySelector(x)?.getBoundingClientRect()),sel);const ok=b===last;last=b;return ok&&b;},`${sel} stopped moving`);};
  for(const title of ['library panel','filmstrip']){
   const sel=`button.tool[title="${title}"]`;await still(sel);
   if(await t.driver.observe(x=>document.querySelector(x)?.classList.contains('on'),sel)){await click(t,sel);await until(()=>t.driver.observe(x=>!document.querySelector(x)?.classList.contains('on'),sel),`${title} collapsed`);}
  }
- await still('button.tool.grid-toggle');
- assert(!await t.driver.observe(()=>document.querySelector('button.tool.grid-toggle')?.classList.contains('on')),'grid view must be off');
+ await still('button.tool.library-toggle');
+ assert(!await t.driver.observe(()=>document.querySelector('button.tool.library-toggle')?.classList.contains('on')),'grid view must be off');
  assert(await t.driver.observe(()=>document.querySelector('.strip-slot')?.classList.contains('closed')),'filmstrip must be collapsed');
  await settledPhoto(t);
  await panel(t,'effects');
@@ -172,4 +175,26 @@ export async function grainHover(t){
  const wanted=Math.min(3200,Math.round(Math.max(shown.cssWidth,shown.cssHeight)*shown.dpr)),got=Math.max(shown.width,shown.height);
  t.measure({name:'grain-hover',...shown,wanted,got});await t.evidence('grain-hover');
  assert(got>=wanted*.95||wanted<=1600,`hover render ${got}px must match the shown size ${wanted}px`);
+}
+
+export async function presetsHoverRelease(t){
+ // a tile that disappears under the pointer (its group shut) must not leave its preview stuck
+ // on the image or block the next tile's preview
+ await settledPhoto(t);await openTool(t,'presets');
+ const tiles=await t.driver.observe(()=>[...document.querySelectorAll('.preset-group .tile')].slice(0,2).map(e=>e.title));
+ if(tiles.length<2)throw new Blocked('Requires two preset tiles in an expanded group');
+ const on=()=>t.driver.observe(()=>{const c=document.querySelector('canvas.hover-preview');return!!c&&!c.classList.contains('off')&&c.width>0;});
+ const tile=n=>`.preset-group .tile[title=${JSON.stringify(n)}]`;
+ const a=await reveal(t,tile(tiles[0]));await t.driver.move(a.x,a.y);
+ await until(on,'hover preview shown for the first tile');await t.evidence('presets-hover-a');
+ // shut the group the tile is in, with the pointer ending on its title
+ const title=await reveal(t,'.preset-group:has(.tile) .preset-group-title');
+ await click(t,'.preset-group:has(.tile) .preset-group-title');
+ await until(async()=>!await on(),'hover preview cleared when the group shuts');
+ await click(t,'.preset-group .preset-group-title');
+ const b=await reveal(t,tile(tiles[1]));await t.driver.move(b.x,b.y);
+ await until(on,'hover preview shown for the second tile');await t.evidence('presets-hover-b');
+ // off the tiles entirely
+ await t.driver.move(title.x,title.y);
+ await until(async()=>!await on(),'hover preview cleared off the tiles');
 }

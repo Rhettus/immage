@@ -20,6 +20,8 @@
 // the library: folders, import, thumbnails, prefetch, metadata, keywords, capture times, copies and sidecars
 
 #include "engine.h"
+#include "common/exif.h"
+#include "develop/imageop_math.h"
 
 // photos likely opened next, their raws decoded ahead on threads of their
 // own, a few at once: a raw's decode mostly keeps to one core. darktable's
@@ -517,9 +519,13 @@ void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
   engine_add_string(b, "maker", img->camera_maker);
   engine_add_string(b, "model", img->camera_model);
   engine_add_string(b, "lens", img->exif_lens);
-  gchar *body_serial = camera_body_serial(path);
+  gchar *capture = NULL, *offset = NULL;
+  gchar *body_serial = camera_source_metadata(path, &capture, &offset);
   engine_add_string(b, "body_serial", body_serial);
   g_free(body_serial);
+  engine_add_string(b, "capture_time_raw", capture);
+  engine_add_string(b, "capture_offset", offset);
+  g_free(capture); g_free(offset);
   engine_add_double(b, "exposure", img->exif_exposure);
   engine_add_double(b, "aperture", img->exif_aperture);
   engine_add_double(b, "iso", img->exif_iso);
@@ -971,6 +977,7 @@ typedef struct _probe_t
   gboolean finished;
   gint refs;
   char *path;
+  gint64 finished_at;
 } _probe_t;
 
 static void _probe_unref(_probe_t *p)
@@ -999,6 +1006,7 @@ static gpointer _probe_run(gpointer data)
   _probe_read(xmp);
   g_free(xmp);
   eng_lock(&p->lock, ENG_LOCK_PROBE);
+  p->finished_at = g_get_monotonic_time();
   p->finished = TRUE;
   g_cond_signal(&p->done);
   eng_unlock(&p->lock, ENG_LOCK_PROBE);
@@ -1008,6 +1016,30 @@ static gpointer _probe_run(gpointer data)
 
 static GMutex _quarantine_lock;
 static GHashTable *_quarantine = NULL; // folder -> monotonic time it is skipped until
+
+static gboolean _folder_quarantined(const char *path)
+{
+  gchar *dir = g_path_get_dirname(path);
+  const gint64 now = g_get_monotonic_time();
+  eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
+  if(!_quarantine) _quarantine = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  const gint64 *until = g_hash_table_lookup(_quarantine, dir);
+  const gboolean held = until && *until > now;
+  eng_unlock(&_quarantine_lock, ENG_LOCK_PROBE);
+  g_free(dir);
+  return held;
+}
+
+static void _quarantine_folder(const char *path, const gint64 now)
+{
+  gchar *dir = g_path_get_dirname(path);
+  gint64 *when = g_new(gint64, 1);
+  *when = now + _PROBE_QUARANTINE_US;
+  eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
+  if(!_quarantine) _quarantine = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  g_hash_table_replace(_quarantine, dir, when);
+  eng_unlock(&_quarantine_lock, ENG_LOCK_PROBE);
+}
 
 // FALSE when the file did not answer within `timeout_us`, or its folder
 // did not a moment ago
@@ -1056,6 +1088,124 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   return answered;
 }
 
+// ORF metadata can be parsed before the serialized catalog import. A task's
+// process-wide slot lasts until both the worker and the importing batch have
+// released it, so completed results and abandoned reads remain bounded too.
+#define _METADATA_TIMEOUT_US (30 * G_USEC_PER_SEC)
+typedef struct _metadata_task_t
+{
+  GMutex lock;
+  GCond done;
+  gboolean finished;
+  gint refs;
+  gint64 launched;
+  gint64 finished_at;
+  dt_exif_prefetch_t *prefetch;
+  char *path;
+} _metadata_task_t;
+
+static GMutex _metadata_lock;
+static guint _metadata_live = 0;
+static guint _metadata_limit = _THUMB_THREADS;
+
+void library_metadata_threads(gint n)
+{
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_limit = (guint)CLAMP(n, 1, _THUMB_THREADS_MAX);
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+}
+
+static void _metadata_unref(_metadata_task_t *task)
+{
+  if(!g_atomic_int_dec_and_test(&task->refs)) return;
+  dt_exif_prefetch_free(task->prefetch);
+  g_free(task->path);
+  g_cond_clear(&task->done);
+  g_mutex_clear(&task->lock);
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_live--;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  g_free(task);
+}
+
+static gpointer _metadata_run(gpointer data)
+{
+  _metadata_task_t *task = data;
+  _probe_read(task->path);
+  gchar *xmp = g_strconcat(task->path, ".xmp", NULL);
+  _probe_read(xmp);
+  g_free(xmp);
+  task->prefetch = dt_exif_prefetch_prepare(task->path);
+  eng_lock(&task->lock, ENG_LOCK_PROBE);
+  task->finished_at = g_get_monotonic_time();
+  task->finished = TRUE;
+  g_cond_broadcast(&task->done);
+  eng_unlock(&task->lock, ENG_LOCK_PROBE);
+  _metadata_unref(task);
+  return NULL;
+}
+
+// NULL means the strict process-wide bound is already occupied.
+static _metadata_task_t *_metadata_start(const char *path, const guint batch_workers)
+{
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  // A preference change applies to the next batch. In-flight batches retain
+  // their snapshot, while this hard process cap includes abandoned workers.
+  if(_metadata_live >= _THUMB_THREADS_MAX || _metadata_live >= batch_workers)
+  {
+    eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+    return NULL;
+  }
+  _metadata_live++;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  _metadata_task_t *task = g_new0(_metadata_task_t, 1);
+  g_mutex_init(&task->lock);
+  g_cond_init(&task->done);
+  task->refs = 2; // importing batch and worker
+  task->launched = g_get_monotonic_time();
+  task->path = g_strdup(path);
+  GThread *thread = g_thread_new("import-metadata", _metadata_run, task);
+  g_thread_unref(thread);
+  return task;
+}
+
+typedef enum _metadata_wait_result_t
+{
+  METADATA_READY,
+  METADATA_TIMEOUT,
+  METADATA_CANCELLED
+} _metadata_wait_result_t;
+
+static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint64 job)
+{
+  const gint64 deadline = task->launched + _METADATA_TIMEOUT_US;
+  for(;;)
+  {
+    eng_lock(&task->lock, ENG_LOCK_PROBE);
+    if(task->finished)
+    {
+      const gboolean ready = task->finished_at <= deadline;
+      eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      return ready ? METADATA_READY : METADATA_TIMEOUT;
+    }
+    const gint64 now = g_get_monotonic_time();
+    if(now >= deadline)
+    {
+      eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      return METADATA_TIMEOUT;
+    }
+    g_cond_wait_until(&task->done, &task->lock, MIN(deadline, now + 50 * 1000));
+    eng_unlock(&task->lock, ENG_LOCK_PROBE);
+    if(job)
+    {
+      eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      const gboolean cancelled = library_import_latest != job;
+      eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+      if(cancelled) return METADATA_CANCELLED;
+    }
+  }
+}
+
 // import these files, as library_folder() does a folder's: the client lists the
 // folder itself and sends it in batches, so it can show its progress. with
 // a `job`, a batch stops once a newer read's is queued; with a `budget` (ms),
@@ -1063,6 +1213,9 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
 // files it went through, so the client sends the rest again
 void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background)
 {
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const guint workers = _metadata_limit;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
   JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
   const gint64 job = json_object_get_int_member_with_default(req, "job", 0);
   const gint64 budget = json_object_get_int_member_with_default(req, "budget", 0) * 1000;
@@ -1070,7 +1223,10 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   const gint64 start = g_get_monotonic_time();
   const guint n = files ? json_array_get_length(files) : 0;
   guint k = 0;
-  GPtrArray *silent = g_ptr_array_new(); // paths that did not answer, owned by `files`
+  GPtrArray *silent = g_ptr_array_new();
+  _metadata_task_t **tasks = g_new0(_metadata_task_t *, n);
+  gboolean *staged = g_new0(gboolean, n);
+    gboolean stop_metadata = FALSE;
   json_builder_set_member_name(b, "images");
   json_builder_begin_array(b);
   for(; k < n; k++)
@@ -1083,18 +1239,108 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
       if(superseded) break;
     }
     if(budget && k && g_get_monotonic_time() - start >= budget) break;
-    if(background) engine_background_yield(); // the main loop's own import is the foreground work
+    if(background) engine_background_yield();
+
+    // Keep a fixed horizon of prepared ORFs. The task cap includes completed
+    // results until their serial import consumes and releases them.
+    if(!stop_metadata)
+    {
+      const guint end = MIN(n, k + workers);
+      for(guint j = k; j < end; j++)
+      {
+        if(staged[j]) continue;
+        staged[j] = TRUE;
+        const char *next = json_array_get_string_element(files, j);
+        if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
+           || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
+        tasks[j] = _metadata_start(next, workers);
+      }
+    }
+
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
     if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
-    if(!_file_answers(path, probe))
+    dt_imgid_t imgid = NO_IMGID;
+    if(dt_exif_prefetch_supported(path))
     {
-      g_ptr_array_add(silent, (gpointer)path);
-      continue;
+      _metadata_task_t *task = tasks[k];
+      if(!task && !stop_metadata && !_folder_quarantined(path))
+      {
+        // A global slot may have opened after this file was staged.
+        task = _metadata_start(path, workers);
+        tasks[k] = task;
+      }
+      if(!task)
+      {
+        // If the global cap is busy with a still-running abandoned task, do
+        // not turn the bounded pipeline into a synchronous metadata read.
+        g_ptr_array_add(silent, (gpointer)path);
+      }
+      else
+      {
+        const _metadata_wait_result_t wait_result = _metadata_wait(task, job);
+        if(wait_result == METADATA_CANCELLED)
+        {
+          g_ptr_array_add(silent, (gpointer)path);
+          _metadata_unref(task);
+          tasks[k] = NULL;
+          break;
+        }
+        if(wait_result == METADATA_TIMEOUT)
+        {
+          stop_metadata = TRUE;
+          _quarantine_folder(path, g_get_monotonic_time());
+          fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
+                  path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+          g_ptr_array_add(silent, (gpointer)path);
+          for(guint j = k + 1; j < n; j++)
+          {
+            if(tasks[j]) _metadata_unref(tasks[j]);
+            tasks[j] = NULL;
+          }
+        }
+        else
+        {
+          if(job)
+          {
+            eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+            const gboolean cancelled = library_import_latest != job;
+            eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+            if(cancelled)
+            {
+              g_ptr_array_add(silent, (gpointer)path);
+              _metadata_unref(task);
+              tasks[k] = NULL;
+              break;
+            }
+          }
+          if(!task->prefetch || _folder_quarantined(path))
+            g_ptr_array_add(silent, (gpointer)path);
+          else
+          {
+            dt_exif_prefetch_set(task->prefetch);
+            imgid = library_import(path);
+            dt_exif_prefetch_set(NULL);
+          }
+        }
+        _metadata_unref(task); // the importing batch; a timed-out worker still owns its reference
+        tasks[k] = NULL;
+      }
     }
-    const dt_imgid_t imgid = library_import(path);
+    else
+    {
+      const gboolean answered = _file_answers(path, probe);
+      if(!answered) g_ptr_array_add(silent, (gpointer)path);
+      else
+      {
+        imgid = library_import(path);
+      }
+    }
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
   }
+  for(guint j = 0; j < n; j++) if(tasks[j]) _metadata_unref(tasks[j]);
+  g_free(tasks);
+  g_free(staged);
   json_builder_end_array(b);
   json_builder_set_member_name(b, "unanswered");
   json_builder_begin_array(b);
@@ -1103,8 +1349,6 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   g_ptr_array_free(silent, TRUE);
   json_builder_set_member_name(b, "done");
   json_builder_add_int_value(b, k);
-  // the queued line is logged as it comes in (_read_requests); this one
-  // shows how far behind the import thread runs
   fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
           (g_get_monotonic_time() - start) / 1000.0, k < n ? " (stopped)" : "");
 }
@@ -1145,6 +1389,14 @@ gboolean library_import_queue(JsonParser *parser)
   return queued;
 }
 
+gboolean library_import_metadata_pending(void)
+{
+  eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
+  const gboolean pending = _metadata_live > 0;
+  eng_unlock(&_metadata_lock, ENG_LOCK_PROBE);
+  return pending;
+}
+
 // before darktable's caches go: the batch under way finishes, those
 // waiting are dropped
 void library_import_wait(void)
@@ -1156,6 +1408,43 @@ void library_import_wait(void)
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
 }
 
+// Analysis renders in an independent develop, always sRGB. Original means
+// upstream history_end=0, not export metadata's history=false option.
+gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err)
+{
+  if(g_strcmp0(subject, "original") && g_strcmp0(subject, "edited"))
+  { *err = g_strdup("invalid analysis subject"); return FALSE; }
+  JsonObject *req = json_object_new();
+  json_object_set_string_member(req, "out", out);
+  json_object_set_string_member(req, "format", "jpeg");
+  json_object_set_string_member(req, "color_space", "srgb");
+  json_object_set_int_member(req, "quality", 85);
+  json_object_set_int_member(req, "long_edge", 1024);
+  json_object_set_boolean_member(req, "draft", TRUE);
+  json_object_set_boolean_member(req, "transient", TRUE);
+  json_object_set_boolean_member(req, "analysis_original", !g_strcmp0(subject, "original"));
+  const gboolean ok = export_export(imgid, req, err);
+  json_object_unref(req);
+  // a file darktable could read but not decode gets its own error, so Smart
+  // search can stop retrying it (search_analysis.rs) while a failed read, a
+  // missing file, memory or a failed write are tried again later. the load
+  // status is the one the full mipmap load just recorded (mipmap_cache.c)
+  if(!ok)
+  {
+    const dt_image_t *img = dt_image_cache_get(imgid, 'r');
+    const dt_imageio_retval_t status = img ? img->load_status : DT_IMAGEIO_OK;
+    if(img) dt_image_cache_read_release(img);
+    if(status == DT_IMAGEIO_LOAD_FAILED || status == DT_IMAGEIO_UNSUPPORTED_FORMAT
+       || status == DT_IMAGEIO_UNSUPPORTED_CAMERA || status == DT_IMAGEIO_UNSUPPORTED_FEATURE
+       || status == DT_IMAGEIO_FILE_CORRUPTED || status == DT_IMAGEIO_UNRECOGNIZED)
+    {
+      g_free(*err);
+      *err = g_strdup_printf("cannot decode image %d (status %d)", imgid, (int)status);
+    }
+  }
+  return ok;
+}
+
 // the lighttable's thumbnail for an image: the embedded preview of an
 // unedited raw, a processed render of an edited one. the buffer is 8-bit
 // RGBA (views/view.c swaps it to BGRA for cairo); its color space is
@@ -1163,30 +1452,114 @@ void library_import_wait(void)
 gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err)
 {
+  // Size zero requests native-resolution inspection independently of the
+  // editor session. Never substitute camera pixels for an edited image.
+  if(size == 0)
+  {
+    if(!dt_is_valid_imgid(imgid) || !dt_image_exists(imgid))
+    { *err = g_strdup("no such image"); return FALSE; }
+    const dt_image_t *image = dt_image_cache_get(imgid, 'r');
+    const gboolean raw = image && dt_image_is_raw(image);
+    if(image) dt_image_cache_read_release(image);
+    uint8_t *pixels = NULL;
+    int32_t width = 0, height = 0;
+    dt_colorspaces_color_profile_type_t space;
+    char path[PATH_MAX] = { 0 };
+    gboolean from_cache = TRUE;
+    dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+    if(raw && !dt_image_altered(imgid)
+       && !dt_imageio_large_thumbnail(path, &pixels, &width, &height, &space)
+       && space == DT_COLORSPACE_SRGB)
+    {
+      const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
+      uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * width * height);
+      if(!oriented) { dt_free_align(pixels); *err = g_strdup("preview allocation failed"); return FALSE; }
+      uint32_t w, h;
+      dt_iop_flip_and_zoom_8(pixels, width, height, oriented,
+        orientation & ORIENTATION_SWAP_XY ? height : width,
+        orientation & ORIENTATION_SWAP_XY ? width : height, orientation, &w, &h);
+      const gboolean ok = engine_transient_write(out, oriented, (size_t)4 * w * h, NULL, 0);
+      dt_free_align(pixels);
+      dt_free_align(oriented);
+      json_builder_set_member_name(b, "width"); json_builder_add_int_value(b, w);
+      json_builder_set_member_name(b, "height"); json_builder_add_int_value(b, h);
+      json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, "embedded");
+      if(!ok) *err = g_strdup("could not write preview");
+      return ok;
+    }
+    dt_free_align(pixels);
+    JsonObject *req = json_object_new();
+    json_object_set_string_member(req, "out", out);
+    json_object_set_string_member(req, "format", "jpeg");
+    json_object_set_string_member(req, "color_space", "srgb");
+    json_object_set_int_member(req, "quality", 85);
+    json_object_set_boolean_member(req, "transient", TRUE);
+    json_object_set_int_member(req, "long_edge", 0);
+    const gboolean ok = export_export(imgid, req, err);
+    json_object_unref(req);
+    json_builder_set_member_name(b, "encoding"); json_builder_add_string_value(b, "jpeg");
+    json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, "rendered");
+    return ok;
+  }
   const dt_mipmap_size_t mip = dt_mipmap_cache_get_matching_size(size, size);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, mip, DT_MIPMAP_BLOCKING, 'r');
-  if(!buf.buf || buf.width <= 0 || buf.height <= 0)
+  const gboolean cached = buf.buf && buf.width > 0 && buf.height > 0;
+  uint8_t *preview = NULL;
+  int32_t width = buf.width, height = buf.height;
+  dt_colorspaces_color_profile_type_t color_space = buf.color_space;
+  if(!cached)
   {
     dt_mipmap_cache_release(&buf);
-    *err = g_strdup_printf("no thumbnail for image %d", imgid);
-    return FALSE;
+    // Some DNGs have unsupported RAW/compression data and a readable small
+    // preview. Use that if the normal mipmap/render path failed. An edited
+    // photo must never silently show a preview without its edits.
+    char path[PATH_MAX] = { 0 };
+    gboolean from_cache = TRUE;
+    dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+    const int target = CLAMP(size, 1, 256);
+    if(dt_image_altered(imgid) || !*path
+       || (dt_imageio_thumbnail(path, &preview, &width, &height, &color_space, target)
+           && (target == 1 || dt_imageio_thumbnail(path, &preview, &width, &height, &color_space, 1))))
+    {
+      *err = g_strdup_printf("no thumbnail for image %d", imgid);
+      return FALSE;
+    }
+    const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
+    const int32_t max_width = orientation & ORIENTATION_SWAP_XY ? height : width;
+    const int32_t max_height = orientation & ORIENTATION_SWAP_XY ? width : height;
+    uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * width * height);
+    if(!oriented)
+    {
+      dt_free_align(preview);
+      *err = g_strdup("could not allocate thumbnail preview");
+      return FALSE;
+    }
+    uint32_t oriented_width, oriented_height;
+    dt_iop_flip_and_zoom_8(preview, width, height, oriented, max_width, max_height,
+                           orientation, &oriented_width, &oriented_height);
+    width = oriented_width;
+    height = oriented_height;
+    dt_free_align(preview);
+    preview = oriented;
   }
+  const uint8_t *pixels = cached ? buf.buf : preview;
   // the print sheet's cells, shown as the soft proof does: a copy, as the
   // cache's buffer is shared; sRGB once proofed
-  const size_t bytes = (size_t)4 * buf.width * buf.height;
+  const size_t bytes = (size_t)4 * width * height;
   uint8_t *copy = proof ? g_try_malloc(bytes) : NULL;
-  if(copy) memcpy(copy, buf.buf, bytes);
-  const gboolean proofed = copy && print_proof_pixels(copy, buf.width, buf.height, buf.color_space);
-  const gboolean ok = engine_transient_write(out, proofed ? copy : buf.buf, bytes, NULL, 0);
+  if(copy) memcpy(copy, pixels, bytes);
+  const gboolean proofed = copy && print_proof_pixels(copy, width, height, color_space);
+  const gboolean ok = engine_transient_write(out, proofed ? copy : pixels, bytes, NULL, 0);
   g_free(copy);
   json_builder_set_member_name(b, "width");
-  json_builder_add_int_value(b, buf.width);
+  json_builder_add_int_value(b, width);
   json_builder_set_member_name(b, "height");
-  json_builder_add_int_value(b, buf.height);
+  json_builder_add_int_value(b, height);
   json_builder_set_member_name(b, "color_space");
-  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : buf.color_space);
-  dt_mipmap_cache_release(&buf);
+  json_builder_add_int_value(b, proofed ? DT_COLORSPACE_SRGB : color_space);
+  if(cached) dt_mipmap_cache_release(&buf);
+  dt_free_align(preview);
   if(!ok) *err = g_strdup_printf("could not write '%s'", out);
   return ok;
 }
@@ -1194,21 +1567,53 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
 GThreadPool *library_thumb_pool = NULL;
 static GMutex _thumb_lock;
 
+// foreground (the lightbox's photo) before grid thumbnails and metadata,
+// those before analysis previews; equal ranks keep their arrival order
+static gint _thumb_rank(JsonParser *parser)
+{
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  if(!g_strcmp0(json_object_get_string_member_with_default(req, "cmd", ""), "analysis_preview")) return 2;
+  return json_object_get_boolean_member_with_default(req, "foreground", FALSE) ? 0 : 1;
+}
+
+gint library_thumb_order(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+  return _thumb_rank((JsonParser *)a) - _thumb_rank((JsonParser *)b);
+}
+
 void library_thumb_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
-  engine_background_yield();
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  // a foreground request is waited on, so it does not give way to the main loop
+  if(!json_object_get_boolean_member_with_default(req, "foreground", FALSE)) engine_background_yield();
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   char *err = NULL;
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "tag");
   json_builder_add_int_value(b, json_object_get_int_member(req, "tag"));
-  const gboolean ok = dest && library_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
-                                     json_object_get_int_member_with_default(req, "size", 256),
-                                     json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
+  const char *cmd = json_object_get_string_member_with_default(req, "cmd", "");
+  const gboolean analysis = !g_strcmp0(cmd, "analysis_preview");
+  const gboolean metadata = !g_strcmp0(cmd, "meta");
+  const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
+  gboolean ok = FALSE;
+  if(metadata)
+  {
+    if(dt_is_valid_imgid(imgid) && dt_image_exists(imgid))
+    {
+      json_builder_set_member_name(b, "image");
+      library_image_json(b, imgid, TRUE);
+      ok = TRUE;
+    }
+    else err = g_strdup("no such image");
+  }
+  else if(dest && analysis)
+    ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
+  else if(dest)
+    ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
+                       json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)
@@ -1242,6 +1647,13 @@ void library_thumb_wait(void)
   library_thumb_pool = NULL;
   eng_unlock(&_thumb_lock, ENG_LOCK_POOL);
   if(pool) g_thread_pool_free(pool, TRUE, TRUE);
+}
+
+void library_thumb_threads(gint n)
+{
+  eng_lock(&_thumb_lock, ENG_LOCK_POOL);
+  if(library_thumb_pool) g_thread_pool_set_max_threads(library_thumb_pool, n, NULL);
+  eng_unlock(&_thumb_lock, ENG_LOCK_POOL);
 }
 
 // rating (0-5), rejected, labels (bit mask: red 1, yellow 2, green 4, blue

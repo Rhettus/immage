@@ -39,6 +39,7 @@
 #include "common/iop_order.h"
 #include "common/metadata.h"
 #include "common/mipmap_cache.h"
+#include "common/presets.h"
 #include "common/ratings.h"
 #include <libxml/parser.h>
 #include <sqlite3.h>
@@ -159,6 +160,10 @@ typedef struct dt_engine_session_t
   // saves record what it applies to a new photo as darktable's automatic
   // baseline (history_auto_hash), so those defaults do not mark it altered
   gboolean fresh, baseline;
+  // instances Advanced mode deleted (`instance` "delete"): switched off and
+  // left out of `instances` until undone, their entries dropped at each save.
+  // kept, not freed, so undo brings one back at the same priority
+  GList *deleted;
 } dt_engine_session_t;
 
 typedef struct preview_output_t {
@@ -172,10 +177,12 @@ typedef struct preview_output_t {
 // folder's thumbnails come in while the photo is edited and rendered.
 // darktable's lighttable builds them from its job threads the same way:
 // the mipmap cache and the library (SQLITE_CONFIG_SERIALIZED, database.c)
-// take callers on many threads. two threads, so a render keeps most of the
-// cores. the reply carries the tag, and can come between another request
-// and its reply
+// take callers on many threads. two threads unless Preferences says
+// otherwise (--thumb-threads, the thumb_threads command), so a render keeps
+// most of the cores. the reply carries the tag, and can come between
+// another request and its reply
 #define _THUMB_THREADS 2
+#define _THUMB_THREADS_MAX 8
 
 #ifdef HAVE_AI
 // GPU execution providers, the only ones the upscale model runs on: on the
@@ -218,7 +225,8 @@ typedef struct _working_t
 // output); the tone mapper's input, with every mask instance's adjustment
 // in it; the Zone System placement's input, which it has not placed yet;
 // rotate and perspective's input, larger, for Upright's line detection; or
-// negadoctor's input, the negative as its pickers read it
+// negadoctor's input, the negative as its pickers read it; or color
+// mapping's input, in Lab, which its acquire buttons analyze
 typedef enum _stage_t
 {
   _STAGE_ANCHOR,
@@ -226,6 +234,7 @@ typedef enum _stage_t
   _STAGE_UNPLACED,
   _STAGE_ASHIFT,
   _STAGE_NEGADOCTOR,
+  _STAGE_COLORMAPPING,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -308,6 +317,9 @@ void engine_background_yield(void);
 void engine_background_priority(void);
 double engine_ms_since(const gint64 t0);
 void engine_reply(FILE *out, JsonBuilder *b);
+void clip_start(FILE *out);
+void clip_queue(JsonParser *parser);
+void clip_wait(void);
 void engine_add_string(JsonBuilder *b, const char *name, const char *value);
 void engine_add_double(JsonBuilder *b, const char *name, const double value);
 void engine_add_int(JsonBuilder *b, const char *name, const gint64 value);
@@ -330,6 +342,7 @@ void session_saved_history(JsonBuilder *b);
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
                             char **err);
 dt_iop_module_t *session_module(const char *op, char **err);
+dt_iop_module_t *session_module_at(const char *op, const int priority, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,
                        dt_introspection_field_t **f, char **err);
 gboolean session_write_field_in(dt_iop_module_t *mod, void *base, const char *name,
@@ -338,14 +351,58 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
                              char **err);
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err);
+
+// wb.c: the temperature module's "temp_k" and "tint" fields, engine-own
+// like the lens module's "lens_pick"
+#define WB_TEMP "temp_k"
+#define WB_TINT "tint"
+gboolean wb_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                 char **err);
+gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+// the settings combobox ("wb_setting") and finetune slider ("wb_tune"), and
+// the camera presets that fill the menu
+#define WB_SETTING "wb_setting"
+#define WB_TUNE "wb_tune"
+gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
+                         double *num, char **err);
+gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+void wb_mark_user(dt_iop_module_t *mod);
+gboolean wb_presets(JsonBuilder *b, char **err);
+// files.c: the file-name params no number can hold, edited as the hash of the
+// name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
+// file in the LUT folder) and watermark's "wm_marker" (filename, a marker in
+// the watermarks folders). 0 is none; a write finds the file by its hash
+#define FILES_LUT "lut_file"
+#define FILES_MARKER "wm_marker"
+gboolean files_is_field(const dt_iop_module_t *mod, const char *name);
+gboolean files_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                    char **err);
+gboolean files_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+void files_set_lut_folder(const char *folder);
+gboolean files_lut(JsonObject *req, JsonBuilder *b, char **err);
+gboolean files_watermarks(JsonBuilder *b, char **err);
+// cmapping.c: color mapping's acquired clusters, edited as the number the
+// engine gives them: `cm_source` and `cm_target` (0 is none), and the acquire
+// itself, which analyzes the module's input and replies that number
+#define CMAP_SOURCE "cm_source"
+#define CMAP_TARGET "cm_target"
+gboolean cmap_is_field(const dt_iop_module_t *mod, const char *name);
+gboolean cmap_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num,
+                   char **err);
+gboolean cmap_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
+gboolean cmap_acquire(JsonObject *req, JsonBuilder *b, char **err);
+// Composite's photo: a write of overlay's `imgid` (see files.c)
+gboolean files_overlay_write(dt_iop_module_t *mod, const double num, char **err);
+void files_overlay_sync(const dt_imgid_t imgid);
 gboolean session_set(const char *op, const char *field, JsonNode *value,
                      JsonObject *params, const gboolean has_enabled,
                      const gboolean enabled, const char *after, const char *before,
-                     const char *instance, const char *mask, const gboolean invert,
-                     const double opacity, JsonObject *refine, char **err);
+                     const char *instance, const char *mask, const gboolean anchored, const gboolean invert,
+                     const double opacity, JsonObject *refine, const int priority, char **err);
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
-                              JsonBuilder *b, char **err);
+                              const char *preset, JsonBuilder *b, char **err);
+gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err);
 dt_hash_t session_frame_hash(const dt_hash_t pipe_hash);
 void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
@@ -355,6 +412,12 @@ gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, con
 gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings);
 dt_iop_module_t *session_find_named(const char *op, const char *name);
 gboolean session_get(JsonObject *ops, JsonBuilder *b, char **err);
+gboolean session_module_schema(const char *op, JsonBuilder *b, char **err);
+void session_instances(JsonBuilder *b);
+void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const gboolean include_blend);
+gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
+                          const char *mask,
+                          const int other, const gboolean after, JsonBuilder *b, char **err);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
@@ -366,11 +429,13 @@ gboolean session_preview(JsonObject *req, int *ow, int *oh, char **err);
 gboolean session_save(char **err);
 extern GHashTable *session_paste_batches;
 gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err);
+gboolean session_history_discard(const dt_imgid_t imgid, JsonBuilder *b, char **err);
 void session_save_pending(void);
 
 // masks.c
 const char *masks_mask_name(const char *full);
 dt_masks_form_t *masks_instance_group(const dt_iop_module_t *m);
+const char *masks_instance_owner(const dt_iop_module_t *m);
 dt_iop_module_t *masks_named_instance(const char *op, const char *name, const gboolean anchored,
                                       char **err);
 void masks_invalidate_from(const int order, const char *why);
@@ -387,6 +452,7 @@ gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err);
 gboolean masks_mask_delete(const char *name, char **err);
 gboolean masks_mask_rename(const char *name, const char *to, char **err);
 gboolean masks_working(_working_t *w, char **err);
+gboolean masks_working_colormapping(_working_t *w, char **err);
 void masks_to_working(const _working_t *w, float *pts, const size_t n);
 void masks_blend_values(const _working_t *w, const float *rgb_in, float *Y, dt_aligned_pixel_t JzCzhz);
 gboolean masks_sample(const float x, const float y, JsonArray *box, const _stage_t stage, JsonBuilder *b,
@@ -431,12 +497,17 @@ extern GThreadPool *library_import_pool;
 void library_import_run(gpointer data, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
 void library_import_wait(void);
+gboolean library_import_metadata_pending(void);
+gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err);
 gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
                        JsonBuilder *b, char **err);
 extern GThreadPool *library_thumb_pool;
 void library_thumb_run(gpointer data, gpointer user_data);
 gboolean library_thumb_queue(JsonParser *parser);
+gint library_thumb_order(gconstpointer a, gconstpointer b, gpointer user_data);
 void library_thumb_wait(void);
+void library_thumb_threads(gint n);
+void library_metadata_threads(gint n);
 gboolean library_meta_set(const dt_imgid_t imgid, JsonObject *req, char **err);
 gboolean library_capture_times(JsonObject *req, JsonBuilder *b, char **err);
 

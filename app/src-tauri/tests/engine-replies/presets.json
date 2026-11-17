@@ -1,0 +1,25 @@
+[
+ {
+  "label": "3 open / presets exposure",
+  "reply": {
+   "ms": 0.0,
+   "ok": true,
+   "presets": [
+    {
+     "active": false,
+     "applicable": true,
+     "builtin": true,
+     "description": "",
+     "name": "_builtin_magic lantern defaults"
+    },
+    {
+     "active": false,
+     "applicable": true,
+     "builtin": true,
+     "description": "",
+     "name": "_builtin_scene-referred default"
+    }
+   ]
+  }
+ }
+]

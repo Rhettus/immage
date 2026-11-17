@@ -15,6 +15,8 @@ export type Exif = {
   exposure_bias: number; focus_distance: number; datetime: string;
   // the file's modified time, sent only when there is no capture time
   file_datetime?: string;
+  capture_time_raw?: string;
+  capture_offset?: string;
 };
 
 // when a photo was taken, for its order and the date filters: its file's
@@ -22,6 +24,7 @@ export type Exif = {
 export const takenAt = (i: Known) => i.exif.datetime || i.exif.file_datetime || "";
 
 export type ImageEntry = {
+  localIndex?: { assetId: string; variantId: string; subject: string };
   imgid: number;
   location?: { latitude: number; longitude: number } | null;
   path: string;
@@ -111,6 +114,18 @@ export const fileKind = (filename: string) => {
   return NOT_RAW[ext] ?? "RAW";
 };
 
+// the file's extension as Find's File type lists it, upper case: ORF, DNG,
+// JPG (also .jpeg and .jpe) and TIFF (also .tif). fileKind stays the
+// coarser name, and a saved filter's older "RAW" or "JPEG" still matches
+export const fileExt = (filename: string) => {
+  const ext = filename.match(/\.([^.]+)$/)?.[1].toUpperCase() ?? "";
+  return ext === "JPEG" || ext === "JPE" ? "JPG" : ext === "TIF" ? "TIFF" : ext;
+};
+// whether a file passes a list of ticked types: one of its extension, its
+// kind ("RAW" is every raw format) or, from older saved filters, its kind name
+export const kindsInclude = (kinds: string[], filename: string) =>
+  !kinds.length || kinds.includes(fileExt(filename)) || kinds.includes(fileKind(filename));
+
 // a camera's RAW+JPEG (or RAW+HEIF) pair shares its folder and name; this
 // is that shared part, the same for both files
 export const pairKey = (path: string) => path.replace(/\.[^./\\]+$/, "").toLowerCase();
@@ -155,8 +170,9 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 // an image as darktable's thumbnail pipe renders it, edits and all, at the
 // cached size next up from this one. given its entry, the thumbnail is also
 // kept on disk for fetchCachedThumb()
-export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false): Promise<ImageBitmap> {
-  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof);
+export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false,
+  foreground = false): Promise<ImageBitmap> {
+  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground);
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));
@@ -164,7 +180,7 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 
 // the thumbnail kept on disk for the file as it is now (its sidecar too),
 // without the engine; null when there is none
-async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageBitmap | null> {
+export async function fetchCachedThumb(entry: ImageEntry, size: number): Promise<ImageBitmap | null> {
   const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
@@ -178,14 +194,32 @@ async function fetchKnownThumb(key: string, size: number): Promise<ImageBitmap |
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
+// the engine's thumbnail threads (main.c, _THUMB_THREADS), set in
+// Preferences > Performance: two unless set, as a render keeps most of the
+// cores; a network drive may do better with fewer reads at once.
+// thumb_threads keeps it for the engine's next start too
+export const THUMB_THREADS = [1, 2, 3, 4, 6, 8];
+export const THUMB_THREADS_DEFAULT = 2;
+const THUMB_THREADS_KEY = "immage.thumbThreads";
+export function loadThumbThreads(): number {
+  try {
+    const v = Number(settings.get(THUMB_THREADS_KEY));
+    return THUMB_THREADS.includes(v) ? v : THUMB_THREADS_DEFAULT;
+  } catch { return THUMB_THREADS_DEFAULT; }
+}
+export function storeThumbThreads(v: number) {
+  try { settings.set(THUMB_THREADS_KEY, String(v)); } catch { /* not kept */ }
+  commands.thumbThreads(v).catch(() => {});
+}
+
 // fetches thumbnails: those kept on disk first, several at a time, then
-// the rest from the engine, ENGINE_THUMBS at a time. the engine builds them
+// the rest from the engine, as many at a time as it has threads
+// (loadThumbThreads). the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
 // is edited, and no render waits behind one. past `limit` bytes (the memory budget), those off screen
 // longest are let go, and come back from disk when scrolled to.
 // a known image's thumbnail goes by its knownKey() until the image has an
 // imgid, then stands in for it until checked (fetchKnownThumb)
-const ENGINE_THUMBS = 2; // the engine's thumbnail threads, main.c's _THUMB_THREADS
 
 type Id = number | string;
 
@@ -424,7 +458,7 @@ export class ThumbLoader {
           if (any) this.progressed();
           continue;
         }
-        if (this.inFlight >= ENGINE_THUMBS) {
+        if (this.inFlight >= loadThumbThreads()) {
           await new Promise<void>((r) => { this.wake = r; });
           continue;
         }

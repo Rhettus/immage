@@ -328,3 +328,34 @@ test('tone and look paste undo/redo preserves existing AI masks', {timeout:12000
   s=await open(images[1]);assert.equal(s.values.exposure,1);assert.equal(s.masks[0].shapes[0].ai.kind,'object');await s.close();
   await batch('release',result.token);
 }));
+
+// Copy Settings' Advanced modules: a named second exposure and velvia go to
+// each target with their whole state; pasting again replaces them rather
+// than stacking new instances (darktable's paste picks the same name)
+test('paste carries Advanced instances Simple cannot show, once', {timeout:120000}, async () => fixture(async ({images}) => {
+  const source=await open(images[0]);
+  const p1=(await request({cmd:'instance',action:'new',op:'exposure',priority:0})).priority;
+  await request({cmd:'instance',action:'rename',op:'exposure',priority:p1,name:'lift'});
+  await request({cmd:'set',op:'exposure',priority:p1,params:{exposure:-0.25}});
+  await request({cmd:'set',op:'velvia',priority:0,params:{strength:40},enabled:true});
+  const copies=await source.copyAdvanced(); await source.close();
+  assert.deepEqual(copies.map(c=>`${c.op}:${c.name}`).sort(),['exposure:lift','velvia:']);
+  const read=async(i)=>{
+    const s=await open(i);
+    const list=(await request({cmd:'instances'})).instances;
+    const lift=list.filter(x=>x.op==='exposure'&&x.name==='lift');
+    const got=lift.length===1?(await request({cmd:'get',modules:{[`exposure@${lift[0].priority}`]:['exposure'],'velvia@0':['strength']}})).modules:null;
+    await s.close();
+    return {lifts:lift.length,exposure:got?.[`exposure@${lift[0].priority}`].params.exposure,velvia:got?.['velvia@0']};
+  };
+  for (let round=0; round<2; round++) {
+    const r=await runPaste(images.slice(1,3),{values:{},advanced:copies},()=>{},()=>{});
+    assert.equal(r.error,null);
+    for (const i of images.slice(1,3)) {
+      const got=await read(i);
+      assert.equal(got.lifts,1,`round ${round}: exposure "lift" instances`);
+      assert.ok(Math.abs(got.exposure+0.25)<1e-6,`round ${round}: lift exposure ${got.exposure}`);
+      assert.equal(got.velvia.enabled,true); assert.ok(Math.abs(got.velvia.params.strength-40)<1e-6);
+    }
+  }
+}));

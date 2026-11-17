@@ -32,10 +32,20 @@ index 48a99cda71..99394cf925 100644
      g_free(filename);
      CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index 8c82a5efd1..83a9016ed7 100644
+index 8c82a5efd1..e87c9a097c 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
-@@ -432,6 +432,138 @@ public:
+@@ -30,6 +30,9 @@
+ #include <zlib.h>
+ 
+ #include <array>
++#include <exception>
++#include <memory>
++#include <new>
+ #include <cassert>
+ #include <cmath>
+ #include <cstdlib>
+@@ -432,6 +435,221 @@ public:
    image->writeMetadata();                                     \
  }
  
@@ -74,6 +84,14 @@ index 8c82a5efd1..83a9016ed7 100644
 +static thread_local bool _reading_prefix = false;
 +static thread_local bool _prefix_incomplete = false;
 +
++#if EXIV2_TEST_VERSION(0,28,0)
++using ReadCount = size_t;
++using SeekOffset = int64_t;
++#else
++using ReadCount = long;
++using SeekOffset = long;
++#endif
++
 +class ReadFileIo : public Exiv2::FileIo
 +{
 +public:
@@ -89,7 +107,9 @@ index 8c82a5efd1..83a9016ed7 100644
 +    {
 +      const size_t used = _data.size();
 +      _data.resize(length);
-+      if(seek(used, Exiv2::BasicIo::beg) || (size_t)read(_data.data() + used, length - used) != length - used)
++      const ReadCount requested = (ReadCount)(length - used);
++      if(seek((SeekOffset)used, Exiv2::BasicIo::beg)
++         || (size_t)read(_data.data() + used, requested) != length - used)
 +      {
 +        _data.clear();
 +        throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
@@ -119,16 +139,18 @@ index 8c82a5efd1..83a9016ed7 100644
 +    throw Exiv2::Error(Exiv2::ErrorCode::kerDataSourceOpenFailed, path, g_strerror(errno));
 +  const size_t length = io->size();
 +  unsigned char header[4] = {};
-+  const bool tiff = (size_t)io->read(header, sizeof(header)) == sizeof(header)
-+                    && (!memcmp(header, "II*\0", 4) || !memcmp(header, "MM\0*", 4));
-+  if(tiff && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
++  const bool have_header = (size_t)io->read(header, (ReadCount)sizeof(header)) == sizeof(header);
++  const bool tiff = have_header && (!memcmp(header, "II*\0", 4) || !memcmp(header, "MM\0*", 4));
++  const bool orf = have_header && (!memcmp(header, "IIRO", 4) || !memcmp(header, "IIRS", 4)
++                                   || !memcmp(header, "MMOR", 4) || !memcmp(header, "MMSR", 4));
++  if((tiff || orf) && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
 +  {
 +    size_t used = 0;
 +    for(size_t limit = 64 * 1024; limit < length && limit <= 16 * 1024 * 1024; limit *= 4)
 +    {
 +      file.data = (gchar *)g_realloc(file.data, limit);
-+      if(io->seek(used, Exiv2::BasicIo::beg)
-+         || (size_t)io->read((Exiv2::byte *)file.data + used, limit - used) != limit - used)
++      if(io->seek((SeekOffset)used, Exiv2::BasicIo::beg)
++         || (size_t)io->read((Exiv2::byte *)file.data + used, (ReadCount)(limit - used)) != limit - used)
 +        throw Exiv2::Error(Exiv2::ErrorCode::kerInputDataReadFailed);
 +      used = file.size = limit;
 +      std::unique_ptr<Exiv2::Image> image;
@@ -171,10 +193,81 @@ index 8c82a5efd1..83a9016ed7 100644
 +  return image;
 +}
 +
++struct dt_exif_prefetch_t
++{
++  gchar *path = NULL;
++  FileData file;
++  std::unique_ptr<Exiv2::Image> image;
++  gchar *error = NULL;
++  bool consumed = false;
++  ~dt_exif_prefetch_t() { g_free(path); g_free(error); }
++};
++
++static thread_local dt_exif_prefetch_t *_exif_prefetch = NULL;
++
++static void _exif_prefetch_set_error(dt_exif_prefetch_t *prefetch, const char *message)
++{
++  g_free(prefetch->error);
++  prefetch->error = g_strdup(message ? message : "metadata prefetch failed");
++}
++
++gboolean dt_exif_prefetch_supported(const char *path)
++{
++  if(!path) return FALSE;
++  const char *extension = strrchr(path, '.');
++  return extension && !g_ascii_strcasecmp(extension, ".orf");
++}
++
++dt_exif_prefetch_t *dt_exif_prefetch_prepare(const char *path)
++{
++  std::unique_ptr<dt_exif_prefetch_t> prefetch(new(std::nothrow) dt_exif_prefetch_t);
++  if(!prefetch) return NULL;
++  prefetch->path = g_strdup(path ? path : "");
++  if(!prefetch->path) return prefetch.release();
++  if(!path)
++  {
++    _exif_prefetch_set_error(prefetch.get(), "no metadata source path");
++    return prefetch.release();
++  }
++  if(!dt_exif_prefetch_supported(path))
++  {
++    _exif_prefetch_set_error(prefetch.get(), "metadata prefetch is supported only for ORF files");
++    return prefetch.release();
++  }
++  try
++  {
++    prefetch->image = _read_metadata(path, prefetch->file);
++  }
++  catch(const Exiv2::AnyError &e)
++  {
++    _exif_prefetch_set_error(prefetch.get(), e.what());
++  }
++  catch(const std::exception &e)
++  {
++    _exif_prefetch_set_error(prefetch.get(), e.what());
++  }
++  catch(...)
++  {
++    _exif_prefetch_set_error(prefetch.get(), "unknown metadata prefetch failure");
++  }
++  return prefetch.release();
++}
++
++void dt_exif_prefetch_set(dt_exif_prefetch_t *prefetch)
++{
++  _exif_prefetch = prefetch;
++}
++
++void dt_exif_prefetch_free(dt_exif_prefetch_t *prefetch)
++{
++  if(_exif_prefetch == prefetch) _exif_prefetch = NULL;
++  delete prefetch;
++}
++
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
  
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -1769,7 +1901,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+@@ -1769,7 +1987,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
  
    try
    {
@@ -184,7 +277,7 @@ index 8c82a5efd1..83a9016ed7 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -2921,19 +3054,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+@@ -2921,19 +3140,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
    }
  }
  
@@ -347,7 +440,7 @@ index 8c82a5efd1..83a9016ed7 100644
  
      // Get a list of preview images available in the image. The list is sorted
      // by the preview image pixel size, starting with the smallest preview.
-@@ -2946,10 +3214,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -2946,10 +3300,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
        return TRUE;
      }
  
@@ -365,7 +458,7 @@ index 8c82a5efd1..83a9016ed7 100644
  
      // Get the selected preview image
      Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
-@@ -2980,6 +3252,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -2980,6 +3338,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
    }
  }
  
@@ -377,19 +470,39 @@ index 8c82a5efd1..83a9016ed7 100644
  /* Read the metadata of an image.
   * XMP data trumps IPTC data trumps EXIF data.
   */
-@@ -3002,9 +3279,9 @@ gboolean dt_exif_read(dt_image_t *img,
+@@ -3002,9 +3365,28 @@ gboolean dt_exif_read(dt_image_t *img,
  
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
-+    FileData file;
-+    std::unique_ptr<Exiv2::Image> image(_read_metadata(path, file));
-     assert(image.get() != 0);
+-    assert(image.get() != 0);
 -    read_metadata_threadsafe(image);
++    FileData file;
++    std::unique_ptr<Exiv2::Image> image_owner;
++    Exiv2::Image *image = NULL;
++    if(_exif_prefetch && !_exif_prefetch->consumed && path
++       && _exif_prefetch->path && !strcmp(_exif_prefetch->path, path))
++    {
++      dt_exif_prefetch_t *prefetched = _exif_prefetch;
++      prefetched->consumed = true;
++      if(!prefetched->image)
++      {
++        dt_print(DT_DEBUG_IMAGEIO, "[dt_exif_read] prefetched metadata failed for %s: %s",
++                 path, prefetched->error ? prefetched->error : "unknown metadata prefetch failure");
++        return TRUE;
++      }
++      image = prefetched->image.get();
++    }
++    else
++    {
++      image_owner = _read_metadata(path, file);
++      image = image_owner.get();
++    }
++    assert(image != NULL);
      bool res = true;
  
      // EXIF metadata
-@@ -3067,9 +3344,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+@@ -3067,9 +3449,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
@@ -401,7 +514,7 @@ index 8c82a5efd1..83a9016ed7 100644
      const int w = (int)image->pixelWidth();
      const int h = (int)image->pixelHeight();
      if(w <= 0 || h <= 0) return FALSE;
-@@ -3094,7 +3371,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+@@ -3094,7 +3476,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      if(!image.get()) return FALSE;
@@ -409,7 +522,7 @@ index 8c82a5efd1..83a9016ed7 100644
      image->xmpData()["Xmp.darktable.neural_restore"] = task;
      write_metadata_threadsafe(image);
      return TRUE;
-@@ -3117,7 +3393,6 @@ int dt_exif_write_blob(uint8_t *blob,
+@@ -3117,7 +3498,6 @@ int dt_exif_write_blob(uint8_t *blob,
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      assert(image.get() != 0);
@@ -417,7 +530,7 @@ index 8c82a5efd1..83a9016ed7 100644
      Exiv2::ExifData &imgExifData = image->exifData();
      Exiv2::ExifData blobExifData;
      Exiv2::ExifParser::decode(blobExifData, blob, size);
-@@ -3198,7 +3473,8 @@ int dt_exif_read_blob(uint8_t **buf,
+@@ -3198,7 +3578,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -427,7 +540,7 @@ index 8c82a5efd1..83a9016ed7 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6297,8 +6573,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6297,8 +6678,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -438,7 +551,7 @@ index 8c82a5efd1..83a9016ed7 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
-@@ -6765,6 +7042,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+@@ -6765,6 +7147,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
  static void _exif_log_handler(const int log_level,
                                const char *message)
  {
@@ -455,10 +568,29 @@ index 8c82a5efd1..83a9016ed7 100644
    {
      // We don't seem to need \n in the format string as Exiv2 includes it
 diff --git a/src/common/exif.h b/src/common/exif.h
-index b7617404e6..093b2bf617 100644
+index b7617404e6..3d3f88361d 100644
 --- a/src/common/exif.h
 +++ b/src/common/exif.h
-@@ -129,6 +129,8 @@ void dt_exif_apply_default_metadata(dt_image_t *img);
+@@ -80,6 +80,18 @@ void dt_exif_sanitize_datetime(char *datetime);
+  * struct. returns TRUE if no success. */
+ gboolean dt_exif_read(dt_image_t *img, const char *path);
+
++/** Experimental ORF preparation, without image/cache/database mutations.
++ * prepare() owns its file bytes and parsed metadata and may run on a worker.
++ * After that worker completes, set() borrows the result on the importing
++ * thread; its next matching dt_exif_read() consumes it once. Keep it alive
++ * through that call, then set(NULL) and free(). Failure results avoid rereads.
++ * The caller must bound outstanding preparations; Exiv2's lock is retained. */
++typedef struct dt_exif_prefetch_t dt_exif_prefetch_t;
++gboolean dt_exif_prefetch_supported(const char *path);
++dt_exif_prefetch_t *dt_exif_prefetch_prepare(const char *path);
++void dt_exif_prefetch_set(dt_exif_prefetch_t *prefetch);
++void dt_exif_prefetch_free(dt_exif_prefetch_t *prefetch);
++
+ /** the pixel dimensions of `path`, from its metadata alone: no pixels are
+     decoded. Unlike dt_exif_read(), it reads no IPTC, XMP or other metadata
+     (creator, rights, tags, GPS), which --harvest-masks-xmp promises not to
+@@ -129,6 +141,8 @@ void dt_exif_apply_default_metadata(dt_image_t *img);
  
  /** fetch largest exif thumbnail jpg bytestream into buffer. Returns TRUE in case of any error */
  gboolean dt_exif_get_thumbnail(const char *path, uint8_t **buffer, size_t *size, char **mime_type);
@@ -763,15 +895,108 @@ index b1e5c2d148..0b33e6982e 100644
    uint8_t *backbuf;
    size_t backbuf_size;
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
-index d7b5a79ef4..9b8340e4ff 100644
+index d7b5a79ef4..1edd5ca300 100644
 --- a/src/imageio/imageio.c
 +++ b/src/imageio/imageio.c
-@@ -650,12 +650,13 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
+@@ -88,6 +88,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <tiffio.h>
+ #include <strings.h>
+
+ #ifdef USE_LUA
+@@ -650,12 +651,98 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
    return 0;
  }
- 
+
 -// load a full-res thumbnail:
 -gboolean dt_imageio_large_thumbnail(const char *filename,
++// Exiv2 wraps DNG's JPEG-compressed TIFF strips in a TIFF preview. Decode
++// that container with the libtiff already used for photo input, without
++// requiring ImageMagick or a temporary file.
++typedef struct dt_preview_tiff_t
++{
++  const uint8_t *data;
++  size_t size, pos;
++} dt_preview_tiff_t;
++
++static tmsize_t _preview_tiff_read(thandle_t handle, void *out, tmsize_t length)
++{
++  dt_preview_tiff_t *mem = (dt_preview_tiff_t *)handle;
++  if(length < 0) return -1;
++  const size_t count = MIN((size_t)length, mem->size - mem->pos);
++  memcpy(out, mem->data + mem->pos, count);
++  mem->pos += count;
++  return count;
++}
++
++static tmsize_t _preview_tiff_write(thandle_t handle, void *data, tmsize_t length)
++{
++  return -1;
++}
++
++static toff_t _preview_tiff_seek(thandle_t handle, toff_t offset, int whence)
++{
++  dt_preview_tiff_t *mem = (dt_preview_tiff_t *)handle;
++  const size_t base = whence == SEEK_SET ? 0 : whence == SEEK_CUR ? mem->pos : mem->size;
++  // TIFF represents backwards relative seeks in the unsigned offset type.
++  const int64_t delta = (int64_t)offset;
++  if(whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) return (toff_t)-1;
++  if(delta < -(int64_t)base || delta > (int64_t)(mem->size - base)) return (toff_t)-1;
++  mem->pos = base + delta;
++  return mem->pos;
++}
++
++static int _preview_tiff_close(thandle_t handle) { return 0; }
++static toff_t _preview_tiff_size(thandle_t handle)
++{
++  return ((dt_preview_tiff_t *)handle)->size;
++}
++static int _preview_tiff_map(thandle_t handle, void **data, toff_t *size) { return 0; }
++static void _preview_tiff_unmap(thandle_t handle, void *data, toff_t size) {}
++
++static gboolean _preview_tiff_decode(const uint8_t *data, size_t size, uint8_t **buffer,
++                                     int32_t *width, int32_t *height)
++{
++  if(size > INT64_MAX) return FALSE;
++  dt_preview_tiff_t mem = { data, size, 0 };
++  TIFF *tif = TIFFClientOpen("embedded preview", "rm", (thandle_t)&mem,
++                           _preview_tiff_read, _preview_tiff_write, _preview_tiff_seek,
++                           _preview_tiff_close, _preview_tiff_size,
++                           _preview_tiff_map, _preview_tiff_unmap);
++  if(!tif) return FALSE;
++  uint32_t w = 0, h = 0;
++  gboolean ok = FALSE;
++  // Bound the decoded preview to 256 MiB, including hostile dimensions.
++  if(TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &w) && TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &h)
++     && w && h && (uint64_t)w * h <= 64 * 1024 * 1024)
++  {
++    uint32_t *pixels = (uint32_t *)dt_alloc_align_uint8((size_t)w * h * 4);
++    // The caller applies the photo's orientation, just as for JPEG previews.
++    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
++    if(pixels && TIFFReadRGBAImageOriented(tif, w, h, pixels, ORIENTATION_TOPLEFT, 1))
++    {
++      for(size_t i = 0; i < (size_t)w * h; i++)
++      {
++        const uint32_t pixel = pixels[i];
++        uint8_t *out = (uint8_t *)(pixels + i);
++        out[0] = TIFFGetR(pixel);
++        out[1] = TIFFGetG(pixel);
++        out[2] = TIFFGetB(pixel);
++        out[3] = 255;
++      }
++      *buffer = (uint8_t *)pixels;
++      *width = w;
++      *height = h;
++      ok = TRUE;
++    }
++    else dt_free_align(pixels);
++  }
++  TIFFClose(tif);
++  return ok;
++}
++
 +// load an embedded preview, using JPEG scaled decoding when a size is requested
 +gboolean dt_imageio_thumbnail(const char *filename,
                                      uint8_t **buffer,
@@ -782,22 +1007,22 @@ index d7b5a79ef4..9b8340e4ff 100644
 +                                    const int target)
  {
    int res = TRUE;
- 
-@@ -663,8 +664,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+
+@@ -663,8 +750,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
    char *mime_type = NULL;
    size_t bufsize;
- 
+
 -  // get the biggest thumb from exif
 -  if(dt_exif_get_thumbnail(filename, &buf, &bufsize, &mime_type))
 +  // get a preview large enough for the requested thumbnail
 +  if(dt_exif_get_thumbnail_sized(filename, &buf, &bufsize, &mime_type, target))
      goto error;
- 
+
    if(strcmp(mime_type, "image/jpeg") == 0)
-@@ -674,8 +675,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+@@ -674,8 +761,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
      if(dt_imageio_jpeg_decompress_header(buf, bufsize, &jpg))
        goto error;
- 
+
 +    if(target > 0)
 +    {
 +      for(unsigned int denom = 8; denom >= 2; denom /= 2)
@@ -818,13 +1043,26 @@ index d7b5a79ef4..9b8340e4ff 100644
 +      jpeg_destroy_decompress(&jpg.dinfo);
 +      goto error;
 +    }
- 
+
      *width = jpg.width;
      *height = jpg.height;
-@@ -820,6 +838,13 @@ error:
+@@ -691,6 +795,12 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+
+     res = FALSE;
+   }
++  else if(strcmp(mime_type, "image/tiff") == 0
++          && _preview_tiff_decode(buf, bufsize, buffer, width, height))
++  {
++    *color_space = DT_COLORSPACE_SRGB;
++    res = FALSE;
++  }
+   else
+   {
+ #ifdef HAVE_GRAPHICSMAGICK
+@@ -820,6 +930,13 @@ error:
    return res;
  }
- 
+
 +gboolean dt_imageio_large_thumbnail(const char *filename, uint8_t **buffer,
 +                                    int32_t *width, int32_t *height,
 +                                    dt_colorspaces_color_profile_type_t *color_space)

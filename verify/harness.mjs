@@ -15,6 +15,7 @@ import { crc32 } from "node:zlib";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withNodeLocales } from "./vite-locales.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const APP = join(HERE, "..", "app");
@@ -32,7 +33,7 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith("file:") || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    const out = transformSync(path, readFileSync(path, "utf8"), { jsx: { runtime: "automatic" } });
+    const out = transformSync(path, withNodeLocales(url, readFileSync(path, "utf8")), { jsx: { runtime: "automatic" } });
     if (out.errors?.length) throw new Error(`${path}: ${out.errors.map((e) => e.message).join("; ")}`);
     return { format: "module", source: out.code, shortCircuit: true };
   },
@@ -174,7 +175,8 @@ const controls = () => {
 const active = (s, id) => m.mapsWith(id).some((map) => m.choiceOn(map, s.values));
 const activeLocal = (s, id) => m.localMaps.some((map) => map.controls.includes(id) && m.choiceOn(map, s.values));
 
-const optionsOf = (c) => (c.optionGroups ? c.optionGroups.flatMap(([, o]) => o) : c.options ?? []).map(([, v]) => v);
+const optionsOf = (c, s) => (c.optionsFor ? c.optionsFor(s.context, s.values[c.id])
+  : c.optionGroups ? c.optionGroups.flatMap(([, o]) => o) : c.options ?? []).map(([, v]) => v);
 
 // one control's trials: set what it needs, try each value, put it all back
 async function trialGlobal(o, photo, c, spec, check) {
@@ -185,7 +187,7 @@ async function trialGlobal(o, photo, c, spec, check) {
   try {
   const ref = spec.with ? await o.after(() => s.setMany(Object.entries(spec.with))) : start;
   const current = s.values[id];
-  const values = c.kind === "choice" ? optionsOf(c).filter((v) => v !== current)
+  const values = c.kind === "choice" ? optionsOf(c, s).filter((v) => v !== current)
     : c.kind === "toggle" ? [current ? 0 : 1] : trialValues(c, spec, current);
   const trials = [];
   let failed = null;
@@ -1220,7 +1222,7 @@ async function decisions(photo) {
       : judge({ expect: { lum: 1 } }, compare(f, o.base), 1);
   });
 
-  // the Filters popup narrows a folder by camera, keywords (a keyword
+  // Find's filters narrow a folder by camera, keywords (a keyword
   // with those under it) and exposure settings, which needs the engine to
   // list each photo's keywords with the folder (filter.ts; library.md,
   // Filtering)
@@ -1242,7 +1244,7 @@ async function decisions(photo) {
       : wrong.length ? `wrong for ${wrong.map(([f]) => JSON.stringify(f)).join(", ")}` : null;
   });
 
-  // each of the Filters popup's lists holds only what the other choices
+  // each of Find's lists holds only what the other choices
   // leave, so a camera chosen narrows the lenses, ISOs and the rest to
   // those it took (library.md, Filtering)
   await decide("the filter's lists narrow by the other choices", async () => {

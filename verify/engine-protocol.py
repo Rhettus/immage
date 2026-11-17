@@ -54,14 +54,14 @@ ROOT = background.ROOT
 # every command the engine answers; keep in step with engine/main.c
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
-ai_object baseline_end before cancel_base capture_times close color_profiles
-combine copy data_backup export export_hold export_release folder fonts forget get
-hdr_merge history import keywords keywords_set lenses look look_amount mask
-mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_state
+ai_object analysis_preview baseline_end before cancel_base capture_times clip_embed close color_profiles
+colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget get
+hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
+mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
-print print_profile_add print_profiles printer printers quit range_map
+presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
-spektra_stocks spot_source spots spots_enable style_forget thumb tone_key
+spektra_stocks spot_source spots spots_enable style_forget thumb thumb_threads tone_key watermarks wb_presets
 unpack upright version zones
 '''.split())
 
@@ -151,6 +151,7 @@ def anywhere(img):
         R('softproof', mode='off', label='softproof off'),
         R('style_forget', label='style_forget none'),
         R('style_forget', name='immage-no-such-look', label='style_forget unknown'),
+        R('history_discard', label='history_discard none'),
         R('paste_batch', label='paste_batch none'),
         R('paste_batch', action='begin', token=1, label='paste_batch begin empty'),
         R('paste_batch', action='begin', token=1, imgids=[0], label='paste_batch begin missing'),
@@ -172,6 +173,8 @@ def anywhere(img):
         R('capture_times', entries=[{'imgid': 0, 'before': '', 'after': ''}],
           label='capture_times stale'),
         R('thumb', imgid=0, label='thumb no out'),
+        R('analysis_preview', imgid=0, subject='bogus', out='{out}/a-bad.jpg',
+          label='analysis_preview invalid subject'),
         R('thumb', '{out}/t-missing.rgba', imgid=0, size=64, out='{out}/t-missing.rgba',
           label='thumb unknown'),
         R('copy', imgid=0, label='copy unknown'),
@@ -214,7 +217,30 @@ def photo_edits(img):
         R('module_state', op='exposure', enabled=False, label='module_state off'),
         R('module_state', op='exposure', enabled=True, label='module_state on'),
         R('module_state', op='nosuchmodule', label='module_state unknown'),
-        R('color_profiles'), R('lenses'),
+        R('module_schema', label='module_schema none'),
+        R('module_schema', op='nosuchmodule', label='module_schema unknown'),
+        R('module_schema', op='exposure', label='module_schema exposure'),
+        R('module_schema', op='tonecurve', label='module_schema tonecurve'),
+        R('instances'),
+        R('presets', op='exposure', priority=0, label='presets exposure'),
+        R('presets', op='nosuchmodule', priority=0, label='presets unknown'),
+        R('module_state', op='exposure', priority=0, preset='no such preset', label='module_state preset unknown'),
+        R('module_state', op='exposure', priority=0, preset='_builtin_magic lantern defaults', reset=True, label='module_state preset and reset'),
+        R('instance', label='instance none'),
+        R('instance', action='new', op='exposure', priority=0, label='instance new'),
+        R('instance', action='rename', op='exposure', priority=1, name='second', label='instance rename'),
+        R('instance', action='move', op='exposure', priority=1, other=0, after=False, label='instance move'),
+        R('instance', action='delete', op='exposure', priority=0, label='instance delete first'),
+        R('instance', action='delete', op='exposure', priority=1, label='instance delete'),
+        R('instance', action='restore', op='exposure', priority=1, label='instance restore'),
+        R('instance', action='nosuch', op='exposure', priority=0, label='instance unknown action'),
+        R('set', op='exposure', priority=7, enabled=True, params={'exposure': 0.5},
+          label='set exposure priority unknown'),
+        R('set', op='exposure', priority=1, instance='x', params={'exposure': 0.5},
+          label='set exposure priority and instance'),
+        R('get', modules={'exposure@7': ['exposure']}, label='get exposure priority unknown'),
+        R('get', modules={'exposure@0': ['exposure']}, label='get exposure priority 0'),
+        R('color_profiles'), R('lenses'), R('wb_presets'), R('lut_files', folder='{tmp}/luts'), R('lut_folder', folder=''), R('thumb_threads', threads=2), R('watermarks'),
         R('render', '{out}/r.ppm', width=64, height=48, out='{out}/r.ppm', label='render ppm'),
         R('render', '{out}/r.rgba', width=64, height=48, rgba='{out}/r.rgba', label='render rgba'),
         R('render', '{out}/r.ppm', width=32, height=24, scale=1.0, x=8, y=8, out='{out}/r.ppm',
@@ -261,6 +287,10 @@ def photo_edits(img):
           label='spot_source circle'),
         R('sample', label='sample default'),
         R('sample', x=0.25, y=0.75, box=[0.2, 0.2, 0.4, 0.4], label='sample box'),
+        R('colormapping_acquire', which='source', n=3, label='colormapping_acquire source'),
+        R('colormapping_acquire', which='target', n=5, label='colormapping_acquire target'),
+        R('colormapping_acquire', which='bogus', n=3, label='colormapping_acquire unknown side'),
+        R('colormapping_acquire', which='source', n=9, label='colormapping_acquire too many clusters'),
         R('tone_key'), R('agx_auto', label='agx_auto without agx'),
         R('set', op='agx', enabled=True, params={}, label='set agx'), R('agx_auto'),
         R('upright', label='upright default'),
@@ -294,6 +324,7 @@ def photo_edits(img):
         R('before', on=True, label='before on'), R('before', on=False, label='before off'),
         R('baseline_end'),
         R('save'),
+        R('module_state', op='exposure', priority=0, preset='_builtin_magic lantern defaults', label='module_state preset'),
     ]
 
 
@@ -339,6 +370,14 @@ def tagged(img):
     and the reader thread's cancels (no reply of their own)."""
     return [
         T('thumb', '{out}/tt.rgba', imgid=img, size=64, out='{out}/tt.rgba'),
+        T('analysis_preview', '{out}/ta.jpg', imgid=img, subject='edited', out='{out}/ta.jpg'),
+        T('analysis_preview', imgid=img, subject='bogus', out='{out}/ta.jpg',
+          label='analysis_preview tagged invalid subject'),
+        T('analysis_preview', imgid=img, subject='original', label='analysis_preview tagged no out'),
+        T('clip_embed', tower='bogus', model_root='{tmp}/no-model', input='{tmp}/no-input',
+          label='clip_embed tagged invalid'),
+        T('clip_embed', tower='text', model_root='/', input='/no-such-clip-tensor',
+          label='clip_embed tagged missing tensor'),
         T('export', '{out}/te.jpg', imgid=img, out='{out}/te.jpg'),
         T('export', imgid=0, out='{out}/te.jpg', label='export tagged invalid id'),
         T('export_release', job=9),
@@ -446,7 +485,8 @@ class Run:
         if isinstance(value, dict):
             return {k: self.norm(v, k) for k, v in value.items() if not TIMING.search(k)}
         if isinstance(value, list):
-            return [self.norm(v) for v in value]
+            # watermarks' folders, which are the build's and the user's
+            return ['<DIR>'] * len(value) if key == 'dirs' else [self.norm(v) for v in value]
         if key == 'hash' and isinstance(value, str):
             # a frame's hash differs from run to run; which frames share one does not
             return self.hashes.setdefault(value, f'<HASH-{len(self.hashes) + 1}>')
@@ -459,6 +499,8 @@ class Run:
         if isinstance(value, dict):
             return {k: self.fixture(v, k) for k, v in value.items() if k not in ('rid', 'tag')}
         if isinstance(value, list):
+            if key == 'dirs':
+                return ['<DATADIR>/watermarks', '<CONFIGDIR>/watermarks']
             return [self.fixture(v) for v in value[:FIXTURE_ITEMS]]
         if key == 'hash' and isinstance(value, str):
             n = self.hashes.setdefault(value, f'<HASH-{len(self.hashes) + 1}>')
@@ -594,6 +636,7 @@ class Run:
         last = '<last-token>'
         self.state('2 library', [
             R('paste_batch', action='begin', token=0, imgids=[1], label='paste_batch begin'),
+            R('history_discard', imgid=1, label='history_discard'),
             R('paste_batch', action='commit', token=last, label='paste_batch commit'),
             R('paste_batch', action='undo', token=last, label='paste_batch undo'),
             R('paste_batch', action='redo', token=last, label='paste_batch redo'),
@@ -604,7 +647,8 @@ class Run:
                                                          label='open preview pipe'),
                               R('open', label='open no path'),
                               R('open', path='{tmp}/no-such.tif', label='open missing')])
-        self.state('3 open', [R('open', path=str(a), label='open again')])
+        self.state('3 open', [R('open', path=str(a), label='open again'),
+                              R('history_discard', imgid=1, label='history_discard open')])
         self.state('3 open', anywhere(1) + photo_files(1) + photo_edits(1) + tagged(1)
                    + malformed())
         # closed again

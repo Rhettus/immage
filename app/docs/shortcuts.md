@@ -35,7 +35,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 
 | Key | Action |
 | --- | --- |
-| F | Full screen preview (F or Esc leaves) |
+| F | Full screen preview in the editor (F or Esc leaves); in the grid, the culling preview of the photo under the pointer or the selection |
 | L | Next canvas: dark, neutral gray, white |
 | Tab | Hide or show the side panels |
 | ⇧Tab | Hide or show the side panels and filmstrip |
@@ -45,7 +45,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | Scroll | Zoom around the pointer (a brush in hand: its size) |
 | Space-drag | Pan a zoomed-in photo, in any tool |
 | \ | Before |
-| Y | Next before / after view: side by side, split left / right, split top / bottom, hold for before |
+| Y | Next before / after view: side by side, split left / right, split top / bottom |
 | C | Compare with another photo (← → step it, Esc leaves) |
 | J | Show or hide shadow and highlight clipping |
 | H | Next scope: histogram, waveform, RGB parade, vectorscope, waveform + vectorscope (⇧H back) |
@@ -63,7 +63,10 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | X | Reject |
 | ⌘-click | In the filmstrip: add a photo to the selection, or take it out |
 | ⇧-click | In the filmstrip: select the run from the last clicked photo |
-| G | Grid view of the folder (G or Esc goes back) |
+| ⌥1 - ⌥9 | Open saved filter 1 to 9 (Find's saved filters, in list order) |
+| G | Grid view of the folder, as the rail's Library button (G or Esc goes back) |
+| ⌘= ⌘- | In grid view: larger or smaller thumbnails |
+| Pinch, ⌘-scroll | In grid view: resize the thumbnails smoothly |
 
 ## Adjustments
 

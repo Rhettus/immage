@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 import { useEffect, useRef, useState } from "react";
+import { t } from "./i18n";
 import { commands } from "./commands";
 import { perf, observeWebview, writeReport } from "./perf";
 import { loadPreview, loadBalancedPreviewSize, loadDraftSmallest, loadDraftTarget } from "./Preferences";
@@ -57,7 +58,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
   const measure = async () => {
     const runResult = await run();
     if (pending.current?.context && JSON.stringify(runResult.context) !== JSON.stringify(pending.current.context)) {
-      throw new Error("Relaunch verification needs the same photo, window size and display scale. Restore them and run the tuner again.");
+      throw new Error(t("dialogs.tuner.errors.relaunchContext"));
     }
     setContext(runResult.context);
     const measured = measureTuner(runResult);
@@ -88,7 +89,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
       setTrials(best.trials); setResult(best.trial.measurement); setPath(best.trial.path); setTestedSettings(best.trial.settings); setVerified(false);
       const adjustments = tunerChanges(original,best.trial.settings);
       setProposal(adjustments.length ? best.trial.settings : null); setChanges(adjustments);
-      if (!best.met) setError("No tested preview configuration reached both targets. The best measured result is shown; consider a smaller window or lower targets.");
+      if (!best.met) setError(t("dialogs.tuner.errors.targetsNotMet"));
     } catch (e) { setResult(null); setProposal(null); setError(String(e)); }
     finally {
       try { await reload(); } finally { lock.current = false; setBusy(false); setProgress(""); }
@@ -140,7 +141,7 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
         try { await option.set(prior[option.id]); } catch { failures.push(option.label); }
       }
       store.remove(PENDING); setResult(null); setVerified(false);
-      setError(`${e}. ${failures.length ? `Could not restore: ${failures.join(", ")}` : "Previous settings restored."}`);
+      setError(t("dialogs.tuner.errors.applyFailed", { error: String(e), recovery: failures.length ? t("dialogs.tuner.errors.couldNotRestore", { failures: failures.join(", ") }) : t("dialogs.tuner.errors.previousRestored") }));
       await reload();
     } finally { lock.current = false; setBusy(false); }
   };
@@ -170,76 +171,76 @@ export function PerformanceTuner({ run, onClose, onRelaunch, onOverlay, photo, r
     try {
       const resources = await commands.perfResourcesStop();
       const currentOptions = await tunerOptions(onOverlay);
-      if (currentOptions.some((o) => c.settings[o.id] !== o.current)) throw new Error("Settings changed during recording. Repeat the workload without changing preferences.");
+      if (currentOptions.some((o) => c.settings[o.id] !== o.current)) throw new Error(t("dialogs.tuner.errors.settingsChanged"));
       const cacheUsage = await commands.cacheUsage().catch(() => null);
       const at = new Date();
       const reportPath = await writeReport(`tuner-${at.toISOString().replace(/[:.]/g,"-")}`,{immage:"performance-tuner-workload",version:1,at:at.toISOString(),workload:"navigation",settings:c.settings,seconds:(performance.now()-c.start)/1000,samples,frames,webviewTiming,resources,cacheUsage});
       setWork((old) => [...old,{settings:c.settings,samples,path:reportPath}]);
       if (navSamples(samples).length) setNavigationPending(false);
-      else setError("No completed photo opens were captured. Repeat the recording and finish opening photos before stopping.");
+      else setError(t("dialogs.tuner.errors.noPhotoOpens"));
     } catch (e) { setError(String(e)); }
     finally { lock.current = false; setBusy(false); }
   };
   const close = () => { store.remove(PENDING); onClose(); };
   if (recording) return <div role="status" style={{position:"fixed",bottom:24,left:24,zIndex:1000,background:"var(--panel)",padding:16,maxWidth:440,border:"1px solid currentColor"}}>
-    <p>Recording navigation. Step through the same photos in both directions, pausing for read ahead. Reopen the same Immich originals to compare their disk cache.</p>
-    <button className="btn" onClick={() => void finish()}>Stop and compare</button>
+    <p>{t("dialogs.tuner.recordingHint")}</p>
+    <button className="btn" onClick={() => void finish()}>{t("dialogs.tuner.stopCompare")}</button>
   </div>;
-  if (busy) return <div className="modal-backdrop" style={{background:"transparent"}}><div role="status" style={{alignSelf:"flex-end",background:"var(--panel)",padding:16}}>{progress || "Performance tuner: measuring or applying settings…"} Leave the app in front and wait.</div></div>;
+  if (busy) return <div className="modal-backdrop" style={{background:"transparent"}}><div role="status" style={{alignSelf:"flex-end",background:"var(--panel)",padding:16}}>{progress || t("dialogs.tuner.busy")} {t("dialogs.tuner.wait")}</div></div>;
   return <div className="modal-backdrop"><div className="modal tuner" role="dialog" aria-modal="true" aria-labelledby="tuner-title">
-    <div className="modal-head"><h2 id="tuner-title">Performance tuner</h2></div>
+    <div className="modal-head"><h2 id="tuner-title">{t("dialogs.tuner.title")}</h2></div>
     <div className="modal-body">
       <section className="tuner-section">
-        <h3>1. Prepare</h3>
-        <p>Load a representative RAW with your usual edits. Use your normal window size and a copy of the photo.</p>
-        <div className="tuner-photo">{photo?.split(/[\\/]/).pop() ?? "Open photo"}{previewArea && ` · ${Math.round(previewArea.w)} × ${Math.round(previewArea.h)} px`}</div>
-        {raw === false && <p role="alert">Choose a representative RAW for useful recommendations.</p>}
+        <h3>{t("dialogs.tuner.prepare")}</h3>
+        <p>{t("dialogs.tuner.prepareHint")}</p>
+        <div className="tuner-photo">{photo?.split(/[\\/]/).pop() ?? t("dialogs.tuner.openPhoto")}{previewArea && ` · ${Math.round(previewArea.w)} × ${Math.round(previewArea.h)} px`}</div>
+        {raw === false && <p role="alert">{t("dialogs.tuner.chooseRaw")}</p>}
       </section>
       <section className="tuner-section">
-        <h3>2. Set targets</h3>
+        <h3>{t("dialogs.tuner.targets")}</h3>
         <div className="tuner-targets">
-          <label>Frame rate <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[15,30,60].map((n) => <option key={n} value={n}>{n} FPS</option>)}</select></label>
-          <label>Maximum latency <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[50,80,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
+          <label>{t("dialogs.tuner.frameRate")} <select className="field" value={fps} onChange={(e) => {setFps(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[15,30,60].map((n) => <option key={n} value={n}>{n} FPS</option>)}</select></label>
+          <label>{t("dialogs.tuner.maxLatency")} <select className="field" value={latency} onChange={(e) => {setLatency(Number(e.target.value));setVerified(false);setResult(null);setProposal(null);}}>{[50,80,100,200].map((n) => <option key={n} value={n}>{n} ms</option>)}</select></label>
         </div>
-        <p>Tries Balanced 100% previews first, then smaller preview sizes and drafts. Stops when both targets are met.</p>
+        <p>{t("dialogs.tuner.targetsHint")}</p>
       </section>
       {result && <section className="tuner-section">
-        <h3>3. {verified ? "Verification" : "Recommendation"}</h3>
-        <p role="status">{passed ? verified ? "Verified: targets reached." : proposal ? "Ready to apply." : "Current settings meet the targets." : "Targets not reached."}</p>
-        <div className="tuner-metrics"><div><strong>{result.fps.toFixed(1)} FPS</strong><span>Median frame rate</span></div><div><strong>{Number.isFinite(result.latency) ? `${result.latency.toFixed(0)} ms` : "Unavailable"}</strong><span>Median latency</span></div></div>
+        <h3>3. {verified ? t("dialogs.tuner.verification") : t("dialogs.tuner.recommendation")}</h3>
+        <p role="status">{passed ? verified ? t("dialogs.tuner.verified") : proposal ? t("dialogs.tuner.readyToApply") : t("dialogs.tuner.currentMeetsTargets") : t("dialogs.tuner.targetsNotReached")}</p>
+        <div className="tuner-metrics"><div><strong>{result.fps.toFixed(1)} FPS</strong><span>{t("dialogs.tuner.medianFps")}</span></div><div><strong>{Number.isFinite(result.latency) ? `${result.latency.toFixed(0)} ms` : t("dialogs.tuner.unavailable")}</strong><span>{t("dialogs.tuner.medianLatency")}</span></div></div>
         {changes.length>0 && <ul>{changes.map((c) => <li key={c}>{c}</li>)}</ul>}
-        {!result.complete && <p>Incomplete measurement. Keep the app visible at the same size and retry.</p>}
-        {testedSettings && <p className="tuner-photo">{testedSettings.preview}{testedSettings.preview === "balanced" ? ` ${testedSettings.balancedSize*100}%` : ""} · minimum draft {testedSettings.smallest*100}%</p>}
+        {!result.complete && <p>{t("dialogs.tuner.incomplete")}</p>}
+        {testedSettings && <p className="tuner-photo">{t(`dialogs.tuner.profile.${testedSettings.preview}`)}{testedSettings.preview === "balanced" ? ` ${testedSettings.balancedSize*100}%` : ""} · {t("dialogs.tuner.minimumDraft", { size: testedSettings.smallest*100 })}</p>}
       </section>}
       {error && <p role="alert">{error}</p>}
-      {navigationPending && <p role="status">Navigation verification pending; record the same sequence again below.</p>}
-      <details className="tuner-details"><summary>Advanced comparisons</summary>
-        <p>Change one option at a time, then apply and verify. AI and thumbnail caches are excluded.</p>
-        <button className="btn" onClick={() => void startMeasure()}>Measure current settings</button>
-        <table><thead><tr><th>Option</th><th>Candidate</th><th>Test</th></tr></thead><tbody>{options.map((o) => <tr key={o.id}><td>{o.label}{o.restart ? " · relaunch" : ""}</td><td><select aria-label={o.label} className="field" value={chosen[o.id] ?? o.current} onChange={(e) => setChosen((old) => ({...old,[o.id]:e.target.value}))}>{o.values.map((v) => <option key={v.value} value={v.value}>{v.label}{v.value === o.current ? " (current)" : ""}</option>)}</select></td><td>{o.workload}</td></tr>)}</tbody></table>
-        {selected.length>0 && <button className="btn" disabled={needsBaseline || !result} onClick={() => void apply(false)}>{restart ? "Apply, relaunch and verify" : "Apply selected and verify"}</button>}
-        {selected.length>0 && !result && <p>Measure current settings first.</p>}
-        {needsBaseline && <p>Record a navigation baseline first.</p>}
-        <h3>Navigation</h3>
-        <p>Record the same photo sequence before and after changing read ahead or the originals cache. Include both directions. Smaller cache limits can evict downloaded originals; edited originals are retained.</p>
-        <button className="btn" onClick={() => void record()}>Record navigation workload</button>
-        {work.length>0 && <table><thead><tr><th>Run</th><th>Operation</th><th>Median</th></tr></thead><tbody>{work.flatMap((r,i) => {
+      {navigationPending && <p role="status">{t("dialogs.tuner.navPending")}</p>}
+      <details className="tuner-details"><summary>{t("dialogs.tuner.advanced")}</summary>
+        <p>{t("dialogs.tuner.advancedHint")}</p>
+        <button className="btn" onClick={() => void startMeasure()}>{t("dialogs.tuner.measure")}</button>
+        <table><thead><tr><th>{t("dialogs.tuner.option")}</th><th>{t("dialogs.tuner.candidate")}</th><th>{t("dialogs.tuner.test")}</th></tr></thead><tbody>{options.map((o) => <tr key={o.id}><td>{o.label}{o.restart ? ` · ${t("dialogs.tuner.relaunch")}` : ""}</td><td><select aria-label={o.label} className="field" value={chosen[o.id] ?? o.current} onChange={(e) => setChosen((old) => ({...old,[o.id]:e.target.value}))}>{o.values.map((v) => <option key={v.value} value={v.value}>{v.label}{v.value === o.current ? ` (${t("dialogs.tuner.current")})` : ""}</option>)}</select></td><td>{t(`dialogs.tuner.workload.${o.workload}`)}</td></tr>)}</tbody></table>
+        {selected.length>0 && <button className="btn" disabled={needsBaseline || !result} onClick={() => void apply(false)}>{restart ? t("dialogs.tuner.applyRelaunch") : t("dialogs.tuner.applySelected")}</button>}
+        {selected.length>0 && !result && <p>{t("dialogs.tuner.measureFirst")}</p>}
+        {needsBaseline && <p>{t("dialogs.tuner.baselineFirst")}</p>}
+        <h3>{t("dialogs.tuner.navigation")}</h3>
+        <p>{t("dialogs.tuner.navigationHint")}</p>
+        <button className="btn" onClick={() => void record()}>{t("dialogs.tuner.recordNavigation")}</button>
+        {work.length>0 && <table><thead><tr><th>{t("dialogs.tuner.run")}</th><th>{t("dialogs.tuner.operation")}</th><th>{t("dialogs.tuner.median")}</th></tr></thead><tbody>{work.flatMap((r,i) => {
           const samples=navSamples(r.samples), names=[...new Set(samples.map((v) => v.name))];
           return names.map((name) => <tr key={`${i}-${name}`}><td title={r.path}>{i+1}</td><td>{name}</td><td>{trimmedMedian(samples.filter((v) => v.name===name).map((v) => v.ms)).toFixed(1)} ms</td></tr>);
         })}</tbody></table>}
       </details>
-      <details className="tuner-details"><summary>Measurements and reports</summary>
-        <p>Recommendations use the median after removing the fastest and slowest 10% of drag-frame measurements. FPS comes from intervals between painted photo frames; latency measures input to paint.</p>
-        <p>Sliders return to their starting values; benchmark moves add history. Original preferences are restored before Apply. Applying runs verification again.</p>
-        {trials.length>0 && <table><thead><tr><th>Preview</th><th>Minimum draft</th><th>Median FPS</th><th>Median latency</th></tr></thead><tbody>{trials.map((t,i) => <tr key={i}><td>{t.settings.preview}{t.settings.preview === "balanced" ? ` ${t.settings.balancedSize*100}%` : ""}</td><td>{t.settings.smallest*100}%</td><td>{t.measurement.fps.toFixed(1)}</td><td>{Number.isFinite(t.measurement.latency) ? `${t.measurement.latency.toFixed(0)} ms` : "unavailable"}</td></tr>)}</tbody></table>}
-        {result?.modules.length ? <p>Costliest modules: {result.modules.map(([name,ms]) => `${name}: ${ms.toFixed(1)} ms`).join(", ")}.</p> : null}
-        {path && <p className="tuner-report">Report: {path}</p>}
+      <details className="tuner-details"><summary>{t("dialogs.tuner.reports")}</summary>
+        <p>{t("dialogs.tuner.measurementsHint")}</p>
+        <p>{t("dialogs.tuner.preferencesHint")}</p>
+        {trials.length>0 && <table><thead><tr><th>{t("dialogs.tuner.preview")}</th><th>{t("dialogs.tuner.minDraft")}</th><th>{t("dialogs.tuner.medianFps")}</th><th>{t("dialogs.tuner.medianLatency")}</th></tr></thead><tbody>{trials.map((trial,i) => <tr key={i}><td>{t(`dialogs.tuner.profile.${trial.settings.preview}`)}{trial.settings.preview === "balanced" ? ` ${trial.settings.balancedSize*100}%` : ""}</td><td>{trial.settings.smallest*100}%</td><td>{trial.measurement.fps.toFixed(1)}</td><td>{Number.isFinite(trial.measurement.latency) ? `${trial.measurement.latency.toFixed(0)} ms` : t("dialogs.tuner.unavailableLower")}</td></tr>)}</tbody></table>}
+        {result?.modules.length ? <p>{t("dialogs.tuner.costliest", { modules: result.modules.map(([name,ms]) => `${name}: ${ms.toFixed(1)} ms`).join(", ") })}</p> : null}
+        {path && <p className="tuner-report">{t("dialogs.tuner.report", { path })}</p>}
       </details>
     </div>
     <div className="modal-foot">
-      <button className="btn" onClick={close}>{verified ? "Done" : "Cancel"}</button>
-      <button className={`btn${proposal ? "" : " primary"}`} onClick={() => void search()}>Find best preview</button>
-      {proposal && <button className="btn primary" onClick={() => void apply(true)}>Apply and verify</button>}
+      <button className="btn" onClick={close}>{verified ? t("dialogs.tuner.done") : t("dialogs.tuner.cancel")}</button>
+      <button className={`btn${proposal ? "" : " primary"}`} onClick={() => void search()}>{t("dialogs.tuner.findBest")}</button>
+      {proposal && <button className="btn primary" onClick={() => void apply(true)}>{t("dialogs.tuner.applyVerify")}</button>}
     </div>
   </div></div>;
 }

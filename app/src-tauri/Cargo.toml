@@ -1,6 +1,6 @@
 [package]
 name = "immage"
-version = "0.45.0"
+version = "0.46.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -28,6 +28,9 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 chrono = "0.4"
 # model download checksums (already in the tree, via tauri)
 sha2 = "0.10"
+# Immich's checksum of an original, to verify a download into a folder
+# (move_cmds.rs; already in the tree)
+sha1 = "0.11"
 # deleted photos go to the system's Trash / Recycle Bin
 trash = "5"
 # the thumbnail cache (cache.rs): JPEG encoding, and the disk's free space;
@@ -45,11 +48,13 @@ serde = { version = "1", features = ["derive"] }
 tauri-specta = { version = "=2.0.0-rc.28", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive", "function", "serde_json"] }
 specta-typescript = "=0.0.15"
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+rusqlite = "0.41.1"
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 # the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tokenizers = { version = "=0.23.2", default-features = false, features = ["fancy-regex"] }
 
 # the main dispatch queue, to act after tao's own work there (preview_fullscreen;
 # already in the tree, via tao)
@@ -69,6 +74,9 @@ libc = "0.2"
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+# the webview's GTK events, for the touchpad pinch (pinch.rs); the version
+# tauri uses (already in the tree)
+gtk = "0.18"
 
 # WebView2's shared buffers, for frames (main.rs, shared_frame); the versions
 # wry uses (already in the tree, via tauri)
@@ -77,6 +85,7 @@ webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
+tempfile = "3"
 mockito = "1.7.2"
 
 # the importer's decoding and hashing crawl unoptimized; keep dependencies fast in dev

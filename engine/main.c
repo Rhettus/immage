@@ -24,6 +24,7 @@
 // persistent store
 
 #include "engine.h"
+#include <stdlib.h>
 
 #ifdef _WIN32
 // darktable links its programs with -municode: this supplies the wmain()
@@ -328,6 +329,16 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
 // a raw gets the client's raw-only defaults, as Lightroom's do
   json_builder_set_member_name(b, "raw");
   json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
+// the sensor picks the demosaic methods that apply, as demosaic.c's
+// reload_defaults and commit_params tell them apart
+  json_builder_set_member_name(b, "sensor");
+  {
+    const dt_image_t *img = &_s.dev.image_storage;
+    if(!dt_image_is_raw(img)) json_builder_add_null_value(b);
+    else json_builder_add_string_value(b, dt_image_is_monochrome(img) ? "mono"
+                                          : img->buf_dsc.filters == 9u ? "xtrans"
+                                          : img->flags & DT_IMAGE_4BAYER ? "bayer4" : "bayer");
+  }
   json_builder_set_member_name(b, "look");
   const char *look = looks_look_name();
   if(look) json_builder_add_string_value(b, look); else json_builder_add_null_value(b);
@@ -380,6 +391,13 @@ static gboolean _cmd_import(JsonObject *req, JsonBuilder *b, char **err)
 {
   library_import_files(req, b, FALSE);
   return TRUE;
+}
+
+static gboolean _cmd_analysis_preview(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
+  return dest && library_analysis_preview(json_object_get_int_member_with_default(req, "imgid", 0),
+    json_object_get_string_member_with_default(req, "subject", ""), dest, err);
 }
 
 static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
@@ -664,6 +682,11 @@ static gboolean _cmd_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_history_discard(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_history_discard(json_object_get_int_member_with_default(req, "imgid", 0), b, err);
+}
+
 static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
 {
   const char *op = json_object_get_string_member_with_default(req, "op", NULL);
@@ -677,12 +700,14 @@ static gboolean _cmd_set(JsonObject *req, JsonBuilder *b, char **err)
   const char *before = json_object_get_string_member_with_default(req, "before", NULL);
   const char *instance = json_object_get_string_member_with_default(req, "instance", NULL);
   const char *mask = json_object_get_string_member_with_default(req, "mask", NULL);
+  const gboolean anchored = json_object_get_boolean_member_with_default(req, "anchored", TRUE);
   const gboolean invert = json_object_get_boolean_member_with_default(req, "invert", FALSE);
   const double opacity = json_object_get_double_member_with_default(req, "opacity", -1.0);
   JsonObject *refine = json_object_has_member(req, "refine")
     ? json_object_get_object_member(req, "refine") : NULL;
-  if(!op || !session_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, invert, opacity,
-                  refine, err))
+  const int priority = json_object_get_int_member_with_default(req, "priority", 0);
+  if(!op || !session_set(op, field, value, params, has_enabled, enabled, after, before, instance, mask, anchored, invert, opacity,
+                  refine, priority, err))
     return FALSE;
   return TRUE;
 }
@@ -691,6 +716,47 @@ static gboolean _cmd_color_profiles(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!session_color_profiles(b, err)) return FALSE;
   return TRUE;
+}
+
+static gboolean _cmd_wb_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return wb_presets(b, err);
+}
+
+static gboolean _cmd_lut_files(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return files_lut(req, b, err);
+}
+
+static gboolean _cmd_colormapping_acquire(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return cmap_acquire(req, b, err);
+}
+
+static gboolean _cmd_lut_folder(JsonObject *req, JsonBuilder *b, char **err)
+{
+  files_set_lut_folder(json_object_get_string_member_with_default(req, "folder", ""));
+  return TRUE;
+}
+
+// Preferences' thumbnail threads, at once: a lower count lets the threads
+// under way finish their thumbnail first
+static gboolean _cmd_thumb_threads(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const gint64 n = json_object_get_int_member_with_default(req, "threads", _THUMB_THREADS);
+  if(n < 1 || n > _THUMB_THREADS_MAX)
+  {
+    *err = g_strdup_printf("thumbnail threads must be 1 to %d", _THUMB_THREADS_MAX);
+    return FALSE;
+  }
+  library_thumb_threads((gint)n);
+  library_metadata_threads((gint)n);
+  return TRUE;
+}
+
+static gboolean _cmd_watermarks(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return files_watermarks(b, err);
 }
 
 static gboolean _cmd_lenses(JsonObject *req, JsonBuilder *b, char **err)
@@ -708,9 +774,16 @@ static gboolean _cmd_module_state(JsonObject *req, JsonBuilder *b, char **err)
                     json_object_get_boolean_member_with_default(req, "reset", FALSE),
                     json_object_has_member(req, "restore")
                       ? json_object_get_object_member(req, "restore") : NULL,
+                    json_object_get_string_member_with_default(req, "preset", NULL),
                     b, err))
     return FALSE;
   return TRUE;
+}
+
+static gboolean _cmd_presets(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_presets(json_object_get_string_member_with_default(req, "op", NULL),
+                         json_object_get_int_member_with_default(req, "priority", 0), b, err);
 }
 
 static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
@@ -719,6 +792,28 @@ static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
     ? json_object_get_object_member(req, "modules") : NULL;
   if(!ops || !session_get(ops, b, err)) return FALSE;
   return TRUE;
+}
+
+static gboolean _cmd_module_schema(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_module_schema(json_object_get_string_member_with_default(req, "op", NULL), b, err);
+}
+
+static gboolean _cmd_instances(JsonObject *req, JsonBuilder *b, char **err)
+{
+  session_instances(b);
+  return TRUE;
+}
+
+static gboolean _cmd_instance(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_instance(json_object_get_string_member_with_default(req, "action", NULL),
+                          json_object_get_string_member_with_default(req, "op", NULL),
+                          json_object_get_int_member_with_default(req, "priority", 0),
+                          json_object_get_string_member_with_default(req, "name", NULL),
+                          json_object_get_string_member_with_default(req, "mask", NULL),
+                          json_object_get_int_member_with_default(req, "other", 0),
+                          json_object_get_boolean_member_with_default(req, "after", FALSE), b, err);
 }
 
 static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
@@ -1202,6 +1297,7 @@ static const eng_cmd_t _commands[] =
   { "folder", _cmd_folder, 0 },
   { "import", _cmd_import, 0 },
   { "thumb", _cmd_thumb, 0 },
+  { "analysis_preview", _cmd_analysis_preview, 0 },
   { "prefetch", _cmd_prefetch, 0 },
   { "meta", _cmd_meta, 0 },
   { "keywords", _cmd_keywords, 0 },
@@ -1236,11 +1332,22 @@ static const eng_cmd_t _commands[] =
   { "unpack", _cmd_unpack, 0 },
   { "style_forget", _cmd_style_forget, 0 },
   { "paste_batch", _cmd_paste_batch, 0 },
+  { "history_discard", _cmd_history_discard, 0 },
   { "set", _cmd_set, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
+  { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
+  { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
+  { "colormapping_acquire", _cmd_colormapping_acquire, _CMD_NEEDS_OPEN },
+  { "lut_folder", _cmd_lut_folder, 0 },
+  { "thumb_threads", _cmd_thumb_threads, 0 },
+  { "watermarks", _cmd_watermarks, 0 },
   { "lenses", _cmd_lenses, _CMD_NEEDS_OPEN },
   { "module_state", _cmd_module_state, _CMD_NEEDS_OPEN },
+  { "presets", _cmd_presets, _CMD_NEEDS_OPEN },
   { "get", _cmd_get, _CMD_NEEDS_OPEN },
+  { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
+  { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
+  { "instance", _cmd_instance, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "render", _cmd_render, _CMD_NEEDS_OPEN },
   { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },
@@ -1456,7 +1563,7 @@ static void _trim(const gboolean pressure)
 // stdin is read on a thread of its own, so a `cancel_base` (written by the
 // client while it waits on a base's reply) stops that base at once, and a
 // `merge_cancel` a merge before its next photo. neither gets a reply. a
-// tagged `thumb` goes to the thumbnail threads (library_thumb_run), a tagged
+// tagged `thumb` and `meta` go to the thumbnail threads (library_thumb_run), a tagged
 // `export`, `export_release`, `hdr_merge`, `pano_merge` or `pano_preview` to the export
 // thread (export_run), a tagged `import` to the import thread (library_import_run);
 // every other line goes to the main loop, in order. a tagged `ai_denoise`,
@@ -1491,9 +1598,14 @@ static gpointer _read_requests(gpointer data)
           export_merge_cancel(json_object_get_int_member_with_default(req, "job", 0));
           taken = TRUE;
         }
-        else if(!g_strcmp0(cmd, "thumb") && json_object_has_member(req, "tag"))
+        else if(!g_strcmp0(cmd, "clip_embed") && json_object_has_member(req, "tag"))
         {
-          fprintf(stderr, "[engine] thumb %.*s\n", (int)strcspn(line->str, "\r\n"), line->str);
+          clip_queue(parser); parser = NULL; taken = TRUE;
+        }
+        else if((!g_strcmp0(cmd, "thumb") || !g_strcmp0(cmd, "analysis_preview")
+                 || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
+        {
+          fprintf(stderr, "[engine] %s %.*s\n", cmd, (int)strcspn(line->str, "\r\n"), line->str);
           // the pool frees the parser
           if(library_thumb_queue(parser)) parser = NULL;
           taken = TRUE;
@@ -1544,9 +1656,16 @@ int main(int argc, char **argv)
   g_ptr_array_add(m, (gpointer)"darktable-engine");
   g_ptr_array_add(m, (gpointer)"--library");
   g_ptr_array_add(m, (gpointer)":memory:");
-  int i = 1;
+  int i = 1, thumb_threads = _THUMB_THREADS;
   while(i < argc && g_strcmp0(argv[i], "--core"))
   {
+    // read the count before CLAMP: the macro evaluates its argument more
+    // than once, and argv[++i] inside it skipped past --core
+    if(!g_strcmp0(argv[i], "--thumb-threads") && i + 1 < argc)
+    {
+      const int n = atoi(argv[++i]);
+      thumb_threads = CLAMP(n, 1, _THUMB_THREADS_MAX);
+    }
 #ifdef HAVE_AI
     // where the AI models are; given, AI features are on
     if(!g_strcmp0(argv[i], "--models") && i + 1 < argc) ai_models_dir = argv[++i];
@@ -1554,6 +1673,10 @@ int main(int argc, char **argv)
     i++;
   }
   for(i++; i < argc; i++) g_ptr_array_add(m, argv[i]);
+
+  // Keep ORF metadata preparation in step with the user's thumbnail worker
+  // preference.
+  library_metadata_threads(thumb_threads);
 
 #ifdef HAVE_AI
   // The registry checks installed model versions during dt_init. It must
@@ -1611,7 +1734,8 @@ int main(int argc, char **argv)
     g_free(setting);
   }
 
-  library_thumb_pool = g_thread_pool_new(library_thumb_run, out, _THUMB_THREADS, FALSE, NULL);
+  library_thumb_pool = g_thread_pool_new(library_thumb_run, out, thumb_threads, FALSE, NULL);
+  g_thread_pool_set_sort_function(library_thumb_pool, library_thumb_order, NULL);
   export_pool = g_thread_pool_new(export_run, out, 1, TRUE, NULL);
   library_import_pool = g_thread_pool_new(library_import_run, out, 1, FALSE, NULL);
 #ifdef HAVE_AI
@@ -1619,6 +1743,7 @@ int main(int argc, char **argv)
   ai_pool = g_thread_pool_new(ai_run, out, 1, FALSE, NULL);
   g_thread_unref(g_thread_new("ai idle", ai_idle_watch, NULL));
 #endif
+  clip_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
@@ -1684,6 +1809,7 @@ int main(int argc, char **argv)
   // the client gone without a quit: its edits are kept all the same
   if(!quit) session_save_pending();
 
+  clip_wait();
   library_thumb_wait();
   library_import_wait();
   export_wait();
@@ -1694,6 +1820,15 @@ int main(int argc, char **argv)
   session_close_session();
   library_prefetch_wait();
   if(session_paste_batches) g_hash_table_destroy(session_paste_batches);
+  // Detached metadata workers are opt-in and may still be inside Exiv2 or a
+  // filesystem read. Avoid tearing down darktable globals they could touch;
+  // the default serial import path has no pending metadata workers.
+  if(library_import_metadata_pending())
+  {
+    fprintf(stderr, "[engine] metadata workers still active; exiting without global teardown\n");
+    fflush(NULL);
+    _Exit(EXIT_SUCCESS);
+  }
   dt_cleanup();
   g_ptr_array_free(m, TRUE);
   return 0;

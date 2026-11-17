@@ -112,9 +112,9 @@ function Splash() {
         )}
         {!about && (
           <div className="splash-status">
-            {problem ? `the engine did not answer: ${problem}`
-              : slow ? "starting the engine: the first start after installing or updating takes longer…"
-              : "starting the engine…"}
+            {problem ? tr("interface.splash.problem", { problem })
+              : slow ? tr("interface.splash.slow")
+              : tr("interface.splash.starting")}
           </div>
         )}
       </div>
@@ -128,6 +128,7 @@ function Splash() {
 }
 
 await ready;
+const { t: tr } = await import("./i18n");
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Splash />

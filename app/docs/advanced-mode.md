@@ -1,0 +1,586 @@
+# Advanced mode
+
+Advanced mode is for working with darktable's own modules. Turn it on with
+the **Advanced mode** button (stacked cards) at the top of any right-hand rail panel, including Masks, left of
+expand/collapse all; it is highlighted while Advanced is on, and clicking it
+again goes back to **Simple**. [Preferences](preferences.md#general) > General
+> **Editing mode** sets the same choice. Switching does not change the photo or
+its edits.
+
+Edits made in Advanced that Simple's sliders cannot show, such as a second
+instance of a module or a module Simple has no sliders for, keep rendering in
+Simple. At the end of each Adjustments group that holds such edits, Simple shows
+**N advanced edits here keep rendering**. Click it to open Editing mode in
+Preferences. Modules that darktable turns on by itself and that you have not
+changed are not counted.
+
+To copy these edits to other photos, tick **Advanced modules** in Copy
+Settings (see [History and sync](history-and-sync.md)).
+
+In Advanced, the **Adjustments** panel looks like this:
+
+- A **Search modules** box at the top, described below.
+- The same groups as Simple (Basic, Tone Curve, HSL / Color, B&W, Color
+  Grading, Detail, Lens, Transform and Effects), in the same order. They fold
+  open and shut as in Simple, follow Focus mode, and Alt-click opens one alone.
+  HSL / Color and B&W both show whether or not the photo is black and white,
+  where Simple shows one or the other.
+- A **Technical** group at the end, which exists only in Advanced.
+- No **More controls** sliders icon; that icon is only in Simple.
+
+## Search modules
+
+Type two or more characters to list the modules whose name matches, then
+those with a setting whose name matches (for example `lowpass`, or `radius`
+for the modules with a radius). Each row shows the module, its group and, for
+a setting, the matching setting. A module appears once, with the first setting
+that matched, and the list stops at about a dozen rows.
+
+Use the arrow keys and **Enter**, or click a row. Escape clears the box, and a
+click elsewhere closes the list. The group opens as a click on its title would
+(Focus mode closes the others). If the module's card is shown, it opens, flashes
+and scrolls into view. If not, the module is added as **Add module** would add
+it, at its place in the group. For the tone mappers, which share one card, the
+card switches to the one you picked.
+
+A module darktable cannot apply to this photo is greyed out and cannot be
+picked, as in Add module. With no photo open, every row is greyed out.
+
+## Hiding modules
+
+**Preferences > Modules > Advanced modules** lists every Advanced module by
+group, each with a switch. Turn one off to hide it: it leaves Add module, the
+module search and the tone mapper switch, so the lists you use hold only what you
+want. A filter box narrows the list by name, **Show all** and **Hide all** act on
+one group, and **Essentials only** hides every module without a Simple equivalent
+(it keeps white balance, color calibration, exposure, the tone mappers, contrast
+and texture tools, color balance rgb, the curves, denoise, lens correction, rotate
+and perspective, vignetting, grain and the color profiles). A module that appears
+in two groups, such as color balance rgb in Basic and Color Grading, hides in
+each group on its own.
+
+Hiding never takes away an edit. A photo that uses a hidden module (it is on,
+in its history, or was added) still shows its card, with a small **hidden** tag
+beside the name, and the card works as any other. Changes apply as soon as you
+close Preferences.
+
+## Module cards
+
+Each group shows a card for every darktable module this photo uses: the ones
+that are on, and the ones its edit has changed, even if they are now off.
+Each card sits in its own shaded box, a little apart from the next, so you
+can see where one module's controls end. Cards keep a fixed order in each group, the order of Simple's sections, and a
+module's instances sit together.
+
+Below the cards, **+ Add module** lists the group's modules. Choosing one
+switches it on, opens its card and brings it into view, as one undo step. A
+module already on the photo has a check mark; use its card's **...** menu to
+add another instance. A module darktable cannot apply to this photo, such as
+a raw-only module on a JPEG, is greyed out. Its card, where one shows, has its
+switch greyed out too.
+
+Where darktable splits a module's settings over pages, the card shows them as
+tabs, and darktable's section headings appear above their settings.
+
+The Basic group has darktable's **exposure** module. Its card has:
+
+- An on/off switch and the module's name. If the module has a name of its own,
+  such as a second exposure instance, the name follows it.
+- A **darktable presets** button (three lines) beside the reset button; see
+  [darktable presets](#darktable-presets).
+- An instances menu (**...**) beside the reset button; see
+  [Instances](#instances).
+- A reset button that returns the module to darktable's defaults for this
+  photo and leaves it on. These defaults can differ from how a new photo
+  opens, since Immage's new-photo settings are not darktable's.
+- A header you click to fold the card. The card opens unfolded when this photo
+  has edited exposure.
+- The module's settings. **Mode** is Manual or Automatic. In Manual, you see
+  **Compensate camera exposure** and **Exposure** (in EV). In Automatic, you see
+  **Percentile** and **Target level**. **Black level correction** is always
+  shown.
+
+Moving a setting switches the module on. Card changes are undone like any other
+edit, with one undo step per slider drag, and they are saved with the photo.
+Simple's Exposure and Blacks sliders change the same module, so a change made
+on one side shows on the other.
+
+## Basic modules
+
+Besides exposure, the Basic group has these darktable modules:
+
+- **White balance**: darktable's **Settings** list (as shot, user modified,
+  camera reference, as shot to reference, and the white balance presets
+  darktable has for your camera, such as Daylight or Cloudy), a **Finetune**
+  slider for a camera preset that has a range, its **Temperature** and **Tint**
+  sliders, and the channel coefficients, **Red**, **Green** and **Blue**, and **Emerald** on
+  cameras with a fourth color channel. Temperature and tint are computed from
+  the coefficients and your camera's color matrix as darktable does, and
+  setting either one sets the coefficients (a photo whose camera has no color
+  matrix cannot show them). Choosing a setting writes its coefficients, and
+  editing a slider or coefficient switches the list to User modified; Settings
+  shows the entry that matches the current coefficients. darktable's From image
+  area entry, which needs its color picker, is not offered, and a photo without
+  presets for its camera (a JPEG, for one) lists only the first four entries.
+  Simple's White Balance sliders set color calibration, not this module.
+  When this module is on with a setting other than Camera reference or As shot
+  to reference and color calibration is off, the card says "color calibration
+  is off, so this module sets the white balance", and Simple's White Balance
+  section carries a note to the same effect. Choosing Camera reference or As
+  shot to reference here, or turning color calibration on, is darktable's usual
+  setup (Temp and Tint in Simple turn color calibration on). darktable allows
+  one instance.
+- **Color calibration**: tabs as in darktable. **CAT** has the adaptation,
+  the illuminant (with its fluorescent or LED source, or a temperature for
+  daylight and Planckian) and gamut compression; **R**, **G** and **B** mix the
+  input channels into each output channel; **Colorfulness**, **Brightness** and
+  **Gray** set the input weights of each, all with **Normalize channels**. Not
+  yet on the card: the hue and chroma of a custom illuminant, the color
+  picker, area color mapping and color checker calibration. Simple's Black &
+  White conversion uses an instance of its own, which shows in the B&W group
+  rather than here.
+- **Highlight reconstruction**: **Method** and **Clipping threshold**, then
+  the settings of the method chosen: segmentation's combine, candidating and
+  rebuild (with strength and noise level), or guided laplacians' noise level,
+  iterations, flat color and diameter. The card lists every method; darktable
+  offers only those that suit the photo's sensor and switches to inpaint
+  opposed if one does not. darktable allows one instance.
+- **Tone mapper**: one card for darktable's four tone mappers, **AgX**,
+  **Sigmoid**, **Filmic rgb** and **Base curve**, showing the one that is on.
+  The switch button (two arrows) beside the card's name lists them; choosing
+  another switches the current one off and the chosen one on, as one undo
+  step. The old one keeps its settings, so switching back restores them. With
+  none on, the card shows each tone mapper the photo has used. Add module lists
+  them too, checked while the card shows one. Simple's tone mapper follows a
+  switch made here.
+  - AgX: tabs **Settings** (input exposure range, basic and advanced curve
+    settings, look) and **Primaries** (before and after tone mapping). Its curve
+    graph and pickers are not on the card yet.
+  - Sigmoid: contrast, skew, color processing and preserve hue, then the
+    **Primaries** and **Display luminance** sections.
+  - Filmic rgb: tabs **Scene**, **Reconstruct**, **Look**, **Display** and
+    **Options**. Its curve graph and pickers are not on the card yet.
+  - Base curve: **Preserve colors** and exposure **Fusion**. The curve itself
+    needs a curve editor and is not on the card yet.
+- **Contrast & texture**: **Base detail level**, **Highlights** and
+  **Shadows**, then **Coarse**, **Medium** and **Fine details** under Local
+  contrast and **Halo control** and **Noise bias** under Filter settings. The
+  detail mask preview buttons are not on the card yet.
+- **Local contrast**: **Mode** (bilateral grid or local laplacian filter) and
+  **Detail**, then **Coarseness** and **Contrast** for the bilateral grid, or
+  **Highlights**, **Shadows** and **Midtone range** for the local laplacian
+  filter.
+- **Haze removal**: **Strength** and **Distance**.
+- **Diffuse or sharpen**: under Properties, **Iterations**, **Central radius**
+  and **Radius span**; under Speed, the four orders of speed; under Direction,
+  the four orders of anisotropy; under Edge management, **Sharpness**, **Edge
+  sensitivity** and **Edge threshold**; and under Diffusion spatiality, the
+  **Luminance masking threshold**. Simple's Texture uses the first instance; the
+  instance Simple's Sharpening uses is on the Detail group's card instead.
+- **Color balance rgb**: three tabs. Master has **Hue shift**, **Global
+  vibrance** and **Contrast**, then linear chroma, perceptual saturation and
+  perceptual brilliance grading, each with a global slider and shadows,
+  mid-tones and highlights. 4 ways has luminance, hue and chroma for the global
+  offset, shadows lift, highlights gain and power, each with a color wheel
+  above its sliders. Drag the wheel to set the hue and chroma together;
+  double-click it to set chroma to 0. The wheel's edge is the end of the
+  chroma slider, and a larger chroma typed in shows at the edge. Masks has the **Saturation
+  formula**, the shadows and highlights fall-off, the mask and contrast gray
+  fulcrums and the **White fulcrum**. The luminance range graph, mask previews,
+  color pickers and mask preview settings are not on the card yet.
+
+## Tone Curve modules
+
+The Tone Curve group has these darktable modules:
+
+- **Tone curve**: a point curve with **L**, **a** and **b** tabs, an
+  **Interpolation method** (cubic, centripetal or monotonic spline, set for all
+  three curves at once), **Color space**, and **Preserve colors** for RGB,
+  linked channels. Click the graph to add a point, drag to move one,
+  double-click a point or drag it off the graph to remove it. The **a** and
+  **b** curves can be changed only when **Color space** is Lab, independent
+  channels; in the linked modes they are shown but darktable leaves them alone.
+  The graph draws the curve as darktable applies it. Simple's Tone Curve edits
+  the same module.
+- **RGB curve**: **Mode** (linked or independent channels), a point curve with
+  the same editing and **Interpolation method**, **Compensate middle gray**,
+  and **Preserve colors** for linked channels. Linked channels have the one
+  curve; **R**, **G** and **B** tabs appear in independent mode. Simple's R, G
+  and B curves edit the same module.
+- **RGB levels**: **Mode**, a levels graph and, for linked channels,
+  **Preserve colors**. The graph has a black, a gray and a white handle, as in
+  darktable: drag the one nearest the pointer, or scroll over the graph to
+  nudge it (Shift for bigger steps, Ctrl for finer ones). Moving black or
+  white carries gray along, they stay a small distance apart, and gray stays
+  between them. Double-click puts the channel's handles back. In independent
+  mode **R**, **G** and **B** tabs pick the channel. The graph shows no
+  histogram. The pickers, auto levels and select region are not on the card
+  yet.
+- **Tone equalizer**: tabs **Simple** (the nine bands, -8 EV to +0 EV),
+  **Advanced** (mask exposure and contrast compensation) and **Masking** (the
+  luminance estimator, preserve details and, with a filter chosen, its
+  diffusion, smoothing diameter, edge refinement and quantization). Its curve
+  graph, curve smoothing, mask display and auto-adjust buttons are not on the
+  card yet. Basic's Highlights and Shadows with tone equalizer chosen edits the
+  same module.
+- **Shadows and highlights**: **Shadows**, **Highlights**, **White point
+  adjustment**, **Soften with**, **Radius**, **Compress** and the shadows and
+  highlights color adjustments. Basic's Highlights and Shadows with shadows
+  and highlights chosen edits the same module.
+
+## HSL / Color modules
+
+The HSL / Color group has these darktable modules:
+
+- **Color equalizer**: **Node placement**, tabs **Hue**, **Saturation** and
+  **Brightness** with a slider per hue (red to magenta), then the options:
+  **White level**, **Hue curve** and **Use guided filter** with its radius,
+  threshold and contrast settings. The node graph and its pickers are not on
+  the card yet; Simple's HSL / Color edits the same module.
+- **Saturation curve**: a graph of the **Saturation** and **Brilliance**
+  curves (pick one from the menu; click to add a point, drag to move one,
+  double-click a point or drag it off the graph to remove it), then
+  **Saturation formula** and, under Guided filter, its switch, radius, edge
+  feathering and noise protection. Simple's Saturation curve edits the same
+  module.
+- **Velvia**: **Strength** and **Mid-tones bias**.
+- **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
+- **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
+  are not on the card yet.
+- **Color harmonizer**: **Harmony rule** (and **Nodes** for a custom rule),
+  **Pull strength**, **Pull width**, **Neutral color protection** and
+  **Smoothing**, then a saturation slider for each of the rule's hues. The
+  anchor and custom hues and the swatches are not on the card yet.
+- **RGB primaries**: hue (in degrees) and purity of red, green and blue,
+  then **Tint hue** and **Tint purity**.
+- **Color correction**: **Saturation**. Its color grid is not on the card
+  yet.
+- **Color look up table**: on/off, reset and darktable's presets (such as
+  its film emulations), and the patch grid. The grid shows the module's
+  patches (24 in a 6 by 4 grid, more in 7 by 7) in the colors they match
+  in the photo; a patch whose target differs has an outline, and hovering
+  one shows its Lab values. Click a patch to select it (it gets a frame),
+  double-click to put its target back, and right-click to delete it, which
+  moves the later patches up as one undo step. Below the grid, **Patch**
+  chooses the selected patch, **Lightness**, **Green-magenta offset**,
+  **Blue-yellow offset** and **Saturation** change its target color, and
+  **Target color** switches those sliders between offsets from the patch's
+  own color (Relative) and absolute Lab values (Absolute). Picking a patch
+  by clicking a color in the photo is not available.
+- **LUT 3D**: **LUT file** (a folder button and a menu), **Application
+  color space** and **Interpolation**. The button opens a file dialog in the
+  **3D LUT folder** of Preferences > Modules > Advanced modules (your home
+  folder until you choose one) and takes a png (hald CLUT), cube or 3dl file;
+  a file outside that folder is refused. The photo keeps the file's path
+  relative to the folder, not the LUT itself, so a LUT that is moved or
+  deleted shows as `INVALID >>` with its path and the photo renders without
+  it. The menu lists the LUT files in the chosen file's folder; it is empty
+  until a file is chosen. darktable's compressed gmic LUTs (gmz) and their
+  name list are not offered.
+- **Color mapping**: transfers the color palette and tonal spread of one photo
+  to another. Two previews show the **source clusters** and **target
+  clusters**, each cluster a 3 x 3 patch of its average color and the spread
+  around it. **acquire as source** analyzes the open photo as it looks at this
+  module's input (after the edits before it, at preview size) and stores its
+  clusters as the source; **acquire as target** does the same for the target.
+  Each is one undo step and turns the module on. The mapping only applies once
+  both are acquired. **Number of clusters** (1 to 5) is used when acquiring, and
+  changing it discards the acquired source and target. **Color dominance** and
+  **Histogram equalization** set how clusters are matched and how far the
+  tones follow the source. The clusters start at random places, so acquiring
+  again can give a slightly different result, and a cluster that starts with no
+  pixels nearest to it stays empty (its swatches show gray): press the button
+  again, or use fewer clusters. To use the source of one photo on another,
+  acquire it there, then paste this module's settings with **Advanced
+  modules** ticked in Copy Settings, and acquire the target on the second
+  photo. Immage does not keep an acquired source for the next photo you open,
+  as darktable does within one session. darktable allows one instance.
+
+## B&W modules
+
+The B&W group has these darktable modules:
+
+- **Color calibration**: the instance Simple's Black & White conversion uses
+  when its module is color calibration, with the same tabs as in Basic, but
+  **Gray** first. Add module turns on Simple's Black & White with color
+  calibration, as one undo step. Switching Black & White or its module in
+  Simple sets this instance's settings again.
+- **Color equalizer**: the same instance as the HSL / Color group's card,
+  with **Brightness** first, since Simple's B&W Mix sliders set its
+  brightness. A change on one card shows on the other.
+- **Monochrome**: **Highlights**, how much to keep the highlights. The color
+  filter graph, which sets the filter's color and size, is not on the card
+  yet.
+
+## Color Grading modules
+
+The Color Grading group has these darktable modules:
+
+- **Color balance rgb**: the same instance as the Basic group's card, with
+  **4 ways** first, since Simple's Color Grading wheels set its shadows lift,
+  highlights gain, power and global offset. A change on one card shows on the
+  other.
+- **Color balance**: the **Mode** (lift, gamma, gain or slope, offset, power
+  in ProPhoto RGB, or lift, gamma, gain in sRGB), then **Master**, with input
+  and output saturation, the contrast fulcrum and contrast (not in the sRGB
+  mode), and a factor with red, green and blue for shadows, mid-tones and
+  highlights. darktable's hue and saturation sliders for each range, which it
+  shows instead of red, green and blue by default, and the auto optimizers
+  are not on the card yet.
+- **Split-toning**: a hue and saturation for the shadows and for the
+  highlights, then **Balance** and **Compress**. darktable's color buttons
+  beside each are not on the card yet.
+- **Colorize**: **Hue**, **Saturation**, **Lightness** and **Source mix**,
+  how much of the photo's own lightness to keep.
+
+## Detail modules
+
+The Detail group has these darktable modules:
+
+- **Demosaic**: the **Method**, with every method darktable has for any
+  sensor, then the settings the method uses (**Dual threshold**, **Edge
+  threshold**, **LMMSE refine**, **Color smoothing**, **Match greens**), and
+  **Capture sharpen**, the switch Simple's Capture Sharpening sets, with its
+  controls under it while it is on. darktable lists only your camera's
+  methods and changes one for another sensor type to its nearest. Simple's
+  Lens Corrections > Demosaic sets the same Method, from your sensor's
+  methods.
+- **Sharpen**: **Radius**, **Amount** and **Threshold**. Simple's Sharpening
+  with sharpen uses the first instance, so a change on one shows on the
+  other.
+- **Diffuse or sharpen**: the instance Simple's Sharpening uses when it is
+  set to diffuse or sharpen, with the same settings as the Basic group's
+  card, which shows the other instances. **Add module** makes it the way
+  Simple does, at darktable's "sharpness | normal" preset.
+- **Denoise (profiled)**: the **Mode** (non-local means or wavelets, each
+  also auto), then the settings the mode uses and **Strength**. In the
+  wavelets modes a curve graph sets how strongly each band of detail is
+  denoised, from coarse on the left to fine on the right: **all**, **R**,
+  **G** and **B** tabs, or **luma** and **chroma** tabs when **Color mode** is
+  Y0U0V0. Drag over the graph to pull the curve toward the pointer (the
+  highlighted area and circle show what moves), scroll to change how wide a
+  pull is, Alt-scroll to switch tab, and double-click to put the channel's
+  curve back. Simple's Profiled Denoise sets the same curves. The graph shows
+  no histogram. The profile choice is not on the card: it uses the profile
+  darktable finds for the camera and ISO.
+- **Highpass**: **Sharpness** and **Contrast boost**.
+- **Astrophoto denoise**: **Patch size**, **Strength**, **Luma** and
+  **Chroma**.
+- **Raw denoise**: the same wavelet curve graph (**all**, **R**, **G** and
+  **B** tabs, five bands) above **Noise threshold**, dragged, scrolled and
+  reset the same way.
+- **Surface blur**: **Radius**, then **Red**, **Green** and **Blue**.
+- **Contrast equalizer**: a graph with a menu for its curves (**Luminance**,
+  **Chroma**, **Edges**, **Luminance noise** and **Chroma noise**), each of six
+  bands from coarse to fine; drag a point up or down, or use the arrow keys on
+  a focused one. Then **Mix**. The bands sit at fixed positions, as in
+  Simple's Contrast, which edits the same module for the first instance when
+  Preferences set it to contrast equalizer.
+- **Lowpass**: **Radius**, **Soften with**, **Contrast**, **Brightness** and
+  **Saturation**.
+
+## Lens modules
+
+The Lens Corrections group has these darktable modules:
+
+- **Lens correction**: the **Correction method** (darktable's Lensfun
+  database, the corrections the camera or raw converter wrote into the file,
+  or only a manual vignette), **Corrections**, then the method's own
+  settings: for Lensfun, **Target geometry**, **Scale**, **Mode** and the
+  **TCA override**; for embedded metadata, its **Fine-tuning**. **Manual
+  vignette correction** works under every method. With the Lensfun method the
+  card has Simple's **Lens** picker (Auto, the lens matched from the file, or
+  a search of Lensfun's lenses), which sets that instance's lens. Simple's
+  Lens Corrections uses the first instance, shows its **Correction method**
+  when the photo has embedded correction data, and its Remove Chromatic
+  Aberration sets **Corrections**; the card has no camera, focal length,
+  aperture or distance menus. darktable offers embedded metadata only for a
+  photo that has it. The card shows darktable's own method until Simple's Lens
+  Corrections is first used: then a photo with a lensfun profile starts on
+  Lensfun.
+- **Chromatic aberrations**: **Guide**, **Radius** and **Strength**, then
+  **Correction mode** and **Very large chromatic aberration**. Simple's
+  Defringe uses the first instance.
+- **Raw chromatic aberrations**: **Iterations** and **Avoid colorshift**.
+  It works only on raw photos from cameras with a Bayer sensor.
+- **Hot pixels**: **Threshold**, **Strength**, **Detect by 3 neighbors** and
+  **Mark fixed pixels**, for raw photos. Simple's Hot Pixels sets the same
+  module, with its sliders on a 0 to 100 scale.
+
+## Transform modules
+
+The Transform group has these darktable modules:
+
+- **Rotate and perspective**: **Rotation**, then under **Manual
+  perspective** the vertical and horizontal **Lens shift** and **Aspect
+  adjust**. Simple's Transform panel sets the same module, so its Upright,
+  Vertical, Horizontal, Rotate and Aspect move these sliders. As in Simple,
+  each edit crops to the largest rectangle of the photo's own shape, with no
+  black corners; the card has no shear, lens model or automatic cropping
+  settings. Upright's line detection stays in the Transform panel.
+- **Orientation**: darktable's four buttons, rotate 90° left or right and
+  flip horizontally or vertically. They turn the photo as the toolbar's
+  buttons do, with the crop and masks. Reset puts back the orientation the
+  camera recorded.
+- **Scale pixels**: **Pixel aspect ratio**, for photos from cameras or
+  scanners whose pixels are not square.
+- **Enlarge canvas**: a border of plain color around the photo, as
+  **Percent left**, **Percent right**, **Percent top** and **Percent
+  bottom** of its width or height, and its **Color**.
+
+## Effects modules
+
+The Effects group has these darktable modules:
+
+- **Vignetting**: **Fall-off start**, **Fall-off radius**, **Brightness**
+  and **Saturation**, then under **Position / form** the **Horizontal
+  center** and **Vertical center**, **Shape**, **Automatic ratio**,
+  **Width/height ratio** and **Dithering**. Simple's Post-Crop Vignetting
+  sets the same module, so its sliders move these.
+- **Grain**: **Coarseness** (as an ISO value), **Strength** and **Mid-tones
+  bias**. Simple's Grain sets the same module.
+- **Bloom**: **Size**, **Threshold** and **Strength**.
+- **Soften**: **Size**, **Saturation**, **Brightness** and **Mix**.
+- **Blurs**: **Blur radius** and **Blur type**. A lens blur adds
+  **Diaphragm blades**, **Concavity**, **Linearity** and **Rotation**; a
+  motion blur adds **Direction**, **Curvature** and **Offset**; a gaussian
+  blur has no more settings. The card has no preview of the blur's shape.
+- **Lowlight vision**: **Blue shift**. The card does not yet have
+  darktable's curve of how much each brightness level is affected.
+- **Graduated density**: **Density**, **Hardness**, **Rotation**, **Hue** and
+  **Saturation**. The card cannot yet move the filter's line on the photo,
+  so the line stays through the center.
+- **Censorize**: **Input blur radius**, **Pixelization radius**, **Output
+  blur radius** and **Noise level**. Use it with a mask to hide part of a
+  photo.
+- **Framing**: **Basis**, **Border size**, **Aspect ratio**,
+  **Orientation**, **Horizontal offset** and **Vertical offset**, then the
+  frame line's **Frame line size** and **Frame line offset**, then **Border
+  color** and **Frame line color**, each a color button that opens the color
+  chooser. The frame line settings are grayed out, with the reason as a
+  tooltip, until the border is wide enough and the photo sits inside it, as in
+  darktable. The card does not yet have darktable's aspect and position
+  presets or the pickers that take a color from the photo. **Aspect ratio**
+  sets a custom ratio; by default the framed photo keeps its own.
+- **Watermark**: **Marker** (a menu and a refresh button), **Color** (a
+  color button, used by the marker's color tag), **Opacity**, then under
+  **Placement** **Rotation**, **Scale**, **Scale on** (with **Scale marker
+  to** and **Scale marker reference** for its advanced options),
+  **Alignment**, **X offset** and **Y offset**. The menu lists the SVG and
+  png files in darktable's watermarks folder and in the watermarks folder of
+  Immage's settings (its tooltip names both); the refresh button reads them
+  again after you add one. The photo keeps the marker's file name.
+  **Alignment** is a grid of nine buttons: the marker sits in the corner,
+  edge or center of the photo you pick, and the offsets move it from there
+  (the middle button is the default). The card cannot yet edit the marker's
+  text or font.
+- **Composite**: **Photo** shows a thumbnail and the file name of the photo
+  placed over this one, or "No photo chosen". **Choose photo** opens a list
+  of the photos in the folder you are browsing, with thumbnails; click one
+  to place it, as darktable does by dragging a thumbnail onto the card.
+  **Clear** takes the photo off again. The photo is shown as it is edited
+  now, in the position and scale the other settings give it: **Opacity**,
+  then under **Placement** **Rotation**, **Scale**, **Scale on** (with
+  **Scale marker to** and **Scale marker reference**), **Alignment** (the
+  same grid of nine buttons as Watermark), **X offset** and **Y offset**.
+  A photo that itself composites this one, directly or through others, is
+  refused with a message and the card keeps its photo, as in darktable.
+  Placing a photo on itself is allowed; the copy is drawn without the
+  Composite module. The photo is looked up in your library, so it needs
+  to stay there; if it is gone the card shows "Photo" and its number
+  without a thumbnail. The card has no switch to render the composite at
+  lower precision, which darktable keeps for old edits.
+- **Dither or posterize**: **Method**, and **Damping** for random dither.
+
+## Technical modules
+
+The Technical group, only in Advanced, has these darktable modules:
+
+- **Raw black/white point**: **Black level 0** to **Black level 3**,
+  **White point** and **Flat field correction**, for raw photos only. The
+  card does not have darktable's raw crop margins, which darktable also
+  hides unless a preference shows them.
+- **Color reconstruction**: **Threshold**, **Spatial extent**, **Range
+  extent** and **Precedence**, and **Hue** when the precedence is hue.
+- **Input color profile**: **Input profile** and **Working profile**, each
+  a list of the profiles this photo can use, and **Gamut clipping**. The
+  Negative panel's profile menus set the same module.
+- **Output color profile**: **Export profile**, from darktable's built-in
+  profiles. Export always uses its own **Color space**, so this setting
+  only matters when the photo's edits are opened in darktable.
+- **Unbreak input profile**: **Mode**. Logarithmic shows **Middle gray
+  luma**, **Black relative exposure**, **Dynamic range** and, under
+  **Optimize automatically**, **Safety factor**, which scales both ranges
+  as you change it; gamma shows **Linear** and **Gamma**. The card does
+  not have darktable's auto tune button or its pickers.
+
+## Instances
+
+A module can have several instances, each with its own settings. Open the
+**...** menu beside a card's reset button to:
+
+- **New instance**: add another instance right after this one, at darktable's
+  defaults and switched on. Its card opens.
+- **Duplicate**: the same, with this instance's settings.
+- **Rename...**: edit the name in the card's title. Enter or clicking away keeps
+  it, Escape cancels, and an empty name goes back to darktable's own label.
+  Names that Immage uses for masks and looks cannot be used.
+- **Move up in the pipe** and **Move down in the pipe**: swap this instance
+  with its neighbour among the module's instances. They are greyed out at the
+  ends.
+- **Delete**: remove the instance.
+
+Modules that darktable allows only once grey out New instance, Duplicate and
+Rename. Duplicating an instance that has a drawn darktable mask is refused with
+a message for now.
+
+An instance without a name shows darktable's own label after the module name:
+the name of a matching preset, such as "scene-referred default", or the
+instance number. A module's cards sit together, in pipe order: the top card is
+earlier in the pipe, so it is applied first.
+
+The first instance is the one Simple's sliders change. You can switch it off
+but not delete it, and while a module has more than one instance its card shows
+a small **Simple** tag.
+
+Every action is one undo step, and Undo and Redo bring instances back with
+their settings, names and order. A deleted instance is gone from the photo's
+saved edit the next time it is saved. Extra instances look in Immage just as
+they do in darktable, and open there.
+
+Mask-owned modules appear on their mask in the **Masks** panel, rather than in
+global Adjustments. Select a mask to edit its cards or choose **Add module**.
+Its cards offer Reset and Remove from mask, with one instance per module and
+no darktable presets menu. See [Advanced masking](masks.md#advanced-mode).
+Modules managed by looks do not get cards. Groups whose modules are not
+available yet show "No darktable modules yet".
+
+Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do in
+Simple. Switching modes preserves all edits, including a mask's module
+settings; Simple shows a badge for mask edits its local sliders cannot show.
+
+## darktable presets
+
+The **darktable presets** button on a card opens a menu headed **darktable
+presets**. It lists darktable's presets for that module: built-in presets
+first, then your own presets from Immage's darktable library, with a line
+between the two, in darktable's order. A preset in a submenu shows as
+"a › b".
+
+- A check mark marks the preset that matches the instance now.
+- Presets that do not apply to this photo, such as one for another version of
+  the module or for another camera, lens or file format, are greyed out.
+- An empty list shows **No presets**.
+
+Choosing a preset replaces the instance's settings and blend settings with the
+preset's, switches the module on or off as the preset says, and opens the card.
+It is one undo step, named "Preset: <module>". darktable may rename the
+instance after the preset, unless you renamed it yourself.
+
+A preset cannot be applied to an instance that has a drawn mask, and a preset
+that carries a mask cannot be applied at all. Immage shows an error in both
+cases.
+
+Not yet available: importing .dtpreset or .dtstyle files, saving the current
+settings as a preset, and reading presets from a separate darktable
+installation.

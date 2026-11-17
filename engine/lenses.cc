@@ -123,6 +123,20 @@ void lenses_match(const char *cam_maker, const char *cam_model, const char *name
   dt_pthread_mutex_unlock(&darktable.plugin_threadsafe);
 }
 
+gboolean lenses_has_profile(const char *cam_maker, const char *cam_model, const char *name)
+{
+  if(!name || !*name || !cam_model || !*cam_model) return FALSE;
+  lfDatabase *db = _db();
+  dt_pthread_mutex_lock(&darktable.plugin_threadsafe);
+  const lfCamera **cams = db->FindCamerasExt(cam_maker && *cam_maker ? cam_maker : nullptr, cam_model, 0);
+  const lfLens **found = cams ? db->FindLenses(cams[0], nullptr, name, 0) : nullptr;
+  const gboolean ok = found != nullptr;
+  if(found) lf_free(found);
+  if(cams) lf_free(cams);
+  dt_pthread_mutex_unlock(&darktable.plugin_threadsafe);
+  return ok;
+}
+
 gboolean lenses_find(unsigned hash, char *model, size_t size, int *geom)
 {
   lfDatabase *db = _db();

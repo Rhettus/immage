@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { inspect, reveal, click } from './controls.mjs';
+import { inspect, reveal, click, openTool } from './controls.mjs';
 import { until, pause } from './webdriver.mjs';
 export class Blocked extends Error { constructor(message) { super(message); this.name = 'Blocked'; } }
 export async function requireElement(t, selector, reason = selector) {
@@ -53,6 +53,8 @@ export async function choose(t, selector, value, appears) {
 }
 export async function panel(t, id) {
   const selector = `[data-panel-id=${JSON.stringify(id)}]`;
+  // an earlier case can leave another tool (Masks, Crop) open: the Adjustments panels live in the Adjust tool
+  if (!await t.driver.observe(s => !!document.querySelector(s), selector)) await openTool(t, 'adjust').catch(() => {});
   await requireElement(t, selector, `panel ${id}, fixture/module/treatment`);
   if (!await t.driver.observe(s => document.querySelector(`${s} > .panel-title`)?.classList.contains('open'), selector))
     await click(t, `${selector} > .panel-title`);

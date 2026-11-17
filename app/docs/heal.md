@@ -18,6 +18,11 @@ circle where its feather starts, and the dot its center.
 - **Click** a spot to cover it with a round patch.
 - **Drag** along a line, such as a wire, to paint over it.
 
+While you press and drag, the area being healed shows in the mask overlay
+color, with the brush's outer circle guide following the pointer so you can
+see the brush size while painting. The overlay disappears when you release;
+the outer circle remains as the pointer guide while it is over the photo.
+
 Immage finds a source for the patch: the area that best matches the
 spot's surroundings. It shows as an outline linked to the spot.
 

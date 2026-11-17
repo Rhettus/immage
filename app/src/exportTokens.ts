@@ -4,6 +4,7 @@
 // tokens filled in from a photo's metadata: export file names, and the
 // text an export draws on its frame (LRMogrify's token names)
 import type { ImageEntry } from "./library";
+import { t } from "./i18n";
 
 export type Meta = { title: string; description: string; creator: string; rights: string };
 
@@ -16,13 +17,13 @@ export const TOKENS = ["filename", "title", "caption", "creator", "copyright", "
 // the photo info a caption can show, in groups, each with its name in the
 // menu (LRMogrify's token names, so its templates carry over)
 export const TEXT_TOKENS: [string, [string, string][]][] = [
-  ["Photo", [["title", "Title"], ["caption", "Caption"], ["creator", "Creator"], ["copyright", "Copyright"],
-             ["filename", "File name"], ["rating", "Rating"]]],
-  ["Date", [["dateCaptured", "Date taken"], ["timeCaptured", "Time taken"]]],
-  ["Camera", [["shootingInfo", "Shooting info (mm · f · s · ISO)"], ["cameraModel", "Camera"],
-              ["cameraMake", "Camera make"], ["lens", "Lens"], ["focalLength", "Focal length"],
-              ["aperture", "Aperture"], ["shutterSpeed", "Shutter speed"], ["isoSpeedRating", "ISO"],
-              ["exposureBias", "Exposure compensation"], ["subjectDistance", "Subject distance"]]],
+  [t("dialogs.export.tokenGroup.photo"), [["title", t("dialogs.export.token.title")], ["caption", t("dialogs.export.token.caption")], ["creator", t("dialogs.export.token.creator")], ["copyright", t("dialogs.export.token.copyright")],
+             ["filename", t("dialogs.export.token.fileName")], ["rating", t("dialogs.export.token.rating")]]],
+  [t("dialogs.export.tokenGroup.date"), [["dateCaptured", t("dialogs.export.token.dateTaken")], ["timeCaptured", t("dialogs.export.token.timeTaken")]]],
+  [t("dialogs.export.tokenGroup.camera"), [["shootingInfo", t("dialogs.export.token.shootingInfo")], ["cameraModel", t("dialogs.export.token.camera")],
+              ["cameraMake", t("dialogs.export.token.cameraMake")], ["lens", t("dialogs.export.token.lens")], ["focalLength", t("dialogs.export.token.focalLength")],
+              ["aperture", t("dialogs.export.token.aperture")], ["shutterSpeed", t("dialogs.export.token.shutterSpeed")], ["isoSpeedRating", t("dialogs.export.token.iso")],
+              ["exposureBias", t("dialogs.export.token.exposureCompensation")], ["subjectDistance", t("dialogs.export.token.subjectDistance")]]],
 ];
 
 // a capture time written with YYYY, YY, MM, DD, HH, mm and ss

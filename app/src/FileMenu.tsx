@@ -2,12 +2,13 @@
 // Copyright (C) 2026 the Immage authors
 
 import { FILE_MANAGER } from "./ExportDialog";
-import { type ImageEntry, fileKind } from "./library";
+import { type ImageEntry, LABEL_COLORS, fileKind } from "./library";
 import { type PluginConfig } from "./plugins";
 import { isRemote } from "./immich";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { parentDir } from "./paths";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { t } from "./i18n";
 
 // what the system's file manager is called
 export const TRASH = navigator.userAgent.includes("Windows") ? "Recycle Bin" : "Trash";
@@ -24,12 +25,39 @@ export const panoFrames = (list: ImageEntry[]) => {
   return list.filter((i) => !isRemote(i) && !seen.has(i.path) && !!seen.add(i.path));
 };
 
+// a right-click menu's ref: any click outside it, a scroll, Escape or the
+// window losing focus closes it
+export function useMenuClose(onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("wheel", onClose, true);
+    window.addEventListener("keydown", key);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("wheel", onClose, true);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+  return ref;
+}
+
 // a photo's right-click menu: Edit In, Show in Finder, as Lightroom's, and
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
+export function FileMenu({ onSimilar, onKeywords, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+  onSimilar?: () => void;
+  onKeywords?: () => void;
+  // the photos it rates: the rating and the label bits all of them share, whether all are rejected;
+  // null when none can be rated (Immich results)
+  rate: { rating: number | null; labels: number; rejected: boolean;
+          setRating: (n: number) => void; toggleLabel: (bit: number) => void; toggleReject: () => void } | null;
   captureCount: number; onCaptureTime: () => void;
   canUndoCapture: boolean; onUndoCapture: () => void;
   x: number; y: number;
@@ -48,31 +76,66 @@ export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCa
   onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
   onDelete: () => void; onClose: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const away = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("wheel", onClose, true);
-    window.addEventListener("keydown", key);
-    window.addEventListener("blur", onClose);
-    return () => {
-      window.removeEventListener("pointerdown", away, true);
-      window.removeEventListener("wheel", onClose, true);
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("blur", onClose);
-    };
-  }, [onClose]);
+  const ref = useMenuClose(onClose);
   const go = (url: string) => { onClose(); void openUrl(url); };
   // kept inside the window
-  const left = Math.min(x, window.innerWidth - 230), top = Math.min(y, window.innerHeight - 180);
+  const left = Math.min(x, window.innerWidth - 230);
+  // the menu's real height keeps it inside the window; its first submenu
+  // starts near the top, so it fits when the menu does
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) el.style.top = `${Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 8))}px`;
+  });
+  const top = y;
   // the Edit In list opens to the left when there is no room on the right
   const flip = left + 230 + 230 > window.innerWidth;
   return (
     <div ref={ref} className={`context-menu${flip ? " flip" : ""}`} style={{ left, top }}>
+      {onSimilar && <button onClick={() => { onClose(); onSimilar(); }}>{t("library.menu.similar")}</button>}
+      {(rate || onKeywords) && <>
+        {rate && <>
+          <div className="has-sub">
+            <button>{t("library.menu.rating")}</button>
+            <div className="context-menu submenu">
+              {[5, 4, 3, 2, 1].map((n) => (
+                <button key={n} className="hinted" aria-label={t(`menu.rate-${n}`)} onClick={() => { onClose(); rate.setRating(n); }}>
+                  <span className="check tick">{rate.rating === n ? "✓" : ""}</span>
+                  <span className="name stars">{"★".repeat(n)}{"☆".repeat(5 - n)}</span>
+                  <span className="hint key">{n}</span>
+                </button>
+              ))}
+              <button className="hinted" onClick={() => { onClose(); rate.setRating(0); }}>
+                <span className="check tick">{rate.rating === 0 ? "✓" : ""}</span>
+                <span className="name">{t("library.menu.noRating")}</span>
+                <span className="hint key">0</span>
+              </button>
+            </div>
+          </div>
+          <div className="has-sub">
+            <button>{t("library.menu.colorLabel")}</button>
+            <div className="context-menu submenu">
+              {(["red", "yellow", "green", "blue", "purple"] as const).map((name, n) => (
+                <button key={name} className="hinted" data-label={name} onClick={() => { onClose(); rate.toggleLabel(1 << n); }}>
+                  <span className="check tick">{rate.labels & (1 << n) ? "✓" : ""}</span>
+                  <span className="dot" style={{ background: LABEL_COLORS[n] }} />
+                  <span className="name">{t(`library.menu.label-${name}`)}</span>
+                  <span className="hint key">{n < 4 ? n + 6 : ""}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="hinted" onClick={() => { onClose(); rate.toggleReject(); }}>
+            <span className="name">{rate.rejected ? t("library.menu.unreject") : t("library.menu.reject")}</span>
+            <span className="hint key">X</span>
+          </button>
+        </>}
+        {onKeywords && <button className="hinted" onClick={() => { onClose(); onKeywords(); }}>
+          <span className="name">{t("library.menu.keywords")}</span><span className="hint key">K</span></button>}
+        <div className="menu-sep" />
+      </>}
       {editIn && <>
         <div className="has-sub">
-          <button>Edit In</button>
+          <button>{t("library.menu.editIn")}</button>
           <div className="context-menu submenu">
             {editIn.map(({ cfg, why }) => (
               <button key={cfg.id} disabled={!!why} title={why ?? undefined}
@@ -80,36 +143,36 @@ export function FileMenu({ captureCount, onCaptureTime, canUndoCapture, onUndoCa
             ))}
             {editIn.length > 0 && <div className="menu-sep" />}
             <button onClick={() => { onClose(); onSetUpPlugins(); }}>
-              {editIn.length ? "Plugins…" : "Set Up Plugins…"}</button>
+              {editIn.length ? t("library.menu.plugins") : t("library.menu.setupPlugins")}</button>
           </div>
         </div>
         <div className="menu-sep" />
       </>}
-      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>Adjust Capture Time…</button>}
-      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>Undo Capture Time Adjustment…</button>}
+      {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>{t("library.menu.adjustCapture")}</button>}
+      {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>{t("library.menu.undoCapture")}</button>}
       {copyable > 0 && <>
         <button onClick={() => { onClose(); onCopy(); }}>
-          {copyable > 1 ? `Create ${copyable} Virtual Copies` : "Create Virtual Copy"}</button>
+          {copyable > 1 ? t("library.menu.createCopies", { count: copyable }) : t("library.menu.createCopy")}</button>
         {copies > 0 && <button onClick={() => { onClose(); onRemoveCopies(); }}>
-          {copies > 1 ? `Remove ${copies} Virtual Copies` : "Remove Virtual Copy"}</button>}
+          {copies > 1 ? t("library.menu.removeCopies", { count: copies }) : t("library.menu.removeCopy")}</button>}
         {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
       </>}
       {(mergeable > 1 || stitchable > 1) && <>
-        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>HDR Merge…</button>}
-        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>Panorama Merge…</button>}
+        {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>{t("library.menu.hdr")}</button>}
+        {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>{t("library.menu.panorama")}</button>}
         <div className="menu-sep" />
       </>}
-      {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>Show in {FILE_MANAGER}</button>}
+      {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>}
       {parentFolder !== undefined && <button disabled={!parentFolder}
-        title={parentFolder ? parentDir(parentFolder) : "Set up Opening photos in Preferences > Immich so this file is available on this computer"}
-        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>Import Parent Folder</button>}
-      {photo && <button onClick={() => go(photo)}>Show in Immich</button>}
-      {results && <button onClick={() => go(results)}>Show Results in Immich</button>}
+        title={parentFolder ? parentDir(parentFolder) : t("library.menu.parentHint")}
+        onClick={() => { onClose(); if (parentFolder) onImportParent(parentFolder); }}>{t("library.menu.importParent")}</button>}
+      {photo && <button onClick={() => go(photo)}>{t("library.menu.showImmich")}</button>}
+      {results && <button onClick={() => go(results)}>{t("library.menu.showResults")}</button>}
       {rejected !== null && <>
         {(reveal || photo || results) && <div className="menu-sep" />}
-        <button className="danger" disabled={!rejected} title={rejected ? undefined : "only rejected photos (X) can be deleted"}
+        <button className="danger" disabled={!rejected} title={rejected ? undefined : t("library.menu.deleteHint")}
                 onClick={() => { onClose(); onDelete(); }}>
-          {rejected > 1 ? `Delete ${rejected} Rejected Photos…` : "Delete Rejected Photo…"}</button>
+          {rejected > 1 ? t("library.menu.deleteRejectedMany", { count: rejected }) : t("library.menu.deleteRejectedOne")}</button>
       </>}
     </div>
   );

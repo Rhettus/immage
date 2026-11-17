@@ -6,6 +6,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cache;
+mod search_cache;
+mod search_analysis;
+mod library_ids;
+mod analysis_queue;
+mod search_reconcile;
+mod clip_models;
+mod clip_text;
+mod clip_image;
+mod clip_infer;
+mod search_cmds;
+mod search_filters;
+mod local_search;
+mod local_search_cmds;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -22,6 +35,9 @@ mod settings;
 mod scale;
 #[cfg(target_os = "linux")]
 mod renderer;
+#[cfg(target_os = "linux")]
+mod pinch;
+mod pinch_math;
 mod volumes;
 mod scrub;
 mod support_bundle;
@@ -35,6 +51,7 @@ mod typed_session;
 mod session_cmds;
 mod library_cmds;
 mod export_cmds;
+mod move_cmds;
 mod immich_cmds;
 mod print_cmds;
 mod edit_cmds;
@@ -55,6 +72,13 @@ use crate::library_cmds::Launch;
 use crate::app_cmds::supervise;
 
 struct AppState {
+    // disposable local search metadata; darktable's catalog remains in-memory
+    search_cache: Option<Arc<search_cache::SearchCache>>,
+    analysis_queue: Arc<analysis_queue::AnalysisQueue>,
+    search_analysis: search_analysis::Control,
+    search_clear_lock: Mutex<()>,
+    local_search_requests: Arc<local_search_cmds::Requests>,
+    clip_models: Arc<clip_models::Models>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
@@ -65,6 +89,8 @@ struct AppState {
     tagged: Tagged,
     // export_images' running jobs, which export_cancel stops
     export_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
+    // move_files' running jobs, which move_cancel stops
+    move_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     presets_path: PathBuf,
     preview_path: PathBuf,
     range_path: PathBuf,
@@ -137,19 +163,21 @@ fn async_workers(cores: usize) -> usize {
     cores.max(1) + ENGINE_WAITERS
 }
 
+fn defer_window_creation(context: &mut tauri::Context<tauri::Wry>) {
+    for window in &mut context.config_mut().app.windows {
+        window.create = false;
+    }
+}
+
 fn main() {
-    #[allow(unused_mut)]
     let mut context = tauri::generate_context!();
     // before GTK and WebKit start, and before any other thread
     #[cfg(target_os = "linux")]
     renderer::init(&context.config().identifier).expect("cannot select the webview renderer");
-    // Linux: setup builds the windows, with the web extension that hands
-    // frames over (webext_dir); it has to be in place before their web
-    // process starts
-    #[cfg(target_os = "linux")]
-    for w in &mut context.config_mut().app.windows {
-        w.create = false;
-    }
+    // Tauri otherwise creates configured windows before setup. Wait until the
+    // app state and settings store are registered before their pages can call
+    // commands. Linux also needs its frame extension installed before build.
+    defer_window_creation(&mut context);
     // after renderer::init, which needs to run before any other thread
     let runtime = Box::leak(Box::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -202,18 +230,6 @@ fn main() {
         })
         .setup(|app| {
             memory_budget::watch(app.handle().clone());
-            #[cfg(target_os = "linux")]
-            {
-                let dir = webext_dir(app.handle());
-                for config in app.config().app.windows.clone() {
-                    let mut window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
-                    if let Some(dir) = &dir {
-                        window = window.extensions_path(dir);
-                    }
-                    window.build()?;
-                }
-                shm_frame::sweep();
-            }
             // a dev build runs the engine from the checkout's build/ tree; a
             // bundled app carries its own (scripts/bundle_engine.py) and keeps
             // the engine's config and cache in its data folder
@@ -237,18 +253,35 @@ fn main() {
                 eprintln!("settings: cannot move the old preference files: {e}");
             }
             app.manage(settings);
+            let search_cache = match search_cache::SearchCache::open(&runtime.join("search-cache.sqlite")) {
+                Ok(cache) => Some(Arc::new(cache)),
+                Err(e) => { eprintln!("local search disabled for this session: {e}"); None }
+            };
             let resource_level = engine::resource_level(&runtime);
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            engine.set_search_cache(search_cache.clone());
+            let analysis_queue = Arc::new(analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256));
+            analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));
+            search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue);
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             let engine_link = engine.link();
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
+            let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
+            let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
             app.manage(AppState {
+                search_analysis,
+                search_cache,
+                analysis_queue,
+                search_clear_lock: Mutex::new(()),
+                local_search_requests: Arc::new(local_search_cmds::Requests::default()),
+                clip_models,
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
+                move_cancels: Mutex::new(HashMap::new()),
                 engine: perf_trace::TracedMutex::new(engine),
                 frame_path: frame_output.path("frame.rgba"),
                 denoise_path: frame_output.path("denoise-preview.f32"),
@@ -278,12 +311,41 @@ fn main() {
             std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
             app.manage(support_bundle::BundleState::default());
             app.manage(Caches::new(&app.path().app_cache_dir()?));
+            // Build the configured pages only after every command dependency
+            // is managed, including on platforms where Tauri normally creates
+            // windows before setup.
+            #[cfg(target_os = "linux")]
+            let dir = webext_dir(app.handle());
+            for config in app.config().app.windows.clone() {
+                let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?;
+                #[cfg(target_os = "linux")]
+                let window = if let Some(dir) = &dir {
+                    window.extensions_path(dir)
+                } else {
+                    window
+                };
+                #[cfg(target_os = "linux")]
+                let window = window.build()?;
+                #[cfg(target_os = "linux")]
+                pinch::install(&window);
+                #[cfg(not(target_os = "linux"))]
+                let _window = window.build()?;
+            }
+            #[cfg(target_os = "linux")]
+            shm_frame::sweep();
             Ok(())
         })
         .invoke_handler(bindings::handler())
         .build(context)
         .expect("error while running Immage");
     app.run(|_app, _event| {
+        if matches!(_event, tauri::RunEvent::Exit) {
+            _app.state::<AppState>().search_analysis.stop();
+            _app.state::<AppState>().local_search_requests.cancel_all();
+            _app.state::<AppState>().analysis_queue.pause(true);
+            _app.state::<AppState>().analysis_queue.cancel();
+            _app.state::<AppState>().clip_models.cancel();
+        }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = &_event {
             if let Some(p) = urls.iter().filter_map(|u| u.to_file_path().ok()).find_map(|p| launch_path(&p)) {
@@ -302,5 +364,20 @@ mod tests {
     fn async_workers_leave_room_beside_engine_waiters() {
         assert_eq!(async_workers(0), 1 + ENGINE_WAITERS);
         assert_eq!(async_workers(4), 4 + ENGINE_WAITERS);
+    }
+
+    #[test]
+    fn configured_windows_are_deferred_on_every_platform() {
+        let mut context = tauri::generate_context!();
+        defer_window_creation(&mut context);
+        assert!(context.config().app.windows.iter().all(|window| !window.create));
+        assert_eq!(context.config().app.windows.len(), 2);
+
+        let setup = include_str!("main.rs");
+        let settings = setup.find("app.manage(settings)").unwrap();
+        let state = setup.find("app.manage(AppState {").unwrap();
+        let windows = setup.find("for config in app.config().app.windows.clone()").unwrap();
+        assert!(settings < windows, "windows must wait for the settings store");
+        assert!(state < windows, "windows must wait for application state");
     }
 }

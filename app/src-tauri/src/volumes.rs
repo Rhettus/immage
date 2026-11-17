@@ -28,7 +28,14 @@ pub struct Volume {
 
 pub fn volume(path: &str) -> Volume {
     // a drive that is not answering is offline, and only its mount is known
-    let online = answering(Path::new(path)) && Path::new(path).is_dir();
+    describe(path, answering(Path::new(path)) && Path::new(path).is_dir())
+}
+
+// the drive of a folder the caller has just found answering and there, so
+// it is not asked again (volume() would stat it twice more)
+pub fn volume_online(path: &str) -> Volume { describe(path, true) }
+
+fn describe(path: &str, online: bool) -> Volume {
     let found = if online { probe(Path::new(path)) } else { drive_of(Path::new(path)) };
     let mut v = found.unwrap_or_else(|| Volume {
         path: String::new(),
@@ -42,6 +49,12 @@ pub fn volume(path: &str) -> Volume {
     v.online = online;
     v
 }
+
+// Mount-table-only identity for background scans: never asks a server.
+pub fn mount_identity(path: &Path) -> Option<String> { drive_of(path).map(|v|v.mount) }
+
+// whether the path is on a network share, from the mount table alone
+pub fn on_network(path: &Path) -> bool { drive_of(path).is_some_and(|v| v.network) }
 
 // how long a drive has to answer, and how long an answer is trusted for
 const DRIVE_WAIT: Duration = Duration::from_secs(3);

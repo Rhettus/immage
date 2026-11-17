@@ -11,14 +11,15 @@ import { api, type ImmichSettings, type ImmichTestResult } from "@immporter/api"
 import { EMPTY, insecureRemote, serverChanged, suggestPrefix } from "@immporter/immich-form";
 import { commands } from "./commands";
 import { open } from "@tauri-apps/plugin-dialog";
-import { importerPathMap, storedPathMap, storePathMap, type PathMap } from "./immich";
+import { effectivePathMap, importerPathMap, planOpen, storedPathMap, storePathMap, type PathMap } from "./immich";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
+import { t } from "./i18n";
 
 // where the importer's backend keeps the key on each system (the keyring
 // crate's stores): named as the system names it
-const KEY_STORE = /Mac/.test(navigator.userAgent) ? "the macOS Keychain"
-  : /Windows/.test(navigator.userAgent) ? "the Windows Credential Manager"
-  : "the system keyring (Secret Service)";
+const KEY_STORE = /Mac/.test(navigator.userAgent) ? t("immich.store.mac")
+  : /Windows/.test(navigator.userAgent) ? t("immich.store.windows")
+  : t("immich.store.other");
 
 export function ImmichPrefs() {
   const [form, setForm] = useState<ImmichSettings>(EMPTY);
@@ -32,12 +33,30 @@ export function ImmichPrefs() {
   const [test, setTest] = useState<ImmichTestResult | null>(null);
   const [busy, setBusy] = useState<"" | "testing">("");
   const [message, setMessage] = useState<string | null>(null);
+  const [messageWarn, setMessageWarn] = useState(false);
+  const say = (text: string | null, warn = false) => { setMessage(text); setMessageWarn(warn); };
   const [exampleRel, setExampleRel] = useState("");
   // where the server's paths are here, for opening search results; blank
-  // fields fall back to the importer's (shown as placeholders)
+  // fields fall back to the importer's (shown under the field)
   const [map, setMap] = useState<Partial<PathMap>>(storedPathMap);
   const [mapDefault, setMapDefault] = useState<PathMap>({ immich: "", local: "" });
   useEffect(() => { void importerPathMap().then(setMapDefault); }, []);
+  const eff = effectivePathMap(map, mapDefault);
+  // whether the effective local folder answered as a folder: checked after
+  // the page paints, a moment after typing stops; a stale reply is ignored
+  const [reach, setReach] = useState<{ path: string; ok: boolean } | null>(null);
+  const reachSeq = useRef(0);
+  useEffect(() => {
+    const path = eff.local.trim();
+    const seq = ++reachSeq.current;
+    if (!path) { setReach(null); return; }
+    const id = window.setTimeout(() => {
+      commands.pathKind(path).then((k) => { if (seq === reachSeq.current) setReach({ path, ok: k === "dir" }); })
+        .catch(() => { if (seq === reachSeq.current) setReach({ path, ok: false }); });
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [eff.local]);
+  const unreachable = !!eff.local.trim() && reach?.path === eff.local.trim() && !reach.ok;
   const updateMap = (patch: Partial<PathMap>) => {
     const next = { ...map, ...patch };
     setMap(next);
@@ -73,11 +92,11 @@ export function ImmichPrefs() {
       if (p.key) setHasKey(true);
       setSavedUrl(p.form.url);
       if (p.key) setSavedCerts(p.form.acceptInvalidCerts);
-      setMessage("saved");
+      say(t("immich.saved"));
       // an importer already loaded checks the connection again
       void import("@immporter/embed").then((m) => m.reloadImmich());
     } catch (e) {
-      setMessage(`not saved: ${e}`);
+      say(t("immich.notsaved", { error: String(e) }), true);
     }
   };
   const schedule = (form: ImmichSettings, key: string | null) => {
@@ -86,7 +105,7 @@ export function ImmichPrefs() {
     if (!key && hasKey && (moved || form.acceptInvalidCerts !== savedCerts)) {
       pending.current = null;
       window.clearTimeout(timer.current);
-      setMessage(moved ? "enter the API key for this server to save" : "enter the API key again to change the certificate setting");
+      say(moved ? t("immich.needkey.server") : t("immich.needkey.certs"));
       return;
     }
     pending.current = { form, key };
@@ -101,18 +120,24 @@ export function ImmichPrefs() {
   const update = (patch: Partial<ImmichSettings>) => {
     const next = { ...form, ...patch };
     setForm(next);
-    setMessage(null);
+    say(null);
     schedule(next, keyToSend);
   };
   const updateKey = (key: string) => {
     // the field stays open while it is typed in, saved or not
     setReplacingKey(true);
     setApiKey(key);
-    setMessage(null);
+    say(null);
     schedule(form, key.trim() || null);
   };
   const prefix = form.pathPrefix.trim().replace(/\/+$/, "");
   const suggestion = test?.samplePath && exampleRel ? suggestPrefix(test.samplePath, exampleRel) : null;
+
+  // a server path to show how a result would open: the tested one, else
+  // the importer's example under the effective server folder
+  const serverDir = eff.immich.trim().replace(/[\\/]+$/, "");
+  const sample = test?.samplePath || (serverDir && exampleRel ? `${serverDir}/${exampleRel}` : "");
+  const plan = sample ? planOpen(sample, eff) : null;
 
   // a test also checks what exporting needs, which reads the saved
   // settings: anything waiting is saved first
@@ -126,9 +151,9 @@ export function ImmichPrefs() {
     try {
       window.clearTimeout(timer.current);
       if (pending.current) await persist(pending.current);
-      const t = await api.testImmich(form, keyToSend);
-      setTest(t);
-      if (t.ok) {
+      const res = await api.testImmich(form, keyToSend);
+      setTest(res);
+      if (res.ok) {
         const [ex, br] = await Promise.all([commands.immichExportCheck().catch(() => null),
                                             commands.immichBrowseCheck().catch(() => null)]);
         setExportMissing(ex);
@@ -138,99 +163,117 @@ export function ImmichPrefs() {
       setBusy("");
     }
   };
-  const testLine = !test ? "check the server and the key"
-    : !test.ok ? <span className="warn">could not connect: {test.error ?? "unknown error"}</span>
+  const testLine = !test ? t("immich.test.idle")
+    : !test.ok ? <span className="warn">{t("immich.test.failed", { error: test.error ?? t("immich.test.unknown") })}</span>
     : <>
         <span className={test.hasAssetRead ? "good" : "warn"}>
-          Immich {test.version ?? ""}{test.keyName ? `, key "${test.keyName}"` : ""}
-          {test.hasAssetRead ? "" : `: the key lacks ${permission}`}
+          {t("immich.test.version", { version: test.version ?? "" })}{test.keyName ? t("immich.test.key", { name: test.keyName }) : ""}
+          {test.hasAssetRead ? "" : t("immich.test.nopermission", { permission })}
         </span>
         {exportMissing && exportMissing.length > 0 && (
-          <span className="warn"> exporting needs {exportMissing.join(", ")}</span>
+          <span className="warn"> {t("immich.test.export", { list: exportMissing.join(", ") })}</span>
         )}
         {browseMissing && browseMissing.length > 0 && (
-          <span className="warn"> searching from the Library panel needs {browseMissing.join(", ")}</span>
+          <span className="warn"> {t("immich.test.browse", { list: browseMissing.join(", ") })}</span>
         )}
       </>;
   const forget = async () => {
     await api.forgetImmichKey();
     setHasKey(false);
     setReplacingKey(false);
-    setMessage(`key removed from ${KEY_STORE}`);
+    say(t("immich.keyremoved", { store: KEY_STORE }));
   };
 
   return (
     <>
-      <p className="prefs-lead">
-        Immage checks new photos against your Immich library while importing, can export to its albums, and
-        searches it from the Library panel.
-      </p>
-      <PrefCard title="Server">
-        <PrefRow label="Use Immich" hint="look photos up on the server during an import">
+      <p className="prefs-lead">{t("immich.lead")}</p>
+      <PrefCard title={t("immich.card.server")}>
+        <PrefRow id="Use Immich" label={t("immich.row.use")} hint={t("immich.row.use.hint")}>
           <PrefSwitch checked={form.enabled} onChange={(v) => update({ enabled: v })} />
         </PrefRow>
-        <PrefRow label="Server URL"
-                 hint={insecureRemote(form.url) ? <span className="warn">plain http sends the key unencrypted</span> : undefined}>
+        <PrefRow id="Server URL" label={t("immich.row.url")}
+                 hint={insecureRemote(form.url) ? <span className="warn">{t("immich.row.url.hint")}</span> : undefined}>
           <input className="field" placeholder="https://photos.example.com" value={form.url} spellCheck={false}
                  onChange={(e) => update({ url: e.target.value })} />
         </PrefRow>
-        <PrefRow label="API key" hint={`kept in ${KEY_STORE}; needs ${permission}`}>
+        <PrefRow id="API key" label={t("immich.row.key")} hint={t("immich.row.key.hint", { store: KEY_STORE, permission })}>
           {keyInput ? (
-            <input className="field" type="password" placeholder={keyRequired ? "enter the key again" : "paste the key from Immich"} value={apiKey}
+            <input className="field" type="password" placeholder={keyRequired ? t("immich.key.again") : t("immich.key.paste")} value={apiKey}
                    onChange={(e) => updateKey(e.target.value)} />
           ) : (
             <div className="pref-inline">
-              <span className="pill ok">stored</span>
-              <button className="btn small" onClick={() => setReplacingKey(true)}>Replace</button>
-              <button className="btn small" onClick={() => void forget()}>Forget</button>
+              <span className="pill ok">{t("immich.key.stored")}</span>
+              <button className="btn small" onClick={() => setReplacingKey(true)}>{t("immich.key.replace")}</button>
+              <button className="btn small" onClick={() => void forget()}>{t("immich.key.forget")}</button>
             </div>
           )}
         </PrefRow>
-        <PrefRow label="Self-signed certificate" hint="accept a server certificate no authority signed">
+        <PrefRow id="Self-signed certificate" label={t("immich.row.certs")} hint={t("immich.row.certs.hint")}>
           <PrefSwitch checked={form.acceptInvalidCerts} onChange={(v) => update({ acceptInvalidCerts: v })} />
         </PrefRow>
-        <PrefRow label="Connection" hint={testLine}>
+        <PrefRow id="Connection" label={t("immich.row.connection")} hint={testLine}>
           <button className="btn small" disabled={!!busy || !form.url.trim() || (keyRequired && !keyToSend)} onClick={() => void runTest()}>
-            {busy === "testing" ? "Testing…" : "Test"}</button>
+            {busy === "testing" ? t("immich.test.testing") : t("immich.test.run")}</button>
         </PrefRow>
       </PrefCard>
-      <PrefCard title="Duplicates">
-        <PrefRow label="Match the folder path" hint="a photo only counts as in Immich at the path the import gives it">
+      <PrefCard title={t("immich.card.duplicates")}>
+        <PrefRow id="Match the folder path" label={t("immich.row.matchpath")} hint={t("immich.row.matchpath.hint")}>
           <PrefSwitch checked={form.matchPath} onChange={(v) => update({ matchPath: v })} />
         </PrefRow>
         {form.matchPath && (
-          <PrefRow label="Path prefix"
-                   hint={exampleRel ? <>expected as <code>{prefix || "…"}/{exampleRel}</code></> : "where the library sits inside Immich"}>
+          <PrefRow id="Destination as Immich sees it" label={t("immich.row.prefix")}
+                   hint={exampleRel ? <>{t("immich.row.prefix.expected")} <code>{prefix || "…"}/{exampleRel}</code></> : t("immich.row.prefix.hint")}>
             <div className="pref-inline">
               <input className="field" placeholder="/mnt/photos" value={form.pathPrefix} spellCheck={false}
                      onChange={(e) => update({ pathPrefix: e.target.value })} />
               {suggestion && suggestion !== prefix && (
                 <button className="btn small" onClick={() => update({ pathPrefix: suggestion })}
-                        title="taken from a photo on the server">Use {suggestion}</button>
+                        title={t("immich.use.title")}>{t("immich.use", { path: suggestion })}</button>
               )}
             </div>
           </PrefRow>
         )}
       </PrefCard>
-      <PrefCard title="Opening photos">
-        <PrefRow label="Path in Immich" hint="where an external library's folder sits on the server">
-          <input className="field" placeholder={mapDefault.immich || "/mnt/photos"} value={map.immich ?? ""} spellCheck={false}
+      <PrefCard title={t("immich.card.opening")}>
+        <div className="pref-hint pref-card-lead">{t("immich.opening.lead")}</div>
+        <PrefRow id="External library path"label={t("immich.row.path")}
+                 hint={<>{t("immich.row.path.hint")}
+                   {!map.immich?.trim() && mapDefault.immich.trim() && (
+                     <><br />{t("immich.using.prefix", { path: mapDefault.immich })}</>)}</>}>
+          <input className="field" placeholder="/mnt/photos" value={map.immich ?? ""} spellCheck={false}
                  onChange={(e) => updateMap({ immich: e.target.value })} />
         </PrefRow>
-        <PrefRow label="On this computer"
-                 summary="Local results open directly; other results download first."
-                 hint="the same folder here: a search result found in it opens directly, anything else is downloaded first">
+        <PrefRow id="Folder on this computer" label={t("immich.row.local")}
+                 hint={<>{t("immich.row.local.hint")}
+                   {!map.local?.trim() && mapDefault.local.trim() && (
+                     <><br />{t("immich.using.dest", { path: mapDefault.local })}</>)}
+                   {!eff.local.trim() && (
+                     <><br /><span className="warn">{t("immich.local.notset")}</span></>)}
+                   {unreachable && (
+                     <><br /><span className="warn">{t("immich.local.unavailable")}</span></>)}</>}>
           <div className="pref-inline">
-            <input className="field" placeholder={mapDefault.local || "/Volumes/photos"} value={map.local ?? ""} spellCheck={false}
+            <input className="field" placeholder="/Volumes/photos" value={map.local ?? ""} spellCheck={false}
                    onChange={(e) => updateMap({ local: e.target.value })} />
             <button className="btn small" onClick={async () => {
               const dir = await open({ directory: true });
               if (typeof dir === "string") updateMap({ local: dir });
-            }}>Choose…</button>
+            }}>{t("prefs.choose")}</button>
           </div>
         </PrefRow>
+        {sample && (
+          <div className="pref-hint pref-card-lead">
+            {plan && "local" in plan && !unreachable ? (
+              <><span className="good">✓ {sample}</span><br />{t("immich.example.opens")} <code>{plan.local}</code></>
+            ) : (
+              <><span className="warn">✗ {sample}</span> {
+                plan && "local" in plan ? t("immich.example.unreachable", { path: eff.local.trim() })
+                : plan?.reason === "nolocal" ? t("immich.example.nolocal")
+                : t("immich.example.outside")}</>
+            )}
+          </div>
+        )}
       </PrefCard>
-      {message && <div className={`prefs-status${message.startsWith("not saved") ? " warn" : ""}`}>{message}</div>}
+      {message && <div className={`prefs-status${messageWarn ? " warn" : ""}`}>{message}</div>}
     </>
   );
 }

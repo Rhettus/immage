@@ -5,6 +5,24 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	settingsAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_all"),
+	searchStatus: () => __TAURI_INVOKE<SearchStatus>("search_status"),
+	localSearch: (args: LocalSearchArgs, requestId: number) => __TAURI_INVOKE<LocalPage>("local_search", { args, requestId }),
+	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
+	/**  Resolve the clicked file version to a cache identity, never an engine ID. */
+	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
+	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
+	/**
+	 *  The analysis queue's counts and pause state, for Find's indicator to poll.
+	 *  Sync on purpose: it only copies in-memory state under the queue's own mutex
+	 *  (no file, SQLite or network work), unlike `search_status`.
+	 */
+	searchQueue: () => __TAURI_INVOKE<Status>("search_queue"),
+	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
+	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
+	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
+	searchModelProbe: () => __TAURI_INVOKE<ProbeReply>("search_model_probe"),
+	searchModelDownload: (consent: boolean) => __TAURI_INVOKE<null>("search_model_download", { consent }),
+	searchModelCancel: () => __TAURI_INVOKE<void>("search_model_cancel"),
 	settingsSet: (changes: { [key in string]: string | null }) => __TAURI_INVOKE<null>("settings_set", { changes }),
 	meta: (imgid: number) => __TAURI_INVOKE<MetaReply>("meta", { imgid }),
 	metaSet: (imgid: number, fields: { [key in string]: Value }) => __TAURI_INVOKE<null>("meta_set", { imgid, fields }),
@@ -15,7 +33,7 @@ export const commands = {
 	mapTile: (z: number, x: number, y: number) => __TAURI_INVOKE<ArrayBuffer>("map_tile", { z, x, y }),
 	openImage: (path: string, imgid: number | null) => __TAURI_INVOKE<OpenReply>("open_image", { path, imgid }),
 	history: (saved: boolean | null) => __TAURI_INVOKE<HistoryItem[]>("history", { saved }),
-	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore }),
+	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null, preset: string | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore, preset }),
 	getParams: (modules: { [key in string]: string[] }) => __TAURI_INVOKE<GetReply>("get_params", { modules }),
 	setParams: (edit: ModuleEdit) => __TAURI_INVOKE<null>("set_params", { edit }),
 	sample: (x: number, y: number, area: number[] | null, stage: string | null) => __TAURI_INVOKE<SampleReply>("sample", { x, y, area, stage }),
@@ -29,10 +47,13 @@ export const commands = {
 	beforeView: (on: boolean) => __TAURI_INVOKE<null>("before_view", { on }),
 	preview: (size: number, edits: ModuleEdit[], withLook: boolean, look: string | null) => __TAURI_INVOKE<ArrayBuffer>("preview", { size, edits, withLook, look }),
 	pasteBatch: (action: string, token: number | null, imgids: number[] | null) => __TAURI_INVOKE<PasteBatchReply>("paste_batch", { action, token, imgids }),
+	historyDiscard: (imgid: number) => __TAURI_INVOKE<SaveReply>("history_discard", { imgid }),
 	openFolder: (path: string, recursive: boolean | null, skip: string[] | null, token: number) => __TAURI_INVOKE<FolderReply>("open_folder", { path, recursive, skip, token }),
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
+	createFolder: (parent: string, name: string) => __TAURI_INVOKE<string>("create_folder", { parent, name }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
-	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof }),
+	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground }),
+	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),
 	thumbCached: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size }),
 	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
 	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),
@@ -41,6 +62,7 @@ export const commands = {
 	captureTimes: (entries: CaptureTimeEntry[]) => __TAURI_INVOKE<CaptureTimesReply>("capture_times", { entries }),
 	sampleFolder: () => __TAURI_INVOKE<string>("sample_folder"),
 	trashFiles: (imgids: number[]) => __TAURI_INVOKE<string[]>("trash_files", { imgids }),
+	onNetworkShare: (paths: string[]) => __TAURI_INVOKE<boolean[]>("on_network_share", { paths }),
 	createVirtualCopy: (imgid: number) => __TAURI_INVOKE<LibraryImage>("create_virtual_copy", { imgid }),
 	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
 	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
@@ -55,6 +77,9 @@ export const commands = {
 	mapSearchKeyRemove: () => __TAURI_INVOKE<null>("map_search_key_remove"),
 	exportImages: (job: number, items: ExportItem[], options: ExportOptions) => __TAURI_INVOKE<ExportReply>("export_images", { job, items, options }),
 	exportCancel: (job: number) => __TAURI_INVOKE<void>("export_cancel", { job }),
+	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
+	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
+	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
 	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
 	exportPreview: (item: ExportItem, options: ExportOptions, cap: number) => __TAURI_INVOKE<ArrayBuffer>("export_preview", { item, options, cap }),
 	exportPresetsLoad: () => __TAURI_INVOKE<PresetsFile | null>("export_presets_load"),
@@ -82,7 +107,7 @@ export const commands = {
 	aiModelReinstall: (id: string) => __TAURI_INVOKE<null>("ai_model_reinstall", { id }),
 	aiMask: (kind: string, range: [number, number] | null, inset: boolean | null, backdrop: boolean | null) => __TAURI_INVOKE<Value>("ai_mask", { kind, range, inset, backdrop }),
 	aiDepth: (size: number) => __TAURI_INVOKE<DepthMap>("ai_depth", { size }),
-	aiDenoise: (strength: number) => __TAURI_INVOKE<GeneratedReply>("ai_denoise", { strength }),
+	aiDenoise: (path: string, strength: number) => __TAURI_INVOKE<GeneratedReply>("ai_denoise", { path, strength }),
 	aiDenoisePreview: (u: number, v: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("ai_denoise_preview", { u, v, size }),
 	aiAccel: () => __TAURI_INVOKE<AccelProvider[]>("ai_accel"),
 	maskShapes: (name: string, shapes: Value[]) => __TAURI_INVOKE<null>("mask_shapes", { name, shapes }),
@@ -111,6 +136,16 @@ export const commands = {
 	spektraStocks: () => __TAURI_INVOKE<FilmStocks>("spektra_stocks"),
 	spektraFetch: (action: string) => __TAURI_INVOKE<FilmFetch>("spektra_fetch", { action }),
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
+	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
+	lutFiles: (priority: number, pick: boolean) => __TAURI_INVOKE<LutFiles | null>("lut_files", { priority, pick }),
+	colormappingAcquire: (which: string, n: number) => __TAURI_INVOKE<ColormappingClusters>("colormapping_acquire", { which, n }),
+	lutFolder: (folder: string) => __TAURI_INVOKE<null>("lut_folder", { folder }),
+	pickFolder: (start: string) => __TAURI_INVOKE<string | null>("pick_folder", { start }),
+	watermarks: () => __TAURI_INVOKE<Watermarks>("watermarks"),
+	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
+	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
+	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
+	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
@@ -300,9 +335,23 @@ export type ChannelStats = {
 	max: number,
 };
 
+export type ChosenFile = {
+	path: string,
+	label?: string | null,
+	hash: number | null,
+};
+
 export type ColorProfiles = {
 	input: ([string, number])[],
 	working: ([string, number])[],
+};
+
+export type ColormappingClusters = {
+	hash: number,
+	n: number,
+	mean: number[],
+	var: number[],
+	weight: number[],
 };
 
 export type CombineMember = {
@@ -311,10 +360,26 @@ export type CombineMember = {
 	invert: boolean,
 };
 
+export type Counts = {
+	assets: number,
+	variants: number,
+	metadata: number,
+	analyses: number,
+	analysed_photos: number,
+};
+
 export type DepthMap = {
 	width: number,
 	height: number,
 	data: number[],
+};
+
+export type DtPreset = {
+	name: string,
+	description: string,
+	builtin: boolean,
+	applicable: boolean,
+	active: boolean,
 };
 
 export type ExistingFile = {
@@ -437,6 +502,25 @@ export type GpuEditState = {
 	next: boolean,
 };
 
+export type GridFilter = {
+	minRating?: number,
+	rejected?: string,
+	edited?: string,
+	labels?: number,
+	unlabeled?: boolean,
+	kinds?: string[],
+	cameras?: string[],
+	bodies?: string[],
+	lenses?: string[],
+	keywords?: string[],
+	takenFrom?: string,
+	takenTo?: string,
+	iso?: string[],
+	aperture?: string[],
+	focal?: string[],
+	shutter?: string[],
+};
+
 export type HdrReply = {
 	path: string,
 	image: LibraryImage,
@@ -451,6 +535,29 @@ export type HistoryItem = {
 	default_enabled?: boolean | null,
 	fixed?: boolean | null,
 	masked?: boolean | null,
+};
+
+export type Instance = {
+	op: string,
+	priority: number,
+	name: string,
+	hand_edited: boolean,
+	label: string,
+	enabled: boolean,
+	default_enabled: boolean,
+	changed: boolean,
+	copyable: boolean,
+	masked: boolean,
+	switchable: boolean,
+	in_history: boolean,
+	iop_order: number,
+	owner: string | null,
+	mask?: string | null,
+};
+
+export type InstanceReply = {
+	priority: number,
+	instances: Instance[],
 };
 
 export type Lens = {
@@ -495,6 +602,34 @@ export type Limits = {
 	immichOriginals: number,
 };
 
+export type LocalHit = {
+	asset_id: string,
+	variant_id: string,
+	subject: string,
+	score: number | null,
+	image: LibraryImage,
+};
+
+export type LocalPage = {
+	items: LocalHit[],
+	next: string | null,
+	revision: string,
+};
+
+export type LocalSearchArgs = {
+	text?: string,
+	mode?: string,
+	imageVariant?: string | null,
+	subject?: string,
+	scope?: string,
+	folder?: string | null,
+	recursive?: boolean,
+	filters?: GridFilter,
+	remote?: SearchArgs,
+	next?: string | null,
+	size?: number,
+};
+
 export type Location = {
 	latitude: number,
 	longitude: number,
@@ -505,6 +640,14 @@ export type LookInfo = {
 	group: string,
 	path: string,
 	user?: boolean | null,
+};
+
+export type LutFiles = {
+	folder: string,
+	current: string,
+	current_hash: number | null,
+	exists: boolean,
+	files: ChosenFile[],
 };
 
 export type MapView = {
@@ -525,6 +668,8 @@ export type MaskInfo = {
 
 export type MaskInstance = {
 	enabled: boolean,
+	extra?: boolean,
+	state: ModuleState,
 	params: { [key in string]: number },
 };
 
@@ -557,6 +702,8 @@ export type MetaExif = {
 	sensor_width?: number,
 	sensor_height?: number,
 	datetime: string,
+	capture_time_raw?: string,
+	capture_offset?: string,
 	file_datetime?: string,
 };
 
@@ -591,13 +738,24 @@ export type MetaText = {
 	notes: string,
 };
 
+export type ModelStatus = {
+	revision: string,
+	bytes: number,
+	downloading: boolean,
+	/**  Installation verified in this process; not an inference availability claim. */
+	verified: boolean,
+	error: string | null,
+};
+
 export type ModuleEdit = {
 	op: string,
 	params: { [key in string]: number },
 	enabled: boolean,
 	after?: string | null,
 	before?: string | null,
+	anchored?: boolean | null,
 	instance?: string | null,
+	priority?: number | null,
 	mask?: string | null,
 	invert?: boolean | null,
 	opacity?: number | null,
@@ -611,6 +769,16 @@ export type ModuleInfo = {
 	defaults: { [key in string]: number },
 };
 
+export type ModuleSchema = {
+	op: string,
+	name: string,
+	version: number,
+	params_size: number,
+	groups: string[],
+	flags: SchemaFlags,
+	fields: SchemaField[],
+};
+
 export type ModuleState = {
 	enabled: boolean,
 	params: string,
@@ -620,6 +788,42 @@ export type ModuleState = {
 export type ModuleStateReply = {
 	was: ModuleState,
 	now: ModuleState,
+};
+
+export type MoveFailure = {
+	name: string,
+	error: string,
+};
+
+export type MovePlan = {
+	dest: string,
+	units: PlanUnit[],
+	bytes: number,
+	free: number | null,
+	sameDrive: boolean,
+	network: boolean,
+};
+
+export type MoveRequest = {
+	sources: MoveSource[],
+	dest: string,
+	map?: PathMap | null,
+};
+
+export type MoveSource = {
+	imgid?: number | null,
+	asset?: string | null,
+	assetPath?: string | null,
+};
+
+export type MoveSummary = {
+	dest: string,
+	done: string[],
+	removed: number[],
+	skipped: string[],
+	failed: MoveFailure[],
+	warnings: string[],
+	cancelled: boolean,
 };
 
 export type Named = {
@@ -647,6 +851,7 @@ export type OpenReply = {
 	look_amount: number,
 	edited: boolean,
 	raw: boolean,
+	sensor: string | null,
 	fresh: boolean,
 };
 
@@ -735,6 +940,18 @@ export type Place = {
 	bounds?: [number, number, number, number] | null,
 };
 
+export type PlanUnit = {
+	key: string,
+	name: string,
+	imgids: number[],
+	versions: number,
+	files: number,
+	bytes: number,
+	clash: string,
+	download: boolean,
+	keepSource: boolean,
+};
+
 export type PluginConfig = {
 	id?: string,
 	kind?: string,
@@ -782,6 +999,10 @@ export type PresetsDoc = PresetsFile | Value[];
 export type PresetsFile = {
 	version: number,
 	presets: Value[],
+};
+
+export type PresetsReply = {
+	presets: DtPreset[],
 };
 
 export type PrintProfile = {
@@ -836,6 +1057,12 @@ export type PrintersReply = {
 	printers: Printer[],
 };
 
+export type ProbeReply = {
+	dimensions: number,
+	image_dimensions: number,
+	elapsed_ms: number | null,
+};
+
 export type Refine = {
 	feather: number,
 	blur: number,
@@ -871,6 +1098,13 @@ export type ResourceLevels = {
 
 export type Restore = string | ModuleState;
 
+export type RootStatus = {
+	path: string,
+	mount: string | null,
+	state: string,
+	error: string | null,
+};
+
 export type SampleReply = {
 	luminance: number,
 	ev: number,
@@ -883,6 +1117,38 @@ export type SampleReply = {
 
 export type SaveReply = {
 	edited: boolean,
+};
+
+export type SchemaEnumValue = {
+	name: string,
+	value: number,
+	description?: string | null,
+};
+
+export type SchemaField = {
+	path: string,
+	type: string,
+	description?: string | null,
+	min?: number | null,
+	max?: number | null,
+	default?: number | null,
+	enum_type?: string | null,
+	values?: SchemaEnumValue[] | null,
+	dims?: number[] | null,
+	element?: string | null,
+	defaults?: (number | null)[] | null,
+	member_defaults?: ({ [key in string]: number | null })[] | null,
+	members?: SchemaField[] | null,
+};
+
+export type SchemaFlags = {
+	one_instance: boolean,
+	deprecated: boolean,
+	hidden: boolean,
+	supports_blending: boolean,
+	no_masks: boolean,
+	no_history: boolean,
+	no_switch: boolean,
 };
 
 export type SearchArgs = {
@@ -911,6 +1177,18 @@ export type SearchPage = {
 	next: string | null,
 };
 
+export type SearchStatus = {
+	counts: Counts | null,
+	roots: RootStatus[],
+	queue: Status,
+	model: ModelStatus,
+	/**
+	 *  The CLIP package is on disk (checked off the event loop): photo-content
+	 *  search works without the Preferences check, which only sets `model.verified`.
+	 */
+	model_installed: boolean,
+};
+
 export type SharedImport = {
 	presets: Value[],
 	looks: number,
@@ -924,6 +1202,14 @@ export type SpotMode = "heal" | "clone";
 export type SpotSource = {
 	sx: number,
 	sy: number,
+};
+
+export type Status = {
+	queued: number,
+	active: number,
+	paused: boolean,
+	finished: number,
+	failed: number,
 };
 
 export type SubFolder = {
@@ -962,6 +1248,23 @@ export type Volume = {
 	host: string | null,
 	network: boolean,
 	online: boolean,
+};
+
+export type Watermarks = {
+	markers: ChosenFile[],
+	dirs: string[],
+};
+
+export type WbPreset = {
+	name: string,
+	value: number,
+	tune_min: number,
+	tune_max: number,
+	tune_default: number,
+};
+
+export type WbPresets = {
+	presets: WbPreset[],
 };
 
 export type WebviewRenderer = {

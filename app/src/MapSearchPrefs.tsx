@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { commands } from "./commands";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PrefCard, PrefRow } from "./PrefsUI";
+import { t } from "./i18n";
 
 export function MapSearchPrefs() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -18,7 +19,7 @@ export function MapSearchPrefs() {
       setError("");
     } catch (e) {
       setHasKey(null);
-      setError(`Could not read the saved search key: ${String(e)}`);
+      setError(t("mapkey.read", { error: String(e) }));
     }
   }
 
@@ -33,7 +34,7 @@ export function MapSearchPrefs() {
       setKey("");
       await refresh();
     } catch (e) {
-      setError(`Could not save the search key: ${String(e)}`);
+      setError(t("mapkey.save", { error: String(e) }));
     } finally { setBusy(false); }
   }
 
@@ -45,22 +46,22 @@ export function MapSearchPrefs() {
       setKey("");
       await refresh();
     } catch (e) {
-      setError(`Could not remove the saved search key: ${String(e)}`);
+      setError(t("mapkey.remove", { error: String(e) }));
     } finally { setBusy(false); }
   }
 
-  return <PrefCard title="Map search">
-    <PrefRow label="Place search" summary={hasKey === null ? (error ? "Keyring unavailable." : "Checking saved key…") : hasKey ? "Geoapify key saved." : "No search key saved."}
-             hint="Search by place name in the map's location picker. Search results move the map; they do not set photo coordinates. Map tiles and manual pin placement work without a key.">
+  return <PrefCard title={t("mapkey.card")}>
+    <PrefRow id="Place search" label={t("mapkey.row")} summary={hasKey === null ? (error ? t("mapkey.unavailable") : t("mapkey.checking")) : hasKey ? t("mapkey.saved") : t("mapkey.none")}
+             hint={t("mapkey.hint")}>
       <div className="pref-inline">
-        <input className="field" type="password" autoComplete="new-password" aria-label="Geoapify API key"
-               placeholder="Geoapify API key" value={key} onChange={(e) => setKey(e.target.value)} />
-        <button className="btn" disabled={busy || !key.trim()} onClick={() => void save()}>{hasKey ? "Replace" : "Save"}</button>
-        {hasKey && <button className="btn" disabled={busy} onClick={() => void remove()}>Remove</button>}
+        <input className="field" type="password" autoComplete="new-password" aria-label={t("mapkey.apikey")}
+               placeholder={t("mapkey.apikey")} value={key} onChange={(e) => setKey(e.target.value)} />
+        <button className="btn" disabled={busy || !key.trim()} onClick={() => void save()}>{hasKey ? t("immich.key.replace") : t("mapkey.btn.save")}</button>
+        {hasKey && <button className="btn" disabled={busy} onClick={() => void remove()}>{t("mapkey.btn.remove")}</button>}
       </div>
     </PrefRow>
     <div className="prefs-legal">
-      <p>Stored in your system keyring; never shown after saving. <button className="btn small" onClick={() => void openUrl("https://www.geoapify.com/")}>Get a Geoapify key</button></p>
+      <p>{t("mapkey.stored")} <button className="btn small" onClick={() => void openUrl("https://www.geoapify.com/")}>{t("mapkey.get")}</button></p>
       {error && <p role="alert" style={{ color: "var(--error, #ef7777)" }}>{error}</p>}
     </div>
   </PrefCard>;

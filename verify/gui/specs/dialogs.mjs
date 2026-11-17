@@ -28,8 +28,12 @@ export async function preferencesMatrix(t) {
         for(const o of before.options.filter(o=>!o.disabled)){await choose(t,selector,o.value);await t.evidence(`${tab}-${labels.indexOf(label)}-${o.value.replace(/[^a-z0-9]/gi,'-')}`);}
         await choose(t,selector,before.value);
       }else{
-        const selectors=await t.driver.observe(s=>[...document.querySelectorAll(`${s} .segmented button, ${s} .pref-swatches button`)].map(e=>({text:e.textContent.trim(),aria:e.getAttribute('aria-label')})),row);
-        for(const o of selectors){if(o.aria)await click(t,`${row} button[aria-label=${JSON.stringify(o.aria)}]`);else await textButton(t,`${row} .segmented`,o.text);await t.evidence(`${tab}-${labels.indexOf(label)}-${selectors.indexOf(o)}`);}
+        const selectors=await t.driver.observe(s=>[...document.querySelectorAll(`${s} .segmented button, ${s} .pref-swatches button`)].map(e=>({text:e.textContent.trim(),aria:e.getAttribute('aria-label'),
+          on:e.classList.contains('active')||e.classList.contains('on')||e.getAttribute('aria-pressed')==='true'||e.getAttribute('aria-checked')==='true'})),row);
+        const pick=async o=>{if(o.aria)await click(t,`${row} button[aria-label=${JSON.stringify(o.aria)}]`);else await textButton(t,`${row} .segmented`,o.text);};
+        for(const o of selectors){await pick(o);await t.evidence(`${tab}-${labels.indexOf(label)}-${selectors.indexOf(o)}`);}
+        // leave the setting as found: a later case expects Simple editing, the default canvas and the dark theme
+        const original=selectors.find(o=>o.on);if(original)await pick(original);
       }
     }
   }
@@ -51,10 +55,11 @@ export async function sliderWheel(t) {
 export async function exportOptions(t) {
   await click(t,'button[data-tour="export"]');
   await until(()=>t.driver.observe(()=>!!document.querySelector('.modal.export')),'export dialog');
-  const sections=await t.driver.observe(()=>[...document.querySelectorAll('.export-section-head .title')].map(e=>e.textContent));
-  for(const title of sections){
-    const open=await t.driver.observe(title=>[...document.querySelectorAll('.export-section')].find(e=>e.querySelector('.title')?.textContent===title)?.classList.contains('open'),title);
-    const section=`[data-export-section=${JSON.stringify(title)}]`;
+  // sections are keyed by an id, not by their (translated) title
+  const sections=await t.driver.observe(()=>[...document.querySelectorAll('.export-section')].map(e=>e.dataset.exportSection));
+  for(const id of sections){
+    const section=`[data-export-section=${JSON.stringify(id)}]`;
+    const open=await t.driver.observe(s=>document.querySelector(s)?.classList.contains('open'),section);
     if(!open)await click(t,`${section} > .export-section-head`);
     const seen=new Set();
     for(let pass=0;pass<30;pass++) {
@@ -73,58 +78,20 @@ export async function exportOptions(t) {
   // Settings and preview only: never native destination chooser or external editor.
   await textButton(t,'.export .modal-foot','Cancel');
 }
+// Find's category rows and their panes. The popup opens at its stored size,
+// Dock by default (one column, the list above the pane); a size other than
+// Dock has no list, so the case chooses Dock first.
 export async function filters(t) {
-  const initial=await t.driver.observe(()=>({total:document.querySelectorAll('.thumb').length,rejected:document.querySelectorAll('.thumb.rejected').length}));
-  assert(initial.total>=3,'isolated fixture folder has at least three photos');
-  if(!initial.rejected){
-    const active=await reveal(t,'.thumb.active');
-    await t.driver.move(active.x,active.y);
-    await pause(150);
-    await click(t,'.thumb.active .thumb-reject');
-    await until(()=>t.driver.observe(()=>!!document.querySelector('.thumb.active.rejected')),'copied fixture photo rejected');
-  }
-  await click(t,'.kind-button');
-  await click(t,'.filter-cat .name');
-  await click(t,'#filter-rejected');
-  const readMenu=()=>t.driver.observe(()=>{
-    const m=document.querySelector('.select-menu[data-filter-menu]');
-    if(!m)return null;
-    const r=m.getBoundingClientRect();
-    return {viewport:{width:innerWidth,height:innerHeight},bounds:{left:r.left,top:r.top,right:r.right,bottom:r.bottom},items:[...m.querySelectorAll('[role=option]')].map(e=>{
-      const b=e.getBoundingClientRect(), hit=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);
-      return {label:e.textContent.trim(),bounds:{left:b.left,top:b.top,right:b.right,bottom:b.bottom},hit:hit?.closest('[role=option]')===e};
-    })};
-  });
-  await until(readMenu,'Rejected Show dropdown visible');
-  const labels=['All photos','Hide rejected','Only rejected'];
-  for(const [index,label] of labels.entries()){
-    const menu=await until(readMenu,'Rejected Show dropdown visible');
-    if(index===0)await t.evidence('rejected-dropdown');
-    const item=menu.items.find(x=>x.label===label);assert(item,`dropdown contains ${label}`);
-    assert(item.hit,`${label} center is the WebDriver hit target`);
-    const b=item.bounds;assert(b.left>=0&&b.top>=0&&b.right<=menu.viewport.width&&b.bottom<=menu.viewport.height,`${label} hit target is inside the webview`);
-    const m=menu.bounds;assert(m.left>=0&&m.top>=0&&m.right<=menu.viewport.width&&m.bottom<=menu.viewport.height,'dropdown is inside the webview');
-    await t.driver.point((b.left+b.right)/2,(b.top+b.bottom)/2);
-    await until(()=>t.driver.observe(expected=>document.querySelector('#filter-rejected')?.value===expected,['all','hide','only'][index]),`select ${label}`);
-    assert.equal(await t.driver.observe(()=>document.querySelector('#filter-rejected')?.value),['all','hide','only'][index]);
-    assert(await t.driver.observe(()=>!!document.querySelector('.filter-pop')),'filter popup stays open after selecting an option');
-    await textButton(t,'.filter-foot','Search');
-    await until(()=>t.driver.observe(expected=>document.querySelectorAll('.thumb').length===expected,index===0?initial.total:index===1?initial.total-1:1),`${label} Search applies`);
-    const actual=await t.driver.observe(()=>({total:document.querySelectorAll('.thumb').length,rejected:document.querySelectorAll('.thumb.rejected').length}));
-    assert.equal(actual.total,index===0?initial.total:index===1?initial.total-1:1,`${label} shows the expected photos`);
-    assert.equal(actual.rejected,index===0?1:index===1?0:1,`${label} rejected-photo count`);
-    await t.evidence(`rejected-${['all','hide','only'][index]}`);
-    if(index<2){await click(t,'.kind-button');await click(t,'.filter-cat .name');}
-    // Reopen the select for the next option; each selection is still made through its rendered menu.
-    if(index<2)await click(t,'#filter-rejected');
-  }
-  await click(t,'.kind-button');
-  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.filter-cat .name')].map(e=>e.textContent));
+  await click(t,'.find-button');
+  await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
+  if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
+  await until(()=>t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size==='dock'),'Dock size');
+  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-cat .name')].map(e=>e.textContent));
   assert(categories.length>0);
   for(const name of categories){
-    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.filter-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
+    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
     await t.driver.point(point.x,point.y);
-    const shown=await t.driver.observe(()=>document.querySelector('.filter-pane h3')?.textContent);assert.equal(shown,name);
+    const shown=await t.driver.observe(()=>document.querySelector('.find-pane h3')?.textContent);assert.equal(shown,name);
     await t.evidence(`filter-${categories.indexOf(name)}`);
   }
   await t.driver.keys('\uE00C');

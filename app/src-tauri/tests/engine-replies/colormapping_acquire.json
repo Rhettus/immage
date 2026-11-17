@@ -1,0 +1,26 @@
+[
+ {
+  "label": "3 open / colormapping_acquire source",
+  "reply": {
+   "hash": 156606667221630.0,
+   "mean": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "ms": 0.0,
+   "n": 3,
+   "ok": true,
+   "var": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "weight": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  }
+ }
+]

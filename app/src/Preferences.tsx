@@ -11,6 +11,7 @@ import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
+import { SearchPrefs, ClipPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -27,10 +28,13 @@ import { loadSharedFrames, sharedFramesAvailable, storeSharedFrames } from "./sh
 import { loadScreenScale, screenScale, storeScreenScale, loadSettledScale, storeSettledScale } from "./pixelRatio";
 import { checkForUpdate, lastChecked, loadAutoCheck, storeAutoCheck, useUpdate, type UpdateState } from "./updates";
 
-import { loadNewPhotosProfile, storeNewPhotosProfile } from "./profileDefault";
+import { loadNewPhotosProfile, storeNewPhotosProfile, loadNewPhotosLensMethod, storeNewPhotosLensMethod } from "./profileDefault";
 import { settings } from "./settings";
+import { loadThumbThreads, storeThumbThreads, THUMB_THREADS } from "./library";
+export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
+import { LOCALES, SYSTEM, startupLanguage, loadLanguage, storeLanguage, t } from "./i18n";
 import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
-export { loadNewPhotosProfile } from "./profileDefault";
+export { loadNewPhotosProfile, loadNewPhotosLensMethod } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
 // exp_comp), so Exposure still starts at 0; off unless set. the amount is
@@ -344,6 +348,24 @@ export function loadStackPairs(): boolean {
 export function storeStackPairs(on: boolean) {
   try { settings.set(STACK_PAIRS_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
+// the grid view's cell height in CSS pixels, anywhere from GRID_SIZE_MIN to
+// GRID_SIZE_MAX, remembered; in the grid the toolbar's zoom slider sets it,
+// ⌘+ and ⌘- ease it and a pinch or ⌘ wheel zooms it freely. the thumbnails come from the mipmap that holds a 240 pixel square
+// (library.ts THUMB_SIZE), 450 pixels tall, so the largest size stays sharp at 1x
+const GRID_SIZE_KEY = "immage.gridSize";
+export const GRID_SIZE_MIN = 120;
+export const GRID_SIZE_MAX = 400;
+export const GRID_SIZE_DEFAULT = 200;
+export const clampGridSize = (v: number) => Math.min(GRID_SIZE_MAX, Math.max(GRID_SIZE_MIN, v));
+export function loadGridSize(): number {
+  try {
+    const v = Number(settings.get(GRID_SIZE_KEY));
+    return Number.isFinite(v) && v > 0 ? clampGridSize(v) : GRID_SIZE_DEFAULT;
+  } catch { return GRID_SIZE_DEFAULT; }
+}
+export function storeGridSize(v: number) {
+  try { settings.set(GRID_SIZE_KEY, String(v)); } catch { /* not kept */ }
+}
 
 // Lightroom's Auto Hide & Show for the side panels, and which are pinned
 // open; both remembered
@@ -374,6 +396,16 @@ export function storeFocusMode(on: boolean) {
   try { settings.set(FOCUS_MODE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
 
+// Simple's sliders, or Advanced's darktable modules; Simple unless chosen
+export type EditMode = "simple" | "advanced";
+const EDIT_MODE_KEY = "immage.editMode";
+export function loadEditMode(): EditMode {
+  try { return settings.get(EDIT_MODE_KEY) === "advanced" ? "advanced" : "simple"; } catch { return "simple"; }
+}
+export function storeEditMode(v: EditMode) {
+  try { settings.set(EDIT_MODE_KEY, v); } catch { /* not kept */ }
+}
+
 // AI acceleration: the GPU provider and device AI upscaling runs on, as
 // darktable's own setting; the engine lists what this computer has
 export type { AccelProvider } from "./commands";
@@ -398,16 +430,16 @@ const svg = (body: React.ReactNode) => (
        strokeLinecap="round" strokeLinejoin="round">{body}</svg>
 );
 const TABS: [Tab, string, React.ReactNode][] = [
-  ["general", "General", svg(<><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></>)],
-  ["performance", "Performance", svg(<><path d="M4.2 17.5a8.5 8.5 0 1 1 15.6 0" /><path d="m12 13 3.5-4.5" /><circle cx="12" cy="13" r="1.3" /></>)],
-  ["photos", "New Photos", svg(<><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" />
+  ["general", t("prefs.tab.general"), svg(<><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></>)],
+  ["performance", t("prefs.tab.performance"), svg(<><path d="M4.2 17.5a8.5 8.5 0 1 1 15.6 0" /><path d="m12 13 3.5-4.5" /><circle cx="12" cy="13" r="1.3" /></>)],
+  ["photos", t("prefs.tab.photos"), svg(<><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" />
     <path d="m4 17 5-4.5 3.5 3 2.5-2 4.5 3.5" /></>)],
-  ["modules", "Modules", svg(<><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+  ["modules", t("prefs.tab.modules"), svg(<><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
     <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M17 13.5v7M13.5 17h7" /></>)],
-  ["immich", "Immich", svg(<><path d="M7 17.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.5 1.46A3.75 3.75 0 0 1 17.25 17.5z" />
+  ["immich", t("prefs.tab.immich"), svg(<><path d="M7 17.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.5 1.46A3.75 3.75 0 0 1 17.25 17.5z" />
     <path d="M12 10.5v5M9.8 12.7 12 10.5l2.2 2.2" /></>)],
-  ["plugins", "Plugins", svg(<path d="M9.5 4.5a2 2 0 0 1 4 0V6H17a1 1 0 0 1 1 1v3.5h-1.5a2 2 0 0 0 0 4H18V18a1 1 0 0 1-1 1h-3.5v-1.5a2 2 0 0 0-4 0V19H6a1 1 0 0 1-1-1v-3.5h1.5a2 2 0 0 0 0-4H5V7a1 1 0 0 1 1-1h3.5z" />)],
-  ["about", "About", svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.6v.2" /></>)],
+  ["plugins", t("prefs.tab.plugins"), svg(<path d="M9.5 4.5a2 2 0 0 1 4 0V6H17a1 1 0 0 1 1 1v3.5h-1.5a2 2 0 0 0 0 4H18V18a1 1 0 0 1-1 1h-3.5v-1.5a2 2 0 0 0-4 0V19H6a1 1 0 0 1-1-1v-3.5h1.5a2 2 0 0 0 0-4H5V7a1 1 0 0 1 1-1h3.5z" />)],
+  ["about", t("prefs.tab.about"), svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.6v.2" /></>)],
 ];
 
 // where Immage's source is published, which the GPL requires anyone given
@@ -425,21 +457,21 @@ function darktableUrl(version?: string) {
 }
 // Preferences > About: the homepage, Discord and GitHub, as icons under the version
 const ABOUT_LINKS: [string, string, React.ReactNode][] = [
-  ["Immage homepage", "https://immage.photo", svg(<><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.900-3.500 8.500c-2.500-2.600-3.500-5.400-3.500-8.500s1-5.900 3.500-8.500z" /></>)],
-  ["Immage on Discord", "https://discord.gg/zm5JwPhdh", svg(<><path d="M7 6.500c3-1.300 7-1.300 10 0 1.800 2.700 2.600 5.400 2.500 8.500-1.200.9-2.400 1.400-3.700 1.800l-.9-1.500M7 6.500C5.200 9.200 4.400 11.900 4.500 15c1.200.9 2.400 1.400 3.700 1.800l.9-1.500" /><circle cx="9.500" cy="12" r=".9" /><circle cx="14.500" cy="12" r=".9" /></>)],
-  ["Immage on GitHub", "https://github.com/Rhettus/immage", svg(<path d="M9 19c-4 1.200-4-2-6-2.500m12 4.500v-3.100a2.700 2.700 0 0 0-.8-2.100c2.600-.3 5.300-1.300 5.300-5.700a4.400 4.400 0 0 0-1.200-3.100 4.100 4.100 0 0 0-.1-3.100s-1-.3-3.200 1.200a11 11 0 0 0-5.800 0C7.100 3.800 6.100 4.100 6.100 4.100a4.100 4.100 0 0 0-.1 3.100A4.400 4.400 0 0 0 4.800 10.300c0 4.400 2.700 5.400 5.300 5.700a2.700 2.700 0 0 0-.8 2.100V21" />)],
+  [t("prefs.link.home"), "https://immage.photo", svg(<><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.900-3.500 8.500c-2.500-2.600-3.500-5.400-3.500-8.500s1-5.900 3.500-8.500z" /></>)],
+  [t("prefs.link.discord"), "https://discord.gg/zm5JwPhdh", svg(<><path d="M7 6.500c3-1.300 7-1.300 10 0 1.800 2.700 2.600 5.400 2.500 8.500-1.200.9-2.400 1.400-3.700 1.800l-.9-1.500M7 6.500C5.200 9.200 4.400 11.900 4.500 15c1.200.9 2.400 1.400 3.700 1.800l.9-1.500" /><circle cx="9.500" cy="12" r=".9" /><circle cx="14.500" cy="12" r=".9" /></>)],
+  [t("prefs.link.github"), "https://github.com/Rhettus/immage", svg(<path d="M9 19c-4 1.200-4-2-6-2.500m12 4.500v-3.100a2.700 2.700 0 0 0-.8-2.100c2.600-.3 5.300-1.300 5.300-5.700a4.400 4.400 0 0 0-1.200-3.100 4.100 4.100 0 0 0-.1-3.100s-1-.3-3.200 1.200a11 11 0 0 0-5.800 0C7.100 3.800 6.100 4.100 6.100 4.100a4.100 4.100 0 0 0-.1 3.100A4.400 4.400 0 0 0 4.800 10.300c0 4.400 2.700 5.400 5.300 5.700a2.700 2.700 0 0 0-.8 2.100V21" />)],
 ];
 
 // what the last check found, for About's row
 function updateHint(state: UpdateState, app?: string): string {
   switch (state.kind) {
-    case "checking": return "checking…";
-    case "current": return `Immage ${app ?? ""} is the newest version`;
-    case "available": case "downloading": case "installing": return `Immage ${state.update.version} is available`;
-    case "failed": return state.update ? `Immage ${state.update.version} is available` : `the check failed: ${state.message}`;
+    case "checking": return t("prefs.update.checking");
+    case "current": return t("prefs.update.current", { version: app ?? "" });
+    case "available": case "downloading": case "installing": return t("prefs.update.available", { version: state.update.version });
+    case "failed": return state.update ? t("prefs.update.available", { version: state.update.version }) : t("prefs.update.failed", { message: state.message });
     default: {
       const last = lastChecked();
-      return last ? `last checked ${new Date(last).toLocaleString()}` : "not checked yet";
+      return last ? t("prefs.update.last", { date: new Date(last).toLocaleString() }) : t("prefs.update.never");
     }
   }
 }
@@ -455,17 +487,23 @@ function LicenseText({ title, text, onClose }: { title: string; text: string; on
       <div className="modal license-view">
         <div className="modal-head"><h2>{title}</h2></div>
         <div className="modal-body"><pre>{text}</pre></div>
-        <div className="modal-foot"><button className="btn primary" onClick={onClose}>Done</button></div>
+        <div className="modal-foot"><button className="btn primary" onClick={onClose}>{t("prefs.done")}</button></div>
       </div>
     </div>
   );
 }
 
-export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
-                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, autoHide, onAutoHide, stackPairs, onStackPairs,
+// the renderer a window is running on, as Preferences names it
+function rendererName(active: string): string {
+  return ({ mesa: "Mesa", nvidia: "NVIDIA", system: t("prefs.renderer.system"), environment: t("prefs.renderer.environment") } as Record<string, string>)[active] ?? active;
+}
+
+export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurrent, focus, card, canvas, onCanvas, overlayColor, onOverlayColor, guideColor, onGuideColor,
+                                    openGenerated, onOpenGenerated, loupe, onLoupe, focusMode, onFocusMode, editMode, onEditMode, autoHide, onAutoHide, stackPairs, onStackPairs,
                                     accel, plugins, onPlugins, perfHud, onPerfHud, onBenchmark, onGpuCheck, onTune, onRelaunch, onClose }: {
   presets: Preset[];
   focus?: Tab;                           // a tab to open at
+  card?: string;                         // a card (data-pref-card) to scroll to once it is open
   onSaveCurrent: (() => void) | null;    // a new preset from the open photo, or null with none open
   newPhotos: string | null;              // the preset new photos get, by id
   onNewPhotos: (id: string | null) => void;
@@ -481,6 +519,8 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   onLoupe: (on: boolean) => void;
   focusMode: boolean;
   onFocusMode: (on: boolean) => void;
+  editMode: EditMode;
+  onEditMode: (v: EditMode) => void;
   autoHide: boolean;
   onAutoHide: (on: boolean) => void;
   stackPairs: boolean;
@@ -498,9 +538,25 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
 }) {
   useAgxProfiles();
   const [tab, setTab] = useState<Tab>(focus ?? "general");
+  useEffect(() => {
+    if (!card) return;
+    const frame = requestAnimationFrame(() => document.querySelector(`[data-pref-card="${card}"]`)?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const [chosenLanguage, setChosenLanguage] = useState(loadLanguage);
+  const [languageBusy, setLanguageBusy] = useState(false);
+  const [languageError, setLanguageError] = useState("");
+  const restartForLanguage = async () => {
+    setLanguageBusy(true);
+    setLanguageError("");
+    try { await settings.flush(); await onRelaunch(); }
+    catch (error) { setLanguageError(String(error)); }
+    finally { setLanguageBusy(false); }
+  };
   // the guide's own "don't show" box sets the same thing
   const [showTour, setShowTour] = useState(() => !tourSeen());
   const [profile, setProfile] = useState(loadNewPhotosProfile);
+  const [lensMethod, setLensMethod] = useState(loadNewPhotosLensMethod);
   const [autoToneNew, setAutoToneNew] = useState(loadAutoToneNew);
   const [presetNonRaw, setPresetNonRaw] = useState(loadNewPhotosNonRaw);
   const [negWarn, setNegWarn] = useState(loadNegWarn);
@@ -542,6 +598,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   const [draftTarget, setDraftTarget] = useState(loadDraftTarget);
   const [draftSmallest, setDraftSmallest] = useState(loadDraftSmallest);
   const [readAhead, setReadAhead] = useState(loadReadAhead);
+  const [thumbThreads, setThumbThreads] = useState(loadThumbThreads);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // choosing a profile sets what it stands for, which Advanced can then change
   const applyProfile = (p: Preview) => {
@@ -565,7 +622,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   useEffect(() => { commands.darktableResources().then(setResources).catch(() => {}); }, []);
   const [budget, setBudget] = useState(currentMemoryBudget);
   useEffect(() => { void refreshMemoryBudget().then(setBudget); }, []);
-  const gb = (mb: number) => mb >= 1024 ? `${Math.round(mb / 102.4) / 10} GB` : `${mb} MB`;
+  const gb = (mb: number) => mb >= 1024 ? `${Math.round(mb / 102.4) / 10} ${t("unit.gb")}` : `${mb} ${t("unit.mb")}`;
   const chooseResources = (level: Resources) => {
     if (!resources) return;
     commands.darktableResourcesSet(level)
@@ -619,14 +676,14 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal prefs">
         <nav className="prefs-tabs">
-          <h2>Preferences</h2>
+          <h2>{t("prefs.title")}</h2>
           {TABS.map(([id, label, icon]) => (
             <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{icon}{label}</button>
           ))}
           {about && (
             <div className="prefs-about" title={`darktable ${about.darktable}`}>
               <span>Immage {about.app}</span>
-              {about.commit && <span>commit {about.commit}</span>}
+              {about.commit && <span>{t("prefs.about.commit", { commit: about.commit })}</span>}
               <span>darktable {about.darktable.split("~")[0]}</span>
               <div className="prefs-links">
                 {ABOUT_LINKS.map(([label, url, icon]) => (
@@ -640,13 +697,9 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
           <div className="prefs-scroll">
             {tab === "photos" && (
               <>
-                <p className="prefs-lead">
-                  What a photo starts with the first time it is opened, if it has no edit yet in Immage or
-                  darktable. Photos already edited keep their own settings. Keywords follow the photo's first
-                  edit instead.
-                </p>
-                <PrefCard title="Profile">
-                  <PrefRow label="Profile" summary="Starting look for new RAW photos." hint="the color look a raw starts with: one of AgX's own, or darktable's color balance rgb's; JPEGs keep the camera's">
+                <p className="prefs-lead">{t("prefs.photos.lead")}</p>
+                <PrefCard title={t("prefs.card.profile")}>
+                  <PrefRow id="Profile" label={t("prefs.row.profile")} summary={t("prefs.row.profile.summary")} hint={t("prefs.row.profile.hint")}>
                     <select className="field" value={profile}
                             onChange={(e) => { const v = Number(e.target.value); setProfile(v); storeNewPhotosProfile(v); }}>
                       {PROFILE_GROUPS.map(([group, opts]) => (
@@ -655,50 +708,57 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                         </optgroup>))}
                     </select>
                   </PrefRow>
+                  <PrefRow id="Lens correction method" label={t("prefs.row.lensMethod")} summary={t("prefs.row.lensMethod.summary")} hint={t("prefs.row.lensMethod.hint")}>
+                    <select className="field" value={lensMethod}
+                            onChange={(e) => { const v = Number(e.target.value); setLensMethod(v); storeNewPhotosLensMethod(v); }}>
+                      <option value={1}>{t("prefs.lensMethod.lensfun")}</option>
+                      <option value={0}>{t("prefs.lensMethod.embedded")}</option>
+                    </select>
+                  </PrefRow>
                 </PrefCard>
-                <PrefCard title="Exposure">
-                  <PrefRow label="Exposure compensation" summary="Base exposure for new RAW photos."
-                           hint="added to a raw's exposure on a module of its own: Exposure still starts at 0 and adds to it, and Auto allows for it; JPEGs get none">
+                <PrefCard title={t("prefs.card.exposure")}>
+                  <PrefRow id="Exposure compensation" label={t("prefs.row.expcomp")} summary={t("prefs.row.expcomp.summary")}
+                           hint={t("prefs.row.expcomp.hint")}>
                     <PrefSwitch checked={expCompOn}
                                 onChange={(on) => { setExpCompOn(on); storeExposureComp(on, expCompEv); }} />
                   </PrefRow>
-                  <PrefRow label="Amount" hint={`in EV, from -${EXP_COMP_LIMIT} to +${EXP_COMP_LIMIT}`}>
+                  <PrefRow id="Amount" label={t("prefs.row.expcomp.amount")} hint={t("prefs.row.expcomp.amount.hint", { limit: EXP_COMP_LIMIT })}>
                     <input className="field" type="number" step={0.1} min={-EXP_COMP_LIMIT} max={EXP_COMP_LIMIT}
                            disabled={!expCompOn} value={expCompText}
                            onChange={(e) => typeExpComp(e.target.value)}
                            onBlur={() => setExpCompText(String(expCompEv))} />
                   </PrefRow>
                 </PrefCard>
-                <PrefCard title="Auto Tone">
-                  <PrefRow label="Apply Auto" summary="Apply Auto to new RAW photos."
-                           hint="Basic's Auto once a raw has rendered: Exposure, AgX's range, Contrast, Highlights, Shadows, Whites and Blacks">
+                <PrefCard title={t("prefs.card.autotone")}>
+                  <PrefRow id="Apply Auto" label={t("prefs.row.autotone")} summary={t("prefs.row.autotone.summary")}
+                           hint={t("prefs.row.autotone.hint")}>
                     <PrefSwitch checked={autoToneNew} onChange={(on) => { setAutoToneNew(on); storeAutoToneNew(on); }} />
                   </PrefRow>
                 </PrefCard>
-                <PrefCard title="Preset">
-                  <PrefRow label="Apply preset" summary="Starting edits for new photos."
-                           hint="applied to new raw photos; Default gives them lens corrections">
+                <PrefCard title={t("prefs.card.preset")}>
+                  <PrefRow id="Apply preset" label={t("prefs.row.preset")} summary={t("prefs.row.preset.summary")}
+                           hint={t("prefs.row.preset.hint")}>
                     <select className="field" value={newPhotos ?? ""} onChange={(e) => onNewPhotos(e.target.value || null)}>
-                      <option value="">None</option>
+                      <option value="">{t("prefs.none")}</option>
                       {[...presets].sort((a, b) => Number(b.id === DEFAULT_PRESET_ID) - Number(a.id === DEFAULT_PRESET_ID)
                                                    || a.name.localeCompare(b.name)).map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
                   </PrefRow>
-                  <PrefRow label="Also apply to JPEGs" summary="Apply the preset to new non-raw photos too."
-                           hint="JPEGs, TIFFs and other non-raw photos get the preset without Lens Corrections, which the camera did already, or settings that need a raw">
+                  <PrefRow id="Also apply to JPEGs" label={t("prefs.row.presetjpeg")} summary={t("prefs.row.presetjpeg.summary")}
+                           hint={t("prefs.row.presetjpeg.hint")}>
                     <PrefSwitch checked={presetNonRaw} disabled={!newPhotos}
                                 onChange={(on) => { setPresetNonRaw(on); storeNewPhotosNonRaw(on); }} />
                   </PrefRow>
-                  <PrefRow label="New preset" summary="Save selected settings from this photo." hint="from the open photo, with only the settings you tick">
+                  <PrefRow id="New preset" label={t("prefs.row.newpreset")} summary={t("prefs.row.newpreset.summary")} hint={t("prefs.row.newpreset.hint")}>
                     <button className="btn small" disabled={!onSaveCurrent} onClick={() => onSaveCurrent?.()}
-                            title={onSaveCurrent ? undefined : "open a photo first"}>Save current settings…</button>
+                            title={onSaveCurrent ? undefined : t("prefs.row.newpreset.title")}>{t("prefs.row.newpreset.button")}</button>
                   </PrefRow>
                 </PrefCard>
-                <PrefCard title="Keywords">
-                  <PrefRow label="Keywords for edited photos" summary="Tag photos when edited; remove tags on reset."
-                           hint="added to a photo once you edit it, and taken off if it is reset to unedited; Immich reads them from the sidecar, so its Tags filter finds the photos edited here">
+                <PrefCard title={t("prefs.card.keywords")}>
+                  <PrefRow id="Keywords for edited photos" label={t("prefs.row.keywords")} summary={t("prefs.row.keywords.summary")}
+                           hint={t("prefs.row.keywords.hint")}>
                     <div className="pref-keywords">
                       <KeywordChips keywords={editedKeywords}
                                     onRemove={(k) => chooseEditedKeywords(editedKeywords.filter((x) => x !== k))} />
@@ -707,14 +767,14 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </div>
                   </PrefRow>
                 </PrefCard>
-                <PrefCard title="Copyright">
-                  <PrefRow label="Copyright" summary="Fill missing copyright when editing."
-                           hint="filled in once you edit a photo, if it has none yet from the camera or typed in; {year} is the year it was taken">
-                    <input className="field" placeholder="© {year} Your Name" value={editedMeta.rights}
+                <PrefCard title={t("prefs.card.copyright")}>
+                  <PrefRow id="Copyright" label={t("prefs.row.copyright")} summary={t("prefs.row.copyright.summary")}
+                           hint={t("prefs.row.copyright.hint")}>
+                    <input className="field" placeholder={t("prefs.row.copyright.placeholder")} value={editedMeta.rights}
                            onChange={(e) => chooseEditedMeta({ rights: e.target.value })} />
                   </PrefRow>
-                  <PrefRow label="Creator" summary="Fill missing creator when editing." hint="the same, for the photo's creator">
-                    <input className="field" placeholder="Your Name" value={editedMeta.creator}
+                  <PrefRow id="Creator" label={t("prefs.row.creator")} summary={t("prefs.row.creator.summary")} hint={t("prefs.row.creator.hint")}>
+                    <input className="field" placeholder={t("prefs.row.creator.placeholder")} value={editedMeta.creator}
                            onChange={(e) => chooseEditedMeta({ creator: e.target.value })} />
                   </PrefRow>
                 </PrefCard>
@@ -725,143 +785,167 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>
-              <PrefCard title="Workspace">
+              <PrefCard title={t("prefs.card.editing")}>
+                <PrefRow id="Editing mode" label={t("prefs.row.editmode")} summary={t("prefs.row.editmode.summary")}
+                         hint={t("prefs.row.editmode.hint")}>
+                  <div className="segmented small">
+                    {([[t("prefs.mode.simple"), "simple"], [t("prefs.mode.advanced"), "advanced"]] as const).map(([label, v]) => (
+                      <button key={v} className={editMode === v ? "active" : ""} onClick={() => onEditMode(v)}>{label}</button>
+                    ))}
+                  </div>
+                </PrefRow>
+              </PrefCard>
+              <PrefCard title={t("prefs.card.workspace")}>
                 <ThemePrefs />
-                <PrefRow label="Canvas" summary="Background behind the photo. L cycles colors." hint="behind the photo, full screen too; neutral gray judges tones without a dark surround, white as on a print. L steps through them">
+                <PrefRow id="Language" label={t("prefs.language")} hint={t("prefs.language.hint")}>
+                  <select className="field" aria-label={t("prefs.language")} value={chosenLanguage} disabled={languageBusy}
+                          onChange={(e) => { storeLanguage(e.target.value); setChosenLanguage(e.target.value); }}>
+                    <option value={SYSTEM}>{t("prefs.language.system")}</option>
+                    {Object.entries(LOCALES).map(([code, l]) => <option key={code} value={code}>{l.name}</option>)}
+                  </select>
+                  {chosenLanguage !== startupLanguage && (
+                    <button className="btn small" disabled={languageBusy} onClick={() => void restartForLanguage()}>
+                      {t("prefs.relaunchButton")}
+                    </button>
+                  )}
+                  {languageError && <span role="alert">{languageError}</span>}
+                </PrefRow>
+                <PrefRow id="Canvas" label={t("prefs.row.canvas")} summary={t("prefs.row.canvas.summary")} hint={t("prefs.row.canvas.hint")}>
                   <div className="pref-swatches">
                     {/* the viewer's backgrounds in styles.css */}
-                    {([["Dark", "dark", "#121212"], ["Neutral Gray", "gray", "#767676"], ["White", "white", "#fff"]] as const).map(([label, v, color]) => (
+                    {([[t("prefs.color.dark"), "dark", "#121212"], [t("prefs.color.gray"), "gray", "#767676"], [t("prefs.color.white"), "white", "#fff"]] as const).map(([label, v, color]) => (
                       <button key={v} className={`swatch${canvas === v ? " on" : ""}`} title={label} aria-label={label}
                               style={{ background: color }} onClick={() => onCanvas(v)} />
                     ))}
                   </div>
                 </PrefRow>
-                <PrefRow label="Overlay color" summary="Mask overlay and heal brush." hint="a mask's overlay on the photo, and the heal brush's stroke as it is painted">
+                <PrefRow id="Overlay color" label={t("prefs.row.overlaycolor")} summary={t("prefs.row.overlaycolor.summary")} hint={t("prefs.row.overlaycolor.hint")}>
                   <div className="pref-swatches">
-                    {([["Yellow", "yellow"], ["Red", "red"]] as const).map(([label, v]) => (
+                    {([[t("prefs.color.yellow"), "yellow"], [t("prefs.color.red"), "red"]] as const).map(([label, v]) => (
                       <button key={v} className={`swatch${overlayColor.pick === v ? " on" : ""}`} title={label} aria-label={label}
                               style={{ background: `rgb(${OVERLAY_COLORS[v].join(", ")})` }}
                               onClick={() => onOverlayColor({ ...overlayColor, pick: v })} />
                     ))}
-                    <label className={`swatch custom${overlayColor.pick === "custom" ? " on" : ""}`} title="Custom…"
+                    <label className={`swatch custom${overlayColor.pick === "custom" ? " on" : ""}`} title={t("prefs.color.custom")}
                            style={{ "--custom": overlayColor.custom } as React.CSSProperties}>
-                      <input type="color" aria-label="Custom color" value={overlayColor.custom}
+                      <input type="color" aria-label={t("prefs.color.customLabel")} value={overlayColor.custom}
                              onClick={() => onOverlayColor({ ...overlayColor, pick: "custom" })}
                              onChange={(e) => onOverlayColor({ ...overlayColor, pick: "custom", custom: e.target.value })} />
                     </label>
                   </div>
                 </PrefRow>
-                <PrefRow label="Overlay opacity" summary={`Mask overlay strength: ${overlayColor.opacity}%`} hint={`how solid a mask's overlay is where it is fully selected: ${overlayColor.opacity}%`}>
-                  <input type="range" min={10} max={100} step={5} aria-label="Overlay opacity" value={overlayColor.opacity}
+                <PrefRow id="Overlay opacity" label={t("prefs.row.opacity")} summary={t("prefs.row.opacity.summary", { opacity: overlayColor.opacity })} hint={t("prefs.row.opacity.hint", { opacity: overlayColor.opacity })}>
+                  <input type="range" min={10} max={100} step={5} aria-label={t("prefs.row.opacity")} value={overlayColor.opacity}
                          onChange={(e) => onOverlayColor({ ...overlayColor, opacity: Number(e.target.value) })} />
                   <button className="btn small" style={{ marginLeft: 8 }} disabled={overlayColor.opacity === OVERLAY_OPACITY}
-                          onClick={() => onOverlayColor({ ...overlayColor, opacity: OVERLAY_OPACITY })}>Reset</button>
+                          onClick={() => onOverlayColor({ ...overlayColor, opacity: OVERLAY_OPACITY })}>{t("prefs.reset")}</button>
                 </PrefRow>
-                <PrefRow label="Guide color" summary="Crop, straighten and shape guides." hint="the crop frame and grid, the straighten line, Transform's and the vignette's guides, and a mask shape's outline">
+                <PrefRow id="Guide color" label={t("prefs.row.guidecolor")} summary={t("prefs.row.guidecolor.summary")} hint={t("prefs.row.guidecolor.hint")}>
                   <div className="pref-swatches">
-                    {([["White", "white"], ["Yellow", "yellow"], ["Red", "red"]] as const).map(([label, v]) => (
+                    {([[t("prefs.color.white"), "white"], [t("prefs.color.yellow"), "yellow"], [t("prefs.color.red"), "red"]] as const).map(([label, v]) => (
                       <button key={v} className={`swatch${guideColor.pick === v ? " on" : ""}`} title={label} aria-label={label}
                               style={{ background: `rgb(${GUIDE_COLORS[v].join(", ")})` }}
                               onClick={() => onGuideColor({ ...guideColor, pick: v })} />
                     ))}
-                    <label className={`swatch custom${guideColor.pick === "custom" ? " on" : ""}`} title="Custom…"
+                    <label className={`swatch custom${guideColor.pick === "custom" ? " on" : ""}`} title={t("prefs.color.custom")}
                            style={{ "--custom": guideColor.custom } as React.CSSProperties}>
-                      <input type="color" aria-label="Custom color" value={guideColor.custom}
+                      <input type="color" aria-label={t("prefs.color.customLabel")} value={guideColor.custom}
                              onClick={() => onGuideColor({ ...guideColor, pick: "custom" })}
                              onChange={(e) => onGuideColor({ pick: "custom", custom: e.target.value })} />
                     </label>
                   </div>
                 </PrefRow>
-                <PrefRow label="Focus mode" summary={keys("One panel at a time; ⌥-click for more.")} hint={keys("opening a panel closes the others; ⌥-click opens one alongside")}>
+                <PrefRow id="Focus mode" label={t("prefs.row.focus")} summary={keys(t("prefs.row.focus.summary"))} hint={keys(t("prefs.row.focus.hint"))}>
                   <PrefSwitch checked={focusMode} onChange={onFocusMode} />
                 </PrefRow>
-                <PrefRow label="Auto-hide panels" summary="Reveal panels at the window edges."
-                         hint="the side panels and filmstrip slide away when the pointer leaves them, and back at their edge (the rail, or below the toolbar); a pin keeps one open">
+                <PrefRow id="Auto-hide panels" label={t("prefs.row.autohide")} summary={t("prefs.row.autohide.summary")}
+                         hint={t("prefs.row.autohide.hint")}>
                   <PrefSwitch checked={autoHide} onChange={onAutoHide} />
                 </PrefRow>
-                <PrefRow label="Scroll adjusts sliders" summary="Adjust sliders with the mouse wheel."
-                         hint="off, scrolling over the panels only scrolls them, so an edit cannot change by accident">
+                <PrefRow id="Scroll adjusts sliders" label={t("prefs.row.scroll")} summary={t("prefs.row.scroll.summary")}
+                         hint={t("prefs.row.scroll.hint")}>
                   <PrefSwitch checked={sliderScroll} onChange={(on) => { setSliderScroll(on); storeSliderScroll(on); }} />
                 </PrefRow>
                 {sliderScroll && (
-                  <PrefRow label="Scroll amount" summary={`${scrollStep * 100}% of the range per wheel click`}
-                           hint={`how far one click of the wheel moves a slider: ${scrollStep * 100}% of its range`}>
+                  <PrefRow id="Scroll amount" label={t("prefs.row.scrollstep")} summary={t("prefs.row.scrollstep.summary", { percent: scrollStep * 100 })}
+                           hint={t("prefs.row.scrollstep.hint", { percent: scrollStep * 100 })}>
                     <input type="range" min={0} max={SCROLL_STEPS.length - 1} step={1}
                            value={SCROLL_STEPS.indexOf(scrollStep)}
                            onChange={(e) => { const v = SCROLL_STEPS[Number(e.target.value)]; setScrollStep(v); storeSliderScrollStep(v); }} />
                   </PrefRow>
                 )}
-                <PrefRow label="Open generated photos" summary="Open generated results for editing." hint="switch to editing after HDR or panorama merge, AI denoise, positive export, or the first result from a plugin">
+                <PrefRow id="Open generated photos" label={t("prefs.row.opengen")} summary={t("prefs.row.opengen.summary")} hint={t("prefs.row.opengen.hint")}>
                   <PrefSwitch checked={openGenerated} onChange={onOpenGenerated} />
                 </PrefRow>
-                <PrefRow label="Generated positive format" summary="Lossless format for exported positives."
-                         hint="Export to Library in the Negative and Film Simulation panels saves a separate positive with the conversion and edits baked in; both formats use lossless compression">
-                  <select className="field" aria-label="Generated positive format" value={negativeExportFormat} onChange={(e) => {
+                <PrefRow id="Generated positive format" label={t("prefs.row.posformat")} summary={t("prefs.row.posformat.summary")}
+                         hint={t("prefs.row.posformat.hint")}>
+                  <select className="field" aria-label={t("prefs.row.posformat")} value={negativeExportFormat} onChange={(e) => {
                     const format = e.target.value as NegativeExportFormat;
                     setNegativeExportFormat(format); storeNegativeExportFormat(format);
                   }}>
-                    <option value="dng">DNG (16-bit float)</option>
-                    <option value="tiff">TIFF (32-bit float)</option>
+                    <option value="dng">{t("prefs.posformat.dng")}</option>
+                    <option value="tiff">{t("prefs.posformat.tiff")}</option>
                   </select>
                 </PrefRow>
-                <PrefRow label="Warn before converting a negative" summary="Explain which Basic tools conversion disables."
-                         hint="opening the Negative panel says which of Basic's tools a converted negative turns off">
+                <PrefRow id="Warn before converting a negative" label={t("prefs.row.negwarn")} summary={t("prefs.row.negwarn.summary")}
+                         hint={t("prefs.row.negwarn.hint")}>
                   <PrefSwitch checked={negWarn} onChange={(on) => { setNegWarn(on); storeNegWarn(on); }} />
                 </PrefRow>
               </PrefCard>
               <MapSearchPrefs />
-              <PrefCard title="Library">
-                <PrefRow label="Stack RAW+JPEG pairs as one photo" summary="Group matching files for browsing and actions."
-                         hint="a raw and the JPEG, HEIF or OM System .ORI of the same name show as one, and a rating, reject or delete takes them all"
+              <PrefCard title={t("prefs.card.library")}>
+                <PrefRow id="Stack RAW+JPEG pairs as one photo" label={t("prefs.row.stack")} summary={t("prefs.row.stack.summary")}
+                         hint={t("prefs.row.stack.hint")}
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
                 </PrefRow>
               </PrefCard>
-              <PrefCard title="Startup">
-                <PrefRow label="Quick start guide" hint="a short tour of Immage when it opens">
+              <ClipPrefs />
+              <PrefCard title={t("prefs.card.startup")}>
+                <PrefRow id="Quick start guide" label={t("prefs.row.tour")} hint={t("prefs.row.tour.hint")}>
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
                 </PrefRow>
               </PrefCard>
-              <PrefCard title="Backup">
-                <PrefRow label="Backup" summary="Save or restore settings, presets, looks and keywords."
-                         hint="one .zip holding the parts you choose: preferences and library, edit and export presets, looks, Edit In plugins and keywords; restoring replaces the chosen parts and keeps a copy of what it replaced">
-                  <button className="btn small" onClick={() => setBackup("create")}>Back Up…</button>
-                  <button className="btn small" onClick={() => setBackup("restore")}>Restore…</button>
+              <PrefCard title={t("prefs.card.backup")}>
+                <PrefRow id="Backup" label={t("prefs.row.backup")} summary={t("prefs.row.backup.summary")}
+                         hint={t("prefs.row.backup.hint")}>
+                  <button className="btn small" onClick={() => setBackup("create")}>{t("prefs.backup.create")}</button>
+                  <button className="btn small" onClick={() => setBackup("restore")}>{t("prefs.backup.restore")}</button>
                 </PrefRow>
               </PrefCard>
               </>
             )}
             {tab === "performance" && (
               <>
-              <PrefCard title="GPU">
-                <PrefRow label="GPU" hint={accel === null ? "looking for GPU acceleration…"
-                  : accel.length ? "what AI upscaling at export runs on"
-                  : "none found on this computer, so AI upscaling is not offered"}>
+              <PrefCard title={t("prefs.card.gpu")}>
+                <PrefRow id="GPU" label={t("prefs.row.gpu")} hint={accel === null ? t("prefs.row.gpu.hint.looking")
+                  : accel.length ? t("prefs.row.gpu.hint.some")
+                  : t("prefs.row.gpu.hint.none")}>
                   {accel && accel.length > 0 && (
                     <select className="field" value={accelChoice.provider}
                             onChange={(e) => chooseAccel({ provider: e.target.value, device: -1 })}>
-                      <option value="auto">Automatic ({accel[0].name})</option>
+                      <option value="auto">{t("prefs.gpu.auto", { name: accel[0].name })}</option>
                       {accel.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   )}
                 </PrefRow>
                 {accelProvider && accelProvider.devices.length > 1 && (
-                  <PrefRow label="Device" hint="the graphics card to use">
+                  <PrefRow id="Device" label={t("prefs.row.device")} hint={t("prefs.row.device.hint")}>
                     <select className="field" value={accelChoice.device}
                             onChange={(e) => chooseAccel({ ...accelChoice, device: Number(e.target.value) })}>
-                      <option value={-1}>Default</option>
+                      <option value={-1}>{t("prefs.default")}</option>
                       {accelProvider.devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </PrefRow>
                 )}
               </PrefCard>
               {renderer && (
-                <PrefCard title="Interface rendering">
-                  <PrefRow label="Window renderer" summary={`Running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external ? ". Environment override; remove __EGL_VENDOR_LIBRARY_FILENAMES to change." : renderer.next !== renderer.running ? ". Relaunch to apply." : ""}`}
-                           hint={`draws Immage's interface; photo processing uses Edit on the GPU separately. Automatic uses the system default renderer. running: ${{ mesa: "Mesa", nvidia: "NVIDIA", system: "system default", environment: "environment override" }[renderer.active] ?? renderer.active}${renderer.external
-                             ? ". remove __EGL_VENDOR_LIBRARY_FILENAMES from the launch environment to change this"
-                             : renderer.next !== renderer.running ? ". relaunch to apply the selected renderer" : ""}`}>
+                <PrefCard title={t("prefs.card.rendering")}>
+                  <PrefRow id="Window renderer" label={t("prefs.row.renderer")} summary={t("prefs.row.renderer.summary", { name: rendererName(renderer.active) })
+                             + (renderer.external ? ". " + t("prefs.row.renderer.summary.external") : renderer.next !== renderer.running ? ". " + t("prefs.relaunch") : "")}
+                           hint={t("prefs.row.renderer.hint", { name: rendererName(renderer.active) })
+                             + (renderer.external ? ". " + t("prefs.row.renderer.hint.external") : renderer.next !== renderer.running ? ". " + t("prefs.row.renderer.hint.relaunch") : "")}>
                     <div className="segmented small">
-                      {([["Automatic", "auto"], ["Mesa", "mesa"], ["NVIDIA", "nvidia"]] as const).map(([label, mode]) => (
+                      {([[t("prefs.renderer.auto"), "auto"], ["Mesa", "mesa"], ["NVIDIA", "nvidia"]] as const).map(([label, mode]) => (
                         <button key={mode} className={renderer.next === mode ? "active" : ""}
                                 disabled={renderer.external || rendererSaving || (mode !== "auto" && !renderer[mode])}
                                 onClick={() => void chooseRenderer(mode)}>{label}</button>
@@ -869,44 +953,43 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </div>
                     {renderer.next !== renderer.running && (
                       <button className="btn small" style={{ marginLeft: 8 }} disabled={rendererSaving}
-                              onClick={() => void onRelaunch()}>Relaunch</button>
+                              onClick={() => void onRelaunch()}>{t("prefs.relaunchButton")}</button>
                     )}
                   </PrefRow>
                   {rendererError && <p role="alert">{rendererError}</p>}
                 </PrefCard>
               )}
-              <PrefCard title="Editing">
-                <PrefRow label="Edit on the GPU" summary={`Use the graphics card for edits.${gpuEdits && gpuEdits.next !== gpuEdits.running ? " Relaunch to apply." : ""}`}
-                         hint={`renders the photo on the graphics card while you edit, as exports and the whole-photo render behind the viewer already are; off keeps edits on the CPU. without a usable GPU darktable uses the CPU either way. smaller drafts for slow sliders still apply, though on the GPU frames are seldom slow enough${gpuEdits && gpuEdits.next !== gpuEdits.running
-                           ? ". applies once Immage starts again" : ""}`}>
+              <PrefCard title={t("prefs.card.editing")}>
+                <PrefRow id="Edit on the GPU" label={t("prefs.row.gpuedit")} summary={t("prefs.row.gpuedit.summary") + (gpuEdits && gpuEdits.next !== gpuEdits.running ? " " + t("prefs.relaunch") : "")}
+                         hint={t("prefs.row.gpuedit.hint") + (gpuEdits && gpuEdits.next !== gpuEdits.running ? ". " + t("prefs.row.gpuedit.hint.pending") : "")}>
                   <PrefSwitch checked={gpuEdits?.next ?? false} disabled={!gpuEdits} onChange={chooseGpuEdits} />
                   {gpuEdits && gpuEdits.next !== gpuEdits.running && (
-                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>{t("prefs.relaunchButton")}</button>
                   )}
                 </PrefRow>
-                <PrefRow label="Performance profile" summary={{ quality: "Full-size drag previews.", balanced: "75% drag previews.", performance: "50% previews; smaller drafts for slow edits." }[preview]}
+                <PrefRow id="Performance profile" label={t("prefs.row.profile.perf")} summary={{ quality: t("prefs.profile.quality.summary"), balanced: t("prefs.profile.balanced.summary"), performance: t("prefs.profile.performance.summary") }[preview]}
                          hint={{
-                           quality: "for high-end computers: drag previews at full size, without grain, texture and diffuse or sharpen's sharpening, which return in full on release",
-                           balanced: "for decent modern computers: drag previews at 75%, without grain, texture and diffuse or sharpen's sharpening, and in full on release",
-                           performance: "for older computers: drag previews at 50%, smaller again for slow sliders, with the detail loupe on and the whole-photo render behind the viewer only the viewer's size",
+                           quality: t("prefs.profile.quality.hint"),
+                           balanced: t("prefs.profile.balanced.hint"),
+                           performance: t("prefs.profile.performance.hint"),
                          }[preview]}>
                   <div className="segmented small">
-                    {([["Quality", "quality"], ["Balanced", "balanced"], ["Performance", "performance"]] as const).map(([label, v]) => (
+                    {([[t("prefs.profile.quality"), "quality"], [t("prefs.profile.balanced"), "balanced"], [t("prefs.profile.performance"), "performance"]] as const).map(([label, v]) => (
                       <button key={v} className={preview === v ? "active" : ""} onClick={() => applyProfile(v)}>{label}</button>
                     ))}
                   </div>
                   <button className="btn small" style={{ marginLeft: 8 }} disabled={!customized}
-                          title={`return Advanced's preview settings to ${preview === "quality" ? "Quality" : preview === "balanced" ? "Balanced" : "Performance"}'s`}
-                          onClick={() => applyProfile(preview)}>Reset</button>
+                          title={t("prefs.profile.reset", { profile: t(`prefs.profile.${preview}`) })}
+                          onClick={() => applyProfile(preview)}>{t("prefs.reset")}</button>
                 </PrefRow>
                 <button className="module-prefs-fold" data-pref-fold="performance-advanced" aria-expanded={advancedOpen} aria-controls="perf-advanced"
                         onClick={() => setAdvancedOpen(!advancedOpen)}>
-                  Advanced{customized ? " (customized)" : ""} <Chevron open={advancedOpen} />
+                  {t("prefs.advanced")}{customized ? ` ${t("prefs.customized")}` : ""} <Chevron open={advancedOpen} />
                 </button>
                 <Collapse open={advancedOpen}>
                   <div id="perf-advanced">
-                <PrefRow label="Preview size while dragging" summary="Preview resolution during edits; full on release."
-                         hint="while a slider, wheel or curve moves, the photo renders at this share of its full size, and in full on release. 100% turns off smaller drafts for slow sliders">
+                <PrefRow id="Preview size while dragging" label={t("prefs.row.dragsize")} summary={t("prefs.row.dragsize.summary")}
+                         hint={t("prefs.row.dragsize.hint")}>
                   <div className="segmented small">
                     {BALANCED_PREVIEW_SIZES.map((v) => (
                       <button key={v} className={balancedSize === v ? "active" : ""}
@@ -914,19 +997,19 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
-                <PrefRow label="Smaller drafts for slow sliders" summary="Reduce preview size when edits are slow."
-                         hint="while a slider early in darktable's pipe moves (Exposure, White Balance, noise reduction), the photo renders smaller again, so each frame comes sooner. off keeps the preview size">
+                <PrefRow id="Smaller drafts for slow sliders" label={t("prefs.row.drafts")} summary={t("prefs.row.drafts.summary")}
+                         hint={t("prefs.row.drafts.hint")}>
                   <div className="segmented small">
                     {DRAFT_SMALLEST.map((v) => (
                       <button key={v} className={draftSmallest === v ? "active" : ""} disabled={balancedSize === 1}
                               onClick={() => { setDraftSmallest(v); storeDraftSmallest(v); }}>
-                        {v === 1 ? "Off" : `${v * 100}%`}
+                        {v === 1 ? t("prefs.off") : `${v * 100}%`}
                       </button>
                     ))}
                   </div>
                 </PrefRow>
-                <PrefRow label="Draft time" summary="Time before reducing preview resolution."
-                         hint="how long darktable may take on a frame while a slider moves before the next one is smaller; less is quicker and softer. applies when smaller drafts are on">
+                <PrefRow id="Draft time" label={t("prefs.row.drafttime")} summary={t("prefs.row.drafttime.summary")}
+                         hint={t("prefs.row.drafttime.hint")}>
                   <div className="segmented small">
                     {DRAFT_TARGETS.map((ms) => (
                       <button key={ms} className={draftTarget === ms ? "active" : ""} disabled={draftSmallest === 1 || balancedSize === 1}
@@ -934,83 +1017,93 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     ))}
                   </div>
                 </PrefRow>
-                <PrefRow label="Detail loupe" summary="Show a 100% detail preview in Adjustments." hint="show a 100% preview in Adjustments; use its picker to inspect a point on the photo">
+                <PrefRow id="Detail loupe" label={t("prefs.row.loupe")} summary={t("prefs.row.loupe.summary")} hint={t("prefs.row.loupe.hint")}>
                   <PrefSwitch checked={loupe} onChange={onLoupe} />
                 </PrefRow>
                 {sharedFramesAvailable && (
-                  <PrefRow label="Shared-memory frames" summary="Share viewer frames without copying."
-                           hint="hands each frame to the window in memory both share, rather than copying it through Tauri. off to compare the two in the GUI benchmark">
+                  <PrefRow id="Shared-memory frames" label={t("prefs.row.shared")} summary={t("prefs.row.shared.summary")}
+                           hint={t("prefs.row.shared.hint")}>
                     <PrefSwitch checked={sharedFrames} onChange={(on) => { setSharedFrames(on); storeSharedFrames(on); }} />
                   </PrefRow>
                 )}
                 {screenScale() !== null && (
-                  <PrefRow label="Drag drafts at the screen's scale" summary="Match drag previews to the display scale."
-                           hint={`while a slider moves, renders the photo for this screen's ${Math.round(screenScale()! * 100)}%, not the ${Math.round((window.devicePixelRatio || 1) * 100)}% the window is drawn at and shrunk from: fewer pixels for darktable. the frame after letting go is full size either way. off to compare the two in the GUI benchmark`}>
+                  <PrefRow id="Drag drafts at the screen's scale" label={t("prefs.row.screenscale")} summary={t("prefs.row.screenscale.summary")}
+                           hint={t("prefs.row.screenscale.hint", { screen: Math.round(screenScale()! * 100), window: Math.round((window.devicePixelRatio || 1) * 100) })}>
                     <PrefSwitch checked={atScreenScale} onChange={(on) => { setAtScreenScale(on); storeScreenScale(on); }} />
                   </PrefRow>
                 )}
                 {screenScale() !== null && (
-                  <PrefRow label="Fit frames at the screen's scale" summary="Match Fit previews to the display scale; off for sharper detail."
-                           hint="renders the settled Fit frame for this screen's scale and lets the page enlarge it. turn it off if the photo looks soft. takes effect on the next frame">
+                  <PrefRow id="Fit frames at the screen's scale" label={t("prefs.row.fitscale")} summary={t("prefs.row.fitscale.summary")}
+                           hint={t("prefs.row.fitscale.hint")}>
                     <PrefSwitch checked={settledAtScreen} onChange={(on) => { setSettledAtScreen(on); storeSettledScale(on); }} />
                   </PrefRow>
                 )}
-                <PrefRow label="Read ahead" summary="Decode nearby RAW photos in advance."
-                         hint="photos whose raws are decoded while you edit, in the direction you last stepped, so the arrow keys open them without the decode (some 300 ms for a compressed raw). each holds its raw in memory, about 50 MB for 24 megapixels">
+                <PrefRow id="Read ahead" label={t("prefs.row.readahead")} summary={t("prefs.row.readahead.summary")}
+                         hint={t("prefs.row.readahead.hint")}>
                   <div className="segmented small">
                     {Array.from({ length: READ_AHEAD_MAX + 1 }, (_, n) => (
                       <button key={n} className={readAhead.count === n ? "active" : ""}
-                              onClick={() => chooseReadAhead({ count: n })}>{n ? String(n) : "Off"}</button>
+                              onClick={() => chooseReadAhead({ count: n })}>{n ? String(n) : t("prefs.off")}</button>
                     ))}
                   </div>
                 </PrefRow>
                 {readAhead.count > 0 && (
-                  <PrefRow label="Read ahead both ways" summary="Also decode photos behind the current one." hint="as many photos behind the open one too, for stepping back">
+                  <PrefRow id="Read ahead both ways" label={t("prefs.row.readaheadboth")} summary={t("prefs.row.readaheadboth.summary")} hint={t("prefs.row.readaheadboth.hint")}>
                     <PrefSwitch checked={readAhead.both} onChange={(on) => chooseReadAhead({ both: on })} />
                   </PrefRow>
                 )}
                   </div>
                 </Collapse>
               </PrefCard>
-              <PrefCard title="Memory">
-                <PrefRow label="Memory" summary={`${{ small: "About ⅛ of system memory.", default: "About ½ of system memory.", large: "About ⅔ of system memory." }[resources?.next ?? "default"]}${budget ? ` About ${gb(budget.frameCacheMb)} for views, ${gb(budget.thumbMemoryMb)} for thumbnails.` : ""}${resources && resources.next !== resources.running ? " Relaunch to apply." : ""}`}
-                         hint={`how much memory Immage's caches use in total: the render caches, the views of the photo already shown and the library's thumbnails. ${{
-                           small: "Small keeps to about an eighth of this computer's memory, for working beside other large programs; more of each edit is worked out again",
-                           default: "Default uses about half of this computer's memory",
-                           large: "Large uses about two thirds, for when Immage is the only large program running",
-                         }[resources?.next ?? "default"]}. the render part applies once Immage starts again; views and thumbnails follow at once`}>
+              <PrefCard title={t("prefs.card.memory")}>
+                <PrefRow id="Memory" label={t("prefs.row.memory")} summary={`${{ small: t("prefs.row.memory.summary.small"), default: t("prefs.row.memory.summary.default"), large: t("prefs.row.memory.summary.large") }[resources?.next ?? "default"]}${budget ? " " + t("prefs.row.memory.summary.budget", { views: gb(budget.frameCacheMb), thumbs: gb(budget.thumbMemoryMb) }) : ""}${resources && resources.next !== resources.running ? " " + t("prefs.relaunch") : ""}`}
+                         hint={t("prefs.row.memory.hint", { level: {
+                           small: t("prefs.row.memory.hint.small"),
+                           default: t("prefs.row.memory.hint.default"),
+                           large: t("prefs.row.memory.hint.large"),
+                         }[resources?.next ?? "default"] ?? "" })}>
                   <div className="segmented small">
-                    {([["Small", "small"], ["Default", "default"], ["Large", "large"]] as const).map(([label, v]) => (
+                    {([[t("prefs.memory.small"), "small"], [t("prefs.default"), "default"], [t("prefs.memory.large"), "large"]] as const).map(([label, v]) => (
                       <button key={v} className={resources?.next === v ? "active" : ""} disabled={!resources}
                               onClick={() => chooseResources(v)}>{label}</button>
                     ))}
                   </div>
                   {resources && resources.next !== resources.running && (
-                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>Relaunch</button>
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>{t("prefs.relaunchButton")}</button>
                   )}
+                </PrefRow>
+                <PrefRow id="Library workers" label={t("prefs.row.workers")} summary={t("prefs.row.workers.summary")}
+                         hint={t("prefs.row.workers.hint")}>
+                  <div className="segmented small">
+                    {THUMB_THREADS.map((n) => (
+                      <button key={n} className={thumbThreads === n ? "active" : ""}
+                              onClick={() => { setThumbThreads(n); storeThumbThreads(n); }}>{String(n)}</button>
+                    ))}
+                  </div>
                 </PrefRow>
               </PrefCard>
               <CachePrefs />
-              <PrefCard title="Measuring">
-                <PrefRow label="Performance overlay" summary="Show frame rate and rendering times."
-                         hint="over the photo: frame rate, the time from a slider moving to the photo changing, where that time went, and darktable's slowest modules">
+              <SearchPrefs />
+              <PrefCard title={t("prefs.card.measuring")}>
+                <PrefRow id="Performance overlay" label={t("prefs.row.perfhud")} summary={t("prefs.row.perfhud.summary")}
+                         hint={t("prefs.row.perfhud.hint")}>
                   <PrefSwitch checked={perfHud} onChange={onPerfHud} />
                 </PrefRow>
-                <PrefRow label="GUI benchmark" summary={onBenchmark ? "Measure editing speed on a photo copy." : "Open a photo to run it."}
+                <PrefRow id="GUI benchmark" label={t("prefs.row.bench")} summary={onBenchmark ? t("prefs.row.bench.summary") : t("prefs.openPhoto")}
                          hint={onBenchmark
-                           ? "drags the main sliders on the open photo and back, zooms in and out, and saves timing, frame pacing and resource usage; every slider ends where it started. use a copy of a photo you care about"
-                           : "open a photo to run it"}>
-                  <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>Run</button>
+                           ? t("prefs.row.bench.hint")
+                           : t("prefs.openPhoto.hint")}>
+                  <button className="btn" disabled={!onBenchmark} onClick={() => onBenchmark?.()}>{t("prefs.run")}</button>
                 </PrefRow>
-                <PrefRow label="GPU check" summary={onGpuCheck ? "Compare CPU and GPU renders on a photo copy." : "Open a photo to run it."}
+                <PrefRow id="GPU check" label={t("prefs.row.gpucheck")} summary={onGpuCheck ? t("prefs.row.gpucheck.summary") : t("prefs.openPhoto")}
                          hint={onGpuCheck
-                           ? "renders the open photo on the CPU and on the GPU, then with each of several modules turned on, and compares them; records OpenCL errors, fallbacks to the CPU and a canceled GPU render. every control ends where it started. use a copy of a photo you care about, and send the saved report back"
-                           : "open a photo to run it"}>
-                  <button className="btn" disabled={!onGpuCheck} onClick={() => onGpuCheck?.()}>Run</button>
+                           ? t("prefs.row.gpucheck.hint")
+                           : t("prefs.openPhoto.hint")}>
+                  <button className="btn" disabled={!onGpuCheck} onClick={() => onGpuCheck?.()}>{t("prefs.run")}</button>
                 </PrefRow>
-                <PrefRow label="Performance tuner" summary="Find preview settings for your speed targets."
-                         hint="load a representative RAW from your usual work and use your normal window size. finds the highest-quality preview meeting your FPS and latency targets; Apply verifies the result">
-                  <button className="btn" disabled={!onTune} onClick={() => onTune?.()}>Tune…</button>
+                <PrefRow id="Performance tuner" label={t("prefs.row.tuner")} summary={t("prefs.row.tuner.summary")}
+                         hint={t("prefs.row.tuner.hint")}>
+                  <button className="btn" disabled={!onTune} onClick={() => onTune?.()}>{t("prefs.tune")}</button>
                 </PrefRow>
               </PrefCard>
               </>
@@ -1019,7 +1112,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
               <>
                 <PrefCard title="Immage">
                   <div className="prefs-legal">
-                    <p>Immage {about?.app ?? ""}{about?.commit ? ` (commit ${about.commit})` : ""}, Copyright © 2026 the Immage authors</p>
+                    <p>Immage {about?.app ?? ""}{about?.commit ? ` ${t("prefs.about.commitInParens", { commit: about.commit })}` : ""}, Copyright © 2026 the Immage authors</p>
                     <p>
                       Its raw processing engine is darktable{about ? ` ${about.darktable.split("~")[0]}` : ""},
                       Copyright © 2009–2026 darktable developers.
@@ -1036,63 +1129,63 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                     </p>
                   </div>
                 </PrefCard>
-                <PrefCard title="Maps">
+                <PrefCard title={t("prefs.card.maps")}>
                   <div className="prefs-legal">
                     <p>Map data © OpenStreetMap contributors, available under the Open Database License (ODbL).
                       Map tiles provided by the OpenStreetMap Foundation.</p>
                     <p>Interactive maps use Leaflet, Copyright © 2010–2023 Volodymyr Agafonkin
                       and © 2010–2011 CloudMade, under the BSD 2-Clause license.</p>
-                    <button className="btn" onClick={() => void openUrl("https://www.openstreetmap.org/copyright")}>OpenStreetMap attribution</button>{" "}
-                    <button className="btn" onClick={() => void openUrl("https://github.com/Leaflet/Leaflet/blob/main/LICENSE")}>Leaflet license</button>
+                    <button className="btn" onClick={() => void openUrl("https://www.openstreetmap.org/copyright")}>{t("prefs.about.osm")}</button>{" "}
+                    <button className="btn" onClick={() => void openUrl("https://github.com/Leaflet/Leaflet/blob/main/LICENSE")}>{t("prefs.about.leaflet")}</button>
                   </div>
                 </PrefCard>
-                <PrefCard title="Updates">
-                  <PrefRow label="Check automatically" summary="Check for updates daily." hint="once a day, from Immage's releases on GitHub">
+                <PrefCard title={t("prefs.card.updates")}>
+                  <PrefRow id="Check automatically" label={t("prefs.row.autoupdate")} summary={t("prefs.row.autoupdate.summary")} hint={t("prefs.row.autoupdate.hint")}>
                     <PrefSwitch checked={autoUpdate} onChange={(on) => { setAutoUpdate(on); storeAutoCheck(on); }} />
                   </PrefRow>
-                  <PrefRow label="Check for updates" hint={updateHint(update, about?.app)}>
+                  <PrefRow id="Check for updates" label={t("prefs.row.checkupdate")} hint={updateHint(update, about?.app)}>
                     <button className="btn" disabled={update.kind === "checking" || update.kind === "downloading" || update.kind === "installing"}
-                            onClick={() => void checkForUpdate(true)}>Check Now</button>
+                            onClick={() => void checkForUpdate(true)}>{t("prefs.about.checknow")}</button>
                   </PrefRow>
                 </PrefCard>
-                <PrefCard title="License and Source">
-                  <PrefRow label="License" summary="GPL version 3 or later." hint="GNU General Public License, version 3 or later">
+                <PrefCard title={t("prefs.card.license")}>
+                  <PrefRow id="License" label={t("prefs.row.gpl")} summary={t("prefs.row.gpl.summary")} hint={t("prefs.row.gpl.hint")}>
                     <button className="btn" disabled={!licenses?.gpl}
                             onClick={() => licenses?.gpl && setViewing({ title: "GNU General Public License", text: licenses.gpl })}
-                    >View</button>
+                    >{t("prefs.about.view")}</button>
                   </PrefRow>
-                  <PrefRow label="Source code" hint={sourceUrl(about?.app)}>
-                    <button className="btn" onClick={() => void openUrl(sourceUrl(about?.app))}>Open</button>
+                  <PrefRow id="Source code" label={t("prefs.row.source")} hint={sourceUrl(about?.app)}>
+                    <button className="btn" onClick={() => void openUrl(sourceUrl(about?.app))}>{t("prefs.about.open")}</button>
                   </PrefRow>
-                  <PrefRow label="darktable source" hint={darktableUrl(about?.darktable)}>
-                    <button className="btn" onClick={() => void openUrl(darktableUrl(about?.darktable))}>Open</button>
+                  <PrefRow id="darktable source" label={t("prefs.row.dtsource")} hint={darktableUrl(about?.darktable)}>
+                    <button className="btn" onClick={() => void openUrl(darktableUrl(about?.darktable))}>{t("prefs.about.open")}</button>
                   </PrefRow>
-                  <PrefRow label="Bundled libraries" summary={licenses?.libraries ? "Library licenses and source links." : "Not bundled in this build."}
-                           hint={licenses?.libraries ? "the engine's libraries, each under its own license, and where their source is"
-                             : "not bundled in this build"}>
+                  <PrefRow id="Bundled libraries" label={t("prefs.row.libs")} summary={licenses?.libraries ? t("prefs.row.libs.summary") : t("prefs.row.libs.summary.none")}
+                           hint={licenses?.libraries ? t("prefs.row.libs.hint")
+                             : t("prefs.row.libs.hint.none")}>
                     <div className="segmented small">
                       <button disabled={!licenses?.libraries}
-                              onClick={() => licenses?.libraries && setViewing({ title: "Bundled Libraries", text: licenses.libraries })}
-                      >View</button>
+                              onClick={() => licenses?.libraries && setViewing({ title: t("prefs.about.libs.title"), text: licenses.libraries })}
+                      >{t("prefs.about.view")}</button>
                       <button disabled={!licenses?.librariesPath}
                               onClick={() => licenses?.librariesPath && void revealItemInDir(licenses.librariesPath)}
-                      >License Texts</button>
+                      >{t("prefs.about.licensetexts")}</button>
                     </div>
                   </PrefRow>
-                  <PrefRow label="App components" summary={licenses?.notices ? "App dependencies and their licenses." : "Not generated for this build."}
-                           hint={licenses?.notices ? "the Rust crates and npm packages built into the app, and their licenses"
-                             : "not generated for this build"}>
+                  <PrefRow id="App components" label={t("prefs.row.components")} summary={licenses?.notices ? t("prefs.row.components.summary") : t("prefs.row.components.summary.none")}
+                           hint={licenses?.notices ? t("prefs.row.components.hint")
+                             : t("prefs.row.components.hint.none")}>
                     <button className="btn" disabled={!licenses?.notices}
-                            onClick={() => licenses?.notices && setViewing({ title: "App Components", text: licenses.notices })}
-                    >View</button>
+                            onClick={() => licenses?.notices && setViewing({ title: t("prefs.about.components.title"), text: licenses.notices })}
+                    >{t("prefs.about.view")}</button>
                   </PrefRow>
                 </PrefCard>
               </>
             )}
           </div>
           <div className="prefs-foot">
-            <span className="prefs-note">changes apply as you make them</span>
-            <button className="btn primary" onClick={onClose}>Done</button>
+            <span className="prefs-note">{t("prefs.note")}</span>
+            <button className="btn primary" onClick={onClose}>{t("prefs.done")}</button>
           </div>
         </div>
       </div>

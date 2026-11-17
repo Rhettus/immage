@@ -1,0 +1,14 @@
+[
+ {
+  "label": "3 open / lut_files",
+  "reply": {
+   "current": "",
+   "current_hash": 0.0,
+   "exists": false,
+   "files": [],
+   "folder": "/tmp/immage-fixture/luts",
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

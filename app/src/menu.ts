@@ -7,16 +7,17 @@
 // renders them per platform
 
 import type { NativeItem, NativeMenu } from "./commands";
+import { t } from "./i18n";
 
 export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "virtual-copy" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
-  | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "grid" | "before-after" | "compare"
+  | "zoom-in" | "zoom-out" | "zoom-toggle" | "fullscreen-preview" | "culling-preview" | "grid" | "before-after" | "compare"
   | "hide-panels" | "clipping" | "next-scope" | "info-overlay" | "canvas" | "soft-proof" | "perf-overlay"
   | "shortcuts" | "user-guide" | "support-bundle" | "about";
 
@@ -34,11 +35,11 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "virtual-copy", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
-  "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "grid", "before-after", "compare",
+  "zoom-in", "zoom-out", "zoom-toggle", "fullscreen-preview", "culling-preview", "grid", "before-after", "compare",
   "hide-panels", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof", "perf-overlay",
   "shortcuts", "user-guide", "support-bundle", "about",
 ];
@@ -52,87 +53,89 @@ export const MENUS: Menu[] = [
   {
     label: "Immage", platform: "mac", items: [
       role("about"), sep(),
-      item("preferences", "Preferences…", "⌘,"), sep(),
+      item("preferences", t("menu.preferences"), "⌘,"), sep(),
       role("services"), sep(),
       role("hide"), role("hideOthers"), role("showAll"), sep(),
       role("quit"),
     ],
   },
   {
-    label: "File", items: [
-      item("import", "Import Photos…", "⇧⌘I"),
-      item("add-folder", "Add Folder…"), sep(),
-      item("export", "Export…", "⇧⌘E"),
-      item("print", "Print…", "⌘P"), sep("mac"),
+    label: t("menu.title.file"), items: [
+      item("import", t("menu.import"), "⇧⌘I"),
+      item("add-folder", t("menu.add-folder")), sep(),
+      item("export", t("menu.export"), "⇧⌘E"),
+      item("print", t("menu.print"), "⌘P"), sep("mac"),
       role("closeWindow"),
-      sep("other"), item("quit", "Quit", "⌘Q", "other"),
+      sep("other"), item("quit", t("menu.quit"), "⌘Q", "other"),
     ],
   },
   {
-    label: "Edit", items: [
-      item("undo", "Undo", "⌘Z"),
-      item("redo", "Redo", "⇧⌘Z"), sep(),
+    label: t("menu.title.edit"), items: [
+      item("undo", t("menu.undo"), "⌘Z"),
+      item("redo", t("menu.redo"), "⇧⌘Z"), sep(),
       role("cut"), role("copy"), role("paste"),
-      item("cut", "Cut", "⌘X", "other"), item("copy", "Copy", "⌘C", "other"), item("paste", "Paste", "⌘V", "other"),
-      item("select-all", "Select All", "⌘A"), sep(),
-      item("copy-settings", "Copy Settings…", "⇧⌘C"),
-      item("paste-settings", "Paste Settings", "⇧⌘V"),
-      item("paste-previous", "Paste Previous Settings", "⌥⌘V"),
-      sep("other"), item("preferences", "Preferences…", "⌘,", "other"),
+      item("cut", t("menu.cut"), "⌘X", "other"), item("copy", t("menu.copy"), "⌘C", "other"), item("paste", t("menu.paste"), "⌘V", "other"),
+      item("select-all", t("menu.select-all"), "⌘A"), sep(),
+      item("copy-settings", t("menu.copy-settings"), "⇧⌘C"),
+      item("paste-settings", t("menu.paste-settings"), "⇧⌘V"),
+      item("paste-previous", t("menu.paste-previous"), "⌥⌘V"),
+      sep("other"), item("preferences", t("menu.preferences"), "⌘,", "other"),
     ],
   },
   {
-    label: "Photo", items: [
-      item("virtual-copy", "Create Virtual Copy", "⌘'"),
-      item("rotate-left", "Rotate Left", "⌘["),
-      item("rotate-right", "Rotate Right", "⌘]"), sep(),
-      item("hdr-merge", "HDR Merge…", "⌃H"),
-      item("pano-merge", "Panorama Merge…", "⌃M"), sep(),
-      item("crop", "Crop", "R"),
-      item("heal", "Heal", "Q"),
-      item("wb-picker", "White Balance Picker", "W"), sep(),
+    label: t("menu.title.photo"), items: [
+      item("virtual-copy", t("menu.virtual-copy"), "⌘'"),
+      item("start-over", t("menu.start-over")),
+      item("rotate-left", t("menu.rotate-left"), "⌘["),
+      item("rotate-right", t("menu.rotate-right"), "⌘]"), sep(),
+      item("hdr-merge", t("menu.hdr-merge"), "⌃H"),
+      item("pano-merge", t("menu.pano-merge"), "⌃M"), sep(),
+      item("crop", t("menu.crop"), "R"),
+      item("heal", t("menu.heal"), "Q"),
+      item("wb-picker", t("menu.wb-picker"), "W"), sep(),
       {
-        kind: "submenu", label: "Rating", items: [
-          item("rate-0", "No Stars", "0"), item("rate-1", "1 Star", "1"), item("rate-2", "2 Stars", "2"),
-          item("rate-3", "3 Stars", "3"), item("rate-4", "4 Stars", "4"), item("rate-5", "5 Stars", "5"),
+        kind: "submenu", label: t("menu.title.rating"), items: [
+          item("rate-0", t("menu.rate-0"), "0"), item("rate-1", t("menu.rate-1"), "1"), item("rate-2", t("menu.rate-2"), "2"),
+          item("rate-3", t("menu.rate-3"), "3"), item("rate-4", t("menu.rate-4"), "4"), item("rate-5", t("menu.rate-5"), "5"),
         ],
       },
       {
-        kind: "submenu", label: "Label", items: [
-          item("label-red", "Red", "6"), item("label-yellow", "Yellow", "7"),
-          item("label-green", "Green", "8"), item("label-blue", "Blue", "9"),
+        kind: "submenu", label: t("menu.title.label"), items: [
+          item("label-red", t("menu.label-red"), "6"), item("label-yellow", t("menu.label-yellow"), "7"),
+          item("label-green", t("menu.label-green"), "8"), item("label-blue", t("menu.label-blue"), "9"),
         ],
       },
-      item("reject", "Reject", "X"),
+      item("reject", t("menu.reject"), "X"),
     ],
   },
   {
-    label: "View", items: [
-      item("zoom-in", "Zoom In", "⌘="),
-      item("zoom-out", "Zoom Out", "⌘-"),
-      item("zoom-toggle", "Fit / Zoom", "Z"), sep(),
-      item("fullscreen-preview", "Full Screen Preview", "F"),
-      item("grid", "Grid View", "G"),
-      item("before-after", "Before / After", "Y"),
-      item("compare", "Compare", "C"), sep(),
-      item("hide-panels", "Hide Panels", "Tab"),
-      item("clipping", "Show Clipping", "J"),
-      item("next-scope", "Next Scope", "H"),
-      item("info-overlay", "Info Overlay", "I"),
-      item("canvas", "Next Canvas Color", "L"),
-      item("soft-proof", "Soft Proof", "S"), sep(),
-      item("perf-overlay", "Performance Overlay", "⇧⌘P"),
+    label: t("menu.title.view"), items: [
+      item("zoom-in", t("menu.zoom-in"), "⌘="),
+      item("zoom-out", t("menu.zoom-out"), "⌘-"),
+      item("zoom-toggle", t("menu.zoom-toggle"), "Z"), sep(),
+      item("fullscreen-preview", t("menu.fullscreen-preview"), "F"),
+      item("culling-preview", t("menu.culling-preview"), "F"),
+      item("grid", t("menu.grid"), "G"),
+      item("before-after", t("menu.before-after"), "Y"),
+      item("compare", t("menu.compare"), "C"), sep(),
+      item("hide-panels", t("menu.hide-panels"), "Tab"),
+      item("clipping", t("menu.clipping"), "J"),
+      item("next-scope", t("menu.next-scope"), "H"),
+      item("info-overlay", t("menu.info-overlay"), "I"),
+      item("canvas", t("menu.canvas"), "L"),
+      item("soft-proof", t("menu.soft-proof"), "S"), sep(),
+      item("perf-overlay", t("menu.perf-overlay"), "⇧⌘P"),
     ],
   },
   {
-    label: "Window", platform: "mac", items: [role("minimize"), role("zoom"), sep(), role("fullscreen")],
+    label: t("menu.title.window"), platform: "mac", items: [role("minimize"), role("zoom"), sep(), role("fullscreen")],
   },
   {
-    label: "Help", items: [
-      item("shortcuts", "Keyboard Shortcuts", "⌘/"),
-      item("user-guide", "User Guide"),
-      item("support-bundle", "Create Support Bundle…"),
-      sep("other"), item("about", "About Immage", undefined, "other"),
+    label: t("menu.title.help"), items: [
+      item("shortcuts", t("menu.shortcuts"), "⌘/"),
+      item("user-guide", t("menu.user-guide")),
+      item("support-bundle", t("menu.support-bundle")),
+      sep("other"), item("about", t("menu.about"), undefined, "other"),
     ],
   },
 ];

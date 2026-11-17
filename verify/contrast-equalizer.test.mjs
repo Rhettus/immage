@@ -98,3 +98,22 @@ test('masked equalizer round trips independently and shared texture follows the 
   assert.ok(plan.shared.some(m => m.op === 'diffuse'));
   assert.ok(!plan.shared.some(m => m.op === 'contrastntexture#texture'));
 });
+
+test('mask extras and disabled modules are excluded per operation, without blocking other sharing', async () => {
+  const { neutralLocal } = await import('../app/src/masks.ts');
+  const { planMerge } = await import('../app/src/localMerge.ts');
+  const mask = (name, flags = {}) => ({ name,
+    shapes:[{type:'ellipse',x:.5,y:.5,rx:.3,ry:.3,angle:0,feather:.1}], invert:false,
+    values:{...neutralLocal(),l_contrast:24,l_noise:20}, ...flags });
+  const plan = planMerge([
+    mask('extra',{extra:['colorbalancergb']}),
+    mask('disabled',{disabledModules:['denoiseprofile']}),
+    mask('simple'),
+  ], {}, false, {sensorWidth:1200,sensorHeight:800});
+  assert.equal(plan.merged.get('extra')?.has('colorbalancergb') ?? false, false);
+  assert.equal(plan.merged.get('extra')?.has('denoiseprofile'), true,
+    'an extra field on one module does not block sharing on another module');
+  assert.equal(plan.merged.get('disabled')?.has('denoiseprofile') ?? false, false);
+  assert.equal(plan.merged.get('disabled')?.has('colorbalancergb'), true);
+  assert.equal(plan.merged.get('simple')?.has('colorbalancergb'), true);
+});

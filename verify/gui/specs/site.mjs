@@ -148,6 +148,46 @@ export async function siteShots(t) {
     await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'loupe view');
   });
 
+  // Find in the grid, locked in the right-hand column in the sidebar's place,
+  // with a rating and a file type chip on (selectors as in specs/find.mjs).
+  // Filters are cleared and the loupe restored afterwards for the steps that follow.
+  await attempt(t, 'find', async () => {
+    const pop = '.find-pop', grid = '.filmstrip.grid';
+    const present = s => t.driver.observe(q => !!document.querySelector(q), s);
+    const photos = () => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length);
+    const cleanUp = async () => {
+      try {
+        if (await present('.toolbar .clear-filters')) await click(t, '.toolbar .clear-filters');
+        if (await present(grid)) { await t.driver.keys('g'); await until(async () => !await present(grid), 'loupe view'); }
+      } catch {}
+    };
+    try {
+      if (!await present(grid)) await t.driver.keys('g');
+      await until(() => present(grid), 'grid view');
+      await pause(1500); // thumbnails
+      const all = await photos();
+      await click(t, '.find-button');
+      await until(() => present(`${pop}.locked`), 'Find in the right-hand column');
+      await pause(400);
+      await click(t, `${pop} .find-stars button[title="3 stars and up"]`);
+      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-chip').length) >= 1, 'rating chip');
+      const type = await until(() => t.driver.observe(() => {
+        const e = [...document.querySelectorAll('.find-cat')].find(c => c.querySelector('.name')?.textContent === 'File type');
+        if (!e) return null;
+        e.scrollIntoView({ block: 'nearest' });
+        const r = e.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }), 'File type row');
+      await t.driver.point(type.x, type.y);
+      await until(() => t.driver.observe(() => document.querySelector('.find-pane h3')?.textContent === 'File type'), 'File type pane');
+      await click(t, `${pop} .find-pane .filter-ticks button`);
+      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-chip').length) >= 2, 'file type chip');
+      const kept = await photos();
+      if (kept < 3 || kept >= all) throw Error(`filters left ${kept} of ${all} photos`);
+      await shot(t, 'find', pop);
+    } finally { await cleanUp(); }
+  });
+
   await attempt(t, 'before-after-split', async () => {
     await edit(t);
     for (let i = 0; i < 6 && !await t.driver.observe(() => !!document.querySelector('.split-bar:not(.h)')); i++) {
@@ -366,8 +406,8 @@ export async function siteShots(t) {
     await click(t, 'button[data-tour="export"]');
     await until(() => t.driver.observe(() => !!document.querySelector('.modal.export')), 'export dialog');
     await textButton(t, '.export-presets', 'Frame with EXIF');
-    const open = await t.driver.observe(() => document.querySelector('[data-export-section="Frame & Captions"]')?.classList.contains('open'));
-    if (!open) await click(t, '[data-export-section="Frame & Captions"] > .export-section-head');
+    const open = await t.driver.observe(() => document.querySelector('[data-export-section="frame"]')?.classList.contains('open'));
+    if (!open) await click(t, '[data-export-section="frame"] > .export-section-head');
     await pause(2500);
     await shot(t, 'export-dialog', '.export-preview', { settled: false });
     await textButton(t, '.export .modal-foot', 'Cancel');

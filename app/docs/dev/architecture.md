@@ -25,7 +25,17 @@ tooltips, clicks and disabled buttons as well.
 | [splash.html](../../splash.html), [Splash.tsx](../../src/Splash.tsx) | The splash window: shows `build` (version and commit, without the engine) at once, asks `about`, shows the main window, closes itself. |
 | [App.tsx](../../src/App.tsx) | The whole editor's shell and state. See [inside App.tsx](#inside-apptsx). |
 | [main.rs](../../src-tauri/src/main.rs) | `main()`: on Linux selects the web view's EGL before GTK starts (`renderer::init`), migrates the old app name, registers the dialog, opener, updater, process, window state (the main window's size, position and maximized state) and immporter plugins. On Linux `setup()` builds the windows itself, with the frames web extension's folder (`webext_dir`). `setup()` picks the engine: `build/bin/darktable-engine` with runtime state in `build/app-runtime` for a dev build, the bundled `resources/darktable` with the app data folder for a release, or `DT_ENGINE_BIN`. Holds `AppState`; the commands are in the `*_cmds.rs` files below. A `supervise` thread waits for a dead engine connection (`Link::wait_dead`), emits `engine-state` `down{epoch}`, clears export cancels, checks `RestartBudget` (skipped for a manual restart), respawns under the engine lock as `engine_respawn`, re-applies the resource level and Edit on the GPU, and emits `ready{epoch}`; a refused budget or a failed respawn emits `failed` and stops. `engine_restart` (no engine lock) asks for a manual restart, and `AppState.engine(op)` records the operation name that sets each request's soft deadline. |
+| [search_cache.rs](../../src-tauri/src/search_cache.rs) | Disposable SQLite store at `search-cache.sqlite`, separate from darktable's in-memory catalog. It gives source paths and original/virtual-copy variants cache-owned stable IDs, stores original and edited fingerprints plus raw and nanosecond capture times and UTC offset, and keys embedding rows by analysis subject, analysis version and model version. Original image analysis is asset-scoped and shared by virtual copies; edited analysis is per variant. Analysis writes recheck the input fingerprint to reject stale inference results. Changed source bytes invalidate all variants; changed edits invalidate only that variant's edited analysis. Verified file relocation can update a path without dropping analysis; deleting a source cascades its variants and analysis. The database is rebuildable and is not a darktable catalog. Metadata JSON omits engine IDs; source/edit fingerprints guard writes and reads. Folder reads retain their own immutable directory stamps, validate the full virtual-copy set and raster-mask data, and send only cache-miss groups through engine import. `library_ids.rs` gives warm rows session handles outside darktable’s int32 range; `Tagged::prepare` imports one source on demand, shares that import among concurrent sibling requests, and resolves the exact version. Both tagged and foreground replies translate identity fields back to handles without touching render IDs, request IDs or job numbers. Restart clears engine bindings while retaining handles for re-resolution. Cached IDs are never persisted as engine IDs. |
+| [library_ids.rs](../../src-tauri/src/library_ids.rs) | Resolves cached session handles through the existing import worker on first use, retaining exact virtual-copy identity and coalescing concurrent sibling imports. Successful mutations invalidate affected cached metadata and edited analysis; source changes invalidate all versions, including outstanding inference writes. |
+| [analysis_queue.rs](../../src-tauri/src/analysis_queue.rs) | Shared bounded background queue. Running jobs retain admission slots until they return; pause stops dispatch, cancellation changes the generation and deduplication keys include that generation, and publication under `Job::commit` cannot race a clear/rebuild. Shutdown cancels without joining blocked filesystem work. |
+| [search_reconcile.rs](../../src-tauri/src/search_reconcile.rs) | Starts metadata-cache discovery from saved library roots on the shared queue. Uses directory stamps without engine imports, preserves provided capture precision for unchanged sources, and records root/mount status. Missing records are pruned only after a complete scan with known, rechecked mount identity. Unknown, offline, nested disconnected, hidden, symlink and incomplete subtrees are protected. |
+| [clip_models.rs](../../src-tauri/src/clip_models.rs) | Explicit-consent-only CLIP package provisioning, independent of application startup and metadata caching. Pins both float ONNX towers, tokenizer and processor to Xenova/clip-vit-base-patch32 revision `6b7c523703ae26e39be4b03774966f8571c7f523`. Graphs are verified by LFS SHA-256; small assets by Git blob hashes including their headers. Bounded streams reject truncation, corruption and excess bytes. Separate staging directories publish only complete verified packages; cancellation is serialized with publication. Existing valid packages are verified and reused without network access. Native typed status/download/cancel commands are preparatory; preferences are wired through `SearchPrefs.tsx`. Local package preparation verifies hashes after a file stamp change, caches the reference tokenizer and writes a separate engine manifest without altering the pinned Hugging Face configuration. |
+| [clip_text.rs](../../src-tauri/src/clip_text.rs) | Reference Hugging Face tokenizers 0.23.2, with HTTP features disabled, loads the verified package's serialized pipeline. Enforces CLIP special tokens, a 77-token context, right padding and truncation with EOS retained. Installation checks a known prompt for tokenizer compatibility. Headless boundary tests use an explicitly synthetic pipeline, not a substitute CLIP BPE fixture. |
+| [clip_image.rs](../../src-tauri/src/clip_image.rs) | Validates the pinned processor configuration and prepares orientation-correct sRGB RGB8 as a `[1,3,224,224]` float32 tensor: shortest-edge resize, antialiased bicubic, center crop, rescale and channel normalization. Source, intermediate and extreme-aspect dimensions are bounded. Independent pinned Pillow/NumPy hashes cover eight RGB crops and complete CHW tensors. |
+| [clip_infer.rs](../../src-tauri/src/clip_infer.rs) | Shared-queue admission and diagnostic two-tower probe. Sends little-endian tensors through unique temporary files (0600 on Unix), closes files before cleanup on Windows, and accepts only finite normalized 512-value projections. `Job::commit` guards publication after cancellation. The probe uses an already installed verified package and never downloads one. Native `engine/clip.c` starts its serial CPU worker lazily, caps queued plus active work at eight, binds inputs by name and validates every output's type/shape before execution. It does not access the editor session. `engine/clip_contract.h` isolates output-shape and normalization checks. Headless tests run tiny locally generated ONNX graphs; they do not establish pretrained CLIP semantic quality. |
+| [search_cmds.rs](../../src-tauri/src/search_cmds.rs) / [SearchPrefs.tsx](../../src/SearchPrefs.tsx) | Local cache status/counts/root history, remembered background pause, serialized clear/rebuild and opt-in model controls. Clear cancels the analysis generation before deleting disposable rows, retains root identity and ID sequences, and leaves model packages alone. Rebuild schedules fresh root jobs without releasing old active admission slots. `search_queue` is a sync command that only copies the queue's counts and pause flag (the queue's own mutex, no file or SQLite work), polled every 2 s by [AnalysisStatus.tsx](../../src/AnalysisStatus.tsx), the icon at the end of Find's search row (shown when the CLIP model is installed; a click calls `search_pause`, optimistically). Preferences poll only status on mount; model downloads and diagnostics require explicit button actions. |
 | [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `native.webview-renderer` in `settings.json` (see [settings.rs](../../src-tauri/src/settings.rs)) so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
+| [pinch.rs](../../src-tauri/src/pinch.rs) | Linux touchpad pinch. WebKitGTK scales the whole page for a pinch with its own GtkGestureZoom; a handler on the webview's GTK `event` signal takes the pinch first (GTK 3 runs that bubble-phase gesture only when `event` leaves it unhandled) and dispatches each update to the element under the fingers as a synthetic `WheelEvent` with `ctrlKey`, sized so the viewer's ctrl-wheel zoom in App.tsx scales by the pinch's change. Mac and Windows web views already send a pinch as a ctrl wheel event. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with export's pipe type allowed the GPU, which the base borrows, and the full pipes (edits and drags) too with Preferences' Edit on the GPU (`gpu_edits`, on by default); on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock: each start sends a `version` request and goes on as soon as it is answered (after `dt_init`), or after 400 ms if the engine is still alive (`started`). `request()` writes one JSON line with a request number (`rid`, never reused) and reads replies until the one echoing it, dropping a late reply to an earlier request; an engine that never echoes `rid` (an old build) is read in order. `rid` is not `id`, which `render` uses for a base's number. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in ai_cmds.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. `Engine` holds the current connection, a `Conn` (stdin, the waiting reply channel, progress, the child, a `dead` flag) numbered by an `epoch`, inside a shared `Link` (the current conn, a condvar, the tagged-reply and base-cancel tables, `quitting`, the manual restart flag, events). `Tagged` and `BaseCancel` hold the `Link`, so they follow a respawn. `respawn()` starts a new child with the same arguments, and `read_stdout` marks its conn dead when stdout closes. `request()` waits with `recv_timeout` against `soft_deadline(op, req)`; past it, it emits one `slow{op,seconds}` event, and the reply still arrives as `ready` with the same epoch. `RestartBudget(3, 60 s)` limits crash loops. |
 | [engine/main.c](../../../engine/main.c) | `main()`: keeps the real stdout for replies, starts darktable with an in-memory library (`dt_init`), sets its confs, then starts `_read_requests`, which reads a line and hands it to `_handle()` through the `_commands[]` table, and replies. The other engine files are listed under Engine below. |
 
@@ -33,8 +43,10 @@ The boundary is strict. The front end never touches files or darktable
 directly. It calls typed commands (`commands.x(...)`, from the generated bindings), and every command that needs the
 engine goes through the one `Mutex<Engine>` in `AppState`, so engine work is
 serialized, one request at a time. Thumbnails, folder imports and
-exports are the exceptions: the engine builds thumbnails on two threads
-of its own (`library_thumb_run`), and reads folders (`library_import_run`), exports
+exports are the exceptions: the engine builds thumbnails on its own threads
+(`library_thumb_run`; Preferences' Library workers sets their count and the
+metadata pool's through `thumb_threads`, in `library_thumb_threads` and
+`library_metadata_threads`), and reads folders (`library_import_run`), exports
 (`export_run`), runs AI Denoise (`ai_denoise_run`) and the AI selections'
 models (`ai_run`) on one each, beside
 whatever the mutex's holder is doing. Most commands are async and wait for
@@ -84,6 +96,15 @@ module stores: [activity.ts](../../src/activity.ts),
 are keys named `immage.*` in the settings store
 ([settings.ts](../../src/settings.ts)), which is kept in `settings.json` by
 Rust (see Where data lives).
+
+In Advanced mode, `AdvancedMaskCards` in `AdvancedPanel.tsx` renders the
+selected mask's instances in processing order. `MASK_MODULES` in `manifest.ts`
+limits Add module to supported local adjustments. The engine's `masks` reply
+includes unmapped-edit flags and complete parameter snapshots; `Mask.extra`
+keeps those operations out of `planMerge`, and the snapshots preserve their
+settings through duplication, Copy Settings and undo. Mask shapes and blend
+attachments are rebuilt for the destination rather than copying source mask
+identifiers.
 
 ### Shell
 
@@ -157,6 +178,8 @@ and one undo after Done.
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` and `fullDraftK` in App.tsx; the latter also sizes `exactView`, the detail sliders' whole-view draft), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale"; `settledScale()` does the same for the settled Fit frame (`viewAt(1)` in App.tsx), behind "Fit frames at the screen's scale" (on by default). |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `session_module_state`). |
+| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` is the pure targeting and bounded scheduling: one active request, one replaceable foreground request and a bounded list of neighbors, kept in memory. |
+| [folderEdits.ts](../../src/folderEdits.ts) | `FolderEdits`: keeps only the fields changed (`patchImage`) while a folder read runs, and reapplies them to each arriving batch and the final list, so rating, label and reject changes survive the read's older snapshots. |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 | [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
 
@@ -204,11 +227,14 @@ and one undo after Done.
 | File | Responsibility |
 |---|---|
 | [library.ts](../../src/library.ts) | `ImageEntry`, and `Known`: a photo as the folder's last read found it; `openFolder` (batches arriving as `folder-progress` events); `withKnown`, the read and known photos in one order; RAW+JPEG pairing; `ThumbLoader`, which fetches two thumbnails from the engine at a time, alongside editing, shows a known photo's last thumbnail until it is checked, and lets those off screen longest go past the memory budget's thumbnail share. |
-| [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`, read again every 10 s), its dot green while the drive answers and red while it does not. |
+| [FolderTree.tsx](../../src/FolderTree.tsx) | The folder tree; with folders on more than one drive, a heading per drive (`folder_volumes`, read again every 10 s), its dot green while the drive answers and red while it does not. A row's right-click menu (`FolderMenu`, closed by `useMenuClose` from FileMenu.tsx): New Folder… (an inline `NameEdit` row first among the subfolders, then `create_folder`), Show in the file manager, Remove from List. |
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
 | [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
 | [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (reduced-resolution preview above projection and Auto Crop; `pano_preview`, `merge_cancel`, `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
-| [FilterPopup.tsx](../../src/FilterPopup.tsx) | The toolbar's Filters popup: the folder's fields, or on Immich results the server search's filters (the `ImmichSearch` App holds, shared with the Immich card). |
+| [findModel.ts](../../src/findModel.ts) | The Find state, `FindState`: the folder `Filter` plus the `ImmichSearch` (words, mode, `searchIn`, library, server filters). `reach` says which sources a search covers; `needsSearch` whether it runs a search or just filters the folder; `effectiveFilter` the `Filter` actually applied (local-only fields dropped when Immich is unavailable); `CATEGORIES` and `visibleCategories` the grouped filters; `chips` the filters on, each marked when it excludes a source in a Both search; `SavedFilter`, `sameFind`, `normalizeFind`. |
+| [FindPanel.tsx](../../src/FindPanel.tsx) | The toolbar's Find popup in its three sizes (minimize, dock, fill): search row, Search in, chips, category panels and footer. In the grid view App draws it `locked` inside the right column (the dock body, filling its container, no size buttons, grip or closing; `findLocked` in App.tsx, and the toolbar's Find button focuses its box through `focusToken`) and not as the popup. Everything applies live; typed words on Enter or after a short debounce. Edits the one `FindState` App holds, which the toolbar's stars, reject, edited and label buttons also edit. |
+| [findLayout.ts](../../src/findLayout.ts) | Find's size and per-size placement (`immage.findLayout` in the settings store): default rectangles, clamping to the window, drag offsets. |
+| [savedFilters.ts](../../src/savedFilters.ts), [SavedFilterMenus.tsx](../../src/SavedFilterMenus.tsx) | Saved filters (`immage.savedFilters`, part of the Preferences & library backup): store, `savedForDigit` for Alt+1 to Alt+9, and the Saved menu, save dialog and Manage dialog. |
 
 ### Export
 
@@ -228,7 +254,11 @@ and one undo after Done.
 
 | File | Responsibility |
 |---|---|
-| [immich.ts](../../src/immich.ts), [ImmichPanel.tsx](../../src/ImmichPanel.tsx), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the Library's Immich card (library, words, mode; its filters are in the Filters popup); connection settings (from the immporter). |
+| [localSearch.ts](../../src/localSearch.ts) | The local search source: queries over the metadata cache and, once the CLIP model is installed, text and image similarity; paging and the "Show more like this" image query. |
+| [clipStatus.ts](../../src/clipStatus.ts) | Whether the local CLIP package is installed (`search_status`'s `model_installed`), asked by App after the first paint, when Preferences closes and during a download; decides Find's Smart switch, its CLIP tip (`smartAvailable`, `clipTipVisible` in findModel.ts) and Show more like this |
+| [combinedSearch.ts](../../src/combinedSearch.ts) | Frontend-only coordinator over independent sources (local, Immich): each keeps its own results, errors and pagination; it knows neither backend, callers pass adapters. |
+| [searchIdentity.ts](../../src/searchIdentity.ts) | Merging a local and an Immich result only on an exact indexed local path (Immich mapping canonicalizes the file); virtual copies stay separate. It is path identity, not proof the bytes are equal. |
+| [immich.ts](../../src/immich.ts), [ImmichPrefs.tsx](../../src/ImmichPrefs.tsx) | Search, remote assets as `ImageEntry`, path maps from Immich to local files; the search itself is driven from Find; connection settings (from the immporter). |
 | [plugins.ts](../../src/plugins.ts), [PluginPrefs.tsx](../../src/PluginPrefs.tsx) | Edit In: plugin kinds (`KINDS`: DxO PureRAW, and Macro Studio, whose `handoff` is a job rather than files), configs, returns; the Plugins preferences tab. |
 
 [canvasLayers.ts](../../src/canvasLayers.ts) preserves canvas allocations when dimensions
@@ -246,6 +276,8 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [settings.ts](../../src/settings.ts) | The synchronous settings store every module uses in place of `localStorage` (`get`, `set`, `remove`, `keys`), over an in-memory copy. Changes go to Rust (`settings_set`) in batches about 250 ms apart, flushed before relaunch and Quit. Copies the web view's `localStorage` in once, marked `immage.settings-migrated`. `ready` resolves when loaded; there is no top-level await, because the pixel worker bundle reaches this module through perf.ts. |
 | [Preferences.tsx](../../src/Preferences.tsx), [PrefsUI.tsx](../../src/PrefsUI.tsx) | The Preferences dialog and its `load*`/`store*` pairs; `PrefCard`, `PrefRow`, `PrefSwitch`; `ABOUT_LINKS` (homepage, Discord, GitHub icons under the sidebar version). |
 | [BackupDialog.tsx](../../src/BackupDialog.tsx) | Preferences > General > Backup: the Back Up and Restore dialog (opened from the Backup row in Preferences.tsx). Lists the parts the backup holds, with sizes; `settings.flush()` before a backup, and after a restore `settings.discard()` so nothing this page holds is written over the restored files, then a reload. |
+| [MoveDialog.tsx](../../src/MoveDialog.tsx) | The confirmation of photos dropped on a folder: `move_plan`'s units (count, size, versions, photos already there, clashes with Skip / Keep both, free space) and Move or Copy. App's `askMove` opens it, `confirmMove` runs `move_files` through `runMove` in background.ts. |
+| [photoDrag.ts](../../src/photoDrag.ts) | A thumbnail dragged onto a Folders row, with pointer events (`pressPhoto`, from a `FilmCell`'s `onPress`), not HTML drag and drop, which the window's file drop takes on WebKitGTK and Windows. Rows take a drop by `data-folder-path`, refuse one with `data-folder-refuse`; `usePhotoDrag` gives FolderTree the folder taking the drop (`over`, outlined with `drop-into`, not the window overlay's `drop-target`) and the folder under the pointer (`rest`, opened after 500 ms when shut, the photos' own folder included). |
 | [SelectMenu.tsx](../../src/SelectMenu.tsx) | Mounted once in `main.tsx`. Intercepts `mousedown` on any single-choice `<select>`, shows its options in a `.context-menu.select-menu` (inside the enclosing `.filter-pop`, `.icon-picker`, `.modal` or `.context-menu`, so outside-click handlers don't close it), and writes the choice back to the `<select>` and fires `change`. Handlers and `data-*` test hooks are unchanged. Space and Alt-arrow open it; arrows, Home/End, Enter and Escape drive it. |
 | [histogram.ts](../../src/histogram.ts) | Histogram and scope kernels (worker with main-thread fallback), clipping overlay. |
 | [probe.ts](../../src/probe.ts) | The color under the pointer, for the Tone Curve, HSL and B&W cards. |
@@ -259,12 +291,12 @@ identity before drawing, so replacement frames cancel obsolete work.
 | File | Responsibility |
 |---|---|
 | [main.rs](../../src-tauri/src/main.rs) | `AppState` (the engine, scratch file paths, looks and models folders, the folder-read token, perf state) and its `engine(op)` helper, `main()` and its setup. Every command lives in one of the `*_cmds.rs` files below, which `bindings.rs` lists in `collect_commands!`. |
-| [session_cmds.rs](../../src-tauri/src/session_cmds.rs) | The open photo: `open_image`, `history`, `module_state`, `get_params`, `set_params`, `sample`, `tone_key`, `color_profiles`, `agx_auto`, `points`, `render` and its frame reply (`shm_frame` on Linux, `shared_frame` on Windows), `cancel_base`, `save`, `paste_batch`, `baseline_end`, `before_view` and `preview`. |
-| [library_cmds.rs](../../src-tauri/src/library_cmds.rs) | Folders and their import (`open_folder`, snapshots, the folder-read token), `list_subfolders`, `folder_volumes`, thumbnails and their caches, `meta` and `meta_set`, keywords, `capture_times`, trash and virtual copies, `path_exists`, `path_kind`, `sample_folder` and launch-file handling (`Launch`, `launch_path`). |
+| [session_cmds.rs](../../src-tauri/src/session_cmds.rs) | The open photo: `open_image`, `history`, `module_state`, `get_params`, `set_params`, `sample`, `tone_key`, `color_profiles`, `agx_auto`, `points`, `render` and its frame reply (`shm_frame` on Linux, `shared_frame` on Windows), `cancel_base`, `save`, `paste_batch`, `history_discard`, `baseline_end`, `before_view` and `preview`. |
+| [library_cmds.rs](../../src-tauri/src/library_cmds.rs) | Folders and their import (`open_folder`, snapshots, the folder-read token), `list_subfolders`, `create_folder` (the tree's New Folder: one new folder, the name checked as a single, visible folder), `folder_volumes`, thumbnails and their caches, `meta` and `meta_set`, keywords, `capture_times`, trash and virtual copies, `path_exists`, `path_kind`, `sample_folder` and launch-file handling (`Launch`, `launch_path`). |
 | [export_cmds.rs](../../src-tauri/src/export_cmds.rs) | Export (naming conflicts, `export_images` and `export_cancel`), HDR and Panorama merges, `positive_export`, `export_preview`, `shared_import`, the export and look presets files, and the file pickers (`pick_files`, `pick_save`) with `path_inside`. |
 | [immich_cmds.rs](../../src-tauri/src/immich_cmds.rs) | The `immich_*` commands: albums, the browse and export checks, search, libraries, suggestions, people, tags, thumbnails and path resolving, over `immich_call`. |
 | [print_cmds.rs](../../src-tauri/src/print_cmds.rs) | Print profiles, `softproof`, printers, `print_photo` and `print_sheet`, `fonts` and the PDF picker. |
-| [edit_cmds.rs](../../src-tauri/src/edit_cmds.rs) | Masks, ranges, zones, spots, `upright`, `lenses`, looks (`looks_list`, `look_*`, `import_look`), AgX presets and profiles, and the film simulation stocks. |
+| [edit_cmds.rs](../../src-tauri/src/edit_cmds.rs) | Masks, ranges, zones, spots, `upright`, `lenses`, `colormapping_acquire`, looks (`looks_list`, `look_*`, `import_look`), AgX presets and profiles, and the film simulation stocks. |
 | [ai_cmds.rs](../../src-tauri/src/ai_cmds.rs) | The AI selections and depth, `ai_denoise` and its preview, `ai_accel`, and AI model download (`install_model`, `install_extra`, through reqwest; darktable's archives checked against the sha256 pinned per darktable version in `MODEL_RELEASES`, written by `scripts/pin_models.py`, or against the release's published versions.json for an unpinned version, then unpacked by the engine's `unpack`; downloads are cut off past the expected size, and extra models are fetched from a fixed Hugging Face commit). |
 | [app_cmds.rs](../../src-tauri/src/app_cmds.rs) | Preferences' darktable resources, GPU edits and window renderer, the performance overlay and reports (`perf_*`, `machine_block`), the GPU check (`gpu_check_parity`), `build`, `about`, `licenses`, `engine_quit`, `engine_restart` with the `supervise` thread, the macOS native menu (`menu_set`), Full Screen Preview and the CSP violation log. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child and its protocol (above); `perf_mark` and the `-d perf` parser. |
@@ -276,6 +308,7 @@ identity before drawing, so replacement frames cancel obsolete work.
 | [plugins.rs](../../src-tauri/src/plugins.rs) | Edit In: owns the plugin configuration (`plugins.json`; `config`, `config_save`, `set_app`, `ready`), finds apps, launches by plugin id with files checked by `photo_file`, polls their output folders, remembers each result (`plugin-returns.json`). Macro Studio's protocol (`plugin_job`): a job manifest in `plugin-jobs/<id>/`, its receipt read until every stack is saved or closed, and a ledger (`plugin-jobs/pending.json`) drained at start and on each `open_folder` (`drain_jobs`), for stacks saved later. |
 | [settings.rs](../../src-tauri/src/settings.rs) | The settings store: `settings.json` in the runtime folder, written atomically; `settings_all` and `settings_set` for the page; `native.*` keys (`native.darktable-resources`, `native.gpu-edits`, `native.webview-renderer`) written only here. On first start it moves the old `darktable-resources`, `gpu-edits` and `webview-renderer` files into those keys and deletes them. `read_key` lets renderer::init read `native.webview-renderer` before Tauri starts. A damaged file is moved aside as `settings.json.corrupt-<time>` and defaults are used. |
 | [backup.rs](../../src-tauri/src/backup.rs) | Backup and Restore (`COMPONENTS` lists the six parts and their zip folders; `create`, `inspect`, `restore`). The `backup_*` commands; the save and open dialogs open here. See [Backup and restore](#backup-and-restore). |
+| [move_cmds.rs](../../src-tauri/src/move_cmds.rs) | Moving and copying photos into a folder (`move_plan`, `move_files`, `move_cancel`, "move-progress"). A unit is a photo's file with every sidecar the engine's `sidecars` finds; each file is copied to a hidden part file, flushed, its page cache dropped (Linux), read back and compared by SHA-256 (Immich downloads also by Immich's SHA-1), then renamed in. A move removes the sources once the unit verifies, then `forget`s the photo; on the same drive it renames. Clashes: identical by checksum counts as there, else Skip or Keep both (`numbered`). Each unit runs on its own thread; 30 s without a read or write ends the job. |
 | [bindings.rs](../../src-tauri/src/bindings.rs) | The typed command protocol (tauri-specta, pinned exactly in Cargo.toml). `commands()` lists every `#[tauri::command]` of ours (each carries `#[specta::specta]`); their signatures and reply structs (`MetaReply`, `BuildInfo`, ...) are exported to [bindings.ts](../../src/bindings.ts), which the page reaches only through [commands.ts](../../src/commands.ts), and `handler` is the app's one invoke handler for them. [typed-commands.test.mjs](../../../verify/typed-commands.test.mjs) (engine-free, in CI) fails when a page file other than bindings.ts imports or calls `invoke`, and when a `#[tauri::command]` is missing from `commands()` or lacks `#[specta::specta]`. Failed commands reject with their error string, as `invoke` does. Binary replies return `Frame`, exported as `ArrayBuffer`. Reply structs are read from the engine's JSON without denying unknown fields. The generated file is checked in: `cargo test` fails when it is stale; regenerate it with `cd app/src-tauri && IMMAGE_WRITE_BINDINGS=1 cargo test --locked bindings`. To add a command, write it with `#[tauri::command]` and `#[specta::specta]`, list it in `commands()`, regenerate, and call it as `commands.name(...)`. Where the Rust layer reads an engine reply into a struct, the struct must fit the engine's real reply: [`tests/engine-replies/`](../../src-tauri/tests/engine-replies) holds those replies per engine command (`<command>.json`, a list of `{label, reply}`), and `ENGINE_REPLIES` in bindings.rs's tests names each command whose reply is typed and fails when its fixture file is missing or no longer parses. Refresh them after an engine change with `python3 -I verify/engine-protocol.py --fixtures app/src-tauri/tests/engine-replies` (headless, about two minutes; deterministic, so a diff is a real change), then run `cargo test`. The open-photo commands' request and reply types are in [typed_session.rs](../../src-tauri/src/typed_session.rs); free-form parts (a module's parameters by field name) stay maps. The library commands' (folders, import, thumbnails, keywords, capture times, copies, map search) are in [typed_library.rs](../../src-tauri/src/typed_library.rs). The export, print, merge, AI Denoise and presets commands' are in [typed_export.rs](../../src-tauri/src/typed_export.rs), and the masks, spots, Upright, AI selection, looks, film, lens, font and AgX preset commands' in [typed_edit.rs](../../src-tauri/src/typed_edit.rs), and the Immich, Preferences, performance, support bundle and menu commands' in [typed_app.rs](../../src-tauri/src/typed_app.rs) (the backup, plugin and memory budget types sit beside their commands); where a reply's shape follows a request flag (`ai_object`, `ai_mask`) or the page owns a document's shape (mask shapes, presets), that part stays a free-form `Value` inside a typed outer struct. Merges, AI Denoise and the generated positives have no `ok` fixture (they need models or a heavy merge): their `image` is the same listing object as `import`'s. |
 | [Cargo.toml](../../src-tauri/Cargo.toml), [tauri.conf.json](../../src-tauri/tauri.conf.json), [capabilities/](../../src-tauri/capabilities) | Dependencies (each with its reason); windows, bundle resources (`resources/darktable`, `looks`, `sample`); window permissions. |
 
@@ -285,7 +318,7 @@ Commands by what they reach:
 |---|---|
 | The open photo, through the engine | `open_image`, `get_params`, `set_params`, `module_state`, `render`, `cancel_base`, `preview`, `save`, `before_view`, `history`, `masks`, `mask_shapes`, `combine`, `mask_delete`, `mask_rename`, `mask_map`, `range_map`, `sample`, `zones`, `tone_key`, `lenses`, `agx_auto`, `spots`, `spots_enable`, `spot_source`, `look_apply`, `look_amount`, `positive_export`, `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 | The library, through the engine | `open_folder` (engine `import` in batches), `thumb`, `thumb_cached`, `thumb_known`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `create_virtual_copy`, `remove_virtual_copy`, `hdr_merge`, `hdr_can_align`, `pano_merge`, `pano_can_merge`, `trash_files`, `export_images`, `export_cancel`, `export_preview`, `fonts`, `print_photo`, `print_profiles`, `printers`, `printer_info`, `softproof`, `spektra_stocks`, `spektra_fetch`, `ai_accel`, `about` |
-| Files only | `list_subfolders`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `looks_list`, `sample_folder`, `launch_file` |
+| Files only | `list_subfolders`, `create_folder`, `folder_volumes`, `path_exists`, `path_kind`, `export_existing`, `presets_load`, `presets_save`, `export_presets_load`, `export_presets_save`, `looks_list`, `sample_folder`, `launch_file` |
 | Files the user picks (the dialog opens in Rust, so the page never names the path; each returns null or false on cancel) | `export_presets_export`, `export_presets_import`, `shared_import` (presets and looks), `look_export`, `print_profile_add`, `agx_presets_pick`, and the PDF of `print_photo` and `print_sheet` (the page sends only a suggested `pdf_name`, any `pdf` in the request is dropped by `without_pdf`, and the reply carries the chosen path as `pdf`; the capability grants `dialog:allow-open` and `allow-message` but not `allow-save`) (and `agx_presets` for darktable's own data.db). `look_apply`, `look_export` and `look_delete` accept only a path inside the looks folders (`path_inside`) |
 | AI models (download, then the engine's `version`) | `ai_model_ensure`, `ai_model_reinstall` |
 | Immich (HTTP) | `immich_albums`, `immich_create_album`, `immich_export_check`, `immich_browse_check`, `immich_search`, `immich_libraries`, `immich_suggestions`, `immich_people`, `immich_tags`, `immich_thumb`, `immich_resolve` |
@@ -446,6 +479,19 @@ converted by `rotateOf` in manifest.ts as `transformMap.read` does, so
 `tf_upright` and the `tf_base_*` fit stay untouched; it is disabled while
 Upright is on.
 
+Color mapping's acquire buttons (Advanced card, `clusters` marker) are `colormapping_acquire {which, n}`
+(`_cmd_colormapping_acquire`, `cmap_acquire` in [cmapping.c](../../../engine/cmapping.c)). darktable acquires only in
+its GUI: `process()` copies the preview pipe's Lab input into `gui_data`, and `process_clusters()` on the preview
+pipe's finish runs `capture_histogram`, `invert_histogram` and `kmeans` and writes the params. The engine has no
+GUI data, so the command reads the module's input with `masks_working_colormapping` (`_working_at`,
+`_STAGE_COLORMAPPING`: the last enabled piece before colormapping, 768 px on its long side, converted to Lab),
+runs the same three functions (copied, with darktable's `dt_points_get` random start) and replies the clusters and
+a content hash. It writes no params. The card then sets the engine field `cm_source` or `cm_target` to that hash,
+an ordinary `set_params` edit: `cmap_write` restores the arrays and HAS_SOURCE or HAS_TARGET from the sets the
+engine has seen (`_seen`, kept per session), 0 clears them as `gui_changed` does, and `cmap_read` hashes the params'
+arrays. Undo and the card's snapshot therefore carry two numbers rather than 4000 floats. `source_mean[k][j]` and
+the other float2 elements are opaque to introspection, so `cmap_read` and `cmap_write` own those paths too.
+
 [`engine/hdrmerge.c`](../../../engine/hdrmerge.c) is HDR Merge:
 darktable's HDR merge of raw brackets into a float DNG, which darktable
 runs only as a lighttable job on its selection
@@ -550,7 +596,7 @@ match it (`verify/batch-paste.test.mjs`, "a fresh photo renders the same").
 | Session, open, close (session.c) | `session_open_image`, `session_close_session`, `library_import`, `_compress_history` |
 | Set and get params (session.c, masks.c) | `session_set` (fields by introspection, `instance`, `mask`, `after`/`before` moves), `session_get`, `session_write_field`, `masks_named_instance` |
 | Render (session.c) | `session_render` (and the `render` command's `skip`; with `have`, a frame of no size naming the client's frame of the hash it would get), `session_write_rgba`, `session_ppipe_ready`, `session_preview` |
-| Library (library.c) | `library_folder`, `library_import_files` (a tagged `import` on the import thread, `library_import_run`), `library_thumb` (a tagged `thumb` on the thumbnail threads, `library_thumb_run`, routed there by `_read_requests`), `library_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `library_image_json`, `library_meta_set`, `library_keywords_set`, `library_copy`, `library_remove_copy`, `library_sidecars`, `library_forget` (a deleted file's rows, so a new file at its path imports fresh) |
+| Library (library.c) | `library_folder`, `library_import_files` (a tagged `import` on the import thread, `library_import_run`), `library_thumb` (a tagged `thumb` on the thumbnail threads, `library_thumb_run`, routed there by `_read_requests`), ordered by `library_thumb_order` (a `thumb` with `foreground`, the grid culling lightbox's shown photo, first and without `_background_yield()`; grid thumbnails and `meta` next; `analysis_preview` last; first come first served within a rank), `library_prefetch` (raws decoded ahead, a few at once, on a thread pool of its own), `library_image_json`, `library_meta_set`, `library_keywords_set`, `library_copy`, `library_remove_copy`, `library_sidecars`, `library_forget` (a deleted file's rows, so a new file at its path imports fresh) |
 | HDR Merge (export.c) | `export_hdr_merge` (hdrmerge.c's `hdr_merge`, on the export thread when tagged) |
 | Panorama Merge (`HAVE_PANO`, export.c) | `export_pano_merge`, `_pano_frame` (pano.cc's `pano_stitch`, dng.c's `dng_write_linear_half`, on the export thread when tagged) |
 | Export (export.c) | `export_export` (darktable's export with flags, then `strip_metadata` in [strip.cc](../../../engine/strip.cc), with exiv2, for what the flags do not reach: serial numbers, camera info, the source's own text fields and keywords); `_frame_style` (borders and a watermark SVG as a temporary style; a fixed canvas as one last border, sized so the file comes out exactly W x H); the AI upscale proxy format (`_upscale_ctx`) |
@@ -569,9 +615,10 @@ The commands in the `_commands[]` table, each a `_cmd_<name>` handler in main.c 
 | Library (no photo needed) | `folder`, `import`, `thumb`, `prefetch`, `meta`, `meta_set`, `capture_times`, `keywords`, `keywords_set`, `copy`, `remove_copy`, `sidecars`, `forget`, `export`, `export_hold`, `export_release`, `hdr_merge`, `pano_merge` |
 | Backup | `data_backup` (`library_data_backup` in library.c): `VACUUM data INTO` a new file, with darktable's data.db attached as schema `data` |
 | Edit | `set`, `get`, `render`, `preview`, `look`, `look_amount` |
+| Advanced mode (session.c) | `module_schema {op}` (`session_module_schema`): darktable's introspection of a module in the open photo's pipe, so a client draws its parameters without a map: `op`, `name`, `version` (params version), `params_size`, `groups` (default groups), `flags` (`one_instance`, `deprecated`, `hidden`, `supports_blending`, `no_masks`, `no_history`, `no_switch`) and `fields`, the params' leaves in struct order, each with the `path` `set` and `get` take (`exposure`, `look.slope`, `tonecurve_nodes[0]`), `type` (float, int, uint, bool, enum, string, array, ...), `min` and `max` (null: unbounded), `default` (from default_params), `description` (darktable's $DESCRIPTION) and, for an enum, `values` (`name`, `value`, `description`). An array is one entry with `dims`, `element` and, up to 64 numbers, `defaults`; one of structs adds `members` with paths relative to an element (`x` of `curve[1][3].x`) and, up to 64 elements, `member_defaults`: one object per element in row-major order, keyed by those paths (`[{"x":0,"y":0}, ...]`; array and string members are left out). It needs an open photo (`no image open` otherwise) and the module in its pipe (any instance). `instances` (`session_instances`): the open photo's modules in pipe order, each `{ op, priority (multi_priority), name (the user's label, "" for none), hand_edited, enabled, default_enabled, iop_order, owner }`; `owner` is `mask`, `shared` or `look` for the instances Immage's tools manage (`masks_instance_owner`: a mask's own, `immage local: ` shared, `look: `), null for the user's, so a client hides the others. `set` takes `priority` to name an existing instance (0 or absent: the first, as before; an unknown one is an error, as is one with `instance`), and `get` the key `op@N` beside `op#name`. `presets {op, priority}` (`session_presets`): the presets darktable's module preset menu lists for that instance, `{ presets: [{ name, description, builtin, applicable, active }] }` (the library's `data.presets` filtered by this photo's camera, lens and exposure, built-ins last unless `modules/default_presets_first`; `name` keeps darktable's `\|` levels; `applicable` is false for another module version). `module_state` takes `preset` (a name from `presets`) beside `enabled`, `reset` and `restore` (`_apply_preset`: as `dt_gui_presets_apply_preset`, on the session's instance; a preset with a drawn or raster mask is refused). In Rust: `module_schema`, `instances` and `presets` in edit_cmds.rs, `priority` in `ModuleEdit` |
 | Masks and spots | `mask`, `combine`, `masks`, `mask_rename`, `mask_delete`, `mask_map`, `range_map`, `sample`, `spots`, `spots_enable`, `spot_source` |
 | Tone | `tone_key`, `agx_auto`, `zones` |
-| Lens Corrections | `lenses` (`session_lens_menu` in session.c: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick` and `session_read_field` in session.c): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
+| Lens Corrections | `lenses` (`session_lens_menu` in session.c: the matched lens and the camera's Lensfun lenses, from [lenses.cc](../../../engine/lenses.cc), which loads its own lfDatabase the way lens.cc's `init_global()` does); the virtual field `lens_pick` of the `lens` module (`_write_lens_pick` and `session_read_field` in session.c): 0 is the EXIF match (default params), else `lenses_hash()` of the chosen lens, written as the params' `lens` name and `target_geom`, with `method` set to Lensfun (a raw with embedded correction defaults to the embedded method, which ignores the database); 0 restores the default params' three, unless the lens is already the matched one (Simple writes its whole lens map each edit, and `lens_method`, the module's `method`, must survive that); Simple's Correction method (`lens_method`, the `method` field) shows when the photo's default `method` is embedded (`Session.lensEmbedded`). The read-only virtual field `lens_lensfun` (`lenses_has_profile` in lenses.cc: the camera is known and a lens of the default params' name fits it) lets the map's `read` prefer Lensfun for a module never set (`has_been_set` 0, read from the defaults), so the first Simple write carries it; nothing is written at open. Shown by [LensPicker.tsx](../../src/LensPicker.tsx) (`matchLenses` filters by words), which refetches when the photo or the pick changes |
 | AI | `ai_object`, `ai_mask`, `ai_depth`, `ai_denoise`, `ai_denoise_preview` |
 
 It relies on these parts of darktable (paths inside `darktable/`):
@@ -644,7 +691,7 @@ darktable is, and it has AI features when darktable is configured with
    2. Rust polls the output folder and emits `plugin-returned` for each finished file, saved in `plugin-returns.json`.
    3. Opening a returned file applies the plugin's return values, for example lens corrections off after PureRAW.
 9. **Immich browse.**
-   1. `ImmichPanel` searches through `immich_search`.
+   1. App runs Find's Immich search through `immich_search` when `needsSearch` is true.
       The result's FileMenu shows Import Parent Folder only while `immichBase`
       confirms a configured server URL and stored API key. The action is enabled
       when `remote.localPath` is available (disabled otherwise).
@@ -758,6 +805,54 @@ using the `focusMode` prop passed by PreferencesDialog. Focus mode initially
 opens Global only; opening either group closes the other. Alt-click keeps
 both open. With focus mode off, groups toggle independently; Alt-click opens
 one alone (or closes it if it is already the only open group).
+
+[AdvancedPanel.tsx](../../src/AdvancedPanel.tsx) is Advanced editing mode
+(`loadEditMode` / `storeEditMode` in Preferences.tsx; App holds the state and
+passes it to `PanelView` and the Preferences dialog). In Advanced, `PanelView`
+renders `AdvancedGroup` in place of the sliders (same title row, folding and
+Focus mode through `togglePanel`, no More controls icon). App adds the
+Technical group (`TECHNICAL_ID`, open state in `openPanels`) and
+`AdvancedSearch` above the groups. The search and the Technical group are still
+placeholders. Session keeps `instances` (loaded once per photo) and `advanced`,
+each card's darktable fields by `op#priority`. `setField` and
+`setAdvancedEnabled` queue `set_params` with `priority`, which the pump sends
+after Simple's edits and module states; a priority-0 edit rereads Simple's
+sliders, and a Simple edit rereads the cards on that module. Reset uses
+`module_state`, and undo snapshots `advanced` and restores it after module
+states. Headless check: `node --test verify/advanced-modules.test.mjs`.
+
+[InstanceMenu.tsx](../../src/InstanceMenu.tsx) is the card's instance menu. It
+calls the engine's `instance` command with an action: `new`, `duplicate`,
+`rename`, `move`, `delete` or `restore` (undo). `delete` switches the instance
+off and hides it from `instances`; the save drops its history entries. The
+first instance cannot be deleted.
+
+`AdvancedGroup` loads every instance whose op has a layout for the group
+(`layoutFor` in [advancedLayout.ts](../../src/advancedLayout.ts)) and shows a
+card when it is on, `in_history` (the engine's `instances` reply, history up
+to its end) or in `Session.cardsShown` (changed or added this session); cards
+sort by `layoutRank`, the `LAYOUTS` order, stably over pipe order.
+[AddModuleMenu.tsx](../../src/AddModuleMenu.tsx) lists the group's layouts;
+`Session.addModule` switches priority 0 on. `switchable` is darktable's
+`!hide_enable_button`: false greys the entry and the card's switch. Layout
+fields may name an array element (`red[0]`, resolved by `schemaField` in
+ModuleCard.tsx), a notebook `tab` and a `section` heading; a `%` slider over a
+hard range within 10 shows the value times 100, as
+`dt_bauhaus_slider_set_format` does. The card menus share placement and
+dismissal through `useCardMenu` in [cardMenu.ts](../../src/cardMenu.ts). `FAMILIES` in
+AdvancedPanel.tsx groups modules that share a card (the tone mappers): an off
+member hides while another is on, and [FamilySwitch.tsx](../../src/FamilySwitch.tsx)
+calls `Session.switchModule`, the old instance off and the other module's
+priority 0 on. A layout's `choices` names an int field's hand-filled combobox
+(`dt_bauhaus_combobox_add`).
+
+[PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's darktable presets
+menu. It loads the engine's `presets` list when opened (darktable's order,
+shipped presets then the user's, a check on the active one) and applies a pick
+with `Session.applyPreset`, which sends `module_state` with the raw preset name;
+undo restores the instance like a reset. `presetLabel` (presetName.ts) drops
+the `_builtin_` prefix and shows `|` as `›`. The pump reloads `instances` after
+a preset or restore, since darktable relabels the instance from its preset.
 
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
 menu beside a tool's name, for a `MODULE_CHOICES` entry with two or more
@@ -895,6 +990,16 @@ are returned per image; failed recovery keeps the token so Undo can retry.
 Stale undo/redo is checked for the whole target list before any restore. Snapshot
 versions are excluded from library listings and released with their UI entries
 or at engine shutdown. These tokens do not survive an engine restart.
+
+The History card's start over (`startOver` in App.tsx) uses the same tokens
+on the open photo alone: `pauseForPaste`, `begin`, then the engine's
+`history_discard` (`session_history_discard`: darktable's
+`dt_history_delete_on_image_ext` with the auto-applied presets cleared, the
+edited tag off, the sidecar written; refused while the photo is open), then
+`preparePastePhoto` in a background Session for the new-photo defaults, and
+`commit`. Its undo entry carries the token, so `stepHistory` undoes and redoes
+it as a paste. Ctrl+click on compress (`truncateHistory`) only drops the
+client's redo steps; it needs no engine call.
 
 Verification: `node --test --test-isolation=none verify/batch-paste.test.mjs`
 runs production Session/mapping/batch code through `verify/shim.mjs` and the real
@@ -1049,9 +1154,10 @@ folder progress replaces snapshots with current engine metadata.
 `filter.ts::bodyOf` uses a JSON tuple of make, model and complete serial as
 the identity, or the empty string for **Serial not recorded**. `passes`,
 `facets`, `popupCount` and `needsRead` include `bodies`; selections use OR
-within the category and AND with other categories. `FilterPopup.tsx` places
-Camera body below Camera, uses existing draft/Search/Clear semantics and
-faceted counts, and wraps long serial labels. Immich server search is unchanged.
+within the category and AND with other categories. `FindPanel.tsx` places
+Camera body below Camera, applies it live like the other filters with faceted
+counts, and wraps long serial labels. Immich server search is unchanged; Camera body is a local-only category, so a
+Both search marks its chip as hiding Immich results.
 
 Verify with `node --test verify/camera-body.test.mjs` after building the engine.
 The checks cover standard and DNG serial extraction, leading zeros, lens-only
@@ -1220,3 +1326,58 @@ both directions, and resets through a label double-click. Expected mean pixel
 error after reset is below 1/255. See `verify/gui/README.md` for setup, evidence,
 coverage limits and remaining scenarios. Results stay in `verify/results/gui/`;
 fixture originals and the user's running app are not test state.
+
+Local retrieval uses `local_search.rs`, `search_filters.rs` and
+`local_search_cmds.rs`: exact cosine ranking in 256-row batches with a bounded
+page heap, strict known-value filters, component-aware folder/library scopes,
+model-versioned image queries excluding the source asset and its virtual copies,
+and opaque query/revision cursors. Cache changes invalidate pagination; malformed
+vectors are skipped. Metadata-only queries avoid vector reads and model loading.
+A reserved foreground worker shares queue admission while background work is
+paused or blocked. Four request tickets bound overlapping searches; cancellation
+retains admission until work exits and guards publication. Search UI integration
+and automatic embedding generation remain separate work.
+
+Local analysis previews use a separate develop and the thumbnail worker pool.
+`analysis_preview` renders an sRGB JPEG at up to 1024 pixels on the long edge.
+Original analysis passes darktable’s `history_end=0` (no longer queued: only edited
+analyses are, and Find always searches `edited`); edited analysis uses the
+current saved history. Neither path replaces the open editor or writes source
+sidecars. Export metadata’s history switch does not control rendered edits.
+
+`search_analysis.rs` polls locally installed model availability every five seconds
+and submits a bounded keyset scan (32 variants) to the shared background queue.
+Missing metadata is imported on separate bounded jobs after model opt-in;
+startup reconciliation alone does not import photos. Row identity and fingerprint
+compare-and-swap prevent metadata backfill recreating cleared or changed records. Original jobs deduplicate by asset, edited jobs by variant.
+The scan wraps its keyset so failed rows cannot permanently starve later rows.
+Models are verified before any photo import. Live source/edit stamps are checked
+before rendering, after rendering and after inference; database fingerprint and
+queue generation checks guard publication. Inputs and JPEG frames are removed
+on failure as well as success. There is no download in this path. Foreground
+metadata reads refresh disposable metadata, making invalidated rows eligible again.
+
+Precise capture metadata shares `camera_source_metadata`’s existing Exiv2 read
+with body serial extraction. Cached source stamps include subsecond mtime/ctime
+on Unix. JSON carries raw fractional capture text and the recorded UTC offset;
+Rust stores nanosecond instants only when a valid offset exists. The current
+sidecar-adjusted date takes precedence when it differs from the source date.
+
+Manual cache microbenchmarks run with:
+`cargo test --offline --locked --bin immage benchmark_ -- --ignored --nocapture --test-threads=1`
+from `app/src-tauri`. These use disposable synthetic metadata and normalized
+vectors, report first-query and warm medians separately, and state whether the
+build has debug assertions. They isolate cache lookup/listing and retrieval;
+they do not measure model inference, cold filesystem I/O or full folder loading.
+
+Schema 6 invalidates old metadata JSON once to acquire richer capture fields,
+while retaining cache IDs and reusable visual embeddings.
+
+Saved-edit and previous-photo metadata refreshes use background scheduler slots
+independently of optional models, preserving the reserved foreground query slot
+and respecting Pause. Queue keys include each invalidation fingerprint,
+so a post-open refresh is not suppressed by an older save job. Snapshot validation,
+filesystem stamps and JSON preparation happen outside `Job::commit`; only the
+SQLite compare-and-swap runs inside its publication guard. Tagged `meta` uses the
+thumbnail worker pool and background yield; untagged `meta` keeps the normal
+foreground path. Source stat runs before taking the global Exiv2/cache lock.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, reveal, inspect, openTool } from '../support/controls.mjs';
-import { Blocked, panel, expandSections, textButton } from '../support/scenario.mjs';
+import { Blocked, panel, expandSections, textButton, choose } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 
@@ -86,4 +86,33 @@ export async function lensPick(t) {
   const third = await settledPhoto(t, p => p.hash !== second.hash).catch(() => null);
   assert(third, 'Auto changes the picture back');
   assert.equal(third.hash, first.hash, 'Auto restores the first picture');
+}
+
+// Lens Corrections > Demosaic: on an X-Trans raw the Method drop-down lists
+// the X-Trans methods with darktable's default (Markesteijn 1-pass) first
+// and chosen; Markesteijn 3-pass changes the picture and choosing 1-pass
+// again restores it. run it with a Fujifilm RAF as the config's fixture
+const XTRANS = [['Markesteijn 1-pass', '1025'], ['Markesteijn 3-pass', '1026'],
+                ['Frequency domain chroma', '1028'], ['VNG', '1024']];
+export async function demosaicMethod(t) {
+  if (!/\.raf$/i.test(t.fixture.file)) throw new Blocked('Demosaic needs a Fujifilm X-Trans RAF as the fixture');
+  await openTool(t, 'adjust');
+  const root = await panel(t, 'lens');
+  await expandSections(t, root);
+  const select = `${root} [data-control-id="demosaic_method"] select`;
+  const c = await reveal(t, select);
+  assert(!c.disabled, 'the Method drop-down is enabled on a raw');
+  assert.deepEqual(c.options.map(o => [o.label, o.value]), XTRANS, 'the X-Trans methods, the default first');
+  assert.equal(c.value, '1025', 'a new photo is on darktable\'s default');
+  const first = await settledPhoto(t);
+  await t.evidence('demosaic-default');
+  await choose(t, select, '1026');
+  const second = await settledPhoto(t, p => p.hash !== first.hash).catch(() => null);
+  assert(second, 'Markesteijn 3-pass changes the picture');
+  await t.evidence('demosaic-3pass');
+  t.measure({ name: 'demosaic', hashes: [first.hash, second.hash] });
+  await choose(t, select, '1025');
+  const third = await settledPhoto(t, p => p.hash !== second.hash).catch(() => null);
+  assert(third, 'Markesteijn 1-pass changes the picture back');
+  assert.equal(third.hash, first.hash, 'Markesteijn 1-pass restores the first picture');
 }
