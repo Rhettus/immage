@@ -101,9 +101,11 @@ no originals or authoritative edits and can be rebuilt from your photos.
 Metadata caching does not download search models or upload photos; any optional
 local analysis model requires an explicit download choice. Downloaded analysis
 packages are checked before use, and local analysis runs on the CPU.
-**Preferences > General > Local photo cache** shows cache and drive status,
-pauses background checks, clears or rebuilds cached records, and offers the
-optional model download and CPU model check. Clearing preserves model files;
+**Preferences > Performance > Local photo cache** shows cache and drive status,
+pauses background checks, and clears or rebuilds cached records.
+**Preferences > General > Smart search (CLIP)** offers the optional model
+download and CPU model check, and warns that background analysis uses the CPU
+and slows Immage. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
 [Find](#find) searches this cache without an Immich connection. Choose
@@ -350,7 +352,7 @@ Searching the library and narrowing a folder both happen here.
   kept, so Smart returns by itself once the model is on this computer or Immich
   is connected, even for a saved filter that asks for it. While the model is not
   downloaded, a small tip under the search row says so, with **Set up in
-  Preferences**, which opens Preferences > General at the local photo cache card,
+  Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
   and a close button that dismisses the tip for good. The tip also goes away by
   itself once the model is installed.
 - **Search in**: **This folder** or **All folders**. With Immich set up in

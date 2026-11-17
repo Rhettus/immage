@@ -580,6 +580,8 @@
   "library.theme.import": "Importer un thème…",
   "library.theme.remove": "Supprimer le thème",
   "library.cache.title": "Cache photo local",
+  "library.clip.title": "Recherche intelligente (CLIP)",
+  "library.clip.warning": "Pendant que CLIP analyse vos photos en arrière-plan, les performances d’Immage sont réduites, car l’analyse utilise le processeur. Mettez le travail en arrière-plan en pause dans Préférences > Performances pour l’arrêter.",
   "library.cache.metadata": "Métadonnées",
   "library.cache.count": "{photos} photos, {versions} versions ; {records} fiches de métadonnées, {analyses} analyses.",
   "library.cache.unavailable": "Indisponible pour cette session.",

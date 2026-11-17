@@ -580,6 +580,8 @@
   "library.theme.import": "Import theme…",
   "library.theme.remove": "Remove theme",
   "library.cache.title": "Local photo cache",
+  "library.clip.title": "Smart search (CLIP)",
+  "library.clip.warning": "While CLIP analyses your photos in the background, Immage runs slower because the analysis uses the CPU. Pause background work in Preferences > Performance to stop it.",
   "library.cache.metadata": "Metadata",
   "library.cache.count": "{photos} photos, {versions} versions; {records} metadata records, {analyses} analyses.",
   "library.cache.unavailable": "Unavailable for this session.",

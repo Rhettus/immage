@@ -5,11 +5,10 @@ import { commands, type SearchStatus } from "./commands";
 import { PrefCard, PrefRow } from "./PrefsUI";
 import { t } from "./i18n";
 
-export function SearchPrefs() {
+function useSearchStatus() {
   const [status, setStatus] = useState<SearchStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [probe, setProbe] = useState("");
   useEffect(() => {
     let alive = true;
     let polling = false;
@@ -30,12 +29,14 @@ export function SearchPrefs() {
     catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   };
-  const model = status?.model;
+  return { status, busy, error, setError, run };
+}
+
+export function SearchPrefs() {
+  const { status, busy, error, run } = useSearchStatus();
   const queue = status?.queue;
   const count = status?.counts;
-  const downloading = !!model?.downloading;
-  const size = model ? `${Math.ceil(model.bytes / 1_000_000)} MB` : "608 MB";
-  return <PrefCard title={t("library.cache.title")} card="local-search">
+  return <PrefCard title={t("library.cache.title")}>
     <PrefRow label={t("library.cache.metadata")} summary={count ? t("library.cache.count", { photos: count.assets.toLocaleString(), versions: count.variants.toLocaleString(), records: count.metadata.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")}
       hint={t("library.cache.hint")}>
       <button className="btn small" disabled={busy || !count} onClick={() => void run(() => commands.searchCacheClear(false))}>{t("library.cache.clear")}</button>
@@ -46,17 +47,6 @@ export function SearchPrefs() {
       <button className="btn small" disabled={busy || !queue} onClick={() => void run(() => commands.searchPause(!queue!.paused))}>{queue?.paused ? t("library.cache.resume") : t("library.cache.pause")}</button>
     </PrefRow>
     <PrefRow label={t("library.cache.analysis")} summary={count ? t("library.cache.analysedPhotos", { photos: count.analysed_photos.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")} children={null} />
-    <PrefRow label={t("library.cache.model")} summary={downloading ? t("library.cache.downloading") : model?.verified ? t("library.cache.verified") : t("library.cache.notVerified")}
-      hint={t("library.cache.modelHint", { size })}>
-      <button className="btn small" disabled={busy || downloading || !model} onClick={() => void run(() => commands.searchModelDownload(true))}>{t("library.cache.download", { size })}</button>
-      {downloading && <button className="btn small" onClick={() => void commands.searchModelCancel().catch(e => setError(String(e)))}>{t("library.cache.cancel")}</button>}
-    </PrefRow>
-    <PrefRow label={t("library.cache.modelCheck")} summary={probe || t("library.cache.modelCheckHint")}>
-      <button className="btn small" disabled={busy || downloading || !model?.verified || !!queue?.paused} onClick={() => void run(async () => {
-        setProbe(""); const result = await commands.searchModelProbe();
-        setProbe(t("library.cache.probe", { text: result.dimensions, image: result.image_dimensions, timing: result.elapsed_ms === null ? t("library.cache.timingUnavailable") : t("library.cache.elapsed", { ms: Math.round(result.elapsed_ms) }) }));
-      })}>{t("library.cache.check")}</button>
-    </PrefRow>
     {!!status?.roots.length && <div className="cache-directories" role="region" aria-label={t("library.cache.directories")} tabIndex={0}>
       {status.roots.map(root => {
         const connected = root.state === "online";
@@ -72,6 +62,30 @@ export function SearchPrefs() {
         </div>;
       })}
     </div>}
+    {error && <p role="alert" className="prefs-error">{error}</p>}
+  </PrefCard>;
+}
+
+export function ClipPrefs() {
+  const { status, busy, error, setError, run } = useSearchStatus();
+  const [probe, setProbe] = useState("");
+  const model = status?.model;
+  const queue = status?.queue;
+  const downloading = !!model?.downloading;
+  const size = model ? `${Math.ceil(model.bytes / 1_000_000)} MB` : "608 MB";
+  return <PrefCard title={t("library.clip.title")} card="local-search">
+    <PrefRow label={t("library.cache.model")} summary={downloading ? t("library.cache.downloading") : model?.verified ? t("library.cache.verified") : t("library.cache.notVerified")}
+      hint={t("library.cache.modelHint", { size })}>
+      <button className="btn small" disabled={busy || downloading || !model} onClick={() => void run(() => commands.searchModelDownload(true))}>{t("library.cache.download", { size })}</button>
+      {downloading && <button className="btn small" onClick={() => void commands.searchModelCancel().catch(e => setError(String(e)))}>{t("library.cache.cancel")}</button>}
+    </PrefRow>
+    <PrefRow label={t("library.cache.modelCheck")} summary={probe || t("library.cache.modelCheckHint")}>
+      <button className="btn small" disabled={busy || downloading || !model?.verified || !!queue?.paused} onClick={() => void run(async () => {
+        setProbe(""); const result = await commands.searchModelProbe();
+        setProbe(t("library.cache.probe", { text: result.dimensions, image: result.image_dimensions, timing: result.elapsed_ms === null ? t("library.cache.timingUnavailable") : t("library.cache.elapsed", { ms: Math.round(result.elapsed_ms) }) }));
+      })}>{t("library.cache.check")}</button>
+    </PrefRow>
+    <p className="prefs-status warn">{t("library.clip.warning")}</p>
     {(error || model?.error) && <p role="alert" className="prefs-error">{error || model?.error}</p>}
   </PrefCard>;
 }

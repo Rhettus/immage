@@ -11,7 +11,7 @@ import { keys } from "./keys";
 import { AGX_PROFILE_DEFAULT, PROFILE_GROUPS, PROFILE_OPTIONS } from "./manifest";
 import { ThemePrefs } from "./ThemePrefs";
 import { CachePrefs } from "./CachePrefs";
-import { SearchPrefs } from "./SearchPrefs";
+import { SearchPrefs, ClipPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
@@ -891,7 +891,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   ><PrefSwitch checked={stackPairs} onChange={onStackPairs} />
                 </PrefRow>
               </PrefCard>
-              <SearchPrefs />
+              <ClipPrefs />
               <PrefCard title={t("prefs.card.startup")}>
                 <PrefRow id="Quick start guide" label={t("prefs.row.tour")} hint={t("prefs.row.tour.hint")}>
                   <PrefSwitch checked={showTour} onChange={(on) => { setShowTour(on); setTourSeen(!on); }} />
@@ -1075,6 +1075,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                 </PrefRow>
               </PrefCard>
               <CachePrefs />
+              <SearchPrefs />
               <PrefCard title={t("prefs.card.measuring")}>
                 <PrefRow id="Performance overlay" label={t("prefs.row.perfhud")} summary={t("prefs.row.perfhud.summary")}
                          hint={t("prefs.row.perfhud.hint")}>

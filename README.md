@@ -25,9 +25,11 @@ Unchanged folders reuse a disposable [local metadata cache](app/docs/library.md#
 Photos enter the in-memory editing library when an action needs them; cached
 thumbnails can appear without importing the photo. Metadata caching does not
 download search models or upload your photos. Optional local analysis uses
-verified model packages and runs on the CPU. Preferences > General > Local
-photo cache provides status, pause, clear/rebuild and optional model controls,
-with a distinct CLIP photo count and a scrollable directory connection list.
+verified model packages and runs on the CPU. Preferences > Performance > Local
+photo cache provides status, pause and clear/rebuild, with a distinct CLIP photo
+count and a scrollable directory connection list; Preferences > General > Smart
+search (CLIP) has the optional model download and check, and warns that
+background analysis slows Immage.
 Local retrieval keeps selected unknown metadata out of filtered results.
 
 Find (the toolbar's search and filters popup, and in the grid view the right-hand panel) queries cached local metadata without Immich and can

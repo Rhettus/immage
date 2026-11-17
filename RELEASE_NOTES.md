@@ -13,9 +13,13 @@ Improvements
   support masks, undo and Copy Settings.
 - Smart search finds photos by describing them, such as "sunset on a beach",
   using a model that runs on this computer. To turn it on, open Preferences >
-  General, find CLIP model (optional) in the Local photo cache card and press
+  General, find CLIP model (optional) in the Smart search (CLIP) card and press
   Download or repair (about 608 MB), then choose Smart in Find. Until then Find
   searches file names only, and a tip in Find links to the setting.
+  While CLIP analyses photos in the background the card warns that Immage
+  slows down, as the analysis uses the CPU.
+- Preferences > Performance has a Local photo cache card with cache status,
+  background work pause/resume, and clear and rebuild.
 - Find replaces the Search photos card and the Filters popup. The toolbar's
   Find button opens one place for search words, where to search (This folder,
   All folders, or Immich) and every filter, shown as removable chips. In the
