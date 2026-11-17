@@ -118,8 +118,11 @@ within a few seconds and respects Pause; existing results remain searchable.
 Browsing or reading metadata again refreshes invalidated records for analysis.
 After model opt-in, reconciled paths also receive bounded background metadata
 imports before analysis, including unvisited folders. Missing or offline files
-wait for a later pass. Background imports and analysis skip removed and excluded
-folders, including work that was queued before the folder selection changed.
+wait for a later pass. Photos on a network drive are analysed only after two
+minutes without opening or editing a photo, so reading a large file from the
+drive never holds up the photo you open. Background imports and analysis skip
+removed and excluded folders, including work that was queued before the folder
+selection changed.
 Metadata caching without the optional model still fills
 as you browse.
 

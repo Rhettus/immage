@@ -65,6 +65,12 @@ pub struct Link {
     events: Mutex<Arc<dyn Fn(Value) + Send + Sync>>,
     library_ids: Mutex<crate::library_ids::LibraryIds>,
     search_cache: Mutex<Option<Arc<crate::search_cache::SearchCache>>>,
+    // when the user last opened or rendered a photo, in ms after `started`
+    // (0: the app's start). background work that may hold the engine's
+    // import for long, as Smart search reading a network drive, waits for
+    // a quiet spell (Tagged::quiet_for)
+    started: Instant,
+    active_ms: AtomicU64,
 }
 
 impl Link {
@@ -80,6 +86,8 @@ impl Link {
             events: Mutex::new(Arc::new(|_| {})),
             library_ids: Mutex::new(Default::default()),
             search_cache: Mutex::new(None),
+            started: Instant::now(),
+            active_ms: AtomicU64::new(0),
         })
     }
 
@@ -240,6 +248,13 @@ impl Tagged {
 
     pub fn active_photo(&self) -> Option<crate::library_ids::Photo> {
         self.link.library_ids.lock().unwrap().active_photo()
+    }
+
+    // how long since the user last opened or rendered a photo, or since the
+    // app started
+    pub fn quiet_for(&self) -> Duration {
+        let at = Duration::from_millis(self.link.active_ms.load(Ordering::Relaxed));
+        self.link.started.elapsed().saturating_sub(at)
     }
 
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
@@ -932,6 +947,10 @@ impl Engine {
     }
 
     pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
+        if matches!(req.get("cmd").and_then(Value::as_str), Some("open" | "render")) {
+            let ms = self.link.started.elapsed().as_millis() as u64;
+            self.link.active_ms.fetch_max(ms, Ordering::Relaxed);
+        }
         self.tagged().prepare(&mut req, &self.conn)?;
         if self.cache_trace { req["cache_trace"] = json!(true); }
         self.last_id += 1;

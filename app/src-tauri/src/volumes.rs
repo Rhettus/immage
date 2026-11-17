@@ -53,6 +53,9 @@ fn describe(path: &str, online: bool) -> Volume {
 // Mount-table-only identity for background scans: never asks a server.
 pub fn mount_identity(path: &Path) -> Option<String> { drive_of(path).map(|v|v.mount) }
 
+// whether the path is on a network share, from the mount table alone
+pub fn on_network(path: &Path) -> bool { drive_of(path).is_some_and(|v| v.network) }
+
 // how long a drive has to answer, and how long an answer is trusted for
 const DRIVE_WAIT: Duration = Duration::from_secs(3);
 const DRIVE_FRESH: Duration = Duration::from_secs(2);

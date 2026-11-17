@@ -54,6 +54,9 @@ Bug fixes
 - Smart search no longer retries a photo it cannot render (for example a
   panorama DNG in an unsupported format) at every launch, which kept the app
   busy reading it from a network drive; it tries again only if the file changes.
+- Opening a photo no longer waits while Smart search reads a large photo from
+  a network drive: photos there are analysed only after two minutes without
+  opening or editing.
 - In the grid, rating, label and reject keys act on the photos selected, even
   while the photo you clicked is still opening or the open photo is filtered
   out; a second range no longer ignored X.

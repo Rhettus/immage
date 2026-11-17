@@ -77,7 +77,20 @@ pub fn start(
     }
     Control(stop)
 }
+// photos on a network share are analysed only once the user has opened or
+// rendered no photo for this long. importing one there can take a minute
+// (a large DNG over a slow share), and the engine's import, which every
+// photo open also takes, is held while the file is read; an open cannot cut
+// that read short, so it is not started while the user is working
+const SHARE_QUIET: Duration = Duration::from_secs(120);
+
 impl Service {
+    // whether work on this photo waits for a quiet spell (SHARE_QUIET). the
+    // row stays pending and a later scan offers it again
+    fn deferred(&self, path: &str) -> bool {
+        self.engine.quiet_for() < SHARE_QUIET && crate::volumes::on_network(Path::new(path))
+    }
+
     fn scan(self: &Arc<Self>, job: &Job) -> Result<(), String> {
         // Verify the installed package before any lazy photo import/render.
         self.models.prepare_text("")?;
@@ -88,46 +101,72 @@ impl Service {
             .after
             .lock()
             .map_err(|_| "Analysis scan lock poisoned")?;
-        let rows = self.cache.pending_analyses(*after, 32)?;
-        *after = rows.last().map_or(0, |r| r.variant_id);
         let selection = library_selection(&self.runtime);
-        for row in rows {
-            if !selected(Path::new(&row.path), &selection) {
-                continue;
+        let quiet = self.engine.quiet_for();
+        let mut shares = std::collections::HashMap::<PathBuf, bool>::new();
+        // pages of deferred share photos alone are passed over in this scan,
+        // so local photos after them are not held back a scan per page
+        for _ in 0..64 {
+            let rows = self.cache.pending_analyses(*after, 32)?;
+            *after = rows.last().map_or(0, |r| r.variant_id);
+            if rows.is_empty() {
+                break;
             }
-            if row.needs_metadata {
-                let service = self.clone();
-                self.queue
-                    .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
-                        if let Err(e) = service.refresh_metadata(&row, &job) {
-                            eprintln!("local analysis metadata: {e}");
-                        }
-                    });
-                continue;
-            }
-            for subject in ["original", "edited"] {
-                if job.cancelled() || self.stop.load(Ordering::Acquire) {
-                    return Ok(());
-                }
-                if !(if subject == "original" {
-                    row.needs_original
-                } else {
-                    row.needs_edited
-                }) {
+            let mut offered = false;
+            for row in rows {
+                if !selected(Path::new(&row.path), &selection) {
                     continue;
                 }
-                let key = if subject == "original" {
-                    format!("clip:original:{}", row.asset_id)
-                } else {
-                    format!("clip:edited:{}", row.variant_id)
-                };
-                let service = self.clone();
-                let row = row.clone();
-                self.queue.submit(key, move |job| {
-                    if let Err(e) = service.analyze(&row, subject, &job) {
-                        eprintln!("local analysis: {e}");
+                if quiet < SHARE_QUIET {
+                    let dir = Path::new(&row.path)
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_default();
+                    if *shares
+                        .entry(dir)
+                        .or_insert_with(|| crate::volumes::on_network(Path::new(&row.path)))
+                    {
+                        continue;
                     }
-                });
+                }
+                offered = true;
+                if row.needs_metadata {
+                    let service = self.clone();
+                    self.queue
+                        .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
+                            if let Err(e) = service.refresh_metadata(&row, &job) {
+                                eprintln!("local analysis metadata: {e}");
+                            }
+                        });
+                    continue;
+                }
+                for subject in ["original", "edited"] {
+                    if job.cancelled() || self.stop.load(Ordering::Acquire) {
+                        return Ok(());
+                    }
+                    if !(if subject == "original" {
+                        row.needs_original
+                    } else {
+                        row.needs_edited
+                    }) {
+                        continue;
+                    }
+                    let key = if subject == "original" {
+                        format!("clip:original:{}", row.asset_id)
+                    } else {
+                        format!("clip:edited:{}", row.variant_id)
+                    };
+                    let service = self.clone();
+                    let row = row.clone();
+                    self.queue.submit(key, move |job| {
+                        if let Err(e) = service.analyze(&row, subject, &job) {
+                            eprintln!("local analysis: {e}");
+                        }
+                    });
+                }
+            }
+            if offered {
+                break;
             }
         }
         Ok(())
@@ -136,7 +175,9 @@ impl Service {
         if job.cancelled() || self.stop.load(Ordering::Acquire) {
             return Ok(());
         }
-        if !selected(Path::new(&row.path), &library_selection(&self.runtime)) {
+        if !selected(Path::new(&row.path), &library_selection(&self.runtime))
+            || self.deferred(&row.path)
+        {
             return Ok(());
         }
         let version = version(&row.copy_key)?;
@@ -181,7 +222,9 @@ impl Service {
         if job.cancelled() || self.stop.load(Ordering::Acquire) {
             return Ok(());
         }
-        if !selected(Path::new(&row.path), &library_selection(&self.runtime)) {
+        if !selected(Path::new(&row.path), &library_selection(&self.runtime))
+            || self.deferred(&row.path)
+        {
             return Ok(());
         }
         let version = version(&row.copy_key)?;
