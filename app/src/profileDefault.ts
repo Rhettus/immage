@@ -21,7 +21,9 @@ const LENS_METHOD_KEY = "immage.newPhotosLensMethod";
 export const LENS_METHOD_LENSFUN = 1, LENS_METHOD_EMBEDDED = 0;
 export function loadNewPhotosLensMethod(): number {
   try {
-    return Number(settings.get(LENS_METHOD_KEY)) === LENS_METHOD_EMBEDDED ? LENS_METHOD_EMBEDDED : LENS_METHOD_LENSFUN;
+    // unset reads as Lensfun: Number(null) is 0, Embedded's value
+    const v = settings.get(LENS_METHOD_KEY);
+    return v !== null && Number(v) === LENS_METHOD_EMBEDDED ? LENS_METHOD_EMBEDDED : LENS_METHOD_LENSFUN;
   } catch { return LENS_METHOD_LENSFUN; }
 }
 export function storeNewPhotosLensMethod(value: number): void {

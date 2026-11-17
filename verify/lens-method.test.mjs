@@ -84,3 +84,15 @@ test('a photo without embedded data keeps Lensfun', () => {
   const lf = { ...unset, method: 1 };
   assert.equal(method(lf, lf), 1);
 });
+
+test('the New Photos lens method defaults to Lensfun until one is chosen', async () => {
+  const { settings, ready } = await import('../app/src/settings.ts');
+  await ready;
+  const D = await import('../app/src/profileDefault.ts');
+  assert.equal(D.loadNewPhotosLensMethod(), D.LENS_METHOD_LENSFUN);
+  D.storeNewPhotosLensMethod(D.LENS_METHOD_EMBEDDED);
+  assert.equal(D.loadNewPhotosLensMethod(), D.LENS_METHOD_EMBEDDED);
+  D.storeNewPhotosLensMethod(D.LENS_METHOD_LENSFUN);
+  assert.equal(D.loadNewPhotosLensMethod(), D.LENS_METHOD_LENSFUN);
+  assert.ok(settings);
+});
