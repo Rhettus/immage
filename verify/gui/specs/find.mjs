@@ -27,6 +27,22 @@ const chips = t => t.driver.observe(() => [...document.querySelectorAll('.find-c
   category: c.querySelector('.find-chip-cat')?.textContent.trim(), text: c.querySelector('.find-chip-text')?.textContent.trim() ?? '' })));
 const findClass = (t, name) => t.driver.observe(n => document.querySelector('.find-button')?.classList.contains(n), name);
 
+// flip a General preference switch by its row (PrefRow's data-pref-label)
+async function preference(t, label, on) {
+  // a click landing while an auto-hide column slides can go unanswered: try again
+  for (let i = 0; i < 3 && !await present(t, '.prefs'); i++) {
+    await click(t, 'button[data-tour="prefs"]');
+    try { await until(() => present(t, '.prefs'), 'Preferences', 3000); } catch (e) { if (i === 2) throw e; }
+  }
+  const row = `.prefs [data-pref-label="${label}"] input.switch`;
+  if (!await present(t, row)) await textButton(t, '.prefs-tabs', 'General');
+  await until(() => present(t, row), `the ${label} switch`);
+  if (await t.driver.observe(s => document.querySelector(s).checked, row) !== on) await click(t, row);
+  await until(async () => await t.driver.observe(s => document.querySelector(s).checked, row) === on, `${label} ${on ? 'on' : 'off'}`);
+  await textButton(t, '.prefs-foot', 'Done');
+  await until(async () => !await present(t, '.prefs'), 'Preferences closes');
+}
+
 async function openFind(t) {
   if (!await present(t, pop)) await click(t, '.find-button');
   await until(() => present(t, pop), 'Find popup');
@@ -154,6 +170,44 @@ export async function findLive(t) {
   assert.equal(await count(t, cells), 1, 'Escape keeps the filter');
   await click(t, '.toolbar .clear-filters');
   await until(async () => await count(t, cells) === all, 'clearing the filters restores the grid');
+
+  // 5. Clear all clears the search words as well as the filters
+  await click(t, `${pop} .find-text`);
+  await t.driver.keys(...'zzznomatch', ENTER);
+  await until(async () => await count(t, cells) === 0, 'words that match nothing empty the grid');
+  assert(!await t.driver.observe(s => document.querySelector(s).disabled, `${pop} .find-clear-all`), 'Clear all is enabled by the words alone');
+  await click(t, `${pop} .find-clear-all`);
+  await until(() => t.driver.observe(s => document.querySelector(s).value === '', `${pop} .find-text`), 'Clear all empties the search box');
+  await until(async () => await count(t, cells) === all, 'Clear all restores the grid');
+
+  // 6. with auto-hide, the column's pin sits on the search row, at its end
+  await preference(t, 'Auto-hide panels', true);
+  try {
+    await until(() => present(t, `${pop} .find-head .pin`), 'the pin in the Find column');
+    const g = await t.driver.observe(s => {
+      const box = q => document.querySelector(`${s} ${q}`).getBoundingClientRect();
+      const head = document.querySelector(`${s} .find-head`), cs = getComputedStyle(head), h = head.getBoundingClientRect();
+      const pin = box('.find-head .pin'), text = box('.find-text');
+      return { pinMid: pin.top + pin.height / 2, textMid: text.top + text.height / 2, pinRight: pin.right,
+               textRight: text.right, pinLeft: pin.left, end: h.right - parseFloat(cs.paddingRight) };
+    }, pop);
+    assert(Math.abs(g.pinMid - g.textMid) <= 1, `the pin is centered on the search row (${g.pinMid} vs ${g.textMid})`);
+    assert(g.pinLeft >= g.textRight, 'the pin follows the search box');
+    assert(Math.abs(g.pinRight - g.end) <= 1, `the pin ends the row (${g.pinRight} vs ${g.end})`);
+    // pinned, the column stays shown for the picture: rest on the rail to bring it in first
+    const rail = await rectOf(t, '.rail');
+    await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
+    await until(() => t.driver.observe(s => document.querySelector(s).getBoundingClientRect().right <= innerWidth,
+      `${pop} .find-head .pin`), 'the column comes in from the rail', 5000);
+    await click(t, `${pop} .find-head .pin`);
+    await until(() => present(t, `${pop} .find-head .pin.on`), 'the right column pinned');
+    await pause(400);
+    await t.evidence('find-live-pin');
+    await click(t, `${pop} .find-head .pin`);
+    await until(async () => !await present(t, `${pop} .find-head .pin.on`), 'the right column unpinned');
+  } finally {
+    await preference(t, 'Auto-hide panels', false);
+  }
 
   // the toolbar's Find button focuses the box of the column that is already there
   await click(t, '.toolbar .find-button');
@@ -305,7 +359,9 @@ export async function findSaved(t) {
   const back = await chips(t);
   const rating = back.find(c => c.category === 'Rating & flags');
   assert(rating, 'the rating chip is back');
-  assert(rating.text.includes('3 stars and up') && rating.text.includes('Edited'), `the updated filter was applied (${rating.text})`);
+  const edits = back.find(c => c.category === 'Edit status');
+  assert(rating.text.includes('3 stars and up') && edits?.text.includes('Edited'),
+    `the updated filter was applied (${rating.text}; ${edits?.text})`);
   assert.equal(await t.driver.observe(() => document.querySelector('.find-pop .saved-line .saved-name')?.textContent), 'Find test',
     'the saved name shows');
   await t.evidence('find-saved-applied');
@@ -383,7 +439,8 @@ export async function findNoClip(t) {
       .filter(i => i.h > 0 && i.right > i.left);
     return { column: { left: column.left, right: column.right }, box: { top: box.top, bottom: box.bottom }, items };
   }, head);
-  assert(row.items.length >= 2, 'the search box and the Saved menu are in the row');
+  // saved filters live in the footer (Load filter); the pin joins this row only with auto-hide
+  assert(row.items.some(i => /find-text/.test(i.cls)), 'the search box is in the row');
   // a wrapped row has one centre line per line: group by line, and each line must agree within 1px
   const lines = [];
   for (const i of row.items) {
