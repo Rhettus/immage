@@ -75,6 +75,8 @@ Performance
 
 Bug fixes
 
+- The Library column no longer stays scrolled past its end when a card such as
+  History folds or gets shorter, leaving blank space below the cards.
 - Delete Rejected Photos works on a network drive, and says the photos will be
   deleted permanently.
 - A photo that fails to open no longer leaves the editor stuck, and clicking
