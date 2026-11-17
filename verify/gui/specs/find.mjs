@@ -180,31 +180,32 @@ export async function findLive(t) {
   await until(() => t.driver.observe(s => document.querySelector(s).value === '', `${pop} .find-text`), 'Clear all empties the search box');
   await until(async () => await count(t, cells) === all, 'Clear all restores the grid');
 
-  // 6. with auto-hide, the column's pin sits on the search row, at its end
+  // 6. the column has a Find title like the other panels; with auto-hide its pin ends that row
+  assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-head h1`)?.textContent, pop), 'Find', 'the column is titled Find');
   await preference(t, 'Auto-hide panels', true);
   try {
-    await until(() => present(t, `${pop} .find-head .pin`), 'the pin in the Find column');
+    await until(() => present(t, `${pop} .panel-head .pin`), 'the pin in the Find title row');
     const g = await t.driver.observe(s => {
       const box = q => document.querySelector(`${s} ${q}`).getBoundingClientRect();
-      const head = document.querySelector(`${s} .find-head`), cs = getComputedStyle(head), h = head.getBoundingClientRect();
-      const pin = box('.find-head .pin'), text = box('.find-text');
-      return { pinMid: pin.top + pin.height / 2, textMid: text.top + text.height / 2, pinRight: pin.right,
-               textRight: text.right, pinLeft: pin.left, end: h.right - parseFloat(cs.paddingRight) };
+      const head = document.querySelector(`${s} .panel-head`), cs = getComputedStyle(head);
+      const pin = box('.panel-head .pin'), title = box('.panel-head h1');
+      return { pinMid: pin.top + pin.height / 2, titleMid: title.top + title.height / 2, pinRight: pin.right,
+               end: head.getBoundingClientRect().right - parseFloat(cs.paddingRight), inRow: !document.querySelector(`${s} .find-head .pin`) };
     }, pop);
-    assert(Math.abs(g.pinMid - g.textMid) <= 1, `the pin is centered on the search row (${g.pinMid} vs ${g.textMid})`);
-    assert(g.pinLeft >= g.textRight, 'the pin follows the search box');
-    assert(Math.abs(g.pinRight - g.end) <= 1, `the pin ends the row (${g.pinRight} vs ${g.end})`);
+    assert(g.inRow, 'the pin is not in the search row');
+    assert(Math.abs(g.pinMid - g.titleMid) <= 2, `the pin is centered on the title (${g.pinMid} vs ${g.titleMid})`);
+    assert(Math.abs(g.pinRight - g.end) <= 1, `the pin ends the title row (${g.pinRight} vs ${g.end})`);
     // pinned, the column stays shown for the picture: rest on the rail to bring it in first
     const rail = await rectOf(t, '.rail');
     await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
     await until(() => t.driver.observe(s => document.querySelector(s).getBoundingClientRect().right <= innerWidth,
-      `${pop} .find-head .pin`), 'the column comes in from the rail', 5000);
-    await click(t, `${pop} .find-head .pin`);
-    await until(() => present(t, `${pop} .find-head .pin.on`), 'the right column pinned');
+      `${pop} .panel-head .pin`), 'the column comes in from the rail', 5000);
+    await click(t, `${pop} .panel-head .pin`);
+    await until(() => present(t, `${pop} .panel-head .pin.on`), 'the right column pinned');
     await pause(400);
     await t.evidence('find-live-pin');
-    await click(t, `${pop} .find-head .pin`);
-    await until(async () => !await present(t, `${pop} .find-head .pin.on`), 'the right column unpinned');
+    await click(t, `${pop} .panel-head .pin`);
+    await until(async () => !await present(t, `${pop} .panel-head .pin.on`), 'the right column unpinned');
   } finally {
     await preference(t, 'Auto-hide panels', false);
   }

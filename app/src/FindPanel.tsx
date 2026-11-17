@@ -266,7 +266,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   // full body, with no size buttons, grip or Escape/click-away closing
   locked?: boolean;
   clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
-  pin?: React.ReactNode;        // locked: the right panel's pin button (auto-hide), in the head row
+  pin?: React.ReactNode;        // locked: the right panel's pin button (auto-hide), in the title row
   focusToken?: number;          // a change focuses the search box (the toolbar's Find button in the grid)
 }) {
   const pop = useRef<HTMLDivElement>(null);
@@ -573,6 +573,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     <div className={`find-pop${locked ? " locked" : ""}`} ref={pop} role="dialog" aria-label={t("library.find.title")}
          data-size={size}
          style={locked ? undefined : { left: at.left, top: at.top, width: at.width, ...(size === "minimize" ? {} : { height: at.height }) }}>
+      {locked && <div className="panel-head"><h1>{t("library.find.title")}</h1>{pin && <div className="head-tools">{pin}</div>}</div>}
       <div className="find-head" data-analysis={analysis ? "" : undefined}>
         <div className="find-row">
           {!locked && <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>}
@@ -586,7 +587,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                    else if (e.key === "Escape" && locked) e.currentTarget.blur();
                  }} />
           {analysis && <AnalysisStatus />}
-          {locked && pin}
           {size === "minimize" && <span className="find-count find-mincount">{countText}</span>}
           {!locked && <div className="find-sizes">
             {SIZES.map((z) => (

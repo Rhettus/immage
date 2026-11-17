@@ -432,9 +432,10 @@ empty and the stars and ticks filter the folder you open.
 
 ### Find in the grid
 
-In the grid, Find is not a popup. It fills the right-hand panel with the
-**Dock** layout (search, every filter, chips and the footer's saved filters), locked in
-place: it has no size buttons, cannot be dragged and has no close button, and
+In the grid, Find is not a popup. It fills the right-hand panel, titled
+**Find** like the other panels (with auto-hide on, the pin is at the end of
+the title row), with the **Dock** layout (search, every filter, chips and the
+footer's saved filters), locked in place: it has no size buttons, cannot be dragged and has no close button, and
 Esc does not close it. Esc in its search box leaves the box; Esc again leaves
 the grid, as it does anywhere else. The toolbar's **Find** button shows the
 panel if it was hidden (or slid away by auto-hide) and puts the cursor in the

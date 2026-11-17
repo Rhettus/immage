@@ -2077,8 +2077,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .find-pop[data-size="dock"] .find-text { flex-basis: calc(100% - 28px); }
 /* locked: the grid's right-hand panel, in its column and not over the grid */
 .find-pop.locked { position: static; z-index: auto; flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; background: none; }
-.find-pop.locked .find-head { padding-inline: 12px; }
-/* locked: the search box shares its row with the pin (auto-hide) and the analysis indicator */
+.find-pop.locked .find-head { padding-inline: 12px; padding-block-start: 0; }
+/* locked: the search box shares its row with the analysis indicator; the pin is in the title row */
 .find-pop.locked .find-text { flex: 1 1 0; min-width: 0; }
 .find-tip {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: var(--inset);
@@ -2091,9 +2091,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   background: none; border: none; border-radius: 5px; color: var(--text-3); font-size: 16px; line-height: 1; cursor: pointer;
 }
 .find-tip-close:hover { background: var(--hover); color: var(--text); }
-.find-pop .pin.on { color: var(--accent); }
 /* the head's first row: every control the same height, centered on one line, the
-   search box flexing, and what ends the row (the pin, the size buttons) at the inline end */
+   search box flexing, and what ends the row (the size buttons) at the inline end */
 .find-head > .find-row:first-child { --find-ctl: 28px; align-items: center; row-gap: 8px; }
 .find-head > .find-row:first-child > :is(.field, .tool, .find-sizes, .find-size) { height: var(--find-ctl); box-sizing: border-box; }
 /* the footer: one line, every button the same height, the count truncating first */
@@ -2104,7 +2103,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   font-size: var(--fs-small); cursor: pointer;
 }
 .find-foot .saved-menu-button:hover, .find-foot .saved-menu-button.on { background: var(--hover); }
-.find-head .pin { flex: none; margin-inline-start: auto; }
 
 /* Find's analysis indicator (AnalysisStatus.tsx): the search row's last control */
 .analysis-status {
