@@ -69,7 +69,7 @@ so if your server redirects (for example from `http` to `https`), enter the
 final address; otherwise Immage tells you the server redirected the request.
 Existing setups keep working without entering the key again.
 
-![Preferences, Immich tab, after a successful test](images/immich-prefs.png)
+![Preferences, Immich tab, with the path settings filled in](images/immich-prefs.png)
 <!-- screenshot: Preferences > Immich, Server card filled in, Test result showing the version and key -->
 
 ### 3. Duplicates during import (optional)
@@ -147,7 +147,6 @@ configuring an Immich server and key, **Search in** offers **Immich** and
 and **All folders**. Local search remains available without a server; see
 [Library](library.md#find).
 
-![Immich search in Find](images/immich-search.png)
 <!-- screenshot: Find popup docked beside the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, one person ticked under People as a chip -->
 
 - The **Immich library** picker chooses what to search: **External libraries**
