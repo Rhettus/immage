@@ -17,6 +17,7 @@ import {
 } from "./findModel";
 import { StarIcon } from "./icons";
 import type { ImageEntry } from "./library";
+import { AnalysisStatus } from "./AnalysisStatus";
 import { fileKind, LABEL_COLORS } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
@@ -243,12 +244,13 @@ const GROUP_TITLE: Record<(typeof GROUPS)[number], () => string> = {
 };
 
 export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, onShow, onClose, saved, savedLine,
-                            onSaveNew, anchor, bounds, locked, focusToken, pin, smart, clipTip }: {
+                            onSaveNew, anchor, bounds, locked, focusToken, pin, smart, analysis, clipTip }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
   images: ImageEntry[];         // photos to list facets from (folder, or local results)
   immichAvailable: boolean;     // Immich configured
+  analysis?: boolean;           // the CLIP model is installed: show the analysis indicator
   smart: boolean;               // photo-content search can run (CLIP model or Immich); else file names only
   count: number | null;         // live result count, null while unknown
   busy: boolean;                // a search is running
@@ -571,7 +573,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     <div className={`find-pop${locked ? " locked" : ""}`} ref={pop} role="dialog" aria-label={t("library.find.title")}
          data-size={size}
          style={locked ? undefined : { left: at.left, top: at.top, width: at.width, ...(size === "minimize" ? {} : { height: at.height }) }}>
-      <div className="find-head">
+      <div className="find-head" data-analysis={analysis ? "" : undefined}>
         <div className="find-row">
           {!locked && <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>}
           <input className="field find-text" type="search" spellCheck={false} autoFocus={!locked} ref={text} value={s.text}
@@ -583,6 +585,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                    // locked, Escape only leaves the box: the next one leaves the grid, as it does elsewhere
                    else if (e.key === "Escape" && locked) e.currentTarget.blur();
                  }} />
+          {analysis && <AnalysisStatus />}
           {locked && pin}
           {size === "minimize" && <span className="find-count find-mincount">{countText}</span>}
           {!locked && <div className="find-sizes">

@@ -6204,7 +6204,7 @@ export default function App() {
   useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
   const renderFind = (locked: boolean) => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-              smart={smartAvailable(clipReady, !!immichBase)}
+              smart={smartAvailable(clipReady, !!immichBase)} analysis={clipReady}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },

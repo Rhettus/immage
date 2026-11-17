@@ -468,7 +468,9 @@ that follows the optional CLIP model (see Smart search (CLIP) in General).
   Neither action changes your photos or sidecars. Model files are retained.
 - **Pause / Resume** controls new background file checks and analysis. Active
   work finishes, and browsing remains available. The pause setting is remembered
-  after relaunch. A rebuild remains queued while paused.
+  after relaunch. A rebuild remains queued while paused. The analysis icon at
+  the end of Find's search box is the same pause: clicking it pauses or resumes
+  here too.
 - Each saved drive shows its last check state, including offline or incomplete
   checks. An offline drive is never treated as evidence that photos were deleted.
 

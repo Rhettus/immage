@@ -354,6 +354,13 @@ Searching the library and narrowing a folder both happen here.
   Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
   and a close button that dismisses the tip for good. The tip also goes away by
   itself once the model is installed.
+- **Analysis icon**: once the model is downloaded, an icon at the end of the
+  search box shows Smart search's background analysis of your photos. A
+  spinning arc with a number means photos are being analysed and shows how many
+  are waiting (up to 99+); a pause symbol means analysis is paused; a check means
+  every photo is analysed. Hover it for the details. Click it to pause or
+  resume, the same pause as **Pause / Resume** in Preferences > General >
+  Background work. The icon is not shown before the model is downloaded.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.

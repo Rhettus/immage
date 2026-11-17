@@ -24,6 +24,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::local_search_cmds::local_search_cancel,
         crate::local_search_cmds::local_search_seed,
         crate::search_cmds::search_pause,
+        crate::search_cmds::search_queue,
         crate::search_cmds::search_cache_clear,
         crate::clip_models::search_model_status,
         crate::clip_infer::search_model_probe,

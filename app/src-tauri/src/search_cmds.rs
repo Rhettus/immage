@@ -36,6 +36,14 @@ pub async fn search_status(state: State<'_, AppState>) -> Result<SearchStatus, S
     .await
     .map_err(|e| e.to_string())?
 }
+/// The analysis queue's counts and pause state, for Find's indicator to poll.
+/// Sync on purpose: it only copies in-memory state under the queue's own mutex
+/// (no file, SQLite or network work), unlike `search_status`.
+#[tauri::command]
+#[specta::specta]
+pub fn search_queue(state: State<'_, AppState>) -> analysis_queue::Status {
+    state.analysis_queue.status()
+}
 #[tauri::command]
 #[specta::specta]
 pub async fn search_pause(
