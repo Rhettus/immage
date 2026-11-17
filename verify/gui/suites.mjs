@@ -98,6 +98,7 @@ export const cases = {
     verification: 'Linux, system WebKitGTK, Wayland, fixture 2EM10375.ORF, empty workspace 9 floating/maximized, original workspace restored; both boxes shaded with their heading, 2 then 8 full-layout rows, gap before Base detail level. Run 2026-11-14T03-57-46.979Z_ccb89ce_5726ba9e (uncommitted tree).',
     limitation: 'Global Presence only; the masks panel shares detailRows. Layout and labels, not slider values.' },
   'panel-scroll': { scope: 'each right panel tool keeps its own scroll offset; a first open starts at the top', commits: ['81d4441'], liveValidated: true },
+  'left-scroll': { scope: 'the left column clamps its scroll offset when its content shrinks (History folded, #41)', commits: [], liveValidated: true },
   sliders: { scope: 'currently mounted sliders in available manifest panels; drag and reset', liveValidated: false,
     limitation: 'Hidden tabs/sections/module choices and RAW-only controls require further scenarios. Pixel changes are recorded for review, not universal image-effect assertions.' },
   'module-options': { scope: 'each Global/Masks preference option and independent Contrast choices', liveValidated: false,

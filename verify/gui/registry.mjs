@@ -10,7 +10,7 @@ import { negativeProfileMemory } from './specs/negative-profile-memory.mjs';
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { startup, exposure, splash } from './specs/smoke.mjs';
-import { sliderInput, sliderClick, history, rail, sliders, panelScroll } from './specs/controls.mjs';
+import { sliderInput, sliderClick, history, rail, sliders, panelScroll, leftScroll } from './specs/controls.mjs';
 import { moduleOptions, preferencesHelp } from './specs/preferences.mjs';
 import { batchPaste } from './specs/batch-paste.mjs';
 import { guiBenchmark } from './specs/benchmark.mjs';
@@ -70,6 +70,7 @@ import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
+  'left-scroll': leftScroll,
   'panel-peek': panelPeek,
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,

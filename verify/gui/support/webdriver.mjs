@@ -80,7 +80,7 @@ export class AppDriver {
       actions: [{ type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) }] }] });
   }
   async modifiedPoint(modifier, x, y) {
-    if (!['\uE008', '\uE009', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
+    if (!['\uE008', '\uE009', '\uE00A', '\uE03D'].includes(modifier)) throw Error('Unsupported pointer modifier');
     await this.guard();
     this.log({ action: 'modified-click', modifier, x, y });
     try {

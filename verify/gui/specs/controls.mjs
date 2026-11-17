@@ -160,6 +160,57 @@ export async function panelScroll(t) {
   await t.evidence('adjustments-reopened');
 }
 
+// The left column scrolls like the right panels: when its content shrinks
+// (here History folded) its offset must not stay past the new end, or the
+// column is left blank below its cards (#41)
+export async function leftScroll(t) {
+  const left = () => { const p = document.querySelector('aside.left'), r = p?.getBoundingClientRect();
+    return r && { x: r.left + r.width / 2, y: r.top + 40, top: p.scrollTop, room: p.scrollHeight - p.clientHeight,
+      rows: document.querySelectorAll('.panel.history .history-list li').length }; };
+  // a fresh profile starts with History folded; in focus mode (the default)
+  // opening it folds the other cards
+  const head = await t.driver.observe(() => { const e = document.querySelector('.panel.history > .panel-title'); const r = e?.querySelector('span')?.getBoundingClientRect();
+    return e && r && { open: e.classList.contains('open'), x: r.left + 10, y: r.top + r.height / 2 }; });
+  if (head && !head.open) { await t.driver.point(head.x, head.y); await pause(500); }
+  // Alt+click adds Metadata beside it (focus mode's additive click), so the
+  // column is taller than the window
+  const meta = await t.driver.observe(() => { const e = document.querySelector('.panel.metadata > .panel-title'); const r = e?.querySelector('span')?.getBoundingClientRect();
+    return e && r && { open: e.classList.contains('open'), x: r.left + 10, y: r.top + r.height / 2 }; });
+  if (meta && !meta.open) { await t.driver.modifiedPoint('\uE00A', meta.x, meta.y); await pause(500); }
+  await basic(t);
+  const selector = rangeSelector('exposure');
+  for (let i = 0; i < 14; i++) {
+    const s = await reveal(t, selector);
+    const at = v => ({ x: s.bounds.x + 8 + (s.bounds.width - 16) * (v - s.min) / (s.max - s.min), y: s.y });
+    await t.driver.drag(at(+s.value), at(i % 2 ? -.5 : .5 + i * .05));
+    await pause(350);
+  }
+  await settledPhoto(t);
+  const toEnd = async () => {
+    let s = await t.driver.observe(left);
+    for (let i = 0; i < 12 && s.top < s.room - 1; i++) { await t.driver.wheel(s.x, s.y, 400); await pause(150); s = await t.driver.observe(left); }
+    return s;
+  };
+  let s = await toEnd();
+  t.measure({ name: 'filled', ...s });
+  if (s.room < 150) throw new Blocked(`left column too short to scroll (${s.room}px)`);
+  assert(s.top >= s.room - 1, `left column scrolled to its end (${s.top} of ${s.room})`);
+  const results = [];
+  const check = async name => {
+    await pause(800);
+    const a = await t.driver.observe(left);
+    const r = { name, ...a, stale: a.top > a.room + 1 };
+    t.measure(r); results.push(r);
+    await t.evidence(name);
+  };
+  // fold History by its name, clear of the header's buttons
+  const title = await t.driver.observe(() => { const e = document.querySelector('.panel.history > .panel-title > span')?.getBoundingClientRect();
+    return e && { x: e.left + 10, y: e.top + e.height / 2 }; });
+  await t.driver.point(title.x, title.y);
+  await check('history-folded');
+  for (const r of results) assert(!r.stale, `${r.name}: left column offset ${r.top} past its end ${r.room}`);
+}
+
 // Walk all mounted manifest panels and their currently reachable range controls.
 // Conditional tabs/modules, RAW-only and masks need separate prerequisite cases.
 export async function sliders(t) {
