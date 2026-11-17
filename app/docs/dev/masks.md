@@ -47,13 +47,27 @@ colorful background is built so its feather stops at that color; see
 [Selections over a plain background](#selections-over-a-plain-background).
 
 Color and luminance ranges are not drawn shapes. The engine builds them as
-darktable converts a classic parametric mask: one parametric element per
-channel, multiplied with the mask's shapes in a flexi product group named
-`immage ranges: <mask>` (`_set_ranges_group`). The instances that blend in
-scene-referred RGB, where the ranges were measured, take that group; the
+darktable converts a classic parametric mask, in a flexi product group named
+`immage ranges: <mask>` (`_set_ranges_group`). Its members are the mask's shapes
+group, when it has shapes, and a **channels group** (`immage channels: <mask>`,
+a product group too) holding one parametric element per channel, so the ranges
+stay r = hue x chroma x ... The group's value is S x r. The instances that blend
+in scene-referred RGB, where the ranges were measured, take that group; the
 rest take the shapes alone (`_apply_ranges`). The refinements
 (feather, blur, detail, contrast) are blend parameters in the same way. The
 mask's Opacity slider is each instance's opacity.
+
+**Invert.** Without ranges (and on modules that drop them) an inverted mask
+sets `DEVELOP_COMBINE_MASKS_POS`, giving 1 - S. With ranges that would give
+1 - S x r, which turns a shape shown as taking away into everything outside it
+(the page shows an inverted mask's shape modes flipped, `flipMode`, which is
+exact for 1 - S). So `_apply_ranges` instead sets `DT_MASKS_STATE_INVERSE` on both
+members of the ranges group: (1 - S) x (1 - r), the shapes as shown inside the
+inverted range. `maskAt` and `overlayPixels` in masks.ts compute the same.
+`_instance_inverted` reads the new form, and an older edit's flat channel members
+with `MASKS_POS`; the next `masks` call rebuilds those to the new layout.
+`masks_attach_mask` invalidates the pipe caches, as the members' state is
+not in a piece's cache hash. `verify/mask-invert-ranges.py` checks the formulas.
 
 ## Selections over a plain background
 
@@ -132,11 +146,9 @@ On a stilt over water, the mask 1-3 px outside the edge fell from 49% to
 to 80%. Blurring or feathering the hue shape cleared the speckle but gave
 the halo back, which is why the limits keep such photos out instead.
 
-darktable evaluates the hue shape with the module's own `mask_combine`
-(`masks/parametric.c`). An inverted mask with ranges (`DEVELOP_COMBINE_INV`)
-would invert the shape too, so `_backdrop_polarity` flips its channel to
-match. Such a mask shares no instance (`canMerge`), so every instance of it
-agrees.
+darktable evaluates the hue shape with the module's own blend parameters
+(`masks/parametric.c`), which `_apply_ranges` never inverts, so its own channel
+takes the color out.
 
 ## The adjustments: one instance per module
 

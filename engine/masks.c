@@ -83,6 +83,7 @@ static dt_masks_form_t *_combined_group(const char *name)
 // mask's: the instances blending in scene-referred RGB, where the ranges
 // were measured, take that one, and the rest the shapes alone
 #define _RANGES_PREFIX "immage ranges: "
+#define _CHANNELS_PREFIX "immage channels: "
 
 static dt_masks_form_t *_group_named(const char *full)
 {
@@ -106,6 +107,15 @@ static dt_masks_form_t *_ranges_group(const dt_masks_form_t *root)
 {
   char full[sizeof(root->name)];
   g_snprintf(full, sizeof(full), "%s%s", _RANGES_PREFIX, root->name);
+  return _group_named(full);
+}
+
+// the group of the range channels of `root`, nested in its ranges group so
+// that an inverted mask can invert them as one (_apply_ranges), or NULL
+static dt_masks_form_t *_channels_group(const dt_masks_form_t *root)
+{
+  char full[sizeof(root->name)];
+  g_snprintf(full, sizeof(full), "%s%s", _CHANNELS_PREFIX, root->name);
   return _group_named(full);
 }
 
@@ -181,6 +191,7 @@ static GHashTable *_mask_forms(const dt_masks_form_t *root)
   GHashTable *set = g_hash_table_new(NULL, NULL);
   _reach(root, set, 0);
   _reach(_ranges_group(root), set, 0);
+  _reach(_channels_group(root), set, 0);
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
     const dt_iop_module_t *m = l->data;
@@ -767,8 +778,22 @@ static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
   // points in the forms, this one's included (masks.c, _id_taken)
   grp->points = NULL;
   grp->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, grp, DT_MASKS_STATE_FLEXI_PRODUCT));
+  // the channels multiply together in a group of their own, a member of
+  // this one beside the shapes: inverting a mask with ranges inverts each of
+  // the two, as one (_apply_ranges), never the channels one by one
+  dt_masks_form_t *chg = _channels_group(root);
+  if(!chg)
+  {
+    chg = dt_masks_create(DT_MASKS_GROUP);
+    g_snprintf(chg->name, sizeof(chg->name), "%s%s", _CHANNELS_PREFIX, root->name);
+    _s.dev.forms = g_list_append(_s.dev.forms, chg);
+  }
+  g_list_free_full(chg->points, free);
+  chg->points = NULL;
+  chg->points = g_list_append(NULL, dt_masks_marker_new(_s.dev.forms, chg, DT_MASKS_STATE_FLEXI_PRODUCT));
   if(_has_members(root))
     _member(grp, root->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+  _member(grp, chg->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
   const dt_iop_gui_blendif_channel_t *chans = dt_develop_blendif_channels_for_csp(DEVELOP_BLEND_CS_RGB_SCENE);
   for(int c = 0; chans && chans[c].label; c++)
   {
@@ -784,7 +809,7 @@ static void _set_ranges_group(dt_masks_form_t *root, JsonArray *list)
     f->points = g_list_append(NULL, p);
     dt_masks_assign_unique_name(&_s.dev, f);
     _s.dev.forms = g_list_append(_s.dev.forms, f);
-    _member(grp, f->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
+    _member(chg, f->formid, DT_MASKS_STATE_SHOW | DT_MASKS_STATE_USE | DT_MASKS_STATE_UNION, 1.0f);
   }
 }
 
@@ -798,7 +823,14 @@ static gboolean _instance_inverted(const dt_iop_module_t *m)
   if(bp->mask_combine & (DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS)) return TRUE;
   const dt_masks_form_t *g = dt_masks_get_from_id(&_s.dev, bp->mask_id);
   const dt_masks_point_group_t *mk = g && (g->type & DT_MASKS_GROUP) ? dt_masks_group_marker(g) : NULL;
-  return mk && (mk->state & DT_MASKS_STATE_OP_INVERT);
+  if(mk && (mk->state & DT_MASKS_STATE_OP_INVERT)) return TRUE;
+  // a ranges group inverts through its members (_apply_ranges)
+  if(g && (g->type & DT_MASKS_GROUP) && g_str_has_prefix(g->name, _RANGES_PREFIX))
+    for(const GList *l = g->points; l; l = g_list_next(l))
+      if(!dt_masks_point_is_marker(l->data)
+         && (((const dt_masks_point_group_t *)l->data)->state & DT_MASKS_STATE_INVERSE))
+        return TRUE;
+  return FALSE;
 }
 
 // the dt_dev_pixelpipe_cache_invalidate_later of every pipe the engine runs
@@ -2120,6 +2152,8 @@ gboolean masks_mask_delete(const char *name, char **err)
   // unnamed, nothing keeps the group or its ranges' (_free_unreached)
   dt_masks_form_t *ranged = _ranges_group(grp);
   if(ranged) ranged->name[0] = '\0';
+  dt_masks_form_t *channels = _channels_group(grp);
+  if(channels) channels->name[0] = '\0';
   grp->name[0] = '\0';
   _free_unreached(old);
   for(guint i = 0; i < users->len; i++)
@@ -2147,6 +2181,7 @@ gboolean masks_mask_rename(const char *name, const char *to, char **err)
     return FALSE;
   }
   dt_masks_form_t *ranged = _ranges_group(grp);
+  dt_masks_form_t *channels = _channels_group(grp);
   GHashTable *forms = _mask_forms(grp);
   gchar *full = g_strdup(grp->name);
   const size_t n = strlen(full);
@@ -2168,6 +2203,7 @@ gboolean masks_mask_rename(const char *name, const char *to, char **err)
   g_hash_table_destroy(forms);
   g_free(full);
   if(ranged) g_snprintf(ranged->name, sizeof(ranged->name), "%s%s", _RANGES_PREFIX, grp->name);
+  if(channels) g_snprintf(channels->name, sizeof(channels->name), "%s%s", _CHANNELS_PREFIX, grp->name);
   gboolean recorded = FALSE;
   for(GList *l = _s.dev.iop; l; l = g_list_next(l))
   {
@@ -2917,7 +2953,7 @@ static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gbool
 {
   dt_develop_blend_params_t *bp = m->blend_params;
   const dt_develop_blend_colorspace_t cst = dt_develop_blend_default_module_blend_colorspace(m);
-  const dt_masks_form_t *ranges = cst == DEVELOP_BLEND_CS_RGB_SCENE ? _ranges_group(root) : NULL;
+  dt_masks_form_t *ranges = cst == DEVELOP_BLEND_CS_RGB_SCENE ? _ranges_group(root) : NULL;
   bp->blend_cst = cst;
   // the module's own parametric mask would multiply into the group's again
   // (blend.c), as darktable's conversion clears it (_clear_toplevel_blendif)
@@ -2927,7 +2963,23 @@ static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gbool
   bp->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
   bp->mask_id = (ranges ? ranges : root)->formid;
   bp->mask_combine &= ~(DEVELOP_COMBINE_INV | DEVELOP_COMBINE_MASKS_POS | DEVELOP_COMBINE_INCL);
-  if(invert) bp->mask_combine |= DEVELOP_COMBINE_MASKS_POS;
+  // an older edit's ranges group lists its channels flat, and inverting
+  // each would not invert their product: it inverts whole until reshaped
+  if(ranges && _channels_group(root))
+  {
+    // the shapes as the panel shows them, inside the inverted ranges:
+    // (1 - S) * (1 - r). inverting the whole S * r instead would turn a
+    // subtracted shape into everything outside it. each member of the
+    // ranges group, a product, inverts itself (masks/group.c)
+    for(GList *l = ranges->points; l; l = g_list_next(l))
+    {
+      dt_masks_point_group_t *pt = l->data;
+      if(dt_masks_point_is_marker(pt)) continue;
+      if(invert) pt->state |= DT_MASKS_STATE_INVERSE;
+      else pt->state &= ~DT_MASKS_STATE_INVERSE;
+    }
+  }
+  else if(invert) bp->mask_combine |= DEVELOP_COMBINE_MASKS_POS;
 }
 
 // darktable's per-channel factor (blendif_rgb_jzczhz.c), for range_map
@@ -3358,5 +3410,8 @@ gboolean masks_attach_mask(dt_iop_module_t *m, const char *name, const gboolean 
     return FALSE;
   }
   _apply_ranges(m, grp, invert);
+  // a ranges group takes the inversion on its members, which no piece's
+  // cache hash sees (as in masks_mask)
+  masks_invalidate_from(m->iop_order, "invert ");
   return TRUE;
 }

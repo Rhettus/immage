@@ -5,6 +5,7 @@ import { colorProfiles } from "./specs/color-profiles.mjs";
 import { maskFold } from './specs/mask-fold.mjs';
 import { maskHiddenEdit } from './specs/mask-hidden-edit.mjs';
 import { maskMenu } from './specs/mask-menu.mjs';
+import { maskInvertRange } from './specs/mask-invert-range.mjs';
 import { negativeProfileMemory } from './specs/negative-profile-memory.mjs';
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -95,6 +96,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'mask-fold': maskFold,
   'mask-hidden-edit': maskHiddenEdit,
   'mask-menu': maskMenu,
+  'mask-invert-range': maskInvertRange,
   'negative-profile-memory': negativeProfileMemory,
   'gui-benchmark': guiBenchmark,
   'gui-benchmark-screen': t => guiBenchmark(t, true),

@@ -101,7 +101,10 @@ is over the panels, so the adjustment can be seen.
 
 ## Mask settings
 
-- **Invert**: adjust everything except the mask.
+- **Invert**: adjust everything except the mask. On a mask with a range (color,
+  luminance or parametric) and drawn shapes, the range is inverted and the
+  shapes are shown as you drew them: a shape taking away cuts its area out of
+  the inverted range.
 - **Opacity**: 0-100%, how strongly the mask's adjustments apply.
 - **Refine**:
   - **Edge Aware**: softens the edge so it follows edges in the photo

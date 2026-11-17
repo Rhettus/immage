@@ -97,6 +97,10 @@ Bug fixes
 - AI Denoise no longer fails while its model is still downloading, and works
   on photos opened from Find results and Immich external libraries mapped to
   this computer.
+- Invert on a mask that combines a color, luminance or parametric range with
+  drawn shapes now inverts the range: a shape that subtracts cuts its area
+  out of the inverted range instead of selecting everything around it, and
+  a shape that adds keeps to the inverted range.
 
 ## 0.45.0
 

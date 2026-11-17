@@ -307,9 +307,16 @@ export function maskAt(m: Mask, u: number, v: number, W: number, H: number, rang
     const c = coverage(s, u, v, W, H);
     a = s.mode === "subtract" ? a * (1 - c) : Math.max(a, c);
   }
-  if (ranges && m.shapes.some(isRange)) a *= rangeAt(ranges, u, v);
+  if (ranges && m.shapes.some(isRange)) return combineRanged(m.invert, a, rangeAt(ranges, u, v));
   return m.invert ? 1 - a : a;
 }
+
+// the shapes' value `a` with the ranges' `r`. an inverted mask with ranges is
+// the shapes, inverted, inside the inverted ranges, (1 - a) * (1 - r), as the
+// engine builds it (_apply_ranges in masks.c): a shape shown as taking away then
+// cuts its area out of the inverted range. otherwise a * r, or 1 - a without
+// ranges
+const combineRanged = (invert: boolean, a: number, r: number) => (invert ? (1 - a) * (1 - r) : a * r);
 
 // ------------------------------------------------- the overlay, kept
 // each shape's coverage of an overlay's grid, kept between redraws, so a
@@ -460,7 +467,8 @@ export function overlayPixels(m: Mask, w: number, W: number, H: number, ranges: 
       const c = covs[n][k] / 255;
       a = sub[n] ? a * (1 - c) : Math.max(a, c);
     }
-    if (ranged) a *= rangeAt(ranges!, x0 + ((i + 0.5) / w) * (x1 - x0), y0 + ((j + 0.5) / h) * (y1 - y0));
+    if (ranged)
+      return combineRanged(m.invert, a, rangeAt(ranges!, x0 + ((i + 0.5) / w) * (x1 - x0), y0 + ((j + 0.5) / h) * (y1 - y0)));
     return m.invert ? 1 - a : a;
   }, color);
 }
