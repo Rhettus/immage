@@ -55,6 +55,7 @@ import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
+import { libraryMenuRate } from './specs/library-menu-rate.mjs';
 import { immichPrefs } from './specs/immich-prefs.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
 import { gridCulling, gridCullingControls, gridCullingPriority } from './specs/grid-culling.mjs';
@@ -89,6 +90,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'move-photos': movePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,
+  'library-menu-rate': libraryMenuRate,
   'immich-prefs': immichPrefs,
   'detail-group': detailGroup,
   'agx-presets': agxPresets,

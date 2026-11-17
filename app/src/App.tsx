@@ -7257,6 +7257,14 @@ export default function App() {
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
+                  rate={hit && !isRemote(hit) && local.length ? {
+                    rating: local.every((i) => i.rating === local[0].rating && !i.rejected) ? local[0].rating : null,
+                    labels: local.reduce((m, i) => m & i.labels, 31),
+                    rejected: local.every((i) => i.rejected),
+                    setRating: (n) => rateSelection(hit, { rating: n, rejected: false }),
+                    toggleLabel: (bit) => rateSelection(hit, { labels: bit }),
+                    toggleReject: () => rateSelection(hit, { rejected: !local.every((i) => i.rejected) }),
+                  } : null}
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}

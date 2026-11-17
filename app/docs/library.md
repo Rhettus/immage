@@ -596,6 +596,19 @@ show any files still present.
 
 Right-click a photo, or a selection, for:
 
+- **Rating ›**: five stars down to one, or **No Rating**, with the key (5 to
+  0) at the right. A check mark shows the rating every selected photo has.
+- **Color Label ›**: Red, Yellow, Green, Blue (keys 6 to 9) or Purple. Choosing
+  a label toggles it, as the keys do, and a check mark shows the labels every
+  selected photo has.
+- **Reject** (X), which reads **Unreject** when every selected photo is already
+  rejected.
+- **Keywords…** (K), in the grid.
+
+  The first four items rate the photos the menu acts on: the one you
+  right-clicked, or the whole selection when it includes that photo. They are
+  hidden for Immich results, which keep Immich's ratings until opened.
+
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more

@@ -216,6 +216,10 @@ try {
     for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
     report.gridZoomFixtures = gridZoomFixtures.length;
   }
+  if (selectedCases.includes('library-menu-rate')) {
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `rate-menu-${i}${ext}`));
+  }
   if (selectedCases.includes('grid-culling') || selectedCases.includes('grid-culling-controls')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));

@@ -1868,6 +1868,12 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .context-menu button:hover { background: var(--inset); }
 .context-menu button:disabled { opacity: 0.4; cursor: default; background: none; }
 .context-menu button.danger:not(:disabled) { color: #ff6b6b; }
+.context-menu button.hinted { display: flex; align-items: center; gap: 8px; }
+.context-menu button.hinted .name { flex: 1; }
+.context-menu button.hinted .check { width: 12px; color: var(--text-2); font-size: var(--fs-small); }
+.context-menu button.hinted .hint { margin-inline-start: 16px; color: var(--text-3); font-size: var(--fs-small); text-align: end; }
+.context-menu button.hinted .stars { letter-spacing: 1px; }
+.context-menu button.hinted .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .context-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border, #333); }
 .context-menu .has-sub { position: relative; }
 .context-menu .has-sub > button::after { content: "›"; float: right; color: var(--text-3); }

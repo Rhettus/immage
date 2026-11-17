@@ -20,6 +20,9 @@ Improvements
 - Culling preview in the grid: press F, use the toolbar magnifier, or choose
   View > Culling Preview. Rate, label, reject and keyword (K) photos, scroll
   to zoom, click for Fit/100%, Space-drag to pan, double-click to edit.
+- The photo right-click menu has Rating, Color Label, Reject and Keywords
+  entries with their shortcut keys shown, so you can rate and label photos
+  without the keyboard.
 - Grid mode is now Library, with its own icon on the rail that switches
   between the filmstrip and the grid. Thumbnail size has a slider, trackpad
   pinch or ⌘-scroll, and is remembered.

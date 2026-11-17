@@ -169,11 +169,14 @@ export async function gridCulling(t) {
     return !s?.loading && s?.pixels[0] > 300 ? s : null;
   }, 'first wheel loads the detailed preview', 60000);
   const maxWheelSteps = Math.min(180, Math.ceil(Math.log(4 / wheelDetail.scale) / .04) + 4);
+  const steps = [];
   for (let i = 0; i < maxWheelSteps; i++) {
     await t.driver.wheel(wheelPoint.x, wheelPoint.y, -50);
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    steps.push({ i, scale: s?.scale, loading: s?.loading, button: s?.button });
     if (s?.scale >= 3.95 && !s.loading) break;
   }
+  t.measure({ name: 'wheel-steps', start: wheelDetail.scale, steps });
   let previousWheelSample = null, stableWheelSamples = 0;
   const wheelAtMax = await until(async () => {
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
@@ -316,7 +319,7 @@ export async function gridCulling(t) {
   assert.deepEqual(selectionAfterUnselectedRightClick, beforeUnselectedContext,
     'right-clicking an unselected photo preserves the existing selection');
   await until(() => t.driver.observe(() => !!document.querySelector('.context-menu')), 'unselected photo context menu opens');
-  await textButton(t, '.context-menu', 'Keywords… (K)');
+  await textButton(t, '.context-menu', 'Keywords…');
   const unselectedContextHeading = await until(() => t.driver.observe(() => document.querySelector('[aria-label="Grid keywords"] h2')?.textContent ?? null),
     'unselected context keyword dialog opens');
   assert.match(unselectedContextHeading, /^Keywords · 1 photo$/, 'unselected context action targets only its hit photo');
@@ -344,7 +347,7 @@ export async function gridCulling(t) {
   assert.deepEqual(selectionAfterRightClick.selected, contextSelection.map(e => e.title),
     'right-clicking a selected photo preserves the whole selected group');
   await until(() => t.driver.observe(() => !!document.querySelector('.context-menu')), 'grid context menu opens');
-  await textButton(t, '.context-menu', 'Keywords… (K)');
+  await textButton(t, '.context-menu', 'Keywords…');
   const contextHeading = await until(() => t.driver.observe(() => document.querySelector('[aria-label="Grid keywords"] h2')?.textContent ?? null),
     'context menu keyword dialog opens');
   const contextSelectionWorked = contextHeading === 'Keywords · 2 photos'
