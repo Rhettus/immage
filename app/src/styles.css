@@ -2078,7 +2078,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* locked: the grid's right-hand panel, in its column and not over the grid */
 .find-pop.locked { position: static; z-index: auto; flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; background: none; }
 .find-pop.locked .find-head { padding-inline: 12px; }
-.find-pop.locked .find-text { flex-basis: 100%; }
+/* locked: the search box shares its row with the pin (auto-hide) and the analysis indicator */
+.find-pop.locked .find-text { flex: 1 1 0; min-width: 0; }
 .find-tip {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: var(--inset);
   border-radius: 8px; color: var(--text-2); line-height: 1.4;
