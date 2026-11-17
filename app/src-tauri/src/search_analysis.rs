@@ -199,7 +199,29 @@ impl Service {
             FrameOutput::read(&out).map_err(|e| e.to_string())
         })();
         self.output.remove(&out);
-        let preview = preview?;
+        let preview = match preview {
+            Ok(p) => p,
+            // The engine answered that it cannot render this photo (an
+            // unsupported DNG, say) and the file is as listed: remember it, so
+            // the photo is not imported and tried again at every launch. Any
+            // other error (engine exit or restart, timeout, a share that did
+            // not answer, a cancelled job) is retried later.
+            Err(e) => {
+                if e.starts_with("could not write '")
+                    && !job.cancelled()
+                    && !self.stop.load(Ordering::Acquire)
+                    && current(row, subject, version)
+                {
+                    let _ = self.cache.put_analysis_failure(
+                        row,
+                        subject,
+                        crate::local_search::ANALYSIS_VERSION,
+                        crate::local_search::MODEL_VERSION,
+                    );
+                }
+                return Err(e);
+            }
+        };
         if job.cancelled() || !current(row, subject, version) {
             return Ok(());
         }
@@ -303,6 +325,34 @@ mod tests {
             Path::new("/photos/a.jpg"),
             &serde_json::Value::Null
         ));
+    }
+
+    #[test]
+    fn failed_render_is_not_pending_until_the_file_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let v = cache
+            .upsert_variant("/photos/a.dng", "", "source", "edit", None, None, None)
+            .unwrap();
+        cache.store_metadata(v.id, "{}").unwrap();
+        let (av, mv) = (
+            crate::local_search::ANALYSIS_VERSION,
+            crate::local_search::MODEL_VERSION,
+        );
+        let row = cache.pending_analyses(0, 32).unwrap().remove(0);
+        assert!(cache.put_analysis_failure(&row, "original", av, mv).unwrap());
+        assert!(cache.put_analysis_failure(&row, "edited", av, mv).unwrap());
+        assert!(cache.pending_analyses(0, 32).unwrap().is_empty());
+        // a stale fingerprint is not recorded
+        let mut stale = row.clone();
+        stale.original = "other".into();
+        assert!(!cache.put_analysis_failure(&stale, "original", av, mv).unwrap());
+        // the file changed: tried again
+        cache
+            .upsert_variant("/photos/a.dng", "", "source2", "edit", None, None, None)
+            .unwrap();
+        let rows = cache.pending_analyses(0, 32).unwrap();
+        assert!(rows[0].needs_original && !rows[0].needs_edited);
     }
 
     #[test]

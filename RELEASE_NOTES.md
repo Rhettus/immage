@@ -51,6 +51,9 @@ Bug fixes
 - A photo that fails to open no longer leaves the editor stuck until restart;
   Immage names the file, and clicking several photos quickly opens only the
   last one.
+- Smart search no longer retries a photo it cannot render (for example a
+  panorama DNG in an unsupported format) at every launch, which kept the app
+  busy reading it from a network drive; it tries again only if the file changes.
 - In the grid, rating, label and reject keys act on the photos selected, even
   while the photo you clicked is still opening or the open photo is filtered
   out; a second range no longer ignored X.
