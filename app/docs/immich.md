@@ -84,6 +84,17 @@ Existing setups keep working without entering the key again.
   Immich about when **Match the folder path** is on. After a test, a
   **Use …** button can fill it in from a photo on the server.
 
+How the paths line up when **Match the folder path** is on:
+
+```
+This computer                          Immich server
+─────────────                          ─────────────
+Import destination                     Destination as Immich sees it
+/Volumes/photos            ── scanned as an external library ──>  /mnt/photos
+  └ 2026/November/IMG_0412.CR3           └ 2026/November/IMG_0412.CR3
+                                            already there: counts as a duplicate
+```
+
 ### 4. Opening search results (for external libraries)
 
 If Immich reads photos from a folder this computer also has (an external
@@ -96,6 +107,17 @@ download.
   Administration › External Libraries.
 - **Folder on this computer**: the same photos here: a network share, or a
   local or external drive. Click **Choose…**.
+
+For example, with **External library path** `/mnt/photos` and **Folder on this computer** `/Volumes/photos`:
+
+```
+Immich server                          This computer
+─────────────                          ─────────────
+/mnt/photos/2026/November/IMG_0412.CR3  ──>  /Volumes/photos/2026/November/IMG_0412.CR3
+                                              ✓ opens directly
+/mnt/other/2025/DSC_1180.NEF                 ✗ downloads: outside the external library path
+/data/upload/…/IMG_0999.JPG                  ✗ downloads: uploaded to Immich, not in the library
+```
 
 Left blank, a field borrows the importer's value: the external library path
 borrows the destination as Immich sees it, and the folder on this computer
