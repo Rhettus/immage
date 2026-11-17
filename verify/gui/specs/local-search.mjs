@@ -33,9 +33,13 @@ export async function localSearch(t) {
   await choose(t, searchIn, 'library');
   await until(() => t.driver.observe(s => document.querySelector(s)?.value === 'library', searchIn), 'All folders selected');
 
-  await click(t, `${mode}:nth-child(2)`);
-  await until(() => t.driver.observe(s => document.querySelector(`${s}:nth-child(2)`)?.classList.contains('active'), mode),
-    'Filename mode selected');
+  // without the CLIP model Find has no Smart/Filename switch: it searches file names only
+  const switchable = await t.driver.observe(s => !!document.querySelector(s), mode);
+  if (switchable) {
+    await click(t, `${mode}:nth-child(2)`);
+    await until(() => t.driver.observe(s => document.querySelector(`${s}:nth-child(2)`)?.classList.contains('active'), mode),
+      'Filename mode selected');
+  }
   await click(t, searchBox);
   await t.driver.keys(...filename);
   await until(() => t.driver.observe((s, value) => document.querySelector(s)?.value === value, searchBox, filename),
@@ -54,9 +58,12 @@ export async function localSearch(t) {
   assert.equal(found.stars, 5, 'the local result exposes editable rating controls');
   await t.evidence('local-search-result');
   // Show closes the popup and shows the grid, where Find is the locked right-hand
-  // column; the search and its words stay
-  await click(t, `${pop} .find-show`);
-  await until(() => t.driver.observe(s => !document.querySelector(s), `${pop}:not(.locked)`), 'Find popup closes with Show');
+  // column; the search and its words stay. Already in the grid, the locked
+  // column has no Show button.
+  if (await t.driver.observe(s => !!document.querySelector(s), `${pop}:not(.locked) .find-show`)) {
+    await click(t, `${pop} .find-show`);
+    await until(() => t.driver.observe(s => !document.querySelector(s), `${pop}:not(.locked)`), 'Find popup closes with Show');
+  }
 
   // Set a rating on the copied fixture, then filter the search through the
   // real toolbar. The local result should survive because its saved rating is
@@ -83,7 +90,8 @@ export async function localSearch(t) {
       : null;
   }, cell, searchBox, filename, mode), 'filename search retains its rating filter and result');
   assert.equal(filtered.rating, 3);
-  assert.equal(filtered.mode, 'Filename');
+  if (switchable) assert.equal(filtered.mode, 'Filename');
+  else assert.equal(filtered.mode ?? null, null, 'no mode switch without the CLIP model');
   assert(filtered.chips.includes('Rating & flags'), `the rating filter is a chip in Find (${filtered.chips})`);
   await t.evidence('local-search-filter');
 
@@ -96,7 +104,8 @@ export async function localSearch(t) {
   await until(() => t.driver.observe((s, value) => {
     const title = document.querySelector(s)?.title;
     return title === value && document.querySelector('.toolbar .filter button[title="no filters on"]')
-      && /\d+ photos?\b/.test(document.querySelector('.status')?.textContent ?? '');
+      // the count is in Find's footer in the grid, the status line elsewhere
+      && ['.find-count', '.status'].some(q => /\d+ photos?\b/.test(document.querySelector(q)?.textContent ?? ''));
   }, `.filmstrip .thumb[data-imgid][title=${JSON.stringify(filename)}]`, filename), 'folder navigation leaves local search');
   await t.evidence('local-search-folder');
   t.measure({ name: 'local-search', filename, result: found, filtered, returnedToFolder: true });

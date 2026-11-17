@@ -16,6 +16,8 @@ const noImage = () => document.body.innerText.toLowerCase().includes('no image o
 async function openByName(t, prefix) {
   const cell = await until(() => t.driver.observe(p => {
     const e = [...document.querySelectorAll('.filmstrip .thumb[data-imgid]')].find(c => c.title.startsWith(p));
+    // inside the window is not enough: the strip clips a cell at its edge
+    e?.scrollIntoView({ block: 'nearest', inline: 'center' });
     const r = e?.getBoundingClientRect();
     return r && r.width && r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight
       ? { x: r.x + r.width / 2, y: r.y + r.height / 2, title: e.title } : null;

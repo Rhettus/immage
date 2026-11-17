@@ -9,7 +9,9 @@ export async function startupRestore(t) {
   const initial = await until(() => t.driver.observe(() => ({
     grid: !!document.querySelector('.filmstrip.grid'),
     file: document.querySelector('.filmstrip .thumb.active')?.title ?? null,
-  })).then(x => x.grid && x.file && x), 'saved folder grid and photo appear during restore', 60000);
+  // The grid shows only until the restored photo's first frame; a small JPEG
+  // can render before the first poll, so the grid is recorded, not awaited.
+  })).then(x => x.file && x), 'saved folder photo appears during restore', 60000);
   await dismissTour(t);
   const photo = await settledPhoto(t);
   await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'restored photo first frame replaces grid');

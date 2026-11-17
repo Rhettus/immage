@@ -110,6 +110,8 @@ export async function advancedSync(t) {
     await copyAdvanced(t);
     await click(t, cell(TARGET));
     const fresh = await settledPhoto(t);
+    // a newly opened photo shows only Basic, and a closed panel has no badge
+    await panel(t, 'detail');
     assert.equal(await badge(t, 'detail'), null, 'the target starts without a badge');
     const pasted = await paste(t);
     t.measure({ name: 'paste', meanAbsoluteError: meanError(pasted, fresh) });

@@ -125,7 +125,9 @@ export async function advancedHidden(t) {
     assert(!(await hits(t, 'lowpass')).some(h => h.op === 'lowpass'), 'lowpass is hidden by Essentials only');
     assert((await hits(t, 'exposure')).some(h => h.op === 'exposure'), 'exposure is still found under Essentials only');
     await panel(t, 'basic');
-    assert(!await t.driver.observe(() => !!document.querySelector('[data-panel-id="basic"] [data-module^="exposure#"] .module-card-tag')), 'the Exposure card no longer says hidden');
+    // the card can carry other tags (Simple, on the first of two instances)
+    assert(!await t.driver.observe(text => [...document.querySelectorAll('[data-panel-id="basic"] [data-module^="exposure#"] .module-card-tag')]
+      .some(e => e.textContent.trim() === text), tag), 'the Exposure card no longer says hidden');
     await t.evidence('advanced-hidden-essentials');
 
     // 4. Show all in Detail brings its modules back and leaves other groups alone
