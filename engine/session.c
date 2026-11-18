@@ -371,8 +371,6 @@ static gboolean _has_history(const dt_imgid_t imgid)
   return found;
 }
 
-// `version` picks one of the file's versions by imgid, and any other value
-// its lowest
 // what a screen pipe renders to. darktable's darkroom copies this from the
 // window on each run (develop.c, dt_dev_process_image_job); the engine runs
 // its pipes directly, and without an output colorout leaves the pixels in the
@@ -384,6 +382,8 @@ static void _pipe_use_display(dt_dev_pixelpipe_t *pipe)
   dt_colorspaces_get_display_output(DT_COLORSPACE_DISPLAY, &pipe->output);
 }
 
+// `version` picks one of the file's versions by imgid, and any other value
+// its lowest
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
                             char **err)
 {
