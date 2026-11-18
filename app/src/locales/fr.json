@@ -5032,7 +5032,7 @@
   "library.analysis.paused_one": "Analyse en pause, {count} photo en attente. Cliquer pour reprendre",
   "library.analysis.paused_other": "Analyse en pause, {count} photos en attente. Cliquer pour reprendre",
   "library.analysis.pausedEmpty": "Analyse en pause. Cliquer pour reprendre",
-  "library.analysis.idle": "Toutes les photos sont analysées. Cliquer pour mettre en pause",
+  "library.analysis.idle": "Aucune photo en attente d’analyse. Cliquer pour mettre en pause",
   "library.find.editStatus": "État des retouches",
   "library.find.editedOnly": "Retouchées",
   "library.find.uneditedOnly": "Non retouchées",

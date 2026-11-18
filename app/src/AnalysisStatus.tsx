@@ -4,8 +4,8 @@
 // Find's photo-analysis indicator, at the end of the search row: the number of
 // photos still waiting for Smart search analysis beside a spinner (animated
 // while photos are being analysed, still while they wait, for a network drive
-// to answer or the next batch), a pause glyph while paused, a check when every
-// photo is analysed. A click pauses or resumes, the same pause as Preferences >
+// to answer or the next batch), a pause glyph while paused, a check when no
+// photos are waiting. A click pauses or resumes, the same pause as Preferences >
 // General > Background work (`search_pause`). Without the CLIP model it stays,
 // dimmed. It reads `search_analysis_status`, which only copies in-memory
 // state (the service counts the backlog on its own thread), every 2 s while

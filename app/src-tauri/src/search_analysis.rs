@@ -9,12 +9,13 @@ use crate::{
 };
 use serde_json::json;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, OnceLock,
     },
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -22,8 +23,8 @@ use std::{
 /// one, reads the atomics only, so it never waits on the service, the queue or
 /// the cache. `pending` is -1 until a complete count; the times are
 /// milliseconds since `now_ms`'s epoch plus one, 0 meaning never.
-/// `unavailable` holds the variants the scan found missing or offline, left
-/// out of `pending` until a later scan reaches them again. It is a leaf lock:
+/// `unavailable` holds the variants the status probe found missing or offline, left
+/// out of `pending` until a later probe reaches them again. It is a leaf lock:
 /// held for memory work only, with no other lock taken inside it.
 struct Progress {
     installed: AtomicBool,
@@ -31,7 +32,7 @@ struct Progress {
     running: AtomicUsize,
     last_work_ms: AtomicU64,
     wanted_ms: AtomicU64,
-    unavailable: Mutex<HashSet<i64>>,
+    unavailable: Mutex<HashMap<i64, String>>,
 }
 impl Progress {
     fn new() -> Self {
@@ -44,19 +45,29 @@ impl Progress {
             unavailable: Mutex::default(),
         }
     }
-    fn is_unavailable(&self, variant: i64) -> bool {
+    fn count_requested(&self) -> bool {
+        let wanted = self.wanted_ms.load(Ordering::Acquire);
+        wanted != 0 && now_ms().saturating_sub(wanted) <= WANTED_FOR_MS
+    }
+    fn is_unavailable(&self, variant: i64, path: &str) -> bool {
         self.unavailable
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .contains(&variant)
+            .get(&variant)
+            .is_some_and(|checked| checked == path)
     }
-    fn set_unavailable(&self, variant: i64, gone: bool) {
-        let mut set = self.unavailable.lock().unwrap_or_else(|e| e.into_inner());
-        if gone {
-            set.insert(variant);
-        } else {
-            set.remove(&variant);
+    fn update_availability(&self, observations: AvailabilityObservations) -> bool {
+        let mut changed = false;
+        let mut unavailable = self.unavailable.lock().unwrap_or_else(|e| e.into_inner());
+        for (variant, path, gone) in observations {
+            if gone {
+                changed |= unavailable.get(&variant) != Some(&path);
+                unavailable.insert(variant, path);
+            } else {
+                changed |= unavailable.remove(&variant).is_some();
+            }
         }
+        changed
     }
 }
 fn now_ms() -> u64 {
@@ -70,6 +81,7 @@ const WANTED_FOR_MS: u64 = 10_000;
 const COUNT_EVERY: Duration = Duration::from_secs(5);
 const SCAN_EVERY: Duration = Duration::from_secs(5);
 const COUNT_PAGE: u32 = 1024;
+const AVAILABILITY_PAGE: u32 = 64;
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct AnalysisProgress {
@@ -138,7 +150,7 @@ struct Service {
     engine: Tagged,
     output: Arc<FrameOutput>,
     runtime: PathBuf,
-    after: Mutex<i64>,
+    after: AtomicI64,
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
 }
@@ -160,22 +172,23 @@ pub fn start(
             engine,
             output,
             runtime,
-            after: Mutex::new(0),
+            after: AtomicI64::new(0),
             stop: stop.clone(),
             progress: progress.clone(),
         });
-        // this thread yields to nothing but the stop flag: it takes the cache
-        // lock one page at a time and only for the backlog count, so the count
-        // also works while the queue is paused
+        // Dispatch and counting never wait on the availability probe. The
+        // probe runs only while Find requests counts, independently of pause.
         std::thread::spawn(move || {
             let mut last_scan: Option<Instant> = None;
             let mut last_count: Option<Instant> = None;
+            let mut availability = AvailabilityProbe::default();
             while !service.stop.load(Ordering::Acquire) {
                 // No directory creation, download or engine request without installed assets.
                 let installed = service.models.installed();
                 let p = &service.progress;
                 p.installed.store(installed, Ordering::Release);
                 if installed {
+                    let availability_changed = availability.collect(p);
                     if last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
                         last_scan = Some(Instant::now());
                         let next = service.clone();
@@ -187,21 +200,23 @@ pub fn start(
                             }
                         });
                     }
-                    let wanted = p.wanted_ms.load(Ordering::Acquire);
-                    if wanted != 0
-                        && now_ms().saturating_sub(wanted) <= WANTED_FOR_MS
-                        && last_count.is_none_or(|t| t.elapsed() >= COUNT_EVERY)
-                    {
-                        last_count = Some(Instant::now());
-                        let selection = library_selection(&service.runtime);
-                        if let Some(n) = count_backlog(
-                            &service.cache,
-                            &selection,
-                            &service.stop,
-                            &p.unavailable,
-                            COUNT_PAGE,
-                        ) {
-                            p.pending.store(n as i64, Ordering::Release);
+                    if p.count_requested() {
+                        let count_due = last_count.is_none_or(|t| t.elapsed() >= COUNT_EVERY);
+                        if count_due || availability_changed {
+                            let selection = library_selection(&service.runtime);
+                            if count_due {
+                                last_count = Some(Instant::now());
+                                availability.start(&service, &selection);
+                            }
+                            if let Some(n) = count_backlog(
+                                &service.cache,
+                                &selection,
+                                &service.stop,
+                                &p.unavailable,
+                                COUNT_PAGE,
+                            ) {
+                                p.pending.store(n as i64, Ordering::Release);
+                            }
                         }
                     }
                 } else {
@@ -236,44 +251,46 @@ impl Service {
         if job.cancelled() {
             return Ok(());
         }
-        let mut after = self
-            .after
-            .lock()
-            .map_err(|_| "Analysis scan lock poisoned")?;
+        let mut after = self.after.load(Ordering::Acquire);
         let selection = library_selection(&self.runtime);
         let quiet = self.engine.quiet_for();
-        let mut shares = std::collections::HashMap::<PathBuf, bool>::new();
-        let mut answers = std::collections::HashMap::<PathBuf, bool>::new();
-        // pages of deferred or unavailable photos alone are passed over in this
-        // scan, so local photos after them are not held back a scan per page
+        // Without recent Find polling, retry previously marked paths through
+        // the normal analysis budget so a restored photo can still be analysed.
+        let availability_is_checked = self.progress.count_requested();
+        let mut shares = HashMap::<PathBuf, bool>::new();
+        // Pass over pages of deferred or unavailable photos so local work
+        // can still be offered when it follows them in the index.
         for _ in 0..64 {
-            let rows = self.cache.pending_analyses(*after, 32)?;
-            *after = rows.last().map_or(0, |r| r.variant_id);
-            if rows.is_empty() {
+            if job.cancelled() || self.stop.load(Ordering::Acquire) {
+                return Ok(());
+            }
+            let rows = self.cache.pending_analyses(after, 32)?;
+            after = rows.last().map_or(0, |r| r.variant_id);
+            if job
+                .commit(|| self.after.store(after, Ordering::Release))
+                .is_none()
+                || rows.is_empty()
+            {
                 break;
             }
             let mut offered = false;
             for row in rows {
+                if job.cancelled() || self.stop.load(Ordering::Acquire) {
+                    return Ok(());
+                }
                 let path = Path::new(&row.path);
-                if !selected(path, &selection) {
+                if !selected(path, &selection)
+                    || (availability_is_checked
+                        && self.progress.is_unavailable(row.variant_id, &row.path))
+                {
                     continue;
                 }
                 let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
-                let deferred = quiet < SHARE_QUIET
+                if quiet < SHARE_QUIET
                     && *shares
-                        .entry(dir.clone())
-                        .or_insert_with(|| crate::volumes::on_network(path));
-                let answered = *answers
-                    .entry(dir)
-                    .or_insert_with(|| crate::volumes::answering(path));
-                // a deferred photo is looked at only to see whether it came back,
-                // so a busy share is not asked about every photo at every scan
-                let marked = self.progress.is_unavailable(row.variant_id);
-                let gone = unavailable(path, answered, !deferred || marked);
-                if gone != marked {
-                    self.progress.set_unavailable(row.variant_id, gone);
-                }
-                if gone || deferred {
+                        .entry(dir)
+                        .or_insert_with(|| crate::volumes::on_network(path))
+                {
                     continue;
                 }
                 offered = true;
@@ -286,9 +303,6 @@ impl Service {
                             }
                         });
                     continue;
-                }
-                if job.cancelled() || self.stop.load(Ordering::Acquire) {
-                    return Ok(());
                 }
                 // only edited analyses are queued: Find no longer reads original ones
                 if row.needs_edited {
@@ -318,9 +332,7 @@ impl Service {
             return Ok(());
         }
         let version = version(&row.copy_key)?;
-        let listing = Mutex::new(crate::cache::Listed::default());
-        let before =
-            crate::cache::listed_metadata_fingerprints(&listing, Path::new(&row.path), version);
+        let before = photo_fingerprints(row, version);
         let Some((original, edited)) = before.as_ref() else {
             return Ok(());
         };
@@ -332,9 +344,7 @@ impl Service {
         let reply = self
             .engine
             .request(self.engine.tag(), json!({"cmd":"meta","imgid":imgid}))?;
-        if before
-            != crate::cache::listed_metadata_fingerprints(&listing, Path::new(&row.path), version)
-        {
+        if job.cancelled() || before != photo_fingerprints(row, version) {
             return Ok(());
         }
         if let Some(mut image) = reply.get("image").cloned() {
@@ -458,44 +468,115 @@ impl Service {
         Ok(())
     }
 }
-/// Whether a photo cannot be reached now: its drive did not answer
-/// (`volumes::answering`), or, when `look` asks, the file cannot be read.
-fn unavailable(path: &Path, answered: bool, look: bool) -> bool {
-    !answered || (look && std::fs::metadata(path).is_err())
+type AvailabilityObservations = Vec<(i64, String, bool)>;
+
+#[derive(Default)]
+struct AvailabilityProbe {
+    after: i64,
+    running: Option<JoinHandle<AvailabilityObservations>>,
 }
+
+impl AvailabilityProbe {
+    fn collect(&mut self, progress: &Progress) -> bool {
+        if self
+            .running
+            .as_ref()
+            .is_some_and(|batch| batch.is_finished())
+        {
+            if let Ok(observations) = self.running.take().unwrap().join() {
+                return progress.update_availability(observations);
+            }
+        }
+        false
+    }
+
+    fn start(&mut self, service: &Service, selection: &serde_json::Value) {
+        // A filesystem call can stall even after the drive answered. Keep at
+        // most one such batch outstanding, without using a queue worker.
+        if self.running.is_some() {
+            return;
+        }
+        let Ok(mut rows) = service
+            .cache
+            .pending_analysis_paths(self.after, AVAILABILITY_PAGE)
+        else {
+            return;
+        };
+        self.after = if rows.len() == AVAILABILITY_PAGE as usize {
+            rows.last().map_or(0, |row| row.0)
+        } else {
+            0
+        };
+        rows.retain(|(_, path)| selected(Path::new(path), selection));
+        if !rows.is_empty() {
+            let stop = service.stop.clone();
+            self.running = Some(std::thread::spawn(move || probe_availability(rows, &stop)));
+        }
+    }
+}
+
+fn probe_availability(rows: Vec<(i64, String)>, stop: &AtomicBool) -> AvailabilityObservations {
+    let mut answers = HashMap::new();
+    let mut observations = Vec::new();
+    for (id, path) in rows {
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
+        let photo = Path::new(&path);
+        let mount = crate::volumes::mount_identity(photo);
+        let answering = *answers
+            .entry(mount)
+            .or_insert_with(|| crate::volumes::answering(photo));
+        if stop.load(Ordering::Acquire) {
+            break;
+        }
+        let gone = !answering || std::fs::metadata(photo).is_err();
+        observations.push((id, path, gone));
+    }
+    observations
+}
+
 /// Photos waiting for metadata or an edited analysis in the selected folders,
-/// leaving out those the scan found missing or offline. Pages by id with the
+/// leaving out those the probe found missing or offline. Pages by id with the
 /// cache lock held for one page at a time; None when stopped or on an error,
 /// so a partial count is never stored.
 fn count_backlog(
     cache: &SearchCache,
     selection: &serde_json::Value,
     stop: &AtomicBool,
-    unavailable: &Mutex<HashSet<i64>>,
+    unavailable: &Mutex<HashMap<i64, String>>,
     page: u32,
 ) -> Option<u32> {
     let (mut after, mut total) = (0i64, 0u32);
+    let mut still_unavailable = HashSet::new();
     loop {
         if stop.load(Ordering::Acquire) {
             return None;
         }
-        let rows = cache.pending_analysis_paths(after, page).ok()?;
-        let Some(last) = rows.last() else {
-            return Some(total);
-        };
-        after = last.0;
-        let gone = unavailable.lock().unwrap_or_else(|e| e.into_inner());
-        total = total.saturating_add(
-            rows.iter()
-                .filter(|(id, path)| !gone.contains(id) && selected(Path::new(path), selection))
-                .count() as u32,
-        );
-        drop(gone);
-        if (rows.len() as u32) < page {
+        let mut rows = cache.pending_analysis_paths(after, page).ok()?;
+        let end = (rows.len() as u32) < page;
+        after = rows.last().map_or(0, |row| row.0);
+        rows.retain(|(_, path)| selected(Path::new(path), selection));
+        {
+            let gone = unavailable.lock().unwrap_or_else(|e| e.into_inner());
+            for (id, path) in rows {
+                if gone.get(&id) == Some(&path) {
+                    still_unavailable.insert(id);
+                } else {
+                    total = total.saturating_add(1);
+                }
+            }
+        }
+        if end {
+            unavailable
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|id, _| still_unavailable.contains(id));
             return Some(total);
         }
     }
 }
+
 fn library_selection(runtime: &Path) -> serde_json::Value {
     crate::settings::read_key(runtime, "immage.library")
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -524,13 +605,20 @@ fn version(key: &str) -> Result<i64, String> {
             .ok_or_else(|| "Invalid indexed photo version".into())
     }
 }
-fn current(row: &PendingAnalysis, subject: &str, version: i64) -> bool {
+fn photo_fingerprints(row: &PendingAnalysis, version: i64) -> Option<(String, String)> {
+    let path = Path::new(&row.path);
+    if !crate::volumes::answering(path) {
+        return None;
+    }
     crate::cache::listed_metadata_fingerprints(
         &Mutex::new(crate::cache::Listed::default()),
-        Path::new(&row.path),
+        path,
         version,
     )
-    .is_some_and(|(original, edited)| {
+}
+
+fn current(row: &PendingAnalysis, subject: &str, version: i64) -> bool {
+    photo_fingerprints(row, version).is_some_and(|(original, edited)| {
         original == row.original && (subject == "original" || edited == row.edited)
     })
 }
@@ -623,31 +711,40 @@ mod tests {
     fn backlog_leaves_out_unavailable_photos_until_they_return() {
         let dir = tempfile::tempdir().unwrap();
         let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
-        let a = cache
-            .upsert_variant("/photos/a.jpg", "", "s", "e", None, None, None)
+        let a_path = dir.path().join("a.jpg");
+        let b_path = dir.path().join("b.jpg");
+        let a_path = a_path.to_str().unwrap();
+        let b_path = b_path.to_str().unwrap();
+        cache
+            .upsert_variant(a_path, "", "s", "e", None, None, None)
             .unwrap();
         cache
-            .upsert_variant("/photos/b.jpg", "", "s", "e", None, None, None)
+            .upsert_variant(b_path, "", "s", "e", None, None, None)
             .unwrap();
-        let config = json!({"folders":["/photos"]});
+        std::fs::write(b_path, b"photo").unwrap();
+        let config = json!({"folders":[dir.path()]});
         let stop = AtomicBool::new(false);
         let progress = Progress::new();
-        progress.set_unavailable(a.id, true);
-        assert_eq!(count_backlog(&cache, &config, &stop, &progress.unavailable, 8), Some(1));
-        progress.set_unavailable(a.id, false);
-        assert_eq!(count_backlog(&cache, &config, &stop, &progress.unavailable, 8), Some(2));
-    }
 
-    #[test]
-    fn a_photo_is_unavailable_when_missing_or_its_drive_is_silent() {
-        let dir = tempfile::tempdir().unwrap();
-        let here = dir.path().join("here.jpg");
-        std::fs::write(&here, b"photo").unwrap();
-        let gone = dir.path().join("gone.jpg");
-        assert!(!unavailable(&here, true, true));
-        assert!(unavailable(&gone, true, true));
-        assert!(unavailable(&here, false, true), "a silent drive is never touched");
-        assert!(!unavailable(&gone, true, false), "not looked at while deferred");
+        // The status probe needs no analysis queue or idle engine, so the
+        // same missing and restored files are detected while analysis is paused.
+        progress.update_availability(probe_availability(
+            cache.pending_analysis_paths(0, 8).unwrap(),
+            &stop,
+        ));
+        assert_eq!(
+            count_backlog(&cache, &config, &stop, &progress.unavailable, 8),
+            Some(1)
+        );
+        std::fs::write(a_path, b"restored photo").unwrap();
+        progress.update_availability(probe_availability(
+            cache.pending_analysis_paths(0, 8).unwrap(),
+            &stop,
+        ));
+        assert_eq!(
+            count_backlog(&cache, &config, &stop, &progress.unavailable, 8),
+            Some(2)
+        );
     }
 
     #[test]
@@ -964,7 +1061,7 @@ for line in sys.stdin:
             engine: engine.tagged(),
             output: Arc::new(FrameOutput::new(&runtime)),
             runtime,
-            after: Mutex::new(0),
+            after: AtomicI64::new(0),
             stop: Arc::new(AtomicBool::new(false)),
             progress: Arc::new(Progress::new()),
         });

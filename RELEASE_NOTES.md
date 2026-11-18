@@ -45,9 +45,9 @@ Bug fixes
   search analysis, and no longer says every photo is analysed while some are
   still pending. It stays visible, dimmed, without the CLIP model, a still arc
   shows photos that are waiting but not being worked on, and Smart/Filename
-  and Search in always stay on one line. Photos that are missing or on a drive
-  that is offline no longer count as waiting or keep the arc spinning, and
-  are analysed once they are back.
+  and Search in always stay on one line. Find checks for missing and offline
+  photos in batches, even while analysis is paused. The count excludes those
+  photos until they return, and a green check means no photos are waiting.
 - After a similar-photo search, opening a photo no longer leaves an "Image
   query" box in the lower left that could not be dismissed.
 - Buttons in the lower-left notices, such as Stop while searching, can now be

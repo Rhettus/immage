@@ -5032,7 +5032,7 @@
   "library.analysis.paused_one": "Analysis paused, {count} photo waiting. Click to resume",
   "library.analysis.paused_other": "Analysis paused, {count} photos waiting. Click to resume",
   "library.analysis.pausedEmpty": "Analysis paused. Click to resume",
-  "library.analysis.idle": "All photos analysed. Click to pause",
+  "library.analysis.idle": "No photos waiting for analysis. Click to pause",
   "library.find.editStatus": "Edit status",
   "library.find.editedOnly": "Edited",
   "library.find.uneditedOnly": "Unedited",
