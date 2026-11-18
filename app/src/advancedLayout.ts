@@ -505,7 +505,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // sliders, which toggle a display mode rather than set a parameter
     op: "contrastntexture", group: "basic", title: "Contrast & texture",
     fields: [
-      { path: "detail_level", label: "Base detail level", soft: [1, 10] },
+      { path: "base_detail_level", label: "Base detail level", soft: [1, 10] },
       { path: "gain_highlights", label: "Highlights", soft: [-2, 2] },
       { path: "gain_shadows", label: "Shadows", soft: [-2, 2] },
       { path: "gain_coarse", label: "Coarse details", section: "Local contrast", soft: [-1, 1.5], unit: "%" },

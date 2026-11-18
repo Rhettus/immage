@@ -11,6 +11,9 @@ Improvements
   edited in this version should not be reopened in Immage 0.46 or earlier: those
   versions drop the white balance, input color and demosaic steps saved by this
   one.
+- Clarity and Texture use darktable's new local contrast filter, so both can look
+  a little different. Existing edits keep their settings, and their Base detail
+  level moves to the value that matches the new filter.
 - Messages in the corners of the photo, such as the status text, errors and
   export summaries, fade after 15 seconds unless the pointer is over them. A
   click dismisses them at once.
