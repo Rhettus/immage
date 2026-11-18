@@ -277,7 +277,9 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 #define WB_NUM_STD 5
 #define WB_FIRST_CAMERA (WB_NUM_STD + 1)
 #define WB_MAX_PRESETS 50
+#define WB_STORED_UNKNOWN -1
 #define WB_STORED_AS_SHOT 0
+#define WB_STORED_NUM_STD 4
 #define WB_STORED_FIRST_CAMERA 5
 
 typedef struct
@@ -408,50 +410,90 @@ static dt_dev_cat_source_t _cat_source(dt_develop_t *dev)
   return source;
 }
 
-// temperature.c: gui_update's matching of the coefficients to an entry; it
-// only reads (darktable also stores the preset it settles on, which the next
-// edit would overwrite anyway)
+// temperature.c: _params_mode. legacy params have no mode: they take as shot or
+// camera reference if their coefficients are the photo's own for it
+static int _params_mode(const _wb_params_t *p, const dt_dev_chroma_t *chr)
+{
+  if(p->preset != WB_STORED_UNKNOWN) return p->preset;
+  if(_equal(p, chr->as_shot)) return WB_STORED_AS_SHOT;
+  if(_equal(p, chr->wb.D65coeffs)) return WB_D65;
+  return WB_STORED_UNKNOWN;
+}
+
+// temperature.c: gui_update. as shot and camera reference render with the
+// photo's own coefficients, whatever a pasted history or a style stored, so
+// the controls show those and an edit starts from them. only the module's
+// params change: the history keeps what it stored until the next edit, which
+// renders the same
+void wb_show_own(dt_iop_module_t *mod)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  _wb_params_t *p = session_field_in(mod, mod->params, "red", &f, &err);
+  g_free(err);
+  if(!p) return;
+  const dt_dev_chroma_t *chr = &mod->dev->chroma;
+  const int mode = _params_mode(p, chr);
+  if(mode == WB_STORED_AS_SHOT) _from_array(p, chr->as_shot);
+  else if(mode == WB_D65) _from_array(p, chr->wb.D65coeffs);
+}
+
+// temperature.c: _match_camera_preset, for one camera preset: at one of its
+// listed tunings or, with interpolate, at one in a gap between two of them,
+// which gives no way to know the tuning but to try each one
+static gboolean _matches_preset(const dt_image_t *img, const _wb_params_t *p, const _preset_t *pr,
+                                const gboolean interpolate, int *tuning)
+{
+  const int count = dt_wb_presets_count();
+  const char *name = dt_wb_preset(pr->first)->name;
+  for(int i = pr->first + (interpolate ? 1 : 0); i < count; i++)
+  {
+    const dt_wb_data *w = dt_wb_preset(i);
+    if(!_same_camera(img, w) || strcmp(w->name, name)) break;
+    if(!interpolate)
+    {
+      if(dt_dev_equal_chroma(p->coeff, w->channels))
+      {
+        *tuning = w->tuning;
+        return TRUE;
+      }
+      continue;
+    }
+    const dt_wb_data *lo = dt_wb_preset(i - 1);
+    for(int tune = lo->tuning + 1; tune < w->tuning; tune++)
+    {
+      dt_wb_data out = { .tuning = tune };
+      dt_wb_preset_interpolate(lo, w, &out);
+      if(dt_dev_equal_chroma(p->coeff, out.channels))
+      {
+        *tuning = tune;
+        return TRUE;
+      }
+    }
+  }
+  return FALSE;
+}
+
+// temperature.c: gui_update's label for the params. as shot and camera
+// reference are labeled by their mode. only legacy params and saved camera
+// presets are matched against the camera presets, a saved one first, as
+// another preset can have the same coefficients at some tuning. it only reads
+// (darktable also stores the mode it settles on, which the next edit would
+// overwrite anyway)
 static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_params_t *p,
                   const _preset_t *pr, const int n, int *tuning)
 {
   *tuning = 0;
-  if(_equal(p, chr->as_shot) && p->preset == WB_STORED_AS_SHOT && p->late_correction) return WB_D65_LATE;
-  if(_equal(p, chr->as_shot)) return WB_AS_SHOT;
-  if(_equal(p, chr->wb.D65coeffs)) return WB_D65;
-  const int count = dt_wb_presets_count();
-  for(int j = 0; j < n; j++)
-  {
-    for(int i = pr[j].first; i < count; i++)
-    {
-      const dt_wb_data *w = dt_wb_preset(i);
-      if(!_same_camera(img, w) || strcmp(w->name, dt_wb_preset(pr[j].first)->name)) break;
-      if(dt_dev_equal_chroma(p->coeff, w->channels))
-      {
-        *tuning = w->tuning;
-        return WB_FIRST_CAMERA + j;
-      }
-    }
-  }
-  // not an exact variant: maybe interpolated across a gap in the tunings,
-  // which gives no way to know the tuning but to try each one
-  for(int j = 0; j < n; j++)
-  {
-    for(int i = pr[j].first + 1; i < count; i++)
-    {
-      const dt_wb_data *lo = dt_wb_preset(i - 1), *hi = dt_wb_preset(i);
-      if(!_same_camera(img, hi) || strcmp(hi->name, dt_wb_preset(pr[j].first)->name)) break;
-      for(int tune = lo->tuning + 1; tune < hi->tuning; tune++)
-      {
-        dt_wb_data out = { .tuning = tune };
-        dt_wb_preset_interpolate(lo, hi, &out);
-        if(dt_dev_equal_chroma(p->coeff, out.channels))
-        {
-          *tuning = tune;
-          return WB_FIRST_CAMERA + j;
-        }
-      }
-    }
-  }
+  const int mode = _params_mode(p, chr);
+  if(mode == WB_STORED_AS_SHOT) return p->late_correction ? WB_D65_LATE : WB_AS_SHOT;
+  if(mode == WB_D65) return WB_D65;
+  if(mode != WB_STORED_UNKNOWN && mode < WB_STORED_NUM_STD) return WB_PRESET_USER;
+  const int saved = mode - WB_STORED_FIRST_CAMERA;
+  for(int interpolate = 0; saved >= 0 && saved < n && interpolate < 2; interpolate++)
+    if(_matches_preset(img, p, &pr[saved], interpolate, tuning)) return WB_FIRST_CAMERA + saved;
+  for(int interpolate = 0; interpolate < 2; interpolate++)
+    for(int j = 0; j < n; j++)
+      if(_matches_preset(img, p, &pr[j], interpolate, tuning)) return WB_FIRST_CAMERA + j;
   return WB_PRESET_USER;
 }
 

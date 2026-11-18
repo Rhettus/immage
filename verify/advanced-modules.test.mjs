@@ -1365,8 +1365,9 @@ for (const [what, source] of wbPhotos) {
     if (what === 'the sample JPEG') {
       assert.deepEqual(presets, [], 'a JPEG has no camera presets');
       await write({ wb_setting: 3 });
-      // sRGB has no separate reference, so the as shot match wins as in gui_update
-      assert.equal((await get('wb_setting')).wb_setting, 0, 'as shot and camera reference are the same');
+      // temperature.c, gui_update: the mode labels the setting, even where
+      // sRGB gives both modes the same coefficients
+      assert.equal((await get('wb_setting')).wb_setting, 3, 'camera reference stays chosen');
       return;
     }
     const same = (x, y) => ['red', 'green', 'blue'].every((c) => Math.abs(x[c] - y[c]) < 1e-5);
@@ -1387,6 +1388,16 @@ for (const [what, source] of wbPhotos) {
     assert.equal((await get('wb_setting')).wb_setting, 2, 'an edit is user modified');
     await write({ wb_setting: 2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
+    await write({ red: shot.red, green: shot.green, blue: shot.blue });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified stays so at the as shot coefficients');
+
+    // as shot with another photo's coefficients, as a pasted history carries
+    // them: the photo renders with its own (temperature.c, _own_coeffs)
+    await write({ red: shot.red * 1.2 });
+    await write({ preset: 0 });
+    const carried = await get(...coeffs);
+    assert.equal(carried.wb_setting, 0, 'carried as shot reads as shot');
+    assert.ok(same(carried, shot), 'carried as shot shows the photo\'s own coefficients');
 
     // temperature.c, _update_preset: a camera preset keeps "prepare data for
     // color calibration", and leaving camera reference sets it from whether

@@ -690,6 +690,7 @@ static gboolean _write_profile(dt_iop_module_t *mod, const gboolean work, const 
 gboolean session_write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err)
 {
+  if(!g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
   if(!g_strcmp0(mod->op, "colorin")
      && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
@@ -714,6 +715,7 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err)
 {
+  if(!from_defaults && !g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
   if(!g_strcmp0(mod->op, "colorin")
      && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
     return _read_profile(mod, from_defaults, !strcmp(name, "working_profile"), num, err);

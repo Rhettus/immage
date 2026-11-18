@@ -376,6 +376,7 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
                          double *num, char **err);
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 void wb_mark_user(dt_iop_module_t *mod);
+void wb_show_own(dt_iop_module_t *mod);
 gboolean wb_presets(JsonBuilder *b, char **err);
 // files.c: the file-name params no number can hold, edited as the hash of the
 // name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
