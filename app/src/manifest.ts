@@ -1115,7 +1115,7 @@ export const modules: ModuleMap[] = [
   {
     op: "channelmixerrgb", keepOn: true,
     controls: ["temp", "tint"],
-    fields: ["illuminant", "x", "y", "temperature"],
+    fields: ["illuminant", "x", "y", "temperature", "wb_x", "wb_y"],
     read: (p) => readWB(p),
     write: (v, d) => writeWB({ temp: v.temp, tint: v.tint }, d),
   },

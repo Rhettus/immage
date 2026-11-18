@@ -185,8 +185,8 @@ const CAPTURE = (p: Record<string, number>) => p.cs_enabled === 1 && !PASSING(p)
 
 // color calibration's settings, shared by its Basic and B&W cards
 const CALIBRATION: LayoutField[] = [
-  { path: "adaptation", label: "Adaptation", tab: "CAT" },
-  { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10], showIf: (p) => p.adaptation !== 4 },
+  { path: "adaptation", label: "Adaptation", tab: "CAT", grey: (p) => [10, 11].includes(p.illuminant) ? "Set by the illuminant" : null },
+  { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10, 11], showIf: (p) => p.adaptation !== 4 },
   { path: "illum_fluo", label: "F source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 4 },
   { path: "illum_led", label: "LED source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 5 },
   { path: "temperature", label: "Temperature", tab: "CAT", soft: [3000, 7000], unit: "K", digits: 0, showIf: (p) => p.adaptation !== 4 && (p.illuminant === 2 || p.illuminant === 6) },

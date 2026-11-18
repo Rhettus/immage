@@ -716,6 +716,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err)
 {
   if(!from_defaults && !g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
+  if((!g_strcmp0(name, WB_ILLUMINANT_X) || !g_strcmp0(name, WB_ILLUMINANT_Y)) && !g_strcmp0(mod->op, "channelmixerrgb"))
+    return wb_illuminant_read(mod, name, from_defaults, num);
   if(!g_strcmp0(mod->op, "colorin")
      && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
     return _read_profile(mod, from_defaults, !strcmp(name, "working_profile"), num, err);
@@ -881,11 +883,28 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
   gboolean moved = FALSE;
   if(!_place(mod, after, before, &moved, err)) return FALSE;
 
+  // one of color calibration's illuminant controls edited alone
+  GList *members = params ? json_object_get_members(params) : NULL;
+  const char *alone = field ? field : members && !members->next ? members->data : NULL;
+  const gboolean illuminant_edit = alone && !g_strcmp0(mod->op, "channelmixerrgb")
+    && (!strcmp(alone, "illuminant") || !strcmp(alone, "illum_fluo") || !strcmp(alone, "illum_led")
+        || !strcmp(alone, "temperature"));
+  double illuminant_was = 0.0;
+  if(illuminant_edit && !session_read_field(mod, "illuminant", FALSE, &illuminant_was, err))
+  {
+    g_list_free(members);
+    return FALSE;
+  }
+
   gboolean any = FALSE;
   if(field)
   {
     const double num = value && JSON_NODE_HOLDS_VALUE(value) ? json_node_get_double(value) : 0.0;
-    if(!session_write_field(mod, field, num, err)) return FALSE;
+    if(!session_write_field(mod, field, num, err))
+    {
+      g_list_free(members);
+      return FALSE;
+    }
     any = TRUE;
   }
   if(params)
@@ -896,12 +915,15 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
       if(!session_write_field(mod, n->data, json_object_get_double_member(params, n->data), err))
       {
         g_list_free(names);
+        g_list_free(members);
         return FALSE;
       }
       any = TRUE;
     }
     g_list_free(names);
   }
+  if(illuminant_edit) wb_illuminant_changed(mod, alone, (int)illuminant_was);
+  g_list_free(members);
 
   if(has_enabled) mod->enabled = enabled;
   else if(any) mod->enabled = TRUE;

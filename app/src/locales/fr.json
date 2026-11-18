@@ -2886,6 +2886,8 @@
   "fields.text.fine.details.16bc64": "Détails fins",
   "fields.text.fine.tuning.783095": "Ajustement fin",
   "fields.text.finetune.bd8c6e": "Ajustement",
+  "fields.text.set_by_the_illuminant.96e58f": "Définie par l'illuminant",
+  "fields.text.from_the_white_balance_module.a79935": "Du module Balance des blancs",
   "fields.text.prepare_data_for_color_calibration.4e81f1": "Préparer les données pour la calibration des couleurs",
   "fields.text.fix.various.bugs.in.algorithm.78feae": "Correction de bugs dans l’algorithme",
   "fields.text.flat.field.correction.ac50f9": "Correction de non-uniformité",

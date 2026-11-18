@@ -377,6 +377,11 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 void wb_mark_user(dt_iop_module_t *mod);
 void wb_show_own(dt_iop_module_t *mod);
+// color calibration's illuminant "from the white balance module", as x and y
+#define WB_ILLUMINANT_X "wb_x"
+#define WB_ILLUMINANT_Y "wb_y"
+gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num);
+void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous);
 gboolean wb_presets(JsonBuilder *b, char **err);
 // files.c: the file-name params no number can hold, edited as the hash of the
 // name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a

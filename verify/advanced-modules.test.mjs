@@ -1323,6 +1323,27 @@ test('Advanced alignment and composite photo (engine)', { skip: skip || false },
 const wbPhotos = [['the sample JPEG', SAMPLE]];
 if (process.env.IMMAGE_RAW) wbPhotos.push(['IMMAGE_RAW', process.env.IMMAGE_RAW]);
 for (const [what, source] of wbPhotos) {
+  test(`Color calibration follows the white balance module (${what})`, { skip: skip || what === 'the sample JPEG' }, async (t) => {
+    const work = mkdtempSync(join(tmpdir(), 'immage-advcat-'));
+    mkdirSync(join(work, 'photos'));
+    const photo = join(work, 'photos', `cat${source.slice(source.lastIndexOf('.'))}`);
+    copyFileSync(source, photo);
+    const e = new Engine(work);
+    t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+    await e.call({ cmd: 'open', path: photo });
+    const cat = async (...f) => (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': f } })).modules['channelmixerrgb@0'].params;
+    const first = await cat('illuminant', 'wb_x', 'wb_y');
+    assert.equal(first.illuminant, 11, 'a raw starts from the white balance module');
+    await e.call({ cmd: 'set', op: 'temperature', priority: 0, params: { wb_setting: 3 }, enabled: true });
+    const reference = await cat('wb_x', 'wb_y');
+    assert.ok(Math.abs(reference.wb_x - first.wb_x) + Math.abs(reference.wb_y - first.wb_y) > 1e-4, 'the illuminant follows the setting');
+    // channelmixerrgb.c, gui_changed: the new mode starts from that illuminant
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: true });
+    const custom = await cat('illuminant', 'x', 'y');
+    assert.equal(custom.illuminant, 7);
+    assert.ok(Math.abs(custom.x - reference.wb_x) < 1e-5 && Math.abs(custom.y - reference.wb_y) < 1e-5, 'custom starts from the illuminant it left');
+  });
+
   test(`Advanced white balance temperature and tint (${what})`, { skip: skip || false }, async (t) => {
     const work = mkdtempSync(join(tmpdir(), 'immage-advwb-'));
     mkdirSync(join(work, 'photos'));

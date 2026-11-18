@@ -2112,6 +2112,9 @@ export class Session {
             // white balance's temperature and tint set the coefficients, and
             // an edit of the coefficients moves them
             if (op === "temperature") this.advancedStale.add(key);
+            // and color calibration can take its illuminant from them, which
+            // Temp and Tint show
+            if (op === "temperature") await this.reread("channelmixerrgb");
             if (inst?.owner === "mask") this.maskCardsStale = true;
           }
           this.changed();

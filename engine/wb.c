@@ -475,6 +475,142 @@ static gboolean _matches_preset(const dt_image_t *img, const _wb_params_t *p, co
   return FALSE;
 }
 
+// temperature.c: _wb_from_params, what the module applies with its params
+static void _wb_applied(dt_develop_t *dev, const gboolean from_defaults, dt_dev_wb_t *wb)
+{
+  const dt_dev_chroma_t *chr = &dev->chroma;
+  memset(wb, 0, sizeof(*wb));
+  for(int k = 0; k < 4; k++)
+  {
+    wb->coeffs[k] = 1.0f;
+    wb->D65coeffs[k] = chr->wb.D65coeffs[k];
+  }
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(!dt_iop_module_is(mod, "temperature")) continue;
+    dt_introspection_field_t *f = NULL;
+    char *err = NULL;
+    const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params, "red", &f, &err);
+    g_free(err);
+    const gboolean enabled = from_defaults ? mod->default_enabled : mod->enabled;
+    if(!p || !enabled || mod->hide_enable_button) return;
+    const int mode = _params_mode(p, chr);
+    const double *own = mode == WB_STORED_AS_SHOT ? chr->as_shot : mode == WB_D65 ? chr->wb.D65coeffs : NULL;
+    for(int k = 0; k < 4; k++) wb->coeffs[k] = own ? (float)own[k] : p->coeff[k];
+    wb->camera_reference = mode == WB_D65;
+    wb->late_correction = !wb->camera_reference && p->late_correction;
+    return;
+  }
+}
+
+// channelmixerrgb.c: _illuminant_xy_from_wb_or_D50 with
+// _illuminant_xy_from_unprepared_wb
+static void _illuminant_from_wb(const dt_image_t *img, const dt_dev_wb_t *wb, float *x, float *y)
+{
+  gboolean found = FALSE;
+  if(wb->late_correction || wb->camera_reference)
+    found = find_illuminant_xy_from_wb_coeffs(img, wb->coeffs, x, y);
+  else if(!_wb_coeffs_invalid(wb->coeffs, 3))
+  {
+    dt_aligned_pixel_t ratios = { 1.f, 1.f, 1.f, 1.f };
+    for(int k = 0; k < 3; k++) ratios[k] = wb->D65coeffs[k] / wb->coeffs[k];
+    found = find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+  }
+  if(found) return;
+  *x = D50xyY.x;
+  *y = D50xyY.y;
+}
+
+// the illuminant color calibration takes from the white balance module, which
+// it computes on each run and does not store
+gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num)
+{
+  dt_dev_wb_t wb;
+  _wb_applied(mod->dev, from_defaults, &wb);
+  float x = 0.f, y = 0.f;
+  _illuminant_from_wb(&mod->dev->image_storage, &wb, &x, &y);
+  *num = !strcmp(name, WB_ILLUMINANT_X) ? x : y;
+  return TRUE;
+}
+
+// channelmixerrgb.c: _get_d65_correction_ratios
+static void _d65_ratios(const dt_image_t *img, const dt_dev_wb_t *wb, dt_aligned_pixel_t ratios)
+{
+  for(int k = 0; k < 4; k++) ratios[k] = 1.0f;
+  if(!dt_image_is_matrix_correction_supported(img)) return;
+  if(wb->late_correction || dt_dev_equal_chroma(wb->coeffs, wb->D65coeffs)) return;
+  const gboolean valid = wb->D65coeffs[0] > 0.0 && wb->D65coeffs[1] > 0.0 && wb->D65coeffs[2] > 0.0;
+  const gboolean changed = wb->coeffs[0] > 1.0f || wb->coeffs[1] > 1.0f || wb->coeffs[2] > 1.0f;
+  if(valid && changed) dt_dev_wb_get_rgb_correction(wb, TRUE, ratios);
+}
+
+// channelmixerrgb.c: _check_if_close_to_daylight, for the temperature
+static float _closest_cct(const float x, const float y)
+{
+  float t = xy_to_CCT(x, y);
+  if(t < 3000.f && t > 1667.f) t = CCT_reverse_lookup(x, y);
+  return t;
+}
+
+// channelmixerrgb.c: gui_changed, after one of the controls that define the
+// illuminant was edited alone. a request that sets the illuminant's values
+// itself, as Simple's Temp and Tint do, does not come here
+void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  int *illuminant = session_field_in(mod, mod->params, "illuminant", &f, &err);
+  int *adaptation = illuminant ? session_field_in(mod, mod->params, "adaptation", &f, &err) : NULL;
+  int *fluo = adaptation ? session_field_in(mod, mod->params, "illum_fluo", &f, &err) : NULL;
+  int *illum_led = fluo ? session_field_in(mod, mod->params, "illum_led", &f, &err) : NULL;
+  float *x = illum_led ? session_field_in(mod, mod->params, "x", &f, &err) : NULL;
+  float *y = x ? session_field_in(mod, mod->params, "y", &f, &err) : NULL;
+  float *temperature = y ? session_field_in(mod, mod->params, "temperature", &f, &err) : NULL;
+  const float *default_temperature = temperature ? session_field_in(mod, mod->default_params, "temperature", &f, &err) : NULL;
+  g_free(err);
+  if(!default_temperature) return;
+
+  const dt_image_t *img = &mod->dev->image_storage;
+  dt_dev_wb_t wb;
+  _wb_applied(mod->dev, FALSE, &wb);
+  dt_aligned_pixel_t ratios;
+  _d65_ratios(img, &wb, ratios);
+
+  if(!strcmp(name, "illuminant"))
+  {
+    if(previous == DT_ILLUMINANT_CAMERA)
+      find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+    if(previous == DT_ILLUMINANT_FROM_WB)
+      _illuminant_from_wb(img, &wb, x, y);
+    if(previous == DT_ILLUMINANT_CAMERA || previous == DT_ILLUMINANT_FROM_WB)
+    {
+      *temperature = _closest_cct(*x, *y);
+      *adaptation = DT_ADAPTATION_CAT16;
+    }
+    // darktable returns to the last temperature set in that mode, which it
+    // keeps in its GUI and starts from the default
+    if(*illuminant == DT_ILLUMINANT_D || *illuminant == DT_ILLUMINANT_BB)
+      *temperature = *default_temperature;
+    if(*illuminant == DT_ILLUMINANT_CAMERA)
+      find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+    if(*illuminant == DT_ILLUMINANT_FROM_WB)
+      _illuminant_from_wb(img, &wb, x, y);
+    if(*illuminant == DT_ILLUMINANT_CAMERA || *illuminant == DT_ILLUMINANT_FROM_WB)
+    {
+      *temperature = _closest_cct(*x, *y);
+      *adaptation = DT_ADAPTATION_CAT16;
+    }
+  }
+
+  // every way to define an illuminant is kept in step, to allow swapping modes
+  const gboolean from_image = *illuminant == DT_ILLUMINANT_CAMERA || *illuminant == DT_ILLUMINANT_FROM_WB;
+  if(*illuminant != DT_ILLUMINANT_CUSTOM && !from_image)
+    illuminant_to_xy(*illuminant, NULL, NULL, x, y, *temperature, *fluo, *illum_led);
+  if(*illuminant != DT_ILLUMINANT_D && *illuminant != DT_ILLUMINANT_BB && !from_image)
+    *temperature = _closest_cct(*x, *y);
+}
+
 // temperature.c: gui_update's label for the params. as shot and camera
 // reference are labeled by their mode. only legacy params and saved camera
 // presets are matched against the camera presets, a saved one first, as

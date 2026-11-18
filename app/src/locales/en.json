@@ -2886,6 +2886,8 @@
   "fields.text.fine.details.16bc64": "Fine details",
   "fields.text.fine.tuning.783095": "Fine-tuning",
   "fields.text.finetune.bd8c6e": "Finetune",
+  "fields.text.set_by_the_illuminant.96e58f": "Set by the illuminant",
+  "fields.text.from_the_white_balance_module.a79935": "From the white balance module",
   "fields.text.prepare_data_for_color_calibration.4e81f1": "Prepare data for color calibration",
   "fields.text.fix.various.bugs.in.algorithm.78feae": "Fix various bugs in algorithm",
   "fields.text.flat.field.correction.ac50f9": "Flat field correction",

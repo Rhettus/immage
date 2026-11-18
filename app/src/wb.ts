@@ -8,6 +8,7 @@
 export const ILLUMINANT_D = 2;
 export const ILLUMINANT_BB = 6;
 export const ILLUMINANT_CUSTOM = 7;
+export const ILLUMINANT_FROM_WB = 11;
 
 // one Lightroom tint unit, as a distance from the Planckian locus in xy
 const TINT_SCALE = 0.0002;
@@ -90,7 +91,10 @@ export function readWB(p: Params): WB {
   if (p.illuminant === ILLUMINANT_BB) return { temp: p.temperature, tint: 0 };
   // below 4000 K the daylight model has no answer, and darktable renders
   // the black body instead (illuminant_to_xy(), illuminants.h)
-  const [x, y] = p.illuminant !== ILLUMINANT_D ? [p.x, p.y]
+  // from the white balance module, darktable's default for a raw: computed on
+  // each run, so the stored x and y can be out of date (wb.c)
+  const [x, y] = p.illuminant === ILLUMINANT_FROM_WB ? [p.wb_x ?? p.x, p.wb_y ?? p.y]
+    : p.illuminant !== ILLUMINANT_D ? [p.x, p.y]
     : p.temperature >= 4000 ? daylightXY(p.temperature) : blackbodyXY(p.temperature);
   const t = nearestCCT(x, y);
   return { temp: t, tint: -tintOf(y, t) / TINT_SCALE };
