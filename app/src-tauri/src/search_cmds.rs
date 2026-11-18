@@ -36,13 +36,15 @@ pub async fn search_status(state: State<'_, AppState>) -> Result<SearchStatus, S
     .await
     .map_err(|e| e.to_string())?
 }
-/// The analysis queue's counts and pause state, for Find's indicator to poll.
-/// Sync on purpose: it only copies in-memory state under the queue's own mutex
-/// (no file, SQLite or network work), unlike `search_status`.
+/// Find's indicator: the real backlog of photos waiting for analysis, whether
+/// analysis is running, and the pause state. Sync on purpose: atomics and the
+/// queue's own mutex only (no file, SQLite or network work); the service
+/// thread does the counting.
 #[tauri::command]
 #[specta::specta]
-pub fn search_queue(state: State<'_, AppState>) -> analysis_queue::Status {
-    state.analysis_queue.status()
+pub fn search_analysis_status(state: State<'_, AppState>) -> crate::search_analysis::AnalysisProgress {
+    let paused = state.analysis_queue.status().paused;
+    state.search_analysis.status(paused)
 }
 #[tauri::command]
 #[specta::specta]

@@ -169,19 +169,19 @@ export async function siteShots(t) {
       await click(t, '.find-button');
       await until(() => present(`${pop}.locked`), 'Find in the right-hand column');
       await pause(400);
-      await click(t, `${pop} .find-stars button[title="3 stars and up"]`);
-      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-chip').length) >= 1, 'rating chip');
+      await click(t, `${pop} .fe-stars button[aria-label="3 stars and up"]`);
+      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-pop .fr-row.on').length) >= 1, 'rating row on');
       const type = await until(() => t.driver.observe(() => {
-        const e = [...document.querySelectorAll('.find-cat')].find(c => c.querySelector('.name')?.textContent === 'File type');
+        const e = [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === 'File type');
         if (!e) return null;
         e.scrollIntoView({ block: 'nearest' });
         const r = e.getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       }), 'File type row');
       await t.driver.point(type.x, type.y);
-      await until(() => t.driver.observe(() => document.querySelector('.find-pane h3')?.textContent === 'File type'), 'File type pane');
-      await click(t, `${pop} .find-pane .filter-ticks button`);
-      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-chip').length) >= 2, 'file type chip');
+      await until(() => t.driver.observe(() => document.querySelector('.find-pop .fr-row[aria-expanded="true"] .fr-title')?.textContent === 'File type'), 'File type editor');
+      await click(t, `${pop} .fr-editor .filter-ticks button`);
+      await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-pop .fr-row.on').length) >= 2, 'file type row on');
       const kept = await photos();
       if (kept < 3 || kept >= all) throw Error(`filters left ${kept} of ${all} photos`);
       await shot(t, 'find', pop);

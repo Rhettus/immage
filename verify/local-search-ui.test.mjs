@@ -60,7 +60,11 @@ test('Find without the CLIP model or Immich offers file names only',()=>{
  const tree=FindPanel({state:NO_FIND,onChange(){},images:[],immichAvailable:false,smart:false,count:0,busy:false,notes:[],
   onShow(){},onClose(){},anchor:()=>undefined,bounds:()=>({left:0,right:1200,top:0,bottom:700})});
  const all=nodes(tree);
- assert.ok(!all.some(n=>n.type==='button'&&['Smart','Filename'].includes(n.props?.children)),'no Smart/Filename switch');
+ const smartButton=all.find(n=>n.type==='button'&&n.props['aria-disabled']==='true');
+ assert.ok(smartButton,'Smart stays, aria-disabled');
+ assert.ok(!smartButton.props.disabled,'Smart is not the disabled attribute, so its tooltip works');
+ const filenameButton=all.find(n=>n.type==='button'&&n.props.className==='active'&&n.props['aria-pressed']===true);
+ assert.ok(filenameButton,'Filename shows as active');
  const box=all.find(n=>n.type==='input'&&String(n.props.className).includes('find-text'));
  assert.ok(box&&box.props.placeholder!=='sunset on a beach','the box says it searches file names');
 });

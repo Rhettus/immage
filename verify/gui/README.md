@@ -80,8 +80,9 @@ folder and All folders only, Filename mode, the words typed and Enter pressed
 (there is no Search button). Use the bundled sample JPEG as the configured
 fixture; the runner copies it into isolated app state. The case waits for a
 cached local result and thumbnail, closes the popup with Show, rates only that
-disposable copy, retains a rating filter, and returns to its folder. It passed
-live through Find on 2026-11-16 (run `2026-11-16T11-10-07.333Z_565a37b_8773884c`). Local per-run GUI approval rules still apply.
+disposable copy, retains a rating filter (its Rating & flags row stays on in Find),
+and returns to its folder. Rewritten for the inline filter rows; not yet run live.
+Local per-run GUI approval rules still apply.
 
 `--case find-no-clip` (the `find` suite also runs it) checks the grid's locked Find
 column in the isolated profile, which has no CLIP model: no Smart/Filename
@@ -91,14 +92,18 @@ dismissing hides it, also after re-entering the grid), the head row's controls o
 one centre line, and no Show more like this in the photo menu. `find-live` also
 covers the rail Library button and the toolbar magnifier. Neither has run live yet.
 
-`--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
-the locked right-hand column Find becomes in the grid: no Show N, grip or close,
-Escape only leaves its box), `find-sizes` (in the filmstrip view, where Find is
-the popup: Minimize, Dock and Fill, dragging the grip,
-remembered places, double-click reset) and `find-saved` (Save filter…, changed
-and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
-`find-01` to `find-03`. All three, and the `filters` and `camera-body` cases that now
-open Find (Dock size), passed live on 2026-11-16.
+`--suite find` runs `find-live` (a filter narrows the grid as it is set; a filter
+row turns on and its x turns it off; one editor is open at a time under its row;
+the Filters header's Clear keeps the search words; the locked right-hand column Find
+becomes in the grid: no Show N, grip or close, Escape only leaves its box),
+`find-sizes` (in the filmstrip view, where Find is the popup: its one docked layout
+and place, dragging the grip, remembered place, double-click reset) and `find-saved`
+(Save filter…, changed and Update, Alt+1 after Clear, Manage). `find-live` has the
+runner copy the fixture to `find-01` to `find-03`. The `filters` and `camera-body`
+cases open Find's rows and their inline editors. There are no chips and no separate
+value pane: selectors are `.fr-row` (`.on` when active, `aria-expanded` when open),
+`.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`. All of these were rewritten
+for the inline filters and have not run live.
 
 ## Positive hot-pixel fixture
 

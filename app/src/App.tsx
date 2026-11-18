@@ -39,7 +39,7 @@ import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_
 import { PositiveFooter } from "./PositiveFooter";
 import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
          type Stocks } from "./spektrafilm";
-import { Pipette } from "lucide-react";
+import { ChevronDown, Pipette } from "lucide-react";
 
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
@@ -6208,7 +6208,7 @@ export default function App() {
   useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
   const renderFind = (locked: boolean) => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-              smart={smartAvailable(clipReady, !!immichBase)} analysis={clipReady}
+              smart={smartAvailable(clipReady, !!immichBase)}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
@@ -6217,6 +6217,7 @@ export default function App() {
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
               onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
               saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                button={<>{t("library.find.saved.load")}<ChevronDown size={12} strokeWidth={1.8} /></>}
                                 onManage={() => setManageSaved(true)} />}
               savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
                                                onUpdate={() => updateSaved(savedNow.id, find)}

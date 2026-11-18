@@ -11,16 +11,94 @@ use serde_json::json;
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex, OnceLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-pub struct Control(Arc<AtomicBool>);
+/// How Find's indicator sees the analysis backlog. Atomics only, so the
+/// status command, a sync one, never waits on the service, the queue or the
+/// cache. `pending` is -1 until a complete count; the times are milliseconds
+/// since `now_ms`'s epoch plus one, 0 meaning never.
+struct Progress {
+    installed: AtomicBool,
+    pending: AtomicI64,
+    running: AtomicUsize,
+    last_work_ms: AtomicU64,
+    wanted_ms: AtomicU64,
+}
+impl Progress {
+    fn new() -> Self {
+        Progress {
+            installed: AtomicBool::new(false),
+            pending: AtomicI64::new(-1),
+            running: AtomicUsize::new(0),
+            last_work_ms: AtomicU64::new(0),
+            wanted_ms: AtomicU64::new(0),
+        }
+    }
+}
+fn now_ms() -> u64 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_millis() as u64 + 1
+}
+/// A photo job that finished this recently still counts as working.
+const ACTIVE_FOR_MS: u64 = 15_000;
+/// The page's last request keeps the backlog counted this long.
+const WANTED_FOR_MS: u64 = 10_000;
+const COUNT_EVERY: Duration = Duration::from_secs(5);
+const SCAN_EVERY: Duration = Duration::from_secs(5);
+const COUNT_PAGE: u32 = 1024;
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct AnalysisProgress {
+    pub installed: bool,
+    pub pending: Option<u32>,
+    pub running: u32,
+    pub active: bool,
+    pub paused: bool,
+}
+
+/// Counts a photo job while it runs, on every way out of its closure.
+struct RunGuard(Arc<Progress>);
+impl RunGuard {
+    fn new(progress: &Arc<Progress>) -> Self {
+        progress.running.fetch_add(1, Ordering::AcqRel);
+        RunGuard(progress.clone())
+    }
+}
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        self.0.last_work_ms.store(now_ms(), Ordering::Release);
+        self.0.running.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+pub struct Control {
+    stop: Arc<AtomicBool>,
+    progress: Arc<Progress>,
+}
 impl Control {
     pub fn stop(&self) {
-        self.0.store(true, Ordering::Release);
+        self.stop.store(true, Ordering::Release);
+    }
+    /// For the status command: memory only. Asking also keeps the service
+    /// counting the backlog for the next few seconds.
+    pub fn status(&self, paused: bool) -> AnalysisProgress {
+        let p = &self.progress;
+        let now = now_ms();
+        p.wanted_ms.store(now, Ordering::Release);
+        let running = p.running.load(Ordering::Acquire) as u32;
+        let last = p.last_work_ms.load(Ordering::Acquire);
+        let pending = p.pending.load(Ordering::Acquire);
+        AnalysisProgress {
+            installed: p.installed.load(Ordering::Acquire),
+            pending: u32::try_from(pending).ok(),
+            running,
+            active: running > 0 || (last != 0 && now.saturating_sub(last) < ACTIVE_FOR_MS),
+            paused,
+        }
     }
 }
 impl Drop for Control {
@@ -37,6 +115,7 @@ struct Service {
     runtime: PathBuf,
     after: Mutex<i64>,
     stop: Arc<AtomicBool>,
+    progress: Arc<Progress>,
 }
 pub fn start(
     cache: Option<Arc<SearchCache>>,
@@ -47,6 +126,7 @@ pub fn start(
     runtime: PathBuf,
 ) -> Control {
     let stop = Arc::new(AtomicBool::new(false));
+    let progress = Arc::new(Progress::new());
     if let Some(cache) = cache {
         let service = Arc::new(Service {
             cache,
@@ -57,25 +137,54 @@ pub fn start(
             runtime,
             after: Mutex::new(0),
             stop: stop.clone(),
+            progress: progress.clone(),
         });
+        // this thread yields to nothing but the stop flag: it takes the cache
+        // lock one page at a time and only for the backlog count, so the count
+        // also works while the queue is paused
         std::thread::spawn(move || {
+            let mut last_scan: Option<Instant> = None;
+            let mut last_count: Option<Instant> = None;
             while !service.stop.load(Ordering::Acquire) {
                 // No directory creation, download or engine request without installed assets.
-                if service.models.installed() {
-                    let next = service.clone();
-                    service.queue.submit("clip:scan".into(), move |job| {
-                        if !job.cancelled() && !next.stop.load(Ordering::Acquire) {
-                            if let Err(e) = next.scan(&job) {
-                                eprintln!("local analysis: {e}");
+                let installed = service.models.installed();
+                let p = &service.progress;
+                p.installed.store(installed, Ordering::Release);
+                if installed {
+                    if last_scan.map_or(true, |t| t.elapsed() >= SCAN_EVERY) {
+                        last_scan = Some(Instant::now());
+                        let next = service.clone();
+                        service.queue.submit("clip:scan".into(), move |job| {
+                            if !job.cancelled() && !next.stop.load(Ordering::Acquire) {
+                                if let Err(e) = next.scan(&job) {
+                                    eprintln!("local analysis: {e}");
+                                }
                             }
+                        });
+                    }
+                    let wanted = p.wanted_ms.load(Ordering::Acquire);
+                    if wanted != 0
+                        && now_ms().saturating_sub(wanted) <= WANTED_FOR_MS
+                        && last_count.map_or(true, |t| t.elapsed() >= COUNT_EVERY)
+                    {
+                        last_count = Some(Instant::now());
+                        let selection = library_selection(&service.runtime);
+                        if let Some(n) =
+                            count_backlog(&service.cache, &selection, &service.stop, COUNT_PAGE)
+                        {
+                            p.pending.store(n as i64, Ordering::Release);
                         }
-                    });
+                    }
+                } else {
+                    p.pending.store(-1, Ordering::Release);
+                    last_scan = None;
+                    last_count = None;
                 }
-                std::thread::sleep(Duration::from_secs(5));
+                std::thread::sleep(Duration::from_secs(1));
             }
         });
     }
-    Control(stop)
+    Control { stop, progress }
 }
 // photos on a network share are analysed only once the user has opened,
 // rendered or browsed no photo for this long (Tagged::mark_active).
@@ -135,6 +244,7 @@ impl Service {
                     let service = self.clone();
                     self.queue
                         .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
+                            let _running = RunGuard::new(&service.progress);
                             if let Err(e) = service.refresh_metadata(&row, &job) {
                                 eprintln!("local analysis metadata: {e}");
                             }
@@ -150,6 +260,7 @@ impl Service {
                     let row = row.clone();
                     self.queue
                         .submit(format!("clip:edited:{}", row.variant_id), move |job| {
+                            let _running = RunGuard::new(&service.progress);
                             if let Err(e) = service.analyze(&row, "edited", &job) {
                                 eprintln!("local analysis: {e}");
                             }
@@ -302,6 +413,35 @@ impl Service {
         Ok(())
     }
 }
+/// Photos waiting for metadata or an edited analysis in the selected folders.
+/// Pages by id with the cache lock held for one page at a time; None when
+/// stopped or on an error, so a partial count is never stored.
+fn count_backlog(
+    cache: &SearchCache,
+    selection: &serde_json::Value,
+    stop: &AtomicBool,
+    page: u32,
+) -> Option<u32> {
+    let (mut after, mut total) = (0i64, 0u32);
+    loop {
+        if stop.load(Ordering::Acquire) {
+            return None;
+        }
+        let rows = cache.pending_analysis_paths(after, page).ok()?;
+        let Some(last) = rows.last() else {
+            return Some(total);
+        };
+        after = last.0;
+        total = total.saturating_add(
+            rows.iter()
+                .filter(|(_, path)| selected(Path::new(path), selection))
+                .count() as u32,
+        );
+        if (rows.len() as u32) < page {
+            return Some(total);
+        }
+    }
+}
 fn library_selection(runtime: &Path) -> serde_json::Value {
     crate::settings::read_key(runtime, "immage.library")
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -344,6 +484,113 @@ fn current(row: &PendingAnalysis, subject: &str, version: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn control() -> Control {
+        Control {
+            stop: Arc::new(AtomicBool::new(false)),
+            progress: Arc::new(Progress::new()),
+        }
+    }
+
+    #[test]
+    fn backlog_counts_selected_photos_across_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        for i in 0..5 {
+            cache
+                .upsert_variant(&format!("/photos/{i}.jpg"), "", "s", "e", None, None, None)
+                .unwrap();
+        }
+        cache
+            .upsert_variant("/photos/hidden/h.jpg", "", "s", "e", None, None, None)
+            .unwrap();
+        cache
+            .upsert_variant("/elsewhere/x.jpg", "", "s", "e", None, None, None)
+            .unwrap();
+        let config = json!({"folders":["/photos"],"hidden":["/photos/hidden"]});
+        let stop = AtomicBool::new(false);
+        // page sizes smaller than, equal to and larger than the backlog agree
+        for page in [1, 2, 7, 8, 1024] {
+            assert_eq!(count_backlog(&cache, &config, &stop, page), Some(5), "page {page}");
+        }
+        assert_eq!(count_backlog(&cache, &json!({"folders":[]}), &stop, 2), Some(0));
+        stop.store(true, Ordering::Release);
+        assert_eq!(count_backlog(&cache, &config, &stop, 2), None);
+    }
+
+    #[test]
+    fn backlog_leaves_out_analysed_photos() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let v = cache
+            .upsert_variant("/photos/a.jpg", "", "s", "e", None, None, None)
+            .unwrap();
+        cache.store_metadata(v.id, "{}").unwrap();
+        let config = json!({"folders":["/photos"]});
+        let stop = AtomicBool::new(false);
+        assert_eq!(count_backlog(&cache, &config, &stop, 8), Some(1));
+        let row = cache.pending_analyses(0, 8).unwrap().remove(0);
+        cache
+            .put_analysis(
+                row.variant_id,
+                "edited",
+                &row.edited,
+                crate::local_search::ANALYSIS_VERSION,
+                crate::local_search::MODEL_VERSION,
+                &[0u8; 4],
+            )
+            .unwrap();
+        assert_eq!(count_backlog(&cache, &config, &stop, 8), Some(0));
+    }
+
+    #[test]
+    fn status_is_active_while_running_and_shortly_after() {
+        let c = control();
+        let s = c.status(false);
+        assert!(!s.installed && s.pending.is_none() && !s.active && !s.paused);
+        c.progress.pending.store(3, Ordering::Release);
+        c.progress.installed.store(true, Ordering::Release);
+        assert_eq!(c.status(true).pending, Some(3));
+        assert!(c.status(true).paused);
+        let guard = RunGuard::new(&c.progress);
+        let s = c.status(false);
+        assert!(s.active && s.running == 1);
+        drop(guard);
+        let s = c.status(false);
+        assert!(s.active && s.running == 0, "a finished job counts for a while");
+        c.progress
+            .last_work_ms
+            .store(now_ms().saturating_sub(ACTIVE_FOR_MS + 1), Ordering::Release);
+        assert!(!c.status(false).active);
+    }
+
+    #[test]
+    fn guard_decrements_on_early_return_and_panic() {
+        let progress = Arc::new(Progress::new());
+        let early = |p: &Arc<Progress>| -> Result<(), String> {
+            let _running = RunGuard::new(p);
+            assert_eq!(p.running.load(Ordering::Acquire), 1);
+            Err("early".into())
+        };
+        assert!(early(&progress).is_err());
+        assert_eq!(progress.running.load(Ordering::Acquire), 0);
+        assert_ne!(progress.last_work_ms.load(Ordering::Acquire), 0);
+        let p = progress.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _running = RunGuard::new(&p);
+            panic!("job failed");
+        });
+        assert!(result.is_err());
+        assert_eq!(progress.running.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn asking_for_status_marks_the_page_as_waiting() {
+        let c = control();
+        assert_eq!(c.progress.wanted_ms.load(Ordering::Acquire), 0);
+        c.status(false);
+        assert_ne!(c.progress.wanted_ms.load(Ordering::Acquire), 0);
+    }
     #[test]
     fn background_selection_excludes_hidden_removed_and_component_prefix_paths() {
         let config = json!({"folders":["/photos"],"hidden":["/photos/excluded"]});
@@ -623,6 +870,7 @@ for line in sys.stdin:
             runtime,
             after: Mutex::new(0),
             stop: Arc::new(AtomicBool::new(false)),
+            progress: Arc::new(Progress::new()),
         });
         let (tx, rx) = mpsc::channel();
         let task_service = service.clone();

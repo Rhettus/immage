@@ -101,8 +101,8 @@ export const PanelIcon = ({ side }: { side: "left" | "bottom" | "right" }) => ic
 </>);
 
 // Find's analysis indicator: a spinner arc, a pause glyph and a check, drawn on 14 units
-export const AnalysisSpinnerIcon = () => (
-  <svg className="analysis-spin" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+export const AnalysisSpinnerIcon = ({ still }: { still?: boolean }) => (
+  <svg className={still ? undefined : "analysis-spin"} width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
     <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
     <path d="M7 2a5 5 0 0 1 5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
@@ -115,6 +115,7 @@ export const AnalysisPauseIcon = () => (
 );
 export const AnalysisCheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-    <path d="M3 7.4l2.6 2.6L11 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="7" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M4.3 7.2l1.9 1.9 3.5-3.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );

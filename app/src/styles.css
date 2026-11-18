@@ -1942,44 +1942,26 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 @keyframes filter-note { 0% { opacity: 0; } 10%, 75% { opacity: 1; } 100% { opacity: 0; } }
 
-/* the toolbar's Filters button and its popup, opening upward */
-/* one panel, as Preferences: the things to filter by down the left, the
-   chosen one's options beside them, taking the width they need */
-/* a row per thing to filter by, with what it is set to */
-.filter-cat {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: none; border: none;
-  border-radius: 9px; color: var(--text-2); font: inherit; font-size: var(--fs-body); text-align: left; cursor: pointer;
-}
-.filter-cat:hover { background: var(--hover); color: var(--text); }
-.filter-cat.shown { background: var(--inset); color: var(--text); }
-.filter-cat .name { flex: none; }
-.filter-cat .summary {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
-  color: var(--text-3); font-size: var(--fs-small);
-}
-.filter-cat.on .summary { color: var(--accent); }
-/* Exposure: its settings, and the values of the one chosen to their right */
-.filter-split { display: flex; height: 100%; }
-.filter-sub { flex: none; width: 210px; overflow-y: auto; padding-right: 8px; border-right: 1px solid var(--inset, #262626); }
-.filter-values { flex: 1; min-width: 140px; overflow-y: auto; }
+/* the value lists of Find's editors */
+.filter-ticks { max-height: 204px; overflow-y: auto; overscroll-behavior: contain; }
 .filter-ticks .indent { padding-inline-start: 28px; }
-.filter-group { padding: 8px 10px 3px; color: var(--text-3); font-size: var(--fs-small); }
+.filter-group { padding: 8px 10px 3px; color: var(--text-2); font-size: var(--fs-small); }
 .filter-ticks button {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: none; border: none;
-  border-radius: 5px; color: var(--text); font: inherit; font-size: var(--fs-body); text-align: left; cursor: pointer;
+  border-radius: 5px; color: var(--text); font: inherit; font-size: var(--fs-body); text-align: start; cursor: pointer;
 }
 .filter-ticks button:hover { background: var(--hover); }
 .filter-ticks .tick { flex: none; width: 12px; color: var(--accent); }
 .filter-ticks .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.filter-ticks .count { margin-left: auto; padding-left: 24px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.filter-ticks .empty { padding: 4px 10px; color: var(--text-3); }
+.filter-ticks .count { margin-inline-start: auto; padding-inline-start: 24px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.filter-ticks .empty { padding: 4px 10px; color: var(--text-2); }
 .filter-range { display: grid; gap: 5px 6px; align-items: center; padding: 4px 10px; color: var(--text-2); }
 .filter-range { grid-template-columns: 1fr auto 1fr; }
 .filter-immich { padding: 4px 10px 0; }
 .filter-immich .switch { justify-self: start; }
 
-/* Find popup: search, where to look, the filters on as chips, then the
-   grouped list of what to filter by beside the options of the one chosen */
+/* Find popup: search and where to look, then the filters as an accordion: a row
+   each, its editor opening beneath it, all in one scroll region above the footer */
 .find-pop {
   position: fixed; z-index: 60; display: flex; flex-direction: column; overflow: hidden;
   background: var(--panel); border-radius: var(--radius-panel); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
@@ -1990,105 +1972,130 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   border-radius: 7px; color: var(--text); font: inherit; user-select: text; outline: none;
 }
 .find-pop .field:focus { border-color: var(--focus, #555); }
-.find-pop .field.find { display: block; width: calc(100% - 20px); margin-block: 0 6px; margin-inline: 10px; }
+.find-pop .field.find { display: block; width: 100%; margin: 0 0 6px; }
 .find-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--inset, #262626); }
 .find-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .find-row .find-text { flex: 1 1 auto; width: auto; }
-.find-where { flex-wrap: wrap; color: var(--text-2); }
-.find-where .field { flex: 0 1 auto; width: auto; }
+/* one line at every width: the segmented control and the label keep their size, the select truncates */
+.find-modewhere { flex-wrap: nowrap; justify-content: space-between; }
+.find-modewhere .segmented { flex: none; }
+.find-modewhere .segmented button { padding: 4px 10px; font-size: var(--fs-small); white-space: nowrap; }
+.find-modewhere .segmented button[aria-disabled="true"] { color: var(--text-3); cursor: default; }
+.find-modewhere .segmented button[aria-disabled="true"]:hover { background: none; }
+.find-modewhere .find-where { flex: 1 1 auto; justify-content: flex-end; }
+.find-modewhere .find-where-label { flex: none; white-space: nowrap; }
+.find-modewhere .find-where .field { flex: 0 1 auto; min-width: 0; text-overflow: ellipsis; }
+.find-where { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); }
+.find-where .field { flex: 0 1 auto; width: auto; max-width: 160px; }
+.find-pop :is(button, input, select, summary):focus-visible { outline: 2px solid var(--focus, #f5f5f5); outline-offset: -2px; }
 .find-grip { flex: none; width: 18px; text-align: center; color: var(--text-3); user-select: none; }
-.find-sizes { flex: none; display: flex; align-items: center; gap: 2px; }
-.find-sizes:empty { display: none; }
-.find-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.find-none { color: var(--text-3); }
-.find-chip {
-  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 4px 3px 10px;
-  background: var(--hover); border-radius: 99px; color: var(--text);
+.find-filters-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px 4px; }
+.find-pop.locked .find-filters-head { padding-inline: 12px; }
+.find-filters-head h2 { flex: none; margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.find-active { flex: 1; min-width: 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.find-clear { padding: 2px 8px; background: none; border: none; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; }
+.find-clear:hover:not(:disabled) { background: var(--hover); }
+.find-clear:disabled { color: var(--text-2); opacity: 0.6; cursor: default; }
+.find-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 14px 20px; }
+.find-pop.locked .find-scroll { padding-inline: 12px; }
+.fr-group-title {
+  padding: 10px 2px 5px; color: var(--text-2); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
-.find-chip-cat { color: var(--text-3); }
-.find-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.find-chip-note { color: var(--text-3); font-size: var(--fs-micro); }
-.find-chip.excludes { box-shadow: inset 0 0 0 1px var(--text-3); }
-.find-chip button {
-  padding: 0 5px; background: none; border: none; border-radius: 99px; color: var(--text-3); font: inherit;
-  font-size: 13px; line-height: 1; cursor: pointer;
+.fr-wrap { position: relative; margin-bottom: 4px; }
+.fr-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 7px 10px; background: var(--card);
+  border: none; border-radius: 8px; color: var(--text); font: inherit; font-size: var(--fs-body); text-align: start; cursor: pointer;
 }
-.find-chip button:hover { color: var(--text); }
-.find-body { flex: 1 1 auto; min-height: 0; display: flex; }
-.find-nav {
-  flex: none; width: 210px; display: flex; flex-direction: column; gap: 1px; padding: 8px 8px 12px; overflow-y: auto;
-  background: var(--window); border-inline-end: 1px solid var(--inset, #262626);
-}
-.find-group-title {
-  padding: 10px 8px 4px; color: var(--text-3); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.find-cat {
-  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 8px; background: none; border: none;
-  border-radius: 7px; color: var(--text-2); font: inherit; font-size: var(--fs-body); text-align: start; cursor: pointer;
-}
-.find-cat:hover { background: var(--hover); color: var(--text); }
-.find-cat.shown { background: var(--inset); color: var(--text); }
-.find-cat .name { flex: none; }
-.find-cat .summary {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end;
-  color: var(--text-3); font-size: var(--fs-small);
-}
-.find-cat.on .summary { color: var(--accent); }
-.find-tag {
-  flex: none; padding: 1px 5px; border-radius: 4px; background: var(--inset); color: var(--text-2);
+.fr-row:hover { background: var(--hover); }
+.fr-row.open { background: var(--inset); border-end-start-radius: 3px; border-end-end-radius: 3px; }
+.fr-row.has-x .fr-main { padding-inline-end: 22px; }
+.fr-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.fr-row.open .fr-main { flex-direction: column; align-items: flex-start; gap: 1px; }
+.fr-title { flex: none; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-row.open .fr-title { max-width: 100%; font-weight: 600; }
+.fr-sum { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; color: var(--text-2); font-size: var(--fs-small); }
+.fr-row.on .fr-sum { color: var(--text); }
+.fr-row.open .fr-sum { flex: none; max-width: 100%; text-align: start; }
+.fr-note { display: block; flex: none; color: #d1ad62; font-size: var(--fs-micro); }
+.fr-row:not(.open) .fr-main { flex-wrap: wrap; }
+.fr-row:not(.open) .fr-note { flex: 1 0 100%; order: 3; }
+.fr-tag {
+  flex: none; padding: 1px 5px; border-radius: 4px; background: var(--hover); color: var(--text-2);
   font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
 }
-.find-pane { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.find-pane-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px 6px; }
-.find-pane h3 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
-.find-pane-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
-.find-sub { padding: 10px 10px 4px; color: var(--text-3); font-size: var(--fs-small); }
-.find-rating .find-stars { display: flex; }
-.find-rating-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 2px 10px; }
-.find-rating-sep { flex: none; width: 1px; height: 18px; background: var(--inset, #262626); }
-.find-rating .find-stars button { font-size: 18px; padding: 2px; }
-.find-edited { margin-inline: 10px; }
-.find-labels { display: flex; gap: 6px; }
+.fr-chev { flex: none; color: var(--text-2); transition: transform 0.12s; }
+[dir="rtl"] .fr-chev { transform: scaleX(-1); }
+.fr-row.open .fr-chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }
+.fr-x {
+  position: absolute; inset-block-start: 5px; inset-inline-end: 26px; width: 26px; height: 26px; display: grid; place-items: center;
+  padding: 0; background: none; border: none; border-radius: 6px; color: var(--text-2); cursor: pointer;
+}
+.fr-x:hover { background: var(--hover); color: var(--text); }
+.fr-editor { margin: 2px 0 8px; padding: 11px 11px 12px; background: var(--card); border-radius: 3px 3px 8px 8px; }
+.fr-editor .filter-range, .fr-editor .filter-immich { padding-inline: 0; }
+.fr-editor .filter-ticks button { min-height: 28px; }
+.fr-editor .meta-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 10px; align-items: center; color: var(--text-2); }
+.fr-editor .meta-grid .field { width: 100%; }
+.fr-editor .filter-bodies .fe-hint { margin-top: 8px; }
+.fe-sec + .fe-sec { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--hover); }
+.fe-label { display: flex; align-items: center; justify-content: space-between; min-height: 22px; margin-bottom: 5px; color: var(--text-2); }
+.fe-link { padding: 2px 7px; background: none; border: none; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; }
+.fe-link:hover { background: var(--hover); }
+.fe-link[aria-pressed="true"] { color: var(--text-2); }
+.fe-hint { margin: 0 0 8px; color: var(--text-2); }
+.fe-hint.after { margin: 8px 0 0; }
+.fe-stars { display: flex; gap: 2px; }
+.fe-stars button {
+  width: 34px; height: 34px; display: grid; place-items: center; padding: 0; background: none; border: none; border-radius: 7px;
+  color: var(--text-2); cursor: pointer;
+}
+.fe-stars button:hover { background: var(--hover); }
+.fe-stars button.on { color: #e8b93c; }
+.fe-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.fe-swatches button {
+  width: 30px; height: 30px; display: grid; place-items: center; padding: 0; background: none; border: 2px solid transparent;
+  border-radius: 50%; cursor: pointer;
+}
+.fe-swatches button:hover { border-color: var(--text-3); }
+.fe-swatches button.on { border-color: var(--accent); }
+.fe-swatches i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #111; font-size: 12px; font-style: normal; font-weight: 700; line-height: 1; }
+.fe-swatches i.none { box-sizing: border-box; border: 1.5px dashed var(--text-2); color: var(--text); }
+.fe-radios { display: flex; flex-direction: column; gap: 1px; }
+.fe-radios button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 6px; background: none; border: none;
+  border-radius: 6px; color: var(--text); font: inherit; font-size: var(--fs-body); text-align: start; cursor: pointer;
+}
+.fe-radios button:hover { background: var(--hover); }
+.fe-radios .name { flex: 1; min-width: 0; }
+.fe-radios .count { flex: none; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.fe-dot { flex: none; width: 14px; height: 14px; display: grid; place-items: center; border: 1.5px solid var(--text-2); border-radius: 50%; }
+.fe-radios button.on .fe-dot { border-color: var(--accent); }
+.fe-radios button.on .fe-dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.fe-tabs { display: flex; margin-bottom: 8px; }
+.fe-tabs button { flex: 1 1 auto; padding-inline: 5px; }
+.fe-mark { display: inline-block; width: 5px; height: 5px; margin-inline-start: 4px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .find-notes { flex: none; padding: 6px 14px 0; border-top: 1px solid var(--inset, #262626); }
 .find-note { padding: 2px 0; color: #d1ad62; }
-.find-foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 14px; white-space: nowrap; border-top: 1px solid var(--inset, #262626); }
-.find-count { margin-inline-end: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.find-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px; white-space: nowrap; border-top: 1px solid var(--inset, #262626); }
+.find-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .find-spin {
   width: 10px; height: 10px; border: 2px solid var(--text-3); border-top-color: transparent; border-radius: 50%;
   animation: find-spin 0.8s linear infinite;
 }
 @keyframes find-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .find-spin { animation-duration: 3s; } }
-/* the three sizes: Minimize is a strip of the head row, Dock a column at the
-   grid's inline end, Fill every category at once in columns */
+/* the popup's footer carries the number in Show N: the count text yields when it is narrow */
+.find-pop:not(.locked) { container-type: inline-size; }
+@container (max-width: 420px) { .find-foot .find-count-text { display: none; } }
+/* the dock: a column at the grid's inline end */
 .find-grip { cursor: grab; touch-action: none; }
-.find-size { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; background: none; border: none; border-radius: 6px; color: var(--text-3); cursor: pointer; }
-.find-size:hover { background: var(--hover); color: var(--text); }
-.find-size.on { background: var(--inset); color: var(--text); }
-.find-pop[data-size="fill"] .find-grip { visibility: hidden; cursor: default; }
-.find-pop[data-size="minimize"] { overflow: visible; }
-.find-pop[data-size="minimize"] .find-head { border-bottom: none; padding-block: 10px; }
-.find-mincount { flex: none; margin-inline-end: 0; white-space: nowrap; color: var(--text); }
-.find-pop[data-size="dock"] .find-body { flex-direction: column; }
-.find-pop[data-size="dock"] .find-nav { width: auto; flex: 0 1 38%; border-inline-end: none; border-bottom: 1px solid var(--inset, #262626); }
-.find-all {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: grid; gap: 8px 12px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-items: start;
-}
-.find-all .find-pane { background: var(--window); border-radius: 9px; padding-bottom: 6px; }
-.find-all .find-pane-body { overflow: visible; }
 
-/* the head's first row wraps so the search box keeps its width: in the dock it has a line of its own */
-.find-head > .find-row:first-child { flex-wrap: wrap; }
-.find-row .find-text { flex: 1 1 160px; min-width: 160px; }
-.find-sizes { margin-inline-start: auto; }
-.find-pop[data-size="dock"] .find-text { flex-basis: calc(100% - 28px); }
+/* the head's first row stays on one line: the search box takes what the grip and the indicator leave */
+.find-row .find-text { flex: 1 1 0; min-width: 0; }
 /* locked: the grid's right-hand panel, in its column and not over the grid */
 .find-pop.locked { position: static; z-index: auto; flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; background: none; }
 .find-pop.locked .find-head { padding-inline: 12px; padding-block-start: 0; }
-/* locked: the search box shares its row with the analysis indicator; the pin is in the title row */
-.find-pop.locked .find-text { flex: 1 1 0; min-width: 0; }
 .find-tip {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: var(--inset);
   border-radius: 8px; color: var(--text-2); line-height: 1.4;
@@ -2101,9 +2108,9 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 .find-tip-close:hover { background: var(--hover); color: var(--text); }
 /* the head's first row: every control the same height, centered on one line, the
-   search box flexing, and what ends the row (the size buttons) at the inline end */
+   search box flexing */
 .find-head > .find-row:first-child { --find-ctl: 28px; align-items: center; row-gap: 8px; }
-.find-head > .find-row:first-child > :is(.field, .tool, .find-sizes, .find-size) { height: var(--find-ctl); box-sizing: border-box; }
+.find-head > .find-row:first-child > :is(.field, .tool) { height: var(--find-ctl); box-sizing: border-box; }
 /* the footer: one line, every button the same height, the count truncating first */
 .find-foot :is(.btn, .saved-menu, .saved-menu-button) { flex: none; height: 26px; box-sizing: border-box; white-space: nowrap; }
 .find-foot .saved-menu { align-items: center; }
@@ -2115,21 +2122,20 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 
 /* Find's analysis indicator (AnalysisStatus.tsx): the search row's last control */
 .analysis-status {
-  position: relative; flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
+  flex: none; min-width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding-inline: 7px; white-space: nowrap;
   background: var(--inset); border: none; border-radius: 7px; color: var(--text-3); cursor: pointer;
 }
 .analysis-status:hover { background: var(--hover); }
-.analysis-status.working { color: var(--text); }
-.analysis-status.paused { color: #d1ad62; }
+.analysis-status:is([data-state="working"], [data-state="waiting"]) { color: var(--text); }
+.analysis-status:is([data-state="off"], [data-state="checking"]) { opacity: 0.55; }
+.analysis-status[data-state="off"] { cursor: default; }
+.analysis-status[data-state="off"]:hover { background: var(--inset); }
+.analysis-status[data-state="paused"] { color: #d1ad62; }
+.analysis-status[data-state="idle"] { color: #5fc474; }
 .analysis-spin { transform-origin: 50% 50%; animation: find-spin 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .analysis-spin { animation-duration: 3s; } }
-.analysis-badge {
-  position: absolute; inset-block-start: -5px; inset-inline-end: -6px; min-width: 16px; height: 16px; box-sizing: border-box;
-  padding-inline: 4px; border-radius: 99px; background: var(--text); color: var(--window); font-size: 10px; font-weight: 600;
-  line-height: 16px; text-align: center; font-variant-numeric: tabular-nums;
-}
-.find-pop[data-size="dock"] .find-head[data-analysis] .find-text { flex-basis: calc(100% - 64px); }
-.find-pop.locked .find-head[data-analysis] .find-text { flex-basis: calc(100% - 36px); }
+.analysis-count { font-size: var(--fs-small); font-variant-numeric: tabular-nums; line-height: 1; }
 
 /* saved filters (SavedFilterMenus.tsx) */
 .saved-menu { display: inline-flex; }

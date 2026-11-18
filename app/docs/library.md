@@ -345,32 +345,47 @@ Searching the library and narrowing a folder both happen here.
   the photo (it needs the optional model described above for photos on this
   computer, and Immich's own machine learning for Immich); **Filename**
   searches file names. Until the model is downloaded and Immich is not
-  connected, Smart cannot run: Find then shows no Smart/Filename switch, its box
-  says it searches file names, and it matches file names only. Your choice is
+  connected, Smart cannot run: Find then shows Filename as the active choice and Smart
+  dimmed (hover it to see why; clicking does nothing), its box says it searches
+  file names, and it matches file names only. Your choice is
   kept, so Smart returns by itself once the model is on this computer or Immich
   is connected, even for a saved filter that asks for it. While the model is not
   downloaded, a small tip under the search row says so, with **Set up in
   Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
   and a close button that dismisses the tip for good. The tip also goes away by
   itself once the model is installed.
-- **Analysis icon**: once the model is downloaded, an icon at the end of the
-  search box shows Smart search's background analysis of your photos. A
-  spinning arc with a number means photos are being analysed and shows how many
-  are waiting (up to 99+); a pause symbol means analysis is paused; a check means
-  every photo is analysed. Hover it for the details. Click it to pause or
-  resume, the same pause as **Pause / Resume** in Preferences > General >
-  Background work. The icon is not shown before the model is downloaded.
+- **Analysis icon**: the icon at the end of the search box shows Smart
+  search's background analysis of your photos, with the number of photos still
+  waiting beside it (the exact number is in its tooltip; from 10,000 it is
+  shortened, for example 12K). A spinning arc means photos are being analysed.
+  A still arc means photos are waiting but nothing is running just now, for
+  example while a network drive answers or between batches. A pause symbol
+  means analysis is paused, and a green check means every photo is analysed. While the
+  count is being worked out the tooltip says so. Click it to pause or resume,
+  the same pause as **Pause / Resume** in Preferences > General > Background
+  work. Before the model is downloaded the icon is dimmed and does nothing; its
+  tooltip says the model is not installed.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.
 - **Immich library**: a picker that appears when Immich is in the search.
   See [Immich](immich.md).
 
-Filters that are on appear as chips under the search row; click a chip's
-**✕** to remove that filter. In a **Both** search, a chip warns when it can
-match only one source: Immich-only fields such as **People** hide the photos on
-this computer, and fields that exist only on this computer, such as keywords,
-flags or **Camera body**, hide Immich results.
+Under the search words, a **Filters** header shows how many filters are on
+(rating with Hide rejected counts as one) and has a **Clear** button, which turns
+every filter off and keeps your search words, where it searches and Smart or
+Filename. **Clear** is dimmed while no filter is on.
+
+Below it is one list, in groups, with every filter folded when Find opens. Each
+filter is a row showing what it is set to (**Any** when off). Click a row and its options open directly beneath it; click it
+again, or press Esc, to fold it. Only one filter is open at a time, and setting
+values does not depend on which is open. A filter that is on is brighter, with an
+**✕** at its end that turns just that filter off. In a **Both** search, a row
+warns when it can match only one source: Immich-only fields such as **People**
+hide the photos on this computer, and fields that exist only on this computer,
+such as keywords, flags or **Camera body**, hide Immich results. Rows that exist
+only in Immich carry an **Immich** tag in that search. Long lists (keywords,
+cameras, dates and so on) are limited in height and scroll inside the editor.
 
 The filters are grouped:
 
@@ -384,12 +399,15 @@ The filters are grouped:
 in the search. In an Immich-only search, **Camera**, **Lens** and **Keywords**
 list the server's values.
 
-- **Rating & flags**: a minimum star rating and color labels side by side on
-  one row, then **Rejected** (**All photos**, **Hide rejected** or **Rejected**,
-  with photo counts).
+- **Rating & flags**: **Minimum rating** (click a star; click the chosen star or
+  **Any** to clear it), **Color label** (pick any number of colors, each marked
+  with a check when chosen, or **No label**), then **Rejected** (**All photos**,
+  **Hide rejected** or **Only rejected**, with photo counts). The row reads, for
+  example, **3+ stars · Hide rejected**. Color labels and Rejected apply to
+  photos on this computer.
 - **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
   computer. A photo counts as edited once it has been changed in the editor,
-  beyond the automatic starting edits. It has its own chip and summary.
+  beyond the automatic starting edits.
 - **File type**: lists each extension the search holds (DNG, ORF, CR3, JPG,
   TIFF and so on) with how many photos of each. **All RAW** comes first and
   stands for every raw format; the raw extensions are indented below it, so
@@ -412,18 +430,20 @@ list the server's values.
   span (**Last 30 days**, **This month**, **Last year** and others), a year,
   or a month of the year. A photo with no capture time goes by its file's date
   here too.
-- **Exposure**: ISO, aperture, focal length and shutter speed. Tick any
-  values, for example ISO 100 and 200.
+- **Exposure**: tabs for ISO, aperture, focal length and shutter speed; a dot
+  marks a tab with values chosen. Tick any values, for example ISO 100 and 200.
 
 Each list counts only the photos your other choices leave: tick a camera, and
 **Lens** lists just the lenses used on it.
 
 Everything applies live. A tick works at once; typed words apply when you
-press Enter or after a short pause. At the bottom, the footer shows how many
-photos match, **Clear all** (every filter and the search words),
-**Save filter…**, and, in the popup, **Show N**,
-which closes Find and shows the matches in the grid. In the popup, Esc or a
-click away closes Find; the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
+press Enter or after a short pause. The footer is always visible below the list:
+it shows how many photos match, **Load** (saved filters), **Save filter…** and, in
+the popup, **Show N**, which closes Find and shows the matches in the grid (the
+popup's separate count is left out when there is no room, as **Show N** carries
+the number). To clear the search words, empty the search box. Esc folds an open
+filter and returns to its row; with none open, Esc or a click away closes the
+popup and the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder clears the filters, sets Search in back to This folder
 and clears the search words, so a folder left on Rejected only never looks
@@ -435,8 +455,8 @@ empty and the stars and ticks filter the folder you open.
 
 In the grid, Find is not a popup. It fills the right-hand panel, titled
 **Find** like the other panels (with auto-hide on, the pin is at the end of
-the title row), with the **Dock** layout (search, every filter, chips and the
-footer's saved filters), locked in place: it has no size buttons, cannot be dragged and has no close button, and
+the title row), with the same layout as the popup (search, the Filters list and the
+footer's saved filters), locked in place: it cannot be dragged and has no close button, and
 Esc does not close it. Esc in its search box leaves the box; Esc again leaves
 the grid, as it does anywhere else. The toolbar's **Find** button shows the
 panel if it was hidden (or slid away by auto-hide) and puts the cursor in the
@@ -444,18 +464,11 @@ search box. Leaving the grid brings back the editing panel, and the popup
 below is used again. In the grid's Print panel, the **Find** button opens the
 popup.
 
-### Sizes
+### Position
 
-Outside the grid, Find is a popup with three sizes, chosen with the buttons at
-its top:
-
-- **Minimize**: a strip with just the search row and chips.
-- **Dock**: beside the grid, full height, with the categories in a list.
-- **Fill**: covers the grid and shows every category at once, in columns.
-
-Drag the grip to move Find in **Minimize** or **Dock**. Each size remembers
-its own place, and the last size you used is remembered. Double-click the
-grip to put the current size back in its default place.
+Outside the grid, Find is a popup docked beside the grid, full height, with
+the filters in one scrolling list. Drag the grip beside the search box to move it; it
+remembers its place. Double-click the grip to put it back at the grid's edge.
 
 ### Saved filters
 
@@ -463,7 +476,7 @@ grip to put the current size back in its default place.
 searches and every filter. A saved filter that says **This folder** follows
 whatever folder is open, so one filter can serve any folder.
 
-Open a saved filter from **Load filter** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
+Open a saved filter from **Load** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
 **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
 nine in the list. While a saved filter is open, Find shows its name, with
 **changed** beside it after you edit, and **Update** (overwrite it) and

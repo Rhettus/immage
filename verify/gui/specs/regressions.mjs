@@ -119,9 +119,8 @@ export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');
  await click(t,'.find-button');
  await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
- // the category list is in the Dock size
- if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
- const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
+ // the filter rows are in the dock; Camera body opens its editor beneath its row
+ const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body row');
  await t.driver.point(category.x,category.y);
  const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.find-pop .filter-ticks .name')].map(e=>e.textContent)),'body options');
  assert(names.some(s=>s.includes('BODY-A'))&&names.some(s=>s.includes('BODY-B')),'same model serials independently listed');

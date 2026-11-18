@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Find popup (FindPanel.tsx, findLayout.ts, SavedFilterMenus.tsx): filters
-// that apply as they change, the Minimize / Dock / Fill sizes with a draggable
-// strip and dock, and saved filters (Alt+1 to Alt+9). Everything is driven by
-// WebDriver pointer and key actions inside the test webview. The popup opens
-// at its stored size, Dock by default, so each case sets the size it needs.
+// that apply as they change, the draggable Dock, and saved filters (Alt+1 to
+// Alt+9). Everything is driven by WebDriver pointer and key actions inside the
+// test webview. The popup opens at its stored place, the dock's edge by default.
 // In the grid view Find is not a popup but the right-hand column, locked in
-// place (`.find-pop.locked`: Dock's body, no size buttons, grip or closing), so
+// place (`.find-pop.locked`: the dock's body, no grip or closing), so
 // the helpers below accept both and the popup-only cases leave the grid first.
 import assert from 'node:assert/strict';
 import { click } from '../support/controls.mjs';
@@ -23,8 +22,9 @@ const rectOf = (t, selector) => t.driver.observe(s => {
   const r = e.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }, selector);
-const chips = t => t.driver.observe(() => [...document.querySelectorAll('.find-chip')].map(c => ({
-  category: c.querySelector('.find-chip-cat')?.textContent.trim(), text: c.querySelector('.find-chip-text')?.textContent.trim() ?? '' })));
+// the filters that are on: their rows (the accordion has no chips), with their summaries
+const filtersOn = t => t.driver.observe(() => [...document.querySelectorAll('.find-pop .fr-row.on')].map(r => ({
+  category: r.querySelector('.fr-title')?.textContent.trim(), text: r.querySelector('.fr-sum')?.textContent.trim() ?? '' })));
 const findClass = (t, name) => t.driver.observe(n => document.querySelector('.find-button')?.classList.contains(n), name);
 
 // flip a General preference switch by its row (PrefRow's data-pref-label)
@@ -53,16 +53,6 @@ async function closeFind(t) {
   if (await present(t, pop)) await t.driver.keys(ESC);
   await until(async () => !await present(t, pop), 'Find popup closes');
 }
-async function setSize(t, size) {
-  if (await isLocked(t)) {
-    assert.equal(size, 'dock', 'the locked column is only ever the Dock body');
-    assert(!await present(t, `${pop} .find-size`), 'the locked column has no size buttons');
-    return settle(t);
-  }
-  await click(t, `${pop} .find-size-${size}`);
-  await until(() => t.driver.observe(s => document.querySelector('.find-pop')?.dataset.size === s, size), `${size} size`);
-  return settle(t);
-}
 // the popup's rectangle once it has stopped moving
 async function settle(t) {
   let last = await rectOf(t, pop);
@@ -78,16 +68,19 @@ const near = (a, b, label, tolerance = 1.5) => {
   for (const k of ['left', 'top', 'width', 'height'])
     assert(Math.abs(a[k] - b[k]) <= tolerance, `${label}: ${k} ${a[k]} vs ${b[k]}`);
 };
+// open a filter's editor under its row (a no-op when it is open already)
 async function category(t, name) {
+  const row = n => [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === n);
+  if (await t.driver.observe(n => row(n)?.getAttribute('aria-expanded') === 'true', name)) return;
   const point = await until(() => t.driver.observe(n => {
-    const e = [...document.querySelectorAll('.find-cat')].find(c => c.querySelector('.name')?.textContent === n);
+    const e = row(n);
     if (!e) return null;
     e.scrollIntoView({ block: 'nearest' });
     const r = e.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, name), `${name} row`);
   await t.driver.point(point.x, point.y);
-  await until(() => t.driver.observe(n => document.querySelector('.find-pane h3')?.textContent === n, name), `${name} pane`);
+  await until(() => t.driver.observe(n => row(n)?.getAttribute('aria-expanded') === 'true', name), `${name} editor`);
 }
 async function center(t, selector) {
   return until(() => t.driver.observe(s => {
@@ -97,10 +90,10 @@ async function center(t, selector) {
     return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
   }, selector), `${selector} on screen`);
 }
-const stars = n => `${pop} .find-stars button[title="${n} stars and up"]`;
+const stars = n => `${pop} .fe-stars button[aria-label="${n} stars and up"]`;
 
-// Ticking a value adds a chip and narrows the grid with nothing pressed; the
-// chip's x removes it; in the grid Find is the locked right-hand column, which
+// Setting a value turns its filter row on and narrows the grid with nothing pressed; the
+// row's x removes it; in the grid Find is the locked right-hand column, which
 // has no Show N, grip, size buttons or close, and Escape in its box only leaves
 // the box. Needs three or more photos (find-NN copies), one of which the case rates
 export async function findLive(t) {
@@ -125,30 +118,33 @@ export async function findLive(t) {
     'one photo rated three stars');
 
   await openFind(t);
-  await setSize(t, 'dock');
-  assert.equal((await chips(t)).length, 0, 'no filter chips before anything is set');
+  await settle(t);
+  assert.equal((await filtersOn(t)).length, 0, 'no filter is on before anything is set');
+  assert(!await present(t, `${pop} .find-chip`), 'there are no chips');
   assert(!await findClass(t, 'on'), 'the toolbar Find button is not on without filters');
 
-  // 1. a rating, from the Rating & flags pane (the first shown)
+  // 1. a rating, from the Rating & flags editor (open first)
+  await category(t, 'Rating & flags');
   await click(t, stars(3));
-  await until(async () => (await chips(t)).some(c => c.category === 'Rating & flags'), 'a Rating & flags chip appears');
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags' && c.text === '3+ stars'), 'the Rating & flags row shows 3+ stars');
   await until(async () => await count(t, cells) < all, 'the grid narrows without pressing Show');
   assert.equal(await count(t, cells), 1, 'only the rated photo remains');
   assert(await findClass(t, 'on'), 'the toolbar Find button is on');
   await t.evidence('find-live-rating');
 
-  // the chip's x removes it and the grid is whole again
-  await click(t, `${pop} .find-chip button[aria-label="Remove Rating & flags"]`);
-  await until(async () => (await chips(t)).length === 0, 'the chip is removed');
+  // the row's x removes it and the grid is whole again
+  await click(t, `${pop} .fr-x[aria-label="Remove Rating & flags"]`);
+  await until(async () => (await filtersOn(t)).length === 0, 'the filter is removed');
   await until(async () => await count(t, cells) === all, 'the grid is restored');
 
-  // 2. a File type value: a chip, the same photos (the copies are one type)
+  // 2. a File type value: its row on, the same photos (the copies are one type)
   await category(t, 'File type');
-  await click(t, `${pop} .find-pane .filter-ticks button`);
-  await until(async () => (await chips(t)).some(c => c.category === 'File type'), 'a File type chip appears');
+  assert(!await present(t, `${pop} #find-ed-rating`), 'opening File type closes the Rating & flags editor');
+  await click(t, `${pop} .fr-editor .filter-ticks button`);
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'File type'), 'the File type row shows a value');
   assert.equal(await count(t, cells), all, 'the copies all match their own file type');
-  await click(t, `${pop} .find-chip button[aria-label="Remove File type"]`);
-  await until(async () => (await chips(t)).length === 0, 'the File type chip is removed');
+  await click(t, `${pop} .fr-x[aria-label="Remove File type"]`);
+  await until(async () => (await filtersOn(t)).length === 0, 'the File type filter is removed');
 
   // 3. the column is locked: no Show N, grip or close, and the grid still shows beside it
   await category(t, 'Rating & flags');
@@ -171,14 +167,23 @@ export async function findLive(t) {
   await click(t, '.toolbar .clear-filters');
   await until(async () => await count(t, cells) === all, 'clearing the filters restores the grid');
 
-  // 5. Clear all clears the search words as well as the filters
+  // 5. the Filters header's Clear clears the filters and keeps the search words
   await click(t, `${pop} .find-text`);
   await t.driver.keys(...'zzznomatch', ENTER);
   await until(async () => await count(t, cells) === 0, 'words that match nothing empty the grid');
-  assert(!await t.driver.observe(s => document.querySelector(s).disabled, `${pop} .find-clear-all`), 'Clear all is enabled by the words alone');
-  await click(t, `${pop} .find-clear-all`);
-  await until(() => t.driver.observe(s => document.querySelector(s).value === '', `${pop} .find-text`), 'Clear all empties the search box');
-  await until(async () => await count(t, cells) === all, 'Clear all restores the grid');
+  assert(await t.driver.observe(s => document.querySelector(s).disabled, `${pop} .find-clear`), 'Clear is disabled while no filter is on, words or not');
+  await category(t, 'Rating & flags');
+  await click(t, stars(3));
+  await until(async () => (await filtersOn(t)).length === 1, 'a filter is on');
+  assert.equal(await t.driver.observe(s => document.querySelector(s).textContent, `${pop} .find-active`), '1 active', 'the header counts one active filter');
+  await click(t, `${pop} .find-clear`);
+  await until(async () => (await filtersOn(t)).length === 0, 'Clear turns the filters off');
+  assert.equal(await t.driver.observe(s => document.querySelector(s).value, `${pop} .find-text`), 'zzznomatch', 'Clear keeps the search words');
+  assert.equal(await count(t, cells), 0, 'the words still search');
+  await click(t, `${pop} .find-text`);
+  await t.driver.chord(CONTROL, 'a');
+  await t.driver.keys('\uE003', ENTER);
+  await until(async () => await count(t, cells) === all, 'emptying the words restores the grid');
 
   // 6. the column has a Find title like the other panels; with auto-hide its pin ends that row
   assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-head h1`)?.textContent, pop), 'Find', 'the column is titled Find');
@@ -244,9 +249,8 @@ export async function findLive(t) {
   t.measure({ name: 'find-live', photos: all });
 }
 
-// Minimize, Dock and Fill by their buttons; the strip and the dock follow the
-// grip and keep their own places; a reopened popup is where it was; a double
-// click on the grip puts it back
+// the Dock opens at the grid's edge; the grip drags it and a reopened popup is
+// where it was; a double click on the grip puts it back
 export async function findSizes(t) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
   // the popup is the filmstrip view's: the grid has the locked column instead
@@ -254,64 +258,32 @@ export async function findSizes(t) {
   await until(async () => !await present(t, '.filmstrip.grid'), 'filmstrip view');
   await openFind(t);
   assert(!await isLocked(t), 'outside the grid Find is the floating popup');
+  assert(!await present(t, `${pop} .find-size`), 'there are no size buttons');
+  assert(await present(t, `${pop} .fr-row`), 'the dock lists the filter rows');
+  assert(!await present(t, `${pop} .find-pane`), 'there is no separate value pane');
 
-  const rects = {};
-  for (const size of ['minimize', 'dock', 'fill']) {
-    rects[size] = await setSize(t, size);
-    assert.equal(await t.driver.observe(s => document.querySelector(`.find-size-${s}`)?.getAttribute('aria-pressed'), size), 'true',
-      `${size} button is pressed`);
-    await t.evidence(`find-size-${size}`);
-  }
-  assert(rects.minimize.height < rects.dock.height, 'the strip is shorter than the dock');
-  assert(rects.minimize.width > rects.dock.width, 'the strip is wider than the dock');
-  assert(rects.fill.width > rects.dock.width && rects.fill.height >= rects.dock.height, 'Fill covers more than the dock');
-  assert(!await present(t, '.find-pop .find-cat'), 'Fill lists every pane rather than a category list');
+  const home = await settle(t);
+  await t.evidence('find-dock');
 
-  // Fill never moves
+  // dragged across and down
   let grip = await center(t, `${pop} .find-grip`);
-  await t.driver.drag(grip, { x: grip.x - 120, y: grip.y + 40 });
-  near(await settle(t), rects.fill, 'Fill after a drag');
-
-  // the strip: dragged up and to the left
-  await setSize(t, 'minimize');
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.drag(grip, { x: grip.x - 120, y: grip.y - 100 });
-  const movedStrip = await settle(t);
-  assert(movedStrip.left < rects.minimize.left - 40, `the strip moved left (${movedStrip.left} from ${rects.minimize.left})`);
-  assert(movedStrip.top < rects.minimize.top - 40, `the strip moved up (${movedStrip.top} from ${rects.minimize.top})`);
-  await t.evidence('find-strip-dragged');
-
-  // the dock: it fills the height, so only across
-  await setSize(t, 'dock');
-  grip = await center(t, `${pop} .find-grip`);
   await t.driver.drag(grip, { x: grip.x - 150, y: grip.y + 60 });
-  const movedDock = await settle(t);
-  assert(movedDock.left < rects.dock.left - 40, `the dock moved left (${movedDock.left} from ${rects.dock.left})`);
+  const moved = await settle(t);
+  assert(moved.left < home.left - 40, `the dock moved left (${moved.left} from ${home.left})`);
   await t.evidence('find-dock-dragged');
 
-  // each size keeps its own place
-  near(await setSize(t, 'minimize'), movedStrip, 'the strip keeps its place');
-  near(await setSize(t, 'dock'), movedDock, 'the dock keeps its place');
-
-  // closed and opened again: the same size and place
+  // closed and opened again: the same place
   await closeFind(t);
   await openFind(t);
-  assert.equal(await t.driver.observe(() => document.querySelector('.find-pop').dataset.size), 'dock', 'reopened at the last size');
-  near(await settle(t), movedDock, 'reopened at the same place');
+  near(await settle(t), moved, 'reopened at the same place');
 
-  // a double click on the grip puts the size back
+  // a double click on the grip puts it back
   grip = await center(t, `${pop} .find-grip`);
   await t.driver.point(grip.x, grip.y, 2);
-  near(await settle(t), rects.dock, 'the dock after a double click on the grip');
-  await setSize(t, 'minimize');
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.point(grip.x, grip.y, 2);
-  near(await settle(t), rects.minimize, 'the strip after a double click on the grip');
+  near(await settle(t), home, 'the dock after a double click on the grip');
 
-  // leave the default size for later cases
-  await setSize(t, 'dock');
   await closeFind(t);
-  t.measure({ name: 'find-sizes', rects, movedStrip, movedDock });
+  t.measure({ name: 'find-sizes', home, moved });
 }
 
 // Save filter… and its name line, "changed" and Update, Alt+1 on a cleared
@@ -319,7 +291,7 @@ export async function findSizes(t) {
 export async function findSaved(t) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
   await openFind(t);
-  await setSize(t, 'dock');
+  await settle(t);
   const dialogName = async name => {
     const input = '.save-filter input[type="text"]';
     await until(() => present(t, input), 'name field');
@@ -330,8 +302,9 @@ export async function findSaved(t) {
   };
 
   // a filter to keep: three stars and up
+  await category(t, 'Rating & flags');
   await click(t, stars(3));
-  await until(async () => (await chips(t)).some(c => c.category === 'Rating & flags'), 'rating chip');
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags'), 'the rating row is on');
   assert(!await present(t, `${pop} .saved-line`), 'no saved filter is in use yet');
   await click(t, `${pop} .find-save`);
   await dialogName('Find test');
@@ -343,25 +316,25 @@ export async function findSaved(t) {
 
   // change it: changed and Update, and Update takes the change in
   await category(t, 'Edit status');
-  await click(t, `${pop} .find-edited button:nth-child(2)`);
+  await click(t, `${pop} .fr-editor .segmented button:nth-child(2)`);
   await until(() => present(t, `${pop} .saved-changed`), 'the line says changed');
   await t.evidence('find-saved-changed');
   await textButton(t, `${pop} .saved-line`, 'Update');
   await until(async () => !await present(t, `${pop} .saved-changed`), 'Update takes the change in');
 
   // clear everything, close, and Alt+1 re-applies it
-  await click(t, `${pop} .find-clear-all`);
-  await until(async () => (await chips(t)).length === 0, 'cleared');
+  await click(t, `${pop} .find-clear`);
+  await until(async () => (await filtersOn(t)).length === 0, 'cleared');
   await closeFind(t);
   assert(!await findClass(t, 'on'), 'no filter is on once cleared');
   await t.driver.chord(ALT, '1');
   await until(() => findClass(t, 'on'), 'Alt+1 applies the saved filter');
   await openFind(t);
-  const back = await chips(t);
+  const back = await filtersOn(t);
   const rating = back.find(c => c.category === 'Rating & flags');
-  assert(rating, 'the rating chip is back');
+  assert(rating, 'the rating row is on again');
   const edits = back.find(c => c.category === 'Edit status');
-  assert(rating.text.includes('3 stars and up') && edits?.text.includes('Edited'),
+  assert(rating.text.includes('3+ stars') && edits?.text.includes('Edited'),
     `the updated filter was applied (${rating.text}; ${edits?.text})`);
   assert.equal(await t.driver.observe(() => document.querySelector('.find-pop .saved-line .saved-name')?.textContent), 'Find test',
     'the saved name shows');
@@ -416,8 +389,21 @@ export async function findNoClip(t) {
   const all = await count(t, cells);
   const head = `${pop} .find-head > .find-row:first-child`;
 
-  // file names only: no Smart/Filename switch, and the box says so
-  assert(!await present(t, `${head} .segmented`), 'no Smart/Filename switch without the model');
+  // file names only: Filename shows as active, Smart is there but unavailable, and the box says so
+  const modes = await t.driver.observe(() => [...document.querySelectorAll('.find-pop .find-modewhere .segmented button')]
+    .map(b => ({ text: b.textContent.trim(), on: b.classList.contains('active'), disabled: b.getAttribute('aria-disabled') === 'true', title: b.title })));
+  assert.equal(modes.length, 2, 'the Smart/Filename switch stays without the model');
+  assert(modes[0].disabled && !modes[0].on && /CLIP/.test(modes[0].title), `Smart is unavailable and says why (${JSON.stringify(modes[0])})`);
+  assert(modes[1].on, 'Filename shows as active');
+  await click(t, `${pop} .find-modewhere .segmented button`);
+  assert(await t.driver.observe(() => document.querySelectorAll('.find-pop .find-modewhere .segmented button')[1].classList.contains('active')), 'clicking Smart changes nothing');
+  // the mode row and the search row each stay on one line
+  const oneLine = await t.driver.observe(() => [...document.querySelectorAll('.find-pop .find-modewhere, .find-pop .find-head > .find-row:first-child')]
+    .map(r => { const tops = [...r.children].map(e => e.getBoundingClientRect()).filter(b => b.height > 0).map(b => Math.round(b.top + b.height / 2)); return Math.max(...tops) - Math.min(...tops); }));
+  assert(oneLine.every(d => d <= 2), `search row and mode row are single lines (${oneLine})`);
+  // the analysis indicator shows, dimmed, without the model
+  const indicator = await t.driver.observe(() => { const e = document.querySelector('.find-pop .analysis-status'); return e && { off: e.dataset.state === 'off', disabled: e.getAttribute('aria-disabled') === 'true', label: e.getAttribute('aria-label') }; });
+  assert(indicator && indicator.off && indicator.disabled && /CLIP/.test(indicator.label), `the analysis indicator is dimmed and says the model is missing (${JSON.stringify(indicator)})`);
   const placeholder = await t.driver.observe(s => document.querySelector(s)?.placeholder, `${pop} .find-text`);
   assert(placeholder && placeholder !== 'sunset on a beach' && /file name/i.test(placeholder), `the box says it searches file names (${placeholder})`);
 
@@ -442,6 +428,7 @@ export async function findNoClip(t) {
   }, head);
   // saved filters live in the footer (Load filter); the pin joins this row only with auto-hide
   assert(row.items.some(i => /find-text/.test(i.cls)), 'the search box is in the row');
+  assert(row.items.some(i => /analysis-status/.test(i.cls)), 'the analysis indicator is in the row');
   // a wrapped row has one centre line per line: group by line, and each line must agree within 1px
   const lines = [];
   for (const i of row.items) {

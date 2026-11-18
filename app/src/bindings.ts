@@ -12,11 +12,12 @@ export const commands = {
 	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	/**
-	 *  The analysis queue's counts and pause state, for Find's indicator to poll.
-	 *  Sync on purpose: it only copies in-memory state under the queue's own mutex
-	 *  (no file, SQLite or network work), unlike `search_status`.
+	 *  Find's indicator: the real backlog of photos waiting for analysis, whether
+	 *  analysis is running, and the pause state. Sync on purpose: atomics and the
+	 *  queue's own mutex only (no file, SQLite or network work); the service
+	 *  thread does the counting.
 	 */
-	searchQueue: () => __TAURI_INVOKE<Status>("search_queue"),
+	searchAnalysisStatus: () => __TAURI_INVOKE<AnalysisProgress>("search_analysis_status"),
 	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
 	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
@@ -243,6 +244,14 @@ export type Album = {
 	id: string,
 	name: string,
 	count: number,
+};
+
+export type AnalysisProgress = {
+	installed: boolean,
+	pending: number | null,
+	running: number,
+	active: boolean,
+	paused: boolean,
 };
 
 export type Asset = {

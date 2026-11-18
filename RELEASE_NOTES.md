@@ -10,9 +10,25 @@ Improvements
 - Messages in the corners of the photo, such as the status text, errors and
   export summaries, fade after 15 seconds unless the pointer is over them. A
   click dismisses them at once.
+- Find's popup now has one docked layout beside the grid. The Minimize and
+  Fill sizes were removed; drag the grip to move it, and double-click the grip
+  to put it back.
+- Find's filters are a single list: click a filter's row and its options open
+  right beneath it, one at a time, with what each is set to shown on the row
+  and an x to turn it off. The chips are gone. A Filters header counts the
+  filters that are on, and its Clear turns them all off while keeping your
+  search words. Exposure has tabs for ISO, aperture, focal length and shutter
+  speed, rating and color label choices have clearer buttons, and long value
+  lists scroll in their own box. Load and Save filter stay at the bottom with
+  the photo count.
 
 Bug fixes
 
+- Find's analysis icon now shows how many photos are really waiting for Smart
+  search analysis, and no longer says every photo is analysed while some are
+  still pending. It stays visible, dimmed, without the CLIP model, a still arc
+  shows photos that are waiting but not being worked on, and Smart/Filename
+  and Search in always stay on one line.
 - After a similar-photo search, opening a photo no longer leaves an "Image
   query" box in the lower left that could not be dismissed.
 - Buttons in the lower-left notices, such as Stop while searching, can now be

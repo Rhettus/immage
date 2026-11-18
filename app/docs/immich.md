@@ -147,7 +147,7 @@ configuring an Immich server and key, **Search in** offers **Immich** and
 and **All folders**. Local search remains available without a server; see
 [Library](library.md#find).
 
-<!-- screenshot: Find popup docked beside the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, one person ticked under People as a chip -->
+<!-- screenshot: Find popup docked beside the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, the People filter open under its row with one person ticked -->
 
 - The **Immich library** picker chooses what to search: **External libraries**
   (the default), **All photos**, or one library.
@@ -161,8 +161,8 @@ and **All folders**. Local search remains available without a server; see
   you set them. In an Immich-only search, **Camera**, **Lens** and
   **Keywords** list the server's values.
 - Filters that exist only on this computer, such as **Camera body**,
-  **Exposure** or flags, hide Immich results in a **Both** search; the chip
-  says so.
+  **Exposure** or flags, hide Immich results in a **Both** search; the filter's
+  row says so.
 - A [saved filter](library.md#saved-filters) can search Immich. When Immich
   is not available, it searches this computer only and says Immich was
   skipped.

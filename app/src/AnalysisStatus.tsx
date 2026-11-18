@@ -1,29 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// Find's photo-analysis indicator, at the end of the search row: a spinner with
-// the queued count while Smart search analyses photos, a pause glyph while it is
-// paused, a check when every photo is analysed. A click pauses or resumes, the
-// same pause as Preferences > General > Background work (`search_pause`).
-// It reads `search_queue`, which only copies in-memory counts, every 2 s while
+// Find's photo-analysis indicator, at the end of the search row: the number of
+// photos still waiting for Smart search analysis beside a spinner (animated
+// while photos are being analysed, still while they wait, for a network drive
+// to answer or the next batch), a pause glyph while paused, a check when every
+// photo is analysed. A click pauses or resumes, the same pause as Preferences >
+// General > Background work (`search_pause`). Without the CLIP model it stays,
+// dimmed. It reads `search_analysis_status`, which only copies in-memory
+// state (the service counts the backlog on its own thread), every 2 s while
 // mounted and the page is visible, one read at a time, and never waits on a search.
 import { useEffect, useRef, useState } from "react";
 import { commands } from "./commands";
-import type { Status } from "./bindings";
+import type { AnalysisProgress } from "./bindings";
 import { AnalysisCheckIcon, AnalysisPauseIcon, AnalysisSpinnerIcon } from "./icons";
 import { formatNumber, t } from "./i18n";
 
 const POLL_MS = 2000;
-const BADGE_MAX = 99;
+const COMPACT_FROM = 10000;
 
 export function AnalysisStatus() {
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<AnalysisProgress | null>(null);
   const alive = useRef(true);
   const polling = useRef(false);
   const poll = async () => {
     if (polling.current) return;
     polling.current = true;
-    try { const next = await commands.searchQueue(); if (alive.current) setStatus(next); }
+    try { const next = await commands.searchAnalysisStatus(); if (alive.current) setStatus(next); }
     catch { /* keep the last reading; the next poll tries again */ }
     finally { polling.current = false; }
   };
@@ -35,11 +38,16 @@ export function AnalysisStatus() {
     document.addEventListener("visibilitychange", tick);
     return () => { alive.current = false; clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
   }, []);
-  if (!status) return null;
 
-  const { queued, active, paused } = status;
-  const working = !paused && queued + active > 0;
+  const installed = status?.installed ?? false;
+  const paused = status?.paused ?? false;
+  const pending = status?.pending ?? null;
+  const running = status?.running ?? 0;
+  const working = !paused && (running > 0 || (pending !== null && pending > 0 && !!status?.active));
+  const waiting = !paused && !working && pending !== null && pending > 0;
+  const checking = installed && !paused && pending === null && running === 0;
   const toggle = async () => {
+    if (!installed) return;
     const next = !paused;
     // the icon changes before the first await; a failure is put right by the re-read
     setStatus((s) => s && { ...s, paused: next });
@@ -47,16 +55,30 @@ export function AnalysisStatus() {
     catch { /* reverted by the poll below */ }
     finally { void poll(); }
   };
-  const label = paused
-    ? queued > 0 ? t("library.analysis.paused", { n: queued, queued: formatNumber(queued) }) : t("library.analysis.pausedEmpty")
-    : working ? t("library.analysis.working", { n: queued, active: formatNumber(active), queued: formatNumber(queued) })
-    : t("library.analysis.idle");
-  const badge = queued > BADGE_MAX ? `${formatNumber(BADGE_MAX)}+` : formatNumber(queued);
+
+  const exact = pending === null ? "" : formatNumber(pending);
+  const shown = pending === null || pending === 0 ? ""
+    : pending < COMPACT_FROM ? exact : formatNumber(pending, { notation: "compact", maximumFractionDigits: 1 });
+  let label: string;
+  let kind: string;
+  if (!installed) { label = t("library.analysis.notInstalled"); kind = "off"; }
+  else if (paused) {
+    label = pending ? t("library.analysis.paused", { n: pending, count: exact }) : t("library.analysis.pausedEmpty");
+    kind = "paused";
+  }
+  else if (working) {
+    label = pending ? t("library.analysis.working", { n: pending, count: exact }) : t("library.analysis.workingUnknown");
+    kind = "working";
+  }
+  else if (waiting) { label = t("library.analysis.waiting", { n: pending ?? 0, count: exact }); kind = "waiting"; }
+  else if (checking) { label = t("library.analysis.checking"); kind = "checking"; }
+  else { label = t("library.analysis.idle"); kind = "idle"; }
   return (
-    <button type="button" className={`analysis-status ${paused ? "paused" : working ? "working" : "idle"}`}
-            title={label} aria-label={label} onClick={() => void toggle()}>
-      {paused ? <AnalysisPauseIcon /> : working ? <AnalysisSpinnerIcon /> : <AnalysisCheckIcon />}
-      {queued > 0 && (paused || working) && <span className="analysis-badge" aria-hidden="true">{badge}</span>}
+    <button type="button" className="analysis-status" data-state={kind} title={label} aria-label={label}
+            aria-disabled={!installed || undefined} onClick={() => void toggle()}>
+      {!installed ? <AnalysisSpinnerIcon still /> : paused ? <AnalysisPauseIcon />
+        : working ? <AnalysisSpinnerIcon /> : waiting || checking ? <AnalysisSpinnerIcon still /> : <AnalysisCheckIcon />}
+      {installed && shown && <span className="analysis-count" aria-hidden="true">{shown}</span>}
     </button>
   );
 }

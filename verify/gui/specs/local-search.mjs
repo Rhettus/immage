@@ -86,13 +86,13 @@ export async function localSearch(t) {
     const input = document.querySelector(value);
     return result && input?.value === name
       ? { rating: result.querySelectorAll('.thumb-stars button.on').length, mode: document.querySelector(`${modeSel}.active`)?.textContent.trim(),
-          chips: [...document.querySelectorAll('.find-chip .find-chip-cat')].map(e => e.textContent.trim()) }
+          on: [...document.querySelectorAll('.find-pop .fr-row.on .fr-title')].map(e => e.textContent.trim()) }
       : null;
   }, cell, searchBox, filename, mode), 'filename search retains its rating filter and result');
   assert.equal(filtered.rating, 3);
   if (switchable) assert.equal(filtered.mode, 'Filename');
   else assert.equal(filtered.mode ?? null, null, 'no mode switch without the CLIP model');
-  assert(filtered.chips.includes('Rating & flags'), `the rating filter is a chip in Find (${filtered.chips})`);
+  assert(filtered.on.includes('Rating & flags'), `the rating filter is on in Find (${filtered.on})`);
   await t.evidence('local-search-filter');
 
   // Opening the fixture's folder leaves search mode and returns to its normal
