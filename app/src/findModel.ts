@@ -218,10 +218,6 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
   }
 }
 
-// the panel's Clear: every category, keeping the search words and where and
-// how the search looks (source, scope, mode, Immich library)
-export const clearFilters = (st: FindState): FindState => CATEGORIES.reduce((acc, c) => clearCategory(acc, c.key), st);
-
 // Clear all: every category and the search words, keeping where and how
 // the search looks (source, scope, smart or file name)
 export function clearAll(st: FindState): FindState {

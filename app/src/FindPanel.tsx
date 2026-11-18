@@ -10,11 +10,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { commands, type Named } from "./commands";
 import {
-  chips, clearCategory, clearFilters, GROUPS, reach, searchIn, serverPickers, visibleCategories, withSearchIn,
+  chips, clearAll, clearCategory, GROUPS, reach, searchIn, serverPickers, visibleCategories, withSearchIn,
   type CategoryKey, type FindState, type SearchIn,
 } from "./findModel";
 import type { ImageEntry } from "./library";
 import { AnalysisStatus } from "./AnalysisStatus";
+import { ResetIcon } from "./icons";
 import type { ImmichSearch } from "./immich";
 import { formatNumber, t } from "./i18n";
 import { FilterEditor } from "./FindEditors";
@@ -161,7 +162,12 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   </>;
   return (
     <div className="find-pop" ref={pop} role="search" aria-label={t("library.find.title")}>
-      <div className="panel-head"><h1>{t("library.find.title")}</h1>{pin && <div className="head-tools">{pin}</div>}</div>
+      <div className="panel-head"><h1>{t("library.find.title")}</h1>
+        <div className="head-tools">
+          {pin}
+          <button type="button" className="tool find-clear" disabled={!active.length && !s.text} onClick={() => send(clearAll(state))}
+                  aria-label={t("library.find.clearAll")} title={t("library.find.clearAll")}><ResetIcon /></button>
+        </div></div>
       <div className="find-head">
         <div className="find-row">
           <input className="field find-text" type="search" spellCheck={false} ref={text} value={s.text}
@@ -217,7 +223,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
       <div className="find-filters-head">
         <h2>{t("library.find.filters")}</h2>
         <span className="find-active" aria-live="polite">{active.length ? t("library.find.activeCount", { n: active.length, count: formatNumber(active.length) }) : ""}</span>
-        <button type="button" className="find-clear" disabled={!active.length} onClick={() => send(clearFilters(state))}>{t("library.filters.clear")}</button>
       </div>
       <div className="find-scroll" ref={scroll}>
         {GROUPS.map((g) => {

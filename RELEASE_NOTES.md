@@ -16,8 +16,8 @@ Improvements
 - Find's filters are a single list: click a filter's row and its options open
   right beneath it, one at a time, with what each is set to shown on the row
   and an x to turn it off. The chips are gone. A Filters header counts the
-  filters that are on, and its Clear turns them all off while keeping your
-  search words. Exposure has tabs for ISO, aperture, focal length and shutter
+  filters that are on, and the reset icon in Find's title bar clears them
+  and your search words. Exposure has tabs for ISO, aperture, focal length and shutter
   speed, rating and color label choices have clearer buttons, and long value
   lists scroll in their own box. Load and Save filter stay at the bottom with
   the photo count.

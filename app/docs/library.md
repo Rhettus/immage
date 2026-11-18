@@ -372,9 +372,10 @@ Searching the library and narrowing a folder both happen here.
   See [Immich](immich.md).
 
 Under the search words, a **Filters** header shows how many filters are on
-(rating with Hide rejected counts as one) and has a **Clear** button, which turns
-every filter off and keeps your search words, where it searches and Smart or
-Filename. **Clear** is dimmed while no filter is on.
+(rating with Hide rejected counts as one). The reset icon at the end of Find's
+title bar, in the same place as the Adjustments panel's, clears your search words
+and turns every filter off, keeping where it searches and Smart or Filename. It
+is dimmed when there is nothing to clear.
 
 Below it is one list, in groups, with every filter folded when Find opens. Each
 filter is a row showing what it is set to (**Any** when off). Click a row and its options open directly beneath it; click it
@@ -438,9 +439,8 @@ Each list counts only the photos your other choices leave: tick a camera, and
 
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. The footer is always visible below the list:
-it shows how many photos match, **Load** (saved filters) and **Save filter…**. To clear
-the search words, empty the search box. Esc folds an open filter and returns to
-its row. The toolbar's stars, **Reject**, **Edited** and color label
+it shows how many photos match, **Load** (saved filters) and **Save filter…**. Esc
+folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder clears the filters, sets Search in back to This folder
 and clears the search words, so a folder left on Rejected only never looks

@@ -573,6 +573,7 @@
   "library.search.allPhotos": "Toutes les photos",
   "library.search.example": "coucher de soleil sur une plage",
   "library.search.filenameExample": "nom de fichier, par exemple IMG_2041",
+  "library.find.clearAll": "Effacer la recherche et les filtres",
   "library.find.clipTip": "Vous pourrez rechercher les photos selon leur contenu une fois le modèle CLIP téléchargé sur cet ordinateur.",
   "library.find.clipTipSetUp": "Configurer dans les Préférences",
   "library.find.clipTipDismiss": "Fermer cette astuce",

@@ -573,6 +573,7 @@
   "library.search.allPhotos": "All photos",
   "library.search.example": "sunset on a beach",
   "library.search.filenameExample": "file name, such as IMG_2041",
+  "library.find.clearAll": "Clear search and filters",
   "library.find.clipTip": "Photos can be searched by what is in them once the CLIP model is downloaded to this computer.",
   "library.find.clipTipSetUp": "Set up in Preferences",
   "library.find.clipTipDismiss": "Dismiss this tip",

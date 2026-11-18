@@ -1988,9 +1988,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .find-filters-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; }
 .find-filters-head h2 { flex: none; margin: 0; font-size: var(--fs-body); font-weight: 600; }
 .find-active { flex: 1; min-width: 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.find-clear { padding: 2px 8px; background: none; border: none; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; }
-.find-clear:hover:not(:disabled) { background: var(--hover); }
-.find-clear:disabled { color: var(--text-2); opacity: 0.6; cursor: default; }
 .find-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 12px 20px; }
 .fr-group-title {
   padding: 10px 2px 5px; color: var(--text-2); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;

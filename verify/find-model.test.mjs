@@ -36,7 +36,7 @@ const M = await import('../app/src/findModel.ts');
 const { NO_SEARCH } = await import('../app/src/immich.ts');
 const { NO_FILTER } = await import('../app/src/filter.ts');
 const { searchIn, withSearchIn, reach, needsSearch, visibleCategories, serverPickers, effectiveFilter, setStars, setTaken,
-  setKinds, setRawOnly, folderSearch, withFilter, settingOf, clearCategory, clearAll, clearFilters, chips, findCount, sameFind, normalizeFind, NO_FIND, CATEGORIES } = M;
+  setKinds, setRawOnly, folderSearch, withFilter, settingOf, clearCategory, clearAll, chips, findCount, sameFind, normalizeFind, NO_FIND, CATEGORIES } = M;
 
 const st = (search = {}, filter = {}) => ({ search: { ...NO_SEARCH, ...search }, filter: { ...NO_FILTER, ...filter } });
 const keys = (cs) => cs.map(c => c.key);
@@ -168,18 +168,6 @@ test('clearAll clears the words, keeping where and how', () => {
     { cameras: ['c'], bodies: ['b'], lenses: ['l'], iso: ['100'], kinds: ['RAW'], rejected: 'only', labels: 1, unlabeled: true, edited: 'only' });
   assert.ok(sameFind(clearAll(dirty), st({ ...base, text: '' })));
   assert.deepEqual([clearAll(dirty).search.text, clearAll(dirty).search.mode], ['', 'filename']);
-});
-
-test('clearFilters clears every category and keeps the words, where and how', () => {
-  const base = { text: 'cat', mode: 'filename', source: 'both', scope: 'library', library: 'all' };
-  const dirty = st({ ...base, minRating: 2, favorites: true, personIds: ['p'], country: 'NL', rawOnly: true },
-    { cameras: ['c'], iso: ['100'], kinds: ['RAW'], rejected: 'only', labels: 1, unlabeled: true, edited: 'edited' });
-  const r = clearFilters(dirty);
-  assert.ok(sameFind(r, st(base)));
-  assert.equal(r.search.text, 'cat');
-  assert.equal(findCount(r, true), 0);
-  // clearAll still drops the words
-  assert.equal(clearAll(dirty).search.text, '');
 });
 
 test('active filters count categories, not values', () => {
