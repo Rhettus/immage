@@ -3862,8 +3862,6 @@
   "app.status.openFolder": "open a folder to start",
   "app.status.working": "working…",
   "app.status.supportBundle": "Create Support Bundle…",
-  "app.status.imageQuery": "Image query: {query} · all local library folders",
-  "app.status.clearImageQuery": "Clear image query",
   "app.status.engineNotAnswering": "The engine is not answering.",
   "app.status.wait": "Wait",
   "app.status.restart": "Restart",

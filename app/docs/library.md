@@ -166,8 +166,7 @@ In the grid, right-click a local photo and choose **Show more like this**
 (offered once the optional model is downloaded).
 The clicked photo supplies the image query, independently of the open editor.
 The query covers all local library folders, retains selected filters and uses
-the photo as edited. An **Image query** indicator names the seed;
-**Clear image query** returns to a metadata listing. Missing or stale seed
+the photo as edited. Missing or stale seed
 analysis produces an error rather than substituting another photo. Background
 embeddings require the optional model and cached metadata; a photo without
 current analysis cannot supply a similarity query.

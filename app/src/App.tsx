@@ -354,7 +354,6 @@ export default function App() {
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
   const pendingSearchMetadata = useRef(new Set<Promise<unknown>>());
-  const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
   // without Immich configured, a stored search that asks for it is turned to this computer's, once,
   // as the Search in choices hold no Immich then
@@ -3063,7 +3062,6 @@ export default function App() {
                             seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
     window.clearTimeout(immichTimer.current);
     setImmich(null);
-    setImageQuery(null);
     combined.current?.cancel();
     setFolder(dir);
     saveLibrary({ current: dir });
@@ -3164,7 +3162,6 @@ export default function App() {
       await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
       return;
     }
-    if (!imageVariant) setImageQuery(null);
     thumbError.current = false;
     loader.current!.clear();
     setReading(null);
@@ -3184,7 +3181,6 @@ export default function App() {
       const q = similarSearch(immichFormRef.current);
       immichFormRef.current = q; setImmichForm(q); storeSearch(q);
       window.clearTimeout(immichTimer.current);
-      setImageQuery(hit.filename);
       await searchImmich(q, false, variant);
     } catch (e) { setStatus(t("app.status.similarPhotosError", { error: e })); }
   };
@@ -6645,8 +6641,6 @@ export default function App() {
             onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
             onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
           <div className="activities">
-          {imageQuery && immich && <div className="activity"><span>{t("app.status.imageQuery", { query: imageQuery })}</span>
-            <button onClick={() => void searchImmich(immichFormRef.current)}>{t("app.status.clearImageQuery")}</button></div>}
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
             <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}

@@ -3,6 +3,13 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.47.0
+
+Bug fixes
+
+- After a similar-photo search, opening a photo no longer leaves an "Image
+  query" box in the lower left that could not be dismissed.
+
 ## 0.46.0
 
 Improvements

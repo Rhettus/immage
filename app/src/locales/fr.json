@@ -3862,8 +3862,6 @@
   "app.status.openFolder": "ouvrez un dossier pour commencer",
   "app.status.working": "traitement…",
   "app.status.supportBundle": "Créer un dossier d’assistance…",
-  "app.status.imageQuery": "Recherche d’image : {query} · tous les dossiers locaux de la photothèque",
-  "app.status.clearImageQuery": "Effacer la recherche d’image",
   "app.status.engineNotAnswering": "Le moteur ne répond pas.",
   "app.status.wait": "Attendre",
   "app.status.restart": "Redémarrer",
