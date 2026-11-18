@@ -83,6 +83,9 @@ fn next_day(day: &str) -> Option<String> {
 pub fn filter(a: &SearchArgs) -> Value {
     let mut f = Map::new();
     f.insert("type".into(), json!({ "eq": "IMAGE" }));
+    // search includes the trash, where Immich puts external-library photos
+    // that are gone from disk; they cannot be opened
+    f.insert("trashedAt".into(), json!({ "eq": null }));
     match a.library.as_str() {
         "all" => {}
         "" | "external" => { f.insert("libraryId".into(), json!({ "ne": null })); }
@@ -293,7 +296,10 @@ impl Immich {
         let r: Value = status(self.http.post(self.url(path)).json(&body).send().map_err(|e| e.to_string())?)?
             .json().map_err(|e| e.to_string())?;
         let assets = &r["assets"];
-        let items: Vec<Asset> = assets["items"].as_array().map(|v| v.iter().map(|x| asset(x, map)).collect())
+        // the filter already leaves the trash out; a trashed asset that slips
+        // through would open as a 404
+        let items: Vec<Asset> = assets["items"].as_array()
+            .map(|v| v.iter().filter(|x| x["isTrashed"] != true).map(|x| asset(x, map)).collect())
             .unwrap_or_default();
         let next = if a.smart() { &assets["nextPage"] } else { &assets["nextCursor"] };
         let next = match next {
@@ -449,7 +455,7 @@ mod tests {
     #[test]
     fn filter_defaults_to_external_photos() {
         let f = filter(&SearchArgs::default());
-        assert_eq!(f, json!({ "type": { "eq": "IMAGE" }, "libraryId": { "ne": null } }));
+        assert_eq!(f, json!({ "type": { "eq": "IMAGE" }, "trashedAt": { "eq": null }, "libraryId": { "ne": null } }));
         let f = filter(&SearchArgs { library: "all".into(), ..Default::default() });
         assert!(f.get("libraryId").is_none());
     }
@@ -583,6 +589,21 @@ mod tests {
         let r = c.search(&SearchArgs { mode: "smart".into(), text: "beach".into(), next: Some("2".into()),
                                        ..Default::default() }, &PathMap::default()).unwrap();
         assert_eq!(r.next, None);
+    }
+
+    #[test]
+    fn search_drops_trashed_assets() {
+        let mut server = mockito::Server::new();
+        let _meta = server.mock("POST", "/api/search/metadata")
+            .match_body(mockito::Matcher::PartialJson(json!({ "filter": { "trashedAt": { "eq": null } } })))
+            .with_body(r#"{"assets":{"items":[
+                {"id":"t1","originalFileName":"T.RAF","isTrashed":true,"localDateTime":"2026-10-05T06:50:16.000Z"},
+                {"id":"a1","originalFileName":"A.RAF","isTrashed":false,"localDateTime":"2026-10-05T06:50:16.000Z"}],
+                "nextCursor":null}}"#).create();
+        let r = client(&server.url()).search(&SearchArgs::default(), &PathMap::default()).unwrap();
+        let r = serde_json::to_value(&r).unwrap();
+        assert_eq!(r["items"].as_array().unwrap().len(), 1);
+        assert_eq!(r["items"][0]["id"], "a1");
     }
 
     #[test]

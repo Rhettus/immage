@@ -168,6 +168,7 @@ and **All folders**. Local search remains available without a server; see
   skipped.
 
 Results fill the grid, up to 250 per source page, with more as you scroll.
+Photos in the Immich trash are not shown.
 Combined queries display successful sources independently and retain the other
 source’s results if one fails. The status line reports each source’s error.
 Unknown local-only filter fields exclude remote results. Exact verified mapped

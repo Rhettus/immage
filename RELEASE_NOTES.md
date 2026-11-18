@@ -17,6 +17,8 @@ Bug fixes
   query" box in the lower left that could not be dismissed.
 - Buttons in the lower-left notices, such as Stop while searching, can now be
   clicked.
+- Immich search no longer lists photos that are in the Immich trash; opening
+  one used to show a 404 error.
 
 ## 0.46.0
 
