@@ -940,6 +940,7 @@ export type PickerStats = {
 	min: [number, number, number],
 	mean: [number, number, number],
 	max: [number, number, number],
+	fourth?: number | null,
 };
 
 export type Place = {

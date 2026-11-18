@@ -187,6 +187,9 @@ pub struct PickerStats {
     pub min: [Number; 3],
     pub mean: [Number; 3],
     pub max: [Number; 3],
+    // white balance's picker: the mean of a 4-color sensor's fourth channel
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fourth: Option<Number>,
 }
 
 // `sample`'s reply: the working-space values at a point or over a box, by

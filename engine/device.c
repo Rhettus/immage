@@ -238,10 +238,17 @@ static gboolean _parity_pass(const char *name, const gboolean gpu, const int siz
   if(devid > DT_DEVICE_CPU) dt_opencl_unlock_device(devid);
   cl->enabled = enabled;
   if(!ok) return FALSE;
+  session_pixels_t pixels;
+  if(!session_pixels_get(pipe, &pixels))
+  {
+    *err = g_strdup("the render left no pixels");
+    return FALSE;
+  }
   out->w = w;
   out->h = h;
   out->pixels = g_malloc((size_t)4 * w * h);
-  memcpy(out->pixels, pipe->backbuf, (size_t)4 * w * h);
+  memcpy(out->pixels, pixels.bgra, (size_t)4 * w * h);
+  session_pixels_release(&pixels);
   return TRUE;
 }
 

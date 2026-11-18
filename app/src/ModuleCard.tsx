@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
+import { PipetteIcon } from "./icons";
 import { RotateCcw } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { InstanceMenu, type InstanceChoice } from "./InstanceMenu";
@@ -42,6 +43,12 @@ const ENGINE_FIELDS: Record<string, SchemaField> = {
 
 // a GtkColorButton's RGBA is the three floats as they are (borders.c
 // _colorpick_color_set), the button's 8-bit hex being value * 255 rounded
+// what temperature.c's _update_controls_lock greys while color calibration
+// adapts from its own illuminant
+const WB_LOCKED_FIELDS = new Set(["wb_tune", "temp_k", "tint", "red", "green", "blue", "various"]);
+
+const startWbPick = (photo?: object | null) => (photo as { onWbAreaPick?: (() => void) | null } | null | undefined)?.onWbAreaPick?.();
+
 const toHex = (v: number[]) => "#" + v.map((x) => Math.round(Math.min(1, Math.max(0, x)) * 255).toString(16).padStart(2, "0")).join("");
 const fromHex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 
@@ -87,7 +94,7 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, wbLocked, trouble, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
@@ -107,6 +114,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   // the white balance note: the photo's white balance is set by this module
   // with color calibration off (Session.wbInModule)
   wbInModule?: boolean;
+  // color calibration sets the white balance (Session.wbLocked)
+  wbLocked?: boolean;
+  // darktable's warning on this module (Session.wbTrouble, catTrouble)
+  trouble?: number;
   // the modules this card can switch to, when it is a shared card
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
@@ -158,9 +169,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
       if (!wbCurrent || wbCurrent.tune_min >= wbCurrent.tune_max) return null;
       return [{ path: l.path, type: "int", min: wbCurrent.tune_min, max: wbCurrent.tune_max }, { ...l, soft: [wbCurrent.tune_min, wbCurrent.tune_max] }];
     }
-    // temperature.c's own order; from image area (index 1) is not offered
-    const std: [string, number][] = [[tr("fields.module.wb.asShot"), 0], [tr("fields.module.wb.userModified"), 2], [tr("fields.module.wb.cameraReference"), 3], [tr("fields.module.wb.asShotToReference"), 4]];
-    const list = [...std, ...wbList.map((p): [string, number] => [fieldText(p.name), p.value])];
+    // temperature.c's own order; locked, from image area is not offered either
+    const std: [string, number][] = [[tr("fields.module.wb.asShot"), 0], ...(wbLocked ? [] : [[tr("fields.module.wb.fromImageArea"), 1] as [string, number]]), [tr("fields.module.wb.userModified"), 2], [tr("fields.module.wb.cameraReference"), 3]];
+    // locked, darktable leaves only the settings that need no adjusting
+    const list = [...std, ...wbList.filter((p) => !wbLocked || p.value === value).map((p): [string, number] => [fieldText(p.name), p.value])];
     const choices = list.some(([, v]) => v === value) ? list : [...list, [tr("fields.module.currentSetting"), value] as [string, number]];
     return [{ path: l.path, type: "int" }, { ...l, choices }];
   };
@@ -226,6 +238,20 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
       </div>
       <Collapse open={open}>
         <div className="module-card-body">
+          {!!trouble && (layout.op === "temperature" || layout.op === "channelmixerrgb") && (
+            <div className="note" data-module-trouble={trouble} style={{ marginLeft: 0, marginRight: 0 }}
+                 title={tr(`fields.module.trouble.${layout.op}.${trouble}.details`)}>{tr(`fields.module.trouble.${layout.op}.${trouble}.title`)}</div>
+          )}
+          {layout.op === "temperature" && wbLocked && (
+            <div className="note" style={{ marginLeft: 0, marginRight: 0 }} title={tr("fields.module.wbLockedHow")}>{tr("fields.module.wbLocked")}</div>
+          )}
+          {layout.op === "temperature" && (
+            <div className="wb-tools">
+              <button className="tool" data-control-id="adv:wb_pick" disabled={wbLocked || (fixed && !state.enabled)}
+                      title={tr("fields.module.wb.pickArea")} aria-label={tr("fields.module.wb.pickArea")}
+                      onClick={() => startWbPick(photo)}><PipetteIcon /></button>
+            </div>
+          )}
           {layout.op === "temperature" && wbInModule && (
             <div className="note" style={{ marginLeft: 0, marginRight: 0 }}>{tr("fields.module.wbNote")}</div>
           )}
@@ -303,10 +329,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
                 ? <ModuleBands key={`${l.path}-bands`} op={layout.op} bands={layout.bands} state={state} disabled={fixed && !state.enabled} onFields={onFields} /> : null;
               if (!f || (l.tab && l.tab !== tab) || (l.showIf && !l.showIf(state.params))) return bands;
               const neutral = state.defaults[l.path] ?? 0;
-              const why = l.grey?.(state.params) ?? undefined;
+              const why = l.grey?.(state.params) ?? (layout.op === "temperature" && wbLocked && WB_LOCKED_FIELDS.has(l.path) ? tr("fields.module.wbLockedHow") : undefined);
               const control = { ...fieldControl(f, shownAs, value), ...(why ? { note: why } : {}) };
               const props = { control, value, neutral, values: state.params, disabled: (fixed && !state.enabled) || !!why };
-              const set = (coalesce: boolean) => (v: number) => l.clears
+              const set = (coalesce: boolean) => (v: number) => l.wb === "setting" && v === 1 ? startWbPick(photo) : l.clears
                 ? onFields({ [l.path]: v, ...Object.fromEntries(l.clears.map((c) => [c, 0])) }, coalesce, l.path)
                 : onField(l.path, v, coalesce);
               const title = l.section && l.section !== heading ? l.section : undefined;

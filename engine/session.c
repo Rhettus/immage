@@ -371,6 +371,17 @@ static gboolean _has_history(const dt_imgid_t imgid)
   return found;
 }
 
+// what a screen pipe renders to. darktable's darkroom copies this from the
+// window on each run (develop.c, dt_dev_process_image_job); the engine runs
+// its pipes directly, and without an output colorout leaves the pixels in the
+// working RGB (colorout.c, _publish_output). headless, the display is sRGB
+static void _pipe_use_display(dt_dev_pixelpipe_t *pipe)
+{
+  if(!dt_pipe_is_screen(pipe)) return;
+  pipe->window = DT_COLORSPACE_DISPLAY;
+  dt_colorspaces_get_display_output(DT_COLORSPACE_DISPLAY, &pipe->output);
+}
+
 // `version` picks one of the file's versions by imgid, and any other value
 // its lowest
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
@@ -426,6 +437,7 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
     *err = g_strdup("could not allocate the pixelpipe");
     return FALSE;
   }
+  _pipe_use_display(&_s.pipe);
 
   dt_ioppr_resync_modules_order(&_s.dev);
   dt_dev_pixelpipe_set_icc(&_s.pipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_LAST);
@@ -678,6 +690,7 @@ static gboolean _write_profile(dt_iop_module_t *mod, const gboolean work, const 
 gboolean session_write_field(dt_iop_module_t *mod, const char *name, const double num,
                              char **err)
 {
+  if(!g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
   if(!g_strcmp0(mod->op, "colorin")
      && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
     return _write_profile(mod, !strcmp(name, "working_profile"), num, err);
@@ -702,6 +715,13 @@ gboolean session_write_field(dt_iop_module_t *mod, const char *name, const doubl
 gboolean session_read_field(dt_iop_module_t *mod, const char *name,
                             const gboolean from_defaults, double *num, char **err)
 {
+  if(!from_defaults && !g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
+  if(!g_strcmp0(name, "various") && !g_strcmp0(mod->op, "temperature"))
+    return wb_various_read(mod, from_defaults, num, err);
+  if(!g_strcmp0(name, WB_TROUBLE) && (!g_strcmp0(mod->op, "temperature") || !g_strcmp0(mod->op, "channelmixerrgb")))
+    return wb_trouble_read(mod, num);
+  if((!g_strcmp0(name, WB_ILLUMINANT_X) || !g_strcmp0(name, WB_ILLUMINANT_Y)) && !g_strcmp0(mod->op, "channelmixerrgb"))
+    return wb_illuminant_read(mod, name, from_defaults, num);
   if(!g_strcmp0(mod->op, "colorin")
      && (!g_strcmp0(name, "input_profile") || !g_strcmp0(name, "working_profile")))
     return _read_profile(mod, from_defaults, !strcmp(name, "working_profile"), num, err);
@@ -713,7 +733,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
   }
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_read(mod, name, from_defaults, num, err);
-  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE) || !g_strcmp0(name, WB_LOCKED))
+     && !g_strcmp0(mod->op, "temperature"))
     return wb_setting_read(mod, name, from_defaults, num, err);
   if(files_is_field(mod, name)) return files_read(mod, name, from_defaults, num, err);
   if(cmap_is_field(mod, name)) return cmap_read(mod, name, from_defaults, num, err);
@@ -867,11 +888,28 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
   gboolean moved = FALSE;
   if(!_place(mod, after, before, &moved, err)) return FALSE;
 
+  // one of color calibration's illuminant controls edited alone
+  GList *members = params ? json_object_get_members(params) : NULL;
+  const char *alone = field ? field : members && !members->next ? members->data : NULL;
+  const gboolean illuminant_edit = alone && !g_strcmp0(mod->op, "channelmixerrgb")
+    && (!strcmp(alone, "illuminant") || !strcmp(alone, "illum_fluo") || !strcmp(alone, "illum_led")
+        || !strcmp(alone, "temperature"));
+  double illuminant_was = 0.0;
+  if(illuminant_edit && !session_read_field(mod, "illuminant", FALSE, &illuminant_was, err))
+  {
+    g_list_free(members);
+    return FALSE;
+  }
+
   gboolean any = FALSE;
   if(field)
   {
     const double num = value && JSON_NODE_HOLDS_VALUE(value) ? json_node_get_double(value) : 0.0;
-    if(!session_write_field(mod, field, num, err)) return FALSE;
+    if(!session_write_field(mod, field, num, err))
+    {
+      g_list_free(members);
+      return FALSE;
+    }
     any = TRUE;
   }
   if(params)
@@ -882,12 +920,15 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
       if(!session_write_field(mod, n->data, json_object_get_double_member(params, n->data), err))
       {
         g_list_free(names);
+        g_list_free(members);
         return FALSE;
       }
       any = TRUE;
     }
     g_list_free(names);
   }
+  if(illuminant_edit) wb_illuminant_changed(mod, alone, (int)illuminant_was);
+  g_list_free(members);
 
   if(has_enabled) mod->enabled = enabled;
   else if(any) mod->enabled = TRUE;
@@ -1218,7 +1259,7 @@ dt_hash_t session_frame_hash(const dt_hash_t pipe_hash)
   return hash;
 }
 
-static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h);
+static gboolean _preview_output_sink(void *user, const float *pixels, int w, int h);
 
 // darktable checks a pipe's cache against its limit only when the next run
 // starts (pixelpipe_hb.c, dt_dev_pixelpipe_process), so a pipe keeps what its
@@ -1259,7 +1300,53 @@ void session_settle(dt_dev_pixelpipe_t *pipe)
   dt_dev_pixelpipe_cache_checkmem(pipe, FALSE);
 }
 
-// Process byte pixels into the optional output sink or the pipe's backbuf.
+// whether the pipe's last run left pixels for session_pixels_get
+gboolean session_pipe_has_output(const dt_dev_pixelpipe_t *pipe)
+{
+  return dt_pipe_is_screen(pipe) ? pipe->frame != NULL : pipe->backbuf != NULL;
+}
+
+// a screen pipe's frame as its window shows it, a soft proof's included; the
+// float output of any other pipe packed the way a frame is
+gboolean session_pixels_get(dt_dev_pixelpipe_t *pipe, session_pixels_t *out)
+{
+  memset(out, 0, sizeof(*out));
+  const int w = pipe->backbuf_width, h = pipe->backbuf_height;
+  if(w <= 0 || h <= 0 || (size_t)w > SIZE_MAX / 4 / (size_t)h) return FALSE;
+  if(dt_pipe_is_screen(pipe))
+  {
+    out->frame = dt_dev_pixelpipe_frame(pipe);
+    cairo_surface_t *surface = dt_frame_surface(out->frame, &pipe->output.device);
+    if(surface && cairo_image_surface_get_width(surface) == w
+       && cairo_image_surface_get_height(surface) == h
+       && cairo_image_surface_get_stride(surface) == 4 * w)
+    {
+      cairo_surface_flush(surface);
+      out->bgra = cairo_image_surface_get_data(surface);
+      return TRUE;
+    }
+    session_pixels_release(out);
+    return FALSE;
+  }
+  const float *const in = pipe->backbuf;
+  out->owned = in ? g_try_malloc((size_t)4 * w * h) : NULL;
+  if(!out->owned) return FALSE;
+  uint8_t *const bytes = out->owned;
+  DT_OMP_FOR()
+  for(int y = 0; y < h; y++)
+    dt_display_to_8bit_pixels(in + (size_t)4 * w * y, bytes + (size_t)4 * w * y, w, TRUE);
+  out->bgra = out->owned;
+  return TRUE;
+}
+
+void session_pixels_release(session_pixels_t *pixels)
+{
+  dt_frame_unref(pixels->frame);
+  g_free(pixels->owned);
+  memset(pixels, 0, sizeof(*pixels));
+}
+
+// Process pixels into the optional output sink or the pipe's frame.
 // with scale <= 0, fit the whole image into bw x bh. otherwise render the
 // bw x bh window at (x, y) of the image scaled by `scale` (1 is 100%), the
 // way the darkroom's zoomed view does; the window is clipped to the image
@@ -1316,7 +1403,21 @@ gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
   const gboolean failed = dt_dev_pixelpipe_process(pipe, &_s.dev, ox, oy, w, h, scale, devid);
   pipe->output_sink = NULL;
   pipe->output_sink_user = NULL;
-  if(failed || (output ? !output->completed : !pipe->backbuf))
+  // the sink takes only pixels in the display's encoding: a soft proof's
+  // frame is converted here, as a window would show it
+  if(!failed && output && !output->completed)
+  {
+    session_pixels_t pixels;
+    if(session_pixels_get(pipe, &pixels))
+    {
+      const gint64 started = g_get_monotonic_time();
+      output->completed = session_write_rgba(output->path, pixels.bgra, pipe->backbuf_width,
+                                             pipe->backbuf_height, output->timings);
+      output->elapsed_ms = engine_ms_since(started);
+      session_pixels_release(&pixels);
+    }
+  }
+  if(failed || (output ? !output->completed : !session_pipe_has_output(pipe)))
   {
     *err = g_strdup("pixelpipe processing failed or was interrupted");
     return FALSE;
@@ -1328,7 +1429,7 @@ gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw,
   return TRUE;
 }
 
-// the backbuf is 8-bit in display byte order (BGRA), as the export path keeps it
+// `in` is 8-bit in display byte order (BGRX), session_pixels_get's
 gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, const int h)
 {
   FILE *f = g_fopen(path, "wb");
@@ -1361,8 +1462,11 @@ gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, con
 // written over the file in place: g_file_set_contents() would write a
 // temporary file, sync it and rename it, for every frame of a slider drag.
 // the client reads it while the engine is still its own, so no half-written
-// frame is ever read
-gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings)
+// frame is ever read. the pixels are BGRX bytes (`in`) or, from the output
+// sink, display-encoded float RGBA (`pixels`), packed by darktable's own
+// conversion straight into the output
+static gboolean _write_rgba(const char *path, const uint8_t *in, const float *pixels,
+                            const int w, const int h, double *timings)
 {
   const gint64 started = g_get_monotonic_time();
   if(w <= 0 || h <= 0 || (size_t)w > SIZE_MAX / 4 / (size_t)h) return FALSE;
@@ -1377,13 +1481,22 @@ gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, co
 #endif
   if(!rgba) return FALSE;
   const gint64 allocated = g_get_monotonic_time();
-  DT_OMP_FOR()
-  for(size_t k = 0; k < n; k++)
+  if(pixels)
   {
-    rgba[4 * k + 0] = in[4 * k + 2];
-    rgba[4 * k + 1] = in[4 * k + 1];
-    rgba[4 * k + 2] = in[4 * k + 0];
-    rgba[4 * k + 3] = 255;
+    DT_OMP_FOR()
+    for(int y = 0; y < h; y++)
+      dt_display_to_8bit_pixels(pixels + (size_t)4 * w * y, rgba + (size_t)4 * w * y, w, FALSE);
+  }
+  else
+  {
+    DT_OMP_FOR()
+    for(size_t k = 0; k < n; k++)
+    {
+      rgba[4 * k + 0] = in[4 * k + 2];
+      rgba[4 * k + 1] = in[4 * k + 1];
+      rgba[4 * k + 2] = in[4 * k + 0];
+      rgba[4 * k + 3] = 255;
+    }
   }
   const gint64 converted = g_get_monotonic_time();
   // MAP_SHARED writes are visible before the JSON completion reply. No file
@@ -1402,11 +1515,16 @@ gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, co
   return ok;
 }
 
-static gboolean _preview_output_sink(void *user, const uint8_t *pixels, int w, int h)
+gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings)
+{
+  return _write_rgba(path, in, NULL, w, h, timings);
+}
+
+static gboolean _preview_output_sink(void *user, const float *pixels, int w, int h)
 {
   preview_output_t *output = user;
   const gint64 started = g_get_monotonic_time();
-  output->completed = session_write_rgba(output->path, pixels, w, h, output->timings);
+  output->completed = _write_rgba(output->path, NULL, pixels, w, h, output->timings);
   output->elapsed_ms = engine_ms_since(started);
   return output->completed;
 }
@@ -2115,6 +2233,7 @@ gboolean session_ppipe_ready(char **err)
       *err = g_strdup("could not allocate the preview pipe");
       return FALSE;
     }
+    _pipe_use_display(&_s.ppipe);
     dt_dev_pixelpipe_set_icc(&_s.ppipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_LAST);
     dt_dev_pixelpipe_set_input(&_s.ppipe, &_s.dev, (float *)_s.buf.buf,
                                _s.buf.width, _s.buf.height, _s.buf.iscale);
@@ -2151,6 +2270,7 @@ gboolean session_follower_ready(dt_engine_follower_t *f, char **err)
     return FALSE;
   }
   if(f != &_s.drag) f->pipe.cache.mem_fraction = _WHOLE_PIPE_FRACTION;
+  _pipe_use_display(&f->pipe);
   dt_dev_pixelpipe_set_icc(&f->pipe, DT_COLORSPACE_SRGB, NULL, DT_INTENT_LAST);
   dt_dev_pixelpipe_set_input(&f->pipe, &_s.dev, (float *)_s.buf.buf,
                              _s.buf.width, _s.buf.height, _s.buf.iscale);
@@ -2307,7 +2427,7 @@ static gboolean _preview_render(JsonObject *req, int *ow, int *oh, char **err)
   const double scale = fmin(1.0, fmin((double)size / pw, (double)size / ph));
   const int w = MAX(1, floor(scale * pw)), h = MAX(1, floor(scale * ph));
   if(dt_dev_pixelpipe_process(&_s.ppipe, &_s.dev, 0, 0, w, h, scale, DT_DEVICE_NONE)
-     || !_s.ppipe.backbuf)
+     || !session_pipe_has_output(&_s.ppipe))
   {
     *err = g_strdup("the preview failed");
     return FALSE;

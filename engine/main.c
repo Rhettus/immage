@@ -415,7 +415,9 @@ static gboolean _cmd_prefetch(JsonObject *req, JsonBuilder *b, char **err)
 // the reply does not wait for the decode. `imgids` in the order to
 // decode them, or one `imgid`
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
-  const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+  // beyond what the cache holds beside the open photo, a decode only pushes
+  // out the neighbors decoded first
+  const guint n = ids ? MIN(json_array_get_length(ids), MIN(16, dt_worker_threads())) : 1;
   dt_imgid_t list[16];
   for(guint k = 0; k < n; k++)
     list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
@@ -927,19 +929,28 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
   }
   else
   {
-    if(ppm && !session_write_ppm(ppm, pipe->backbuf, w, h))
+    session_pixels_t pixels = { 0 };
+    if((ppm || (rgba && !sink)) && !session_pixels_get(pipe, &pixels))
     {
+      *err = g_strdup("the render left no pixels");
+      return FALSE;
+    }
+    if(ppm && !session_write_ppm(ppm, pixels.bgra, w, h))
+    {
+      session_pixels_release(&pixels);
       *err = g_strdup_printf("could not write '%s'", ppm);
       return FALSE;
     }
     const gint64 t1 = g_get_monotonic_time();
     double output_ms[4] = {0};
     if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
-    if(rgba && !sink && !session_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
+    if(rgba && !sink && !session_write_rgba(rgba, pixels.bgra, w, h, output_ms))
     {
+      session_pixels_release(&pixels);
       *err = g_strdup_printf("could not write '%s'", rgba);
       return FALSE;
     }
+    session_pixels_release(&pixels);
     json_builder_set_member_name(b, "width");
     json_builder_add_int_value(b, w);
     json_builder_set_member_name(b, "height");
@@ -1038,8 +1049,9 @@ static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
               json_object_get_double_member_with_default(req, "y", 0.5),
               json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
                 ? json_object_get_array_member(req, "box") : NULL,
-              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
-                ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
+              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor") ? _STAGE_NEGADOCTOR
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "temperature") ? _STAGE_TEMPERATURE
+                : _STAGE_ANCHOR,
               b, err))
     return FALSE;
   return TRUE;
@@ -1228,7 +1240,15 @@ static gboolean _cmd_preview(JsonObject *req, JsonBuilder *b, char **err)
   int w = 0, h = 0;
   const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
   if(!rgba || !session_preview(req, &w, &h, err)) return FALSE;
-  if(!session_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
+  session_pixels_t pixels;
+  if(!session_pixels_get(&_s.ppipe, &pixels))
+  {
+    *err = g_strdup("the preview left no pixels");
+    return FALSE;
+  }
+  const gboolean written = session_write_rgba(rgba, pixels.bgra, w, h, NULL);
+  session_pixels_release(&pixels);
+  if(!written)
   {
     *err = g_strdup_printf("could not write '%s'", rgba);
     return FALSE;

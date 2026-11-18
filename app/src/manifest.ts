@@ -362,6 +362,9 @@ const DETAIL_FIELDS = [
   ["gain_shadows", "Shadows", -5, 5, 0, 0.01],
   ["gain_highlights", "Highlights", -5, 5, 0, 0.01],
 ] as const;
+// the control keeps its id, which saved app state and looks refer to, when
+// darktable renames the field behind it
+const detailParam = (field: string) => (field === "detail_level" ? "base_detail_level" : field);
 export const detailControlIds = (prefix: string) => DETAIL_FIELDS.map(([field]) => `${prefix}_${field}`);
 const detailControls = (prefix: string, label: string): Control[] =>
   DETAIL_FIELDS.map(([field, name, min, max, neutral, step]) => ({
@@ -374,10 +377,10 @@ const detailMap = (prefix: string, texture: boolean): ModuleMap => ({
   op: texture ? "contrastntexture#texture" : "contrastntexture",
   keepOn: false,
   controls: detailControlIds(prefix),
-  fields: DETAIL_FIELDS.map(([field]) => field),
-  read: (p) => Object.fromEntries(DETAIL_FIELDS.map(([field]) => [`${prefix}_${field}`, p[field]])),
+  fields: DETAIL_FIELDS.map(([field]) => detailParam(field)),
+  read: (p) => Object.fromEntries(DETAIL_FIELDS.map(([field]) => [`${prefix}_${field}`, p[detailParam(field)]])),
   write: (v) => Object.fromEntries(DETAIL_FIELDS.map(([field, , , , neutral]) =>
-    [field, v[`${prefix}_${field}`] ?? neutral])),
+    [detailParam(field), v[`${prefix}_${field}`] ?? neutral])),
   enabled: (v) => DETAIL_FIELDS.some(([field]) => field.startsWith("gain_") && (v[`${prefix}_${field}`] ?? 0) !== 0),
 });
 
@@ -1112,7 +1115,7 @@ export const modules: ModuleMap[] = [
   {
     op: "channelmixerrgb", keepOn: true,
     controls: ["temp", "tint"],
-    fields: ["illuminant", "x", "y", "temperature"],
+    fields: ["illuminant", "x", "y", "temperature", "wb_x", "wb_y"],
     read: (p) => readWB(p),
     write: (v, d) => writeWB({ temp: v.temp, tint: v.tint }, d),
   },

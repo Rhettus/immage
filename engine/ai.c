@@ -55,7 +55,8 @@ uint8_t *ai_shown_rgb(const int size, const gboolean color, int *w, int *h, char
     pc->module->enabled = TRUE;
   }
   g_list_free(off);
-  if(failed || !_s.ppipe.backbuf)
+  session_pixels_t pixels;
+  if(failed || !session_pixels_get(&_s.ppipe, &pixels))
   {
     *err = g_strdup("could not render the image for the model");
     return NULL;
@@ -64,13 +65,14 @@ uint8_t *ai_shown_rgb(const int size, const gboolean color, int *w, int *h, char
   *h = _s.ppipe.backbuf_height;
   const size_t n = (size_t)*w * *h;
   uint8_t *rgb = g_malloc(3 * n);
-  const uint8_t *in = _s.ppipe.backbuf;  // BGRA
+  const uint8_t *in = pixels.bgra;
   for(size_t k = 0; k < n; k++)
   {
     rgb[3 * k + 0] = in[4 * k + 2];
     rgb[3 * k + 1] = in[4 * k + 1];
     rgb[3 * k + 2] = in[4 * k + 0];
   }
+  session_pixels_release(&pixels);
   return rgb;
 }
 

@@ -135,7 +135,7 @@ static const dt_colorspaces_color_profile_t *_register(const char *file)
   int out_pos = -1;
   for(const GList *l = darktable.color_profiles->profiles; l; l = g_list_next(l))
     out_pos = MAX(out_pos, ((const dt_colorspaces_color_profile_t *)l->data)->out_pos);
-  p->in_pos = p->display_pos = p->display2_pos = p->category_pos = p->work_pos = -1;
+  p->in_pos = p->category_pos = p->work_pos = -1;
   p->out_pos = out_pos + 1;
 
   pthread_rwlock_wrlock(&darktable.color_profiles->xprofile_lock);
@@ -299,12 +299,6 @@ gboolean print_profile_add(const char *path, JsonBuilder *b, char **err)
 
 // ---------------------------------------------------------------- soft proof
 
-// colorout proofs with the display intent (colorout.c, commit_params:
-// cmsCreateProofingTransform takes out_intent, the display's, for the step
-// into the proof profile), so it is the print's while proofing, and the
-// display's own again after
-static dt_iop_color_intent_t _display_intent = DT_INTENT_PERCEPTUAL;
-
 gboolean print_softproof(const char *mode, const char *file, const int intent, gboolean *changed, char **err)
 {
   dt_colorspaces_t *cp = darktable.color_profiles;
@@ -335,22 +329,17 @@ gboolean print_softproof(const char *mode, const char *file, const int intent, g
   if(next == DT_PROFILE_GAMUTCHECK) cmsSetAlarmCodes(cyan);
 
   pthread_rwlock_wrlock(&cp->xprofile_lock);
-  const gboolean was = cp->mode != DT_PROFILE_NORMAL;
   *changed = cp->mode != next
              || (next != DT_PROFILE_NORMAL
                  && (cp->softproof_type != DT_COLORSPACE_FILE || strcmp(cp->softproof_filename, p->filename)
-                     || cp->display_intent != want));
-  if(next == DT_PROFILE_NORMAL)
+                     || cp->softproof_intent != want));
+  if(next != DT_PROFILE_NORMAL)
   {
-    if(was) cp->display_intent = _display_intent;
-  }
-  else
-  {
-    if(!was) _display_intent = cp->display_intent;
     cp->softproof_type = DT_COLORSPACE_FILE;
     g_strlcpy(cp->softproof_filename, p->filename, sizeof(cp->softproof_filename));
     cp->softproof_intent = want;
-    cp->display_intent = want;
+    // as print_proof_pixels proofs the cached preview
+    cp->softproof_bpc = TRUE;
   }
   cp->mode = next;
   pthread_rwlock_unlock(&cp->xprofile_lock);
@@ -361,7 +350,7 @@ dt_hash_t print_proof_hash(const dt_hash_t hash)
 {
   const dt_colorspaces_t *cp = darktable.color_profiles;
   if(cp->mode == DT_PROFILE_NORMAL) return hash;
-  const int what[2] = { cp->mode, cp->display_intent };
+  const int what[2] = { cp->mode, cp->softproof_intent };
   const dt_hash_t h = dt_hash(hash, what, sizeof(what));
   return dt_hash(h, cp->softproof_filename, strlen(cp->softproof_filename));
 }
@@ -371,7 +360,7 @@ gboolean print_proof_pixels(uint8_t *rgba, const int width, const int height, co
   dt_colorspaces_t *cp = darktable.color_profiles;
   pthread_rwlock_rdlock(&cp->xprofile_lock);
   const int mode = cp->mode;
-  const int intent = cp->display_intent;
+  const int intent = cp->softproof_intent;
   const dt_colorspaces_color_profile_t *prof
     = mode == DT_PROFILE_NORMAL ? NULL
       : dt_colorspaces_get_profile(cp->softproof_type, cp->softproof_filename, DT_PROFILE_DIRECTION_OUT);

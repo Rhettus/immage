@@ -70,7 +70,9 @@ KNOWN = {
     # darktable's own bug, inherited: claims-huge.tif's failed full-size allocation
     # leaves its mipmap cache entry on the static dead image, and a later eviction
     # free()s it (mipmap_cache.c _mipmap_cache_deallocate_dynamic). It lands on
-    # whichever case evicts that entry, xmp-nul-bytes in this corpus order.
+    # whichever case evicts that entry. The cache holds one raw per worker thread
+    # plus one, so that case depends on the machine's thread count.
+    'crash|text.tif': 'a later thumbnail crashes after a photo claiming a huge size failed to load',
     'crash|xmp-nul-bytes': 'a later thumbnail crashes after a photo claiming a huge size failed to load',
 }
 

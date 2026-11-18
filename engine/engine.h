@@ -51,6 +51,7 @@
 #include "common/exif.h"
 #include "develop/blend.h"
 #include "develop/develop.h"
+#include "develop/frame.h"
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
@@ -173,6 +174,14 @@ typedef struct preview_output_t {
   gboolean completed;
 } preview_output_t;
 
+// a finished render as 8-bit BGRX, 4 * width bytes per row, for as long as it
+// is held (session_pixels_get, session_pixels_release)
+typedef struct session_pixels_t {
+  struct dt_frame_t *frame;
+  uint8_t *owned;
+  const uint8_t *bgra;
+} session_pixels_t;
+
 // a `thumb` with a `tag` runs here rather than in the main loop, so a
 // folder's thumbnails come in while the photo is edited and rendered.
 // darktable's lighttable builds them from its job threads the same way:
@@ -235,6 +244,7 @@ typedef enum _stage_t
   _STAGE_ASHIFT,
   _STAGE_NEGADOCTOR,
   _STAGE_COLORMAPPING,
+  _STAGE_TEMPERATURE,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -363,10 +373,24 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // the camera presets that fill the menu
 #define WB_SETTING "wb_setting"
 #define WB_TUNE "wb_tune"
+// read only: color calibration adapts from its own illuminant, so these
+// coefficients do not decide the colors (temperature.c, _update_controls_lock)
+#define WB_LOCKED "wb_locked"
+// read only, on temperature and each color calibration instance: the warning
+// darktable shows on that module (channelmixerrgb.c, _set_trouble_messages)
+#define WB_TROUBLE "wb_trouble"
+gboolean wb_trouble_read(dt_iop_module_t *mod, double *num);
 gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
                          double *num, char **err);
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 void wb_mark_user(dt_iop_module_t *mod);
+void wb_show_own(dt_iop_module_t *mod);
+gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, double *num, char **err);
+// color calibration's illuminant "from the white balance module", as x and y
+#define WB_ILLUMINANT_X "wb_x"
+#define WB_ILLUMINANT_Y "wb_y"
+gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num);
+void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous);
 gboolean wb_presets(JsonBuilder *b, char **err);
 // files.c: the file-name params no number can hold, edited as the hash of the
 // name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
@@ -408,6 +432,9 @@ void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+gboolean session_pipe_has_output(const dt_dev_pixelpipe_t *pipe);
+gboolean session_pixels_get(dt_dev_pixelpipe_t *pipe, session_pixels_t *out);
+void session_pixels_release(session_pixels_t *pixels);
 gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, const int h);
 gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings);
 dt_iop_module_t *session_find_named(const char *op, const char *name);

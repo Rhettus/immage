@@ -13,6 +13,12 @@ gboolean engine_transient_write(const char *path, const void *first, size_t a,
   return transient_write(path, first, a, second, b);
 }
 #include <assert.h>
+// darktable's conversion for the output sink, which this test does not reach
+void dt_display_to_8bit_pixels(const float *const __restrict__ in, uint8_t *const __restrict__ out,
+                               const size_t n, const gboolean bgr)
+{
+  abort();
+}
 darktable_t darktable = { .num_openmp_threads = 2 };
 static int test_subsample;
 int dt_conf_get_int(const char *name)

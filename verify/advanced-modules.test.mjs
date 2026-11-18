@@ -1323,6 +1323,63 @@ test('Advanced alignment and composite photo (engine)', { skip: skip || false },
 const wbPhotos = [['the sample JPEG', SAMPLE]];
 if (process.env.IMMAGE_RAW) wbPhotos.push(['IMMAGE_RAW', process.env.IMMAGE_RAW]);
 for (const [what, source] of wbPhotos) {
+  test(`Color calibration follows the white balance module (${what})`, { skip: skip || what === 'the sample JPEG' }, async (t) => {
+    const work = mkdtempSync(join(tmpdir(), 'immage-advcat-'));
+    mkdirSync(join(work, 'photos'));
+    const photo = join(work, 'photos', `cat${source.slice(source.lastIndexOf('.'))}`);
+    copyFileSync(source, photo);
+    const e = new Engine(work);
+    t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+    await e.call({ cmd: 'open', path: photo });
+    const cat = async (...f) => (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': f } })).modules['channelmixerrgb@0'].params;
+    const first = await cat('illuminant', 'wb_x', 'wb_y');
+    assert.equal(first.illuminant, 11, 'a raw starts from the white balance module');
+    await e.call({ cmd: 'set', op: 'temperature', priority: 0, params: { wb_setting: 3 }, enabled: true });
+    const reference = await cat('wb_x', 'wb_y');
+    assert.ok(Math.abs(reference.wb_x - first.wb_x) + Math.abs(reference.wb_y - first.wb_y) > 1e-4, 'the illuminant follows the setting');
+    // channelmixerrgb.c, gui_changed: the new mode starts from that illuminant
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: true });
+    const custom = await cat('illuminant', 'x', 'y');
+    assert.equal(custom.illuminant, 7);
+    assert.ok(Math.abs(custom.x - reference.wb_x) < 1e-5 && Math.abs(custom.y - reference.wb_y) < 1e-5, 'custom starts from the illuminant it left');
+    // temperature.c, color_picker_apply reads the sensor's channels at the module's input
+    const { picker } = await e.call({ cmd: 'sample', x: .5, y: .5, box: [.45, .45, .55, .55], stage: 'temperature' });
+    assert.equal(picker.mean.length, 3, 'the picker reads the three channels the reply types');
+    assert.ok(Number.isFinite(picker.fourth), 'the fourth sensor channel comes apart');
+    assert.ok(picker.mean.every((v) => Number.isFinite(v) && v > 0), `picked ${picker.mean}`);
+
+    // channelmixerrgb.c, _set_trouble_messages
+    const trouble = async () => { const m = (await e.call({ cmd: 'get', modules: { temperature: ['wb_trouble'], 'channelmixerrgb@0': ['wb_trouble'] } })).modules; return [m.temperature.params.wb_trouble, m['channelmixerrgb@0'].params.wb_trouble]; };
+    const wbSet = (params, enabled = true) => e.call({ cmd: 'set', op: 'temperature', priority: 0, params, enabled });
+    const catSet = (params) => e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params, enabled: true });
+    await catSet({ illuminant: 11 });
+    await wbSet({ wb_setting: 0, late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared for color calibration, no warning');
+    await wbSet({ late_correction: 0 });
+    assert.deepEqual(await trouble(), [1, 1], 'not prepared for the illuminant from white balance');
+    await catSet({ illuminant: 7 });
+    assert.deepEqual(await trouble(), [3, 3], 'white balance applied twice');
+    await wbSet({ late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared, its own illuminant is fine');
+    const second = (await e.call({ cmd: 'instance', action: 'new', op: 'channelmixerrgb', priority: 0 })).priority;
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: second, params: { adaptation: 1, illuminant: 7 }, enabled: true });
+    const cats = (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': ['wb_trouble'], [`channelmixerrgb@${second}`]: ['wb_trouble'] } })).modules;
+    assert.deepEqual([cats['channelmixerrgb@0'].params.wb_trouble, cats[`channelmixerrgb@${second}`].params.wb_trouble].sort(), [0, 2], 'the later of two adapting instances warns of a double CAT');
+    await e.call({ cmd: 'instance', action: 'delete', op: 'channelmixerrgb', priority: second });
+    await wbSet({}, false);
+    assert.deepEqual(await trouble(), [4, 4], 'white balance missing');
+    await wbSet({ wb_setting: 3 });
+    await catSet({ illuminant: 7 });
+
+    // temperature.c, _update_controls_lock
+    const locked = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['wb_locked'] } })).modules['temperature@0'].params.wb_locked;
+    assert.ok(await locked(), 'its own illuminant locks the white balance');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 11 }, enabled: true });
+    assert.ok(!(await locked()), 'following the white balance module does not');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: false });
+    assert.ok(!(await locked()), 'color calibration off does not');
+  });
+
   test(`Advanced white balance temperature and tint (${what})`, { skip: skip || false }, async (t) => {
     const work = mkdtempSync(join(tmpdir(), 'immage-advwb-'));
     mkdirSync(join(work, 'photos'));
@@ -1365,8 +1422,9 @@ for (const [what, source] of wbPhotos) {
     if (what === 'the sample JPEG') {
       assert.deepEqual(presets, [], 'a JPEG has no camera presets');
       await write({ wb_setting: 3 });
-      // sRGB has no separate reference, so the as shot match wins as in gui_update
-      assert.equal((await get('wb_setting')).wb_setting, 0, 'as shot and camera reference are the same');
+      // temperature.c, gui_update: the mode labels the setting, even where
+      // sRGB gives both modes the same coefficients
+      assert.equal((await get('wb_setting')).wb_setting, 3, 'camera reference stays chosen');
       return;
     }
     const same = (x, y) => ['red', 'green', 'blue'].every((c) => Math.abs(x[c] - y[c]) < 1e-5);
@@ -1378,26 +1436,56 @@ for (const [what, source] of wbPhotos) {
     const ref = await get(...coeffs);
     assert.equal(ref.wb_setting, 3, 'camera reference');
     assert.ok(!same(ref, shot), 'camera reference differs from as shot');
+    assert.ok(Number.isFinite((await get('various')).various), 'camera reference reads a fourth coefficient the reply can carry');
+    // an edit saved with the old "as shot to reference" setting
     await write({ wb_setting: 4 });
-    const late = await get(...coeffs);
-    assert.equal(late.wb_setting, 4, 'as shot to reference');
-    assert.ok(same(late, shot), 'as shot to reference starts from the as shot coefficients');
+    const late = await get(...coeffs, 'late_correction');
+    assert.equal(late.wb_setting, 0, 'the old setting reads as shot');
+    assert.ok(late.late_correction, 'the old setting prepares for color calibration');
+    assert.ok(same(late, shot), 'the old setting starts from the as shot coefficients');
+    await write({ late_correction: 0 });
+    assert.equal((await get('wb_setting')).wb_setting, 0, 'the checkbox does not change the setting');
     await write({ wb_setting: 0 });
     await write({ red: shot.red * 1.2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'an edit is user modified');
     await write({ wb_setting: 2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
+    await write({ red: shot.red, green: shot.green, blue: shot.blue });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified stays so at the as shot coefficients');
+
+    // as shot with another photo's coefficients, as a pasted history carries
+    // them: the photo renders with its own (temperature.c, _own_coeffs)
+    await write({ red: shot.red * 1.2 });
+    await write({ preset: 0 });
+    const carried = await get(...coeffs);
+    assert.equal(carried.wb_setting, 0, 'carried as shot reads as shot');
+    assert.ok(same(carried, shot), 'carried as shot shows the photo\'s own coefficients');
+
+    // temperature.c, _update_preset: a camera preset keeps "prepare data for
+    // color calibration", and leaving camera reference sets it from whether
+    // color calibration adapts
+    if (presets.length) {
+      await write({ wb_setting: 4 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'a camera preset keeps the preparation');
+      await write({ wb_setting: 0, late_correction: 0 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok(!(await get('late_correction')).late_correction, 'a camera preset keeps it off');
+      await write({ wb_setting: 3 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'leaving camera reference prepares for color calibration');
+    }
 
     // the "white balance in the module" note (Session.wbInModule): temperature
-    // on, a setting other than camera reference and as shot to reference, and
+    // on, neither camera reference nor prepared for color calibration, and
     // color calibration off
     const inModule = async () => {
-      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting'], channelmixerrgb: ['illuminant'] } })).modules;
-      return !!r.temperature.enabled && ![3, 4].includes(r.temperature.params.wb_setting) && !r.channelmixerrgb.enabled;
+      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting', 'late_correction'], channelmixerrgb: ['illuminant'] } })).modules;
+      return !!r.temperature.enabled && r.temperature.params.wb_setting !== 3 && !r.temperature.params.late_correction && !r.channelmixerrgb.enabled;
     };
-    await write({ wb_setting: 4 });
-    assert.equal(await inModule(), false, 'as shot to reference is not the note');
-    await write({ wb_setting: 0 });
+    await write({ wb_setting: 0, late_correction: 1 });
+    assert.equal(await inModule(), false, 'prepared for color calibration is not the note');
+    await write({ late_correction: 0 });
     assert.equal(await inModule(), false, 'color calibration on is not the note');
     await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: {}, enabled: false });
     assert.equal(await inModule(), true, 'as shot with color calibration off is the note');

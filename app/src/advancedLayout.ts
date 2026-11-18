@@ -185,8 +185,8 @@ const CAPTURE = (p: Record<string, number>) => p.cs_enabled === 1 && !PASSING(p)
 
 // color calibration's settings, shared by its Basic and B&W cards
 const CALIBRATION: LayoutField[] = [
-  { path: "adaptation", label: "Adaptation", tab: "CAT" },
-  { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10], showIf: (p) => p.adaptation !== 4 },
+  { path: "adaptation", label: "Adaptation", tab: "CAT", grey: (p) => [10, 11].includes(p.illuminant) ? "Set by the illuminant" : null },
+  { path: "illuminant", label: "Illuminant", tab: "CAT", options: [0, 1, 2, 3, 4, 5, 6, 7, 10, 11], showIf: (p) => p.adaptation !== 4 },
   { path: "illum_fluo", label: "F source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 4 },
   { path: "illum_led", label: "LED source", tab: "CAT", showIf: (p) => p.adaptation !== 4 && p.illuminant === 5 },
   { path: "temperature", label: "Temperature", tab: "CAT", soft: [3000, 7000], unit: "K", digits: 0, showIf: (p) => p.adaptation !== 4 && (p.illuminant === 2 || p.illuminant === 6) },
@@ -306,11 +306,13 @@ export const LAYOUTS: ModuleLayout[] = [
     // does; an edit of either sets the coefficients and the card reads them
     // again; a raw with no color matrix reads 0 and hides them. the settings
     // combobox and finetune slider are engine fields too (wb.c): the menu is
-    // as shot, user modified, camera reference, as shot to reference and this
-    // photo's camera presets (from image area needs the color picker and is
-    // left out); finetune shows for a camera preset that has a range
+    // as shot, from image area (a box dragged over the photo), user modified,
+    // camera reference and this photo's camera presets; finetune shows
+    // for a camera preset that has a range. camera reference ignores the
+    // preparation for color calibration, and darktable hides its checkbox there
     op: "temperature", group: "basic", title: "White balance",
     fields: [
+      { path: "late_correction", label: "Prepare data for color calibration", showIf: (p) => p.wb_setting !== 3 },
       { path: "wb_setting", label: "Settings", wb: "setting" },
       { path: "wb_tune", label: "Finetune", wb: "tune" },
       { path: "temp_k", label: "Temperature", section: "Scene illuminant temp", digits: 0, unit: "K", showIf: (p) => p.temp_k > 0 },
@@ -505,7 +507,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // sliders, which toggle a display mode rather than set a parameter
     op: "contrastntexture", group: "basic", title: "Contrast & texture",
     fields: [
-      { path: "detail_level", label: "Base detail level", soft: [1, 10] },
+      { path: "base_detail_level", label: "Base detail level", soft: [1, 10] },
       { path: "gain_highlights", label: "Highlights", soft: [-2, 2] },
       { path: "gain_shadows", label: "Shadows", soft: [-2, 2] },
       { path: "gain_coarse", label: "Coarse details", section: "Local contrast", soft: [-1, 1.5], unit: "%" },

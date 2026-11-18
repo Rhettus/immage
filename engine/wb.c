@@ -24,6 +24,7 @@
 // Keep it identical to temperature.c, quirks included.
 
 #include "engine.h"
+#include "common/illuminants.h"
 #include "common/wb_presets.h"
 
 // for the Kelvin conversions, as temperature.c:43; the tables are static
@@ -42,6 +43,7 @@ typedef struct
 {
   float coeff[4];
   int preset;
+  gboolean late_correction;
 } _wb_params_t;
 #define WB_PRESET_USER 2
 
@@ -265,13 +267,21 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // (dt_wb_presets_init runs in dt_init) each time. a setting is the combobox
 // index: 0 as shot, 2 user modified, 3 camera reference, 4 as shot to
 // reference, and 6 + k for the k-th camera preset (index 5 is the section
-// header, index 1 "from image area" needs the color picker and is not offered)
+// header, index 1 "from image area" needs the color picker and is not offered).
+// these are the client's numbers. since the module's version 5 "as shot to
+// reference" is as shot with late_correction, its own checkbox, and a camera
+// preset's stored number is one lower (temperature.c, legacy_params). the menu
+// no longer offers WB_D65_LATE: only an edit saved before still writes it
 #define WB_AS_SHOT 0
 #define WB_D65 3
 #define WB_D65_LATE 4
 #define WB_NUM_STD 5
 #define WB_FIRST_CAMERA (WB_NUM_STD + 1)
 #define WB_MAX_PRESETS 50
+#define WB_STORED_UNKNOWN -1
+#define WB_STORED_AS_SHOT 0
+#define WB_STORED_NUM_STD 4
+#define WB_STORED_FIRST_CAMERA 5
 
 typedef struct
 {
@@ -366,56 +376,371 @@ static gboolean _apply_tuning(const dt_image_t *img, const _preset_t *pr, const 
   return FALSE;
 }
 
-// temperature.c: gui_update's matching of the coefficients to an entry; it
-// only reads (darktable also stores the preset it settles on, which the next
-// edit would overwrite anyway)
+static int _cat_field(dt_iop_module_t *mod, const char *name)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  const int *value = session_field_in(mod, mod->params, name, &f, &err);
+  g_free(err);
+  return value ? *value : 0;
+}
+
+// channelmixerrgb.c: _applies_cat and _cat_proxy_source
+static dt_dev_cat_source_t _instance_cat_source(dt_iop_module_t *mod)
+{
+  if(!mod->enabled || dt_image_is_monochrome(&mod->dev->image_storage)) return DT_DEV_CAT_NONE;
+  const int illuminant = _cat_field(mod, "illuminant");
+  const gboolean forced_cat = illuminant == DT_ILLUMINANT_CAMERA || illuminant == DT_ILLUMINANT_FROM_WB;
+  if(illuminant == DT_ILLUMINANT_PIPE
+     || (_cat_field(mod, "adaptation") == DT_ADAPTATION_RGB && !forced_cat))
+    return DT_DEV_CAT_NONE;
+  return illuminant == DT_ILLUMINANT_FROM_WB ? DT_DEV_CAT_FROM_WB : DT_DEV_CAT_OWN_ILLUMINANT;
+}
+
+// develop.c: _cat_source. darktable asks through a proxy that only color
+// calibration's gui_init sets, so dt_dev_cat_is_active() is FALSE without a GUI
+static dt_dev_cat_source_t _cat_source(dt_develop_t *dev)
+{
+  dt_dev_cat_source_t source = DT_DEV_CAT_NONE;
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(dt_iop_module_is(mod, "channelmixerrgb") && mod->iop_order != INT_MAX)
+      source = MAX(source, _instance_cat_source(mod));
+  }
+  return source;
+}
+
+// the fourth coefficient as the card reads it. darktable copies all four of a
+// photo's own coefficients, and on a 3-color sensor the fourth of camera
+// reference is infinite: the params keep it, as darktable's do, but no JSON
+// reply can carry it, and darktable hides that slider there
+gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, double *num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params, "red", &f, err);
+  if(!p) return FALSE;
+  *num = isfinite(p->coeff[3]) ? p->coeff[3] : 0.0;
+  return TRUE;
+}
+
+// temperature.c: _params_mode. legacy params have no mode: they take as shot or
+// camera reference if their coefficients are the photo's own for it
+static int _params_mode(const _wb_params_t *p, const dt_dev_chroma_t *chr)
+{
+  if(p->preset != WB_STORED_UNKNOWN) return p->preset;
+  if(_equal(p, chr->as_shot)) return WB_STORED_AS_SHOT;
+  if(_equal(p, chr->wb.D65coeffs)) return WB_D65;
+  return WB_STORED_UNKNOWN;
+}
+
+// temperature.c: gui_update. as shot and camera reference render with the
+// photo's own coefficients, whatever a pasted history or a style stored, so
+// the controls show those and an edit starts from them. only the module's
+// params change: the history keeps what it stored until the next edit, which
+// renders the same
+void wb_show_own(dt_iop_module_t *mod)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  _wb_params_t *p = session_field_in(mod, mod->params, "red", &f, &err);
+  g_free(err);
+  if(!p) return;
+  const dt_dev_chroma_t *chr = &mod->dev->chroma;
+  const int mode = _params_mode(p, chr);
+  if(mode == WB_STORED_AS_SHOT) _from_array(p, chr->as_shot);
+  else if(mode == WB_D65) _from_array(p, chr->wb.D65coeffs);
+}
+
+// temperature.c: _match_camera_preset, for one camera preset: at one of its
+// listed tunings or, with interpolate, at one in a gap between two of them,
+// which gives no way to know the tuning but to try each one
+static gboolean _matches_preset(const dt_image_t *img, const _wb_params_t *p, const _preset_t *pr,
+                                const gboolean interpolate, int *tuning)
+{
+  const int count = dt_wb_presets_count();
+  const char *name = dt_wb_preset(pr->first)->name;
+  for(int i = pr->first + (interpolate ? 1 : 0); i < count; i++)
+  {
+    const dt_wb_data *w = dt_wb_preset(i);
+    if(!_same_camera(img, w) || strcmp(w->name, name)) break;
+    if(!interpolate)
+    {
+      if(dt_dev_equal_chroma(p->coeff, w->channels))
+      {
+        *tuning = w->tuning;
+        return TRUE;
+      }
+      continue;
+    }
+    const dt_wb_data *lo = dt_wb_preset(i - 1);
+    for(int tune = lo->tuning + 1; tune < w->tuning; tune++)
+    {
+      dt_wb_data out = { .tuning = tune };
+      dt_wb_preset_interpolate(lo, w, &out);
+      if(dt_dev_equal_chroma(p->coeff, out.channels))
+      {
+        *tuning = tune;
+        return TRUE;
+      }
+    }
+  }
+  return FALSE;
+}
+
+// temperature.c: _wb_from_params, what the module applies with its params
+static void _wb_applied(dt_develop_t *dev, const gboolean from_defaults, dt_dev_wb_t *wb)
+{
+  const dt_dev_chroma_t *chr = &dev->chroma;
+  memset(wb, 0, sizeof(*wb));
+  for(int k = 0; k < 4; k++)
+  {
+    wb->coeffs[k] = 1.0f;
+    wb->D65coeffs[k] = chr->wb.D65coeffs[k];
+  }
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(!dt_iop_module_is(mod, "temperature")) continue;
+    dt_introspection_field_t *f = NULL;
+    char *err = NULL;
+    const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params, "red", &f, &err);
+    g_free(err);
+    const gboolean enabled = from_defaults ? mod->default_enabled : mod->enabled;
+    if(!p || !enabled || mod->hide_enable_button) return;
+    const int mode = _params_mode(p, chr);
+    const double *own = mode == WB_STORED_AS_SHOT ? chr->as_shot : mode == WB_D65 ? chr->wb.D65coeffs : NULL;
+    for(int k = 0; k < 4; k++) wb->coeffs[k] = own ? (float)own[k] : p->coeff[k];
+    wb->camera_reference = mode == WB_D65;
+    wb->late_correction = !wb->camera_reference && p->late_correction;
+    return;
+  }
+}
+
+// channelmixerrgb.c: _illuminant_xy_from_wb_or_D50 with
+// _illuminant_xy_from_unprepared_wb
+static void _illuminant_from_wb(const dt_image_t *img, const dt_dev_wb_t *wb, float *x, float *y)
+{
+  gboolean found = FALSE;
+  if(wb->late_correction || wb->camera_reference)
+    found = find_illuminant_xy_from_wb_coeffs(img, wb->coeffs, x, y);
+  else if(!_wb_coeffs_invalid(wb->coeffs, 3))
+  {
+    dt_aligned_pixel_t ratios = { 1.f, 1.f, 1.f, 1.f };
+    for(int k = 0; k < 3; k++) ratios[k] = wb->D65coeffs[k] / wb->coeffs[k];
+    found = find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+  }
+  if(found) return;
+  *x = D50xyY.x;
+  *y = D50xyY.y;
+}
+
+// the illuminant color calibration takes from the white balance module, which
+// it computes on each run and does not store
+gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num)
+{
+  dt_dev_wb_t wb;
+  _wb_applied(mod->dev, from_defaults, &wb);
+  float x = 0.f, y = 0.f;
+  _illuminant_from_wb(&mod->dev->image_storage, &wb, &x, &y);
+  *num = !strcmp(name, WB_ILLUMINANT_X) ? x : y;
+  return TRUE;
+}
+
+// channelmixerrgb.c: _set_trouble_messages. darktable keeps its warnings in the
+// GUI, so they are worked out here from what it would see
+enum { _TROUBLE_NONE, _TROUBLE_UNPREPARED, _TROUBLE_DOUBLE_CAT, _TROUBLE_TWICE, _TROUBLE_MISSING };
+
+// whether a mask limits this instance (_commit_params's is_blending)
+static gboolean _instance_blends(const dt_iop_module_t *mod)
+{
+  const dt_develop_mask_mode_t mode = mod->blend_params ? mod->blend_params->mask_mode : DEVELOP_MASK_DISABLED;
+  return (mode & DEVELOP_MASK_ENABLED) && mode >= DEVELOP_MASK_MASK;
+}
+
+// the instance darktable registers for chromatic adaptation
+// (_declare_cat_on_pipe): the first in the pipe that adapts without a mask
+static dt_iop_module_t *_registered_cat(dt_develop_t *dev)
+{
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(!dt_iop_module_is(mod, "channelmixerrgb") || mod->iop_order == INT_MAX) continue;
+    if(mod->enabled && !_instance_blends(mod) && _cat_field(mod, "adaptation") != DT_ADAPTATION_RGB
+       && _cat_field(mod, "illuminant") != DT_ILLUMINANT_PIPE)
+      return mod;
+  }
+  return NULL;
+}
+
+static dt_iop_module_t *_temperature(dt_develop_t *dev)
+{
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+    if(dt_iop_module_is(l->data, "temperature")) return l->data;
+  return NULL;
+}
+
+// the warning on instance `cat`, and in *on_wb the one it puts on white balance
+static int _cat_trouble(dt_iop_module_t *cat, int *on_wb)
+{
+  *on_wb = _TROUBLE_NONE;
+  dt_develop_t *dev = cat->dev;
+  const dt_iop_module_t *wb_mod = _temperature(dev);
+  dt_iop_module_t *registered = _registered_cat(dev);
+  dt_dev_wb_t wb;
+  _wb_applied(dev, FALSE, &wb);
+  const gboolean d65 = wb.late_correction || dt_dev_equal_chroma(wb.coeffs, wb.D65coeffs);
+  const gboolean wb_on = wb_mod && wb_mod->enabled;
+  const gboolean applies = _instance_cat_source(cat) != DT_DEV_CAT_NONE;
+  if(wb_on && !wb.camera_reference && !d65 && applies && _cat_field(cat, "illuminant") == DT_ILLUMINANT_FROM_WB)
+  {
+    if(registered == cat || !registered) *on_wb = _TROUBLE_UNPREPARED;
+    return _TROUBLE_UNPREPARED;
+  }
+  if(!wb_mod || !registered || !applies) return _TROUBLE_NONE;
+  if(_instance_cat_source(registered) != DT_DEV_CAT_NONE && wb_on && registered != cat && !_instance_blends(cat))
+    return _TROUBLE_DOUBLE_CAT;
+  if(registered == cat && wb_on && !d65)
+  {
+    *on_wb = _TROUBLE_TWICE;
+    return _TROUBLE_TWICE;
+  }
+  if(registered->enabled && !wb_on && wb_mod->default_enabled)
+  {
+    *on_wb = _TROUBLE_MISSING;
+    return _TROUBLE_MISSING;
+  }
+  return _TROUBLE_NONE;
+}
+
+gboolean wb_trouble_read(dt_iop_module_t *mod, double *num)
+{
+  *num = _TROUBLE_NONE;
+  if(dt_iop_module_is(mod, "channelmixerrgb"))
+  {
+    int on_wb;
+    *num = _cat_trouble(mod, &on_wb);
+    return TRUE;
+  }
+  for(const GList *l = mod->dev->iop; l && *num == _TROUBLE_NONE; l = g_list_next(l))
+  {
+    dt_iop_module_t *cat = l->data;
+    if(!dt_iop_module_is(cat, "channelmixerrgb") || cat->iop_order == INT_MAX) continue;
+    int on_wb;
+    _cat_trouble(cat, &on_wb);
+    *num = on_wb;
+  }
+  return TRUE;
+}
+
+// channelmixerrgb.c: _get_d65_correction_ratios
+static void _d65_ratios(const dt_image_t *img, const dt_dev_wb_t *wb, dt_aligned_pixel_t ratios)
+{
+  for(int k = 0; k < 4; k++) ratios[k] = 1.0f;
+  if(!dt_image_is_matrix_correction_supported(img)) return;
+  if(wb->late_correction || dt_dev_equal_chroma(wb->coeffs, wb->D65coeffs)) return;
+  const gboolean valid = wb->D65coeffs[0] > 0.0 && wb->D65coeffs[1] > 0.0 && wb->D65coeffs[2] > 0.0;
+  const gboolean changed = wb->coeffs[0] > 1.0f || wb->coeffs[1] > 1.0f || wb->coeffs[2] > 1.0f;
+  if(valid && changed) dt_dev_wb_get_rgb_correction(wb, TRUE, ratios);
+}
+
+// channelmixerrgb.c: _check_if_close_to_daylight, for the temperature
+static float _closest_cct(const float x, const float y)
+{
+  float t = xy_to_CCT(x, y);
+  if(t < 3000.f && t > 1667.f) t = CCT_reverse_lookup(x, y);
+  return t;
+}
+
+// channelmixerrgb.c: gui_changed, after one of the controls that define the
+// illuminant was edited alone. a request that sets the illuminant's values
+// itself, as Simple's Temp and Tint do, does not come here
+void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  int *illuminant = session_field_in(mod, mod->params, "illuminant", &f, &err);
+  int *adaptation = illuminant ? session_field_in(mod, mod->params, "adaptation", &f, &err) : NULL;
+  int *fluo = adaptation ? session_field_in(mod, mod->params, "illum_fluo", &f, &err) : NULL;
+  int *illum_led = fluo ? session_field_in(mod, mod->params, "illum_led", &f, &err) : NULL;
+  float *x = illum_led ? session_field_in(mod, mod->params, "x", &f, &err) : NULL;
+  float *y = x ? session_field_in(mod, mod->params, "y", &f, &err) : NULL;
+  float *temperature = y ? session_field_in(mod, mod->params, "temperature", &f, &err) : NULL;
+  const float *default_temperature = temperature ? session_field_in(mod, mod->default_params, "temperature", &f, &err) : NULL;
+  g_free(err);
+  if(!default_temperature) return;
+
+  const dt_image_t *img = &mod->dev->image_storage;
+  dt_dev_wb_t wb;
+  _wb_applied(mod->dev, FALSE, &wb);
+  dt_aligned_pixel_t ratios;
+  _d65_ratios(img, &wb, ratios);
+
+  if(!strcmp(name, "illuminant"))
+  {
+    if(previous == DT_ILLUMINANT_CAMERA)
+      find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+    if(previous == DT_ILLUMINANT_FROM_WB)
+      _illuminant_from_wb(img, &wb, x, y);
+    if(previous == DT_ILLUMINANT_CAMERA || previous == DT_ILLUMINANT_FROM_WB)
+    {
+      *temperature = _closest_cct(*x, *y);
+      *adaptation = DT_ADAPTATION_CAT16;
+    }
+    // darktable returns to the last temperature set in that mode, which it
+    // keeps in its GUI and starts from the default
+    if(*illuminant == DT_ILLUMINANT_D || *illuminant == DT_ILLUMINANT_BB)
+      *temperature = *default_temperature;
+    if(*illuminant == DT_ILLUMINANT_CAMERA)
+      find_illuminant_xy_from_as_shot_coeffs(img, ratios, x, y);
+    if(*illuminant == DT_ILLUMINANT_FROM_WB)
+      _illuminant_from_wb(img, &wb, x, y);
+    if(*illuminant == DT_ILLUMINANT_CAMERA || *illuminant == DT_ILLUMINANT_FROM_WB)
+    {
+      *temperature = _closest_cct(*x, *y);
+      *adaptation = DT_ADAPTATION_CAT16;
+    }
+  }
+
+  // every way to define an illuminant is kept in step, to allow swapping modes
+  const gboolean from_image = *illuminant == DT_ILLUMINANT_CAMERA || *illuminant == DT_ILLUMINANT_FROM_WB;
+  if(*illuminant != DT_ILLUMINANT_CUSTOM && !from_image)
+    illuminant_to_xy(*illuminant, NULL, NULL, x, y, *temperature, *fluo, *illum_led);
+  if(*illuminant != DT_ILLUMINANT_D && *illuminant != DT_ILLUMINANT_BB && !from_image)
+    *temperature = _closest_cct(*x, *y);
+}
+
+// temperature.c: gui_update's label for the params. as shot and camera
+// reference are labeled by their mode. only legacy params and saved camera
+// presets are matched against the camera presets, a saved one first, as
+// another preset can have the same coefficients at some tuning. it only reads
+// (darktable also stores the mode it settles on, which the next edit would
+// overwrite anyway)
 static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_params_t *p,
                   const _preset_t *pr, const int n, int *tuning)
 {
   *tuning = 0;
-  if(_equal(p, chr->as_shot) && p->preset == WB_D65_LATE) return WB_D65_LATE;
-  if(_equal(p, chr->as_shot)) return WB_AS_SHOT;
-  if(_equal(p, chr->D65coeffs)) return WB_D65;
-  const int count = dt_wb_presets_count();
-  for(int j = 0; j < n; j++)
-  {
-    for(int i = pr[j].first; i < count; i++)
-    {
-      const dt_wb_data *w = dt_wb_preset(i);
-      if(!_same_camera(img, w) || strcmp(w->name, dt_wb_preset(pr[j].first)->name)) break;
-      if(dt_dev_equal_chroma(p->coeff, w->channels))
-      {
-        *tuning = w->tuning;
-        return WB_FIRST_CAMERA + j;
-      }
-    }
-  }
-  // not an exact variant: maybe interpolated across a gap in the tunings,
-  // which gives no way to know the tuning but to try each one
-  for(int j = 0; j < n; j++)
-  {
-    for(int i = pr[j].first + 1; i < count; i++)
-    {
-      const dt_wb_data *lo = dt_wb_preset(i - 1), *hi = dt_wb_preset(i);
-      if(!_same_camera(img, hi) || strcmp(hi->name, dt_wb_preset(pr[j].first)->name)) break;
-      for(int tune = lo->tuning + 1; tune < hi->tuning; tune++)
-      {
-        dt_wb_data out = { .tuning = tune };
-        dt_wb_preset_interpolate(lo, hi, &out);
-        if(dt_dev_equal_chroma(p->coeff, out.channels))
-        {
-          *tuning = tune;
-          return WB_FIRST_CAMERA + j;
-        }
-      }
-    }
-  }
+  const int mode = _params_mode(p, chr);
+  if(mode == WB_STORED_AS_SHOT) return WB_AS_SHOT;
+  if(mode == WB_D65) return WB_D65;
+  if(mode != WB_STORED_UNKNOWN && mode < WB_STORED_NUM_STD) return WB_PRESET_USER;
+  const int saved = mode - WB_STORED_FIRST_CAMERA;
+  for(int interpolate = 0; saved >= 0 && saved < n && interpolate < 2; interpolate++)
+    if(_matches_preset(img, p, &pr[saved], interpolate, tuning)) return WB_FIRST_CAMERA + saved;
+  for(int interpolate = 0; interpolate < 2; interpolate++)
+    for(int j = 0; j < n; j++)
+      if(_matches_preset(img, p, &pr[j], interpolate, tuning)) return WB_FIRST_CAMERA + j;
   return WB_PRESET_USER;
 }
 
 gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
                          double *num, char **err)
 {
+  if(!strcmp(name, WB_LOCKED))
+  {
+    *num = !from_defaults && _cat_source(mod->dev) == DT_DEV_CAT_OWN_ILLUMINANT;
+    return TRUE;
+  }
   dt_introspection_field_t *f = NULL;
   const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params,
                                            "red", &f, err);
@@ -427,6 +752,14 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
   const int setting = _match(img, &mod->dev->chroma, p, pr, n, &tune);
   *num = !strcmp(name, WB_SETTING) ? setting : tune;
   return TRUE;
+}
+
+// temperature.c: _update_preset, moving to as shot or a camera preset: the
+// flag is kept, except that camera reference ignores it and leaves it to be
+// set anew
+static void _leave_reference(dt_iop_module_t *mod, _wb_params_t *p)
+{
+  if(p->preset == WB_D65) p->late_correction = _cat_source(mod->dev) != DT_DEV_CAT_NONE;
 }
 
 // temperature.c: _preset_tune_callback. setting 2 keeps the coefficients, as
@@ -455,7 +788,7 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
     const int lo = dt_wb_preset(cur->min_ft_pos)->tuning, hi = dt_wb_preset(cur->max_ft_pos)->tuning;
     double ch[4];
     if(_apply_tuning(img, cur, CLAMP(value, lo, hi), ch)) _from_array(p, ch);
-    p->preset = setting;
+    p->preset = WB_STORED_FIRST_CAMERA + setting - WB_FIRST_CAMERA;
     return TRUE;
   }
 
@@ -464,9 +797,12 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
     case WB_AS_SHOT:
     case WB_D65_LATE:
       _from_array(p, chr->as_shot);
-      break;
+      _leave_reference(mod, p);
+      if(value == WB_D65_LATE) p->late_correction = TRUE;
+      p->preset = WB_STORED_AS_SHOT;
+      return TRUE;
     case WB_D65:
-      _from_array(p, chr->D65coeffs);
+      _from_array(p, chr->wb.D65coeffs);
       break;
     case WB_PRESET_USER:
       break;
@@ -475,7 +811,9 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
       {
         double ch[4];
         if(_apply_tuning(img, &pr[value - WB_FIRST_CAMERA], 0, ch)) _from_array(p, ch);
-        break;
+        _leave_reference(mod, p);
+        p->preset = WB_STORED_FIRST_CAMERA + value - WB_FIRST_CAMERA;
+        return TRUE;
       }
       *err = g_strdup("unknown white balance setting");
       return FALSE;

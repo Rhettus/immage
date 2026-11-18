@@ -283,23 +283,44 @@ export class Session {
   onShapes: (() => void) | null = null;
 
   // the photo's white balance is set in the white balance module with color
-  // calibration off: temperature on, its setting neither camera reference nor
-  // as shot to reference (wb.c's wb_setting 3 and 4), channelmixerrgb off.
+  // calibration off: temperature on, neither camera reference (wb.c's
+  // wb_setting 3) nor prepared for color calibration, channelmixerrgb off.
   // the panels note it; refreshWb keeps it current (see changed)
   wbInModule = false;
+  // color calibration adapts from its own illuminant, so darktable locks the
+  // white balance controls that no longer decide the colors
+  wbLocked = false;
+  // darktable's warnings on the white balance card and, by instance, on color
+  // calibration's (wb.c, wb_trouble_read); 0 is none
+  wbTrouble = 0;
+  catTrouble = new Map<number, number>();
+  // the white balance card asks the viewer to pick an area of the photo
+  onWbAreaPick: (() => void) | null = null;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
   async refreshWb() {
     clearTimeout(this.wbTimer);
     // a batch's background session shows no panels
     if (this.dead || this.background) return;
-    let now = false;
+    let now = false, locked = false, trouble = 0;
+    const cats = new Map<number, number>();
     try {
-      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting"], channelmixerrgb: ["illuminant"] }));
+      const priorities = this.instances.filter((i) => i.op === "channelmixerrgb").map((i) => i.priority);
+      const r = await traced("get_params", () => commands.getParams({
+        temperature: ["wb_setting", "late_correction", "wb_locked", "wb_trouble"], channelmixerrgb: ["illuminant"],
+        ...Object.fromEntries(priorities.map((p) => [`channelmixerrgb@${p}`, ["wb_trouble"]])) }));
+      for (const p of priorities) cats.set(p, r.modules[`channelmixerrgb@${p}`]?.params.wb_trouble ?? 0);
       const t = r.modules.temperature, c = r.modules.channelmixerrgb;
-      now = !!t?.enabled && ![3, 4].includes(t.params.wb_setting) && !c?.enabled;
+      now = !!t?.enabled && t.params.wb_setting !== 3 && !t.params.late_correction && !c?.enabled;
+      locked = !!t?.params.wb_locked;
+      trouble = t?.params.wb_trouble ?? 0;
     } catch { return; }
-    if (now === this.wbInModule || this.dead) return;
+    const same = now === this.wbInModule && locked === this.wbLocked && trouble === this.wbTrouble
+      && JSON.stringify([...cats]) === JSON.stringify([...this.catTrouble]);
+    if (same || this.dead) return;
     this.wbInModule = now;
+    this.wbLocked = locked;
+    this.wbTrouble = trouble;
+    this.catTrouble = cats;
     this.onModules?.();
   }
 
@@ -2112,6 +2133,9 @@ export class Session {
             // white balance's temperature and tint set the coefficients, and
             // an edit of the coefficients moves them
             if (op === "temperature") this.advancedStale.add(key);
+            // and color calibration can take its illuminant from them, which
+            // Temp and Tint show
+            if (op === "temperature") await this.reread("channelmixerrgb");
             if (inst?.owner === "mask") this.maskCardsStale = true;
           }
           this.changed();

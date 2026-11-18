@@ -250,7 +250,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
+                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} wbLocked={session?.wbLocked} trouble={i.op === "temperature" ? session?.wbTrouble : i.op === "channelmixerrgb" ? session?.catTrouble.get(i.priority) : 0} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
                 onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;
@@ -337,6 +337,8 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
         instance={i} layout={layout} schema={schema} state={state} siblings={siblings.length} index={siblingIndex}
         photo={s} photos={photos} onSettled={() => void s.reloadAdvanced(i.op, i.priority)} settle={() => s.settled()}
         wbInModule={s.wbInModule}
+        wbLocked={s.wbLocked}
+        trouble={i.op === "channelmixerrgb" ? s.catTrouble.get(i.priority) : 0}
         onField={(path, value, coalesce) => {
           record?.([`mask:${mask}:${key}:${path}`], layout.title);
           const c = s.context;
