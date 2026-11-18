@@ -108,7 +108,7 @@ import { SupportBundleDialog, supportValues, type SupportValues } from "./Suppor
 import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
-import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
+import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
@@ -3360,8 +3360,9 @@ export default function App() {
 
   // the application menus: a drawn strip on Windows and Linux, the native
   // menu bar on macOS; both run the same actions as the keys
+  const disabledMenuActionsRef = useRef<ReadonlySet<ActionId>>(new Set());
   const runMenuAction = useCallback((id: ActionId) => {
-    if (pastingRef.current) return;
+    if (pastingRef.current || disabledMenuActionsRef.current.has(id)) return;
     const el = document.activeElement as HTMLInputElement | null;
     if (fieldKeeps(el, "a")) {
       const editing = ["undo", "redo", "select-all", "cut", "copy", "paste"];
@@ -3381,7 +3382,6 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!IS_MAC) return;
-    void commands.menuSet(nativeSpec(MENUS)).catch(() => {});
     const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
     return () => { void off.then((f) => f()); };
   }, [runMenuAction]);
@@ -5951,7 +5951,7 @@ export default function App() {
       if (previewRef.current) {
         if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); e.key === "Escape" ? setPreview(false) : run("fullscreen-preview"); return; }
         if (!/^([zZyYxXiIlL\\0-9]|ArrowLeft|ArrowRight)$/.test(e.key)) return;
-      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
+      } else if ((e.key === "f" || e.key === "F") && !gridRef.current && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
       // I cycles the info over the photo: file, exposure, none, as Lightroom's
       if ((e.key === "i" || e.key === "I") && session.current) { run("info-overlay"); return; }
       // L steps the canvas: dark, neutral gray, white. Lightroom sets it only
@@ -6089,6 +6089,16 @@ export default function App() {
   const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
   const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
   const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
+  const hasPhoto = current !== null;
+  const disabledMenuActions = useMemo(
+    () => disabledViewActions(grid, hasPhoto, hasCullingPhotos, cropping, preview),
+    [grid, hasPhoto, hasCullingPhotos, cropping, preview],
+  );
+  disabledMenuActionsRef.current = disabledMenuActions;
+  useEffect(() => {
+    if (IS_MAC) void commands.menuSet(nativeSpec(MENUS, disabledMenuActions)).catch(() => {});
+  }, [disabledMenuActions]);
   const passingRaws = stackPairs ? new Set(passing.filter(stackRaw).map((i) => pairKey(i.path))) : null;
   const provisional = unread.filter((k) => !stacked(k) && !(!k.copy && isCompanion(k.filename) && passingRaws?.has(pairKey(k.path))));
   const cells: (ImageEntry | Known)[] = provisional.length ? withKnown(shown, provisional) : shown;
@@ -6326,7 +6336,7 @@ export default function App() {
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
-    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} onAction={runMenuAction} />}</div>}
+    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} disabled={disabledMenuActions} onAction={runMenuAction} />}</div>}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`

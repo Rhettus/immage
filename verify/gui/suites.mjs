@@ -4,6 +4,8 @@ import { generated, generatedNames } from './generated.mjs';
 export const cases = {
   menus: { scope: 'Windows/Linux drawn menus: five titles inside the 34px title bar, click open, hover switch, Escape and outside click, label and shortcut text of every item, and the effects of Export, Print, Keyboard Shortcuts, Preferences, Import Photos, Undo/Redo, Zoom In, Grid View, Show Clipping and Create Virtual Copy', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T02-59-06.431Z_113e595_340e02b9.',
     limitation: 'Quit and Add Folder (native dialog or closing the app) and User Guide (opens a browser) are outside the app-only boundary. The virtual copy stays in the run fixture folder.' },
+  'menus-view-mode': { scope: 'Drawn View menu dims Culling Preview in Edit and editor-only actions in the grid; a disabled click leaves the menu open; the grid menu opens the culling preview; returning to Edit restores the original availability', liveValidated: true, verification: 'Linux ARM64, system WebKitGTK, disposable JPEG fixture. Run 2026-11-18T22-39-44.201Z_1a109e6_cece5786, workspace 2 restored.',
+    limitation: 'Exercises the webview menu. The macOS native menu requires separate verification.' },
   'menus-guards': { scope: 'menu items do nothing behind the Preferences modal; with a text field focused Edit > Select All selects the text and not the photos, and Edit > Undo does not step photo history; the title bar keeps data-tauri-drag-region and the menu buttons do not', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, viewport 1596x840, original workspace 3 restored. Run 2026-11-10T02-59-06.431Z_113e595_340e02b9.',
     limitation: 'DOM attribute check only; window dragging is not exercised. Fails if clicking a menu title moves focus off the text field.' },
   'location-map': { scope: 'Metadata map Dark toggle (embedded and expanded), expansion, wheel zoom, Escape collapse, dialog stacking and unchanged location draft', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK; empty workspace 9 floating/maximized, original workspace 3 restored. Run 2026-11-09T23-59-45.887Z_ab0c885_6005ea2f; Dark toggle added and passed in run 2026-11-10T04-04-34.542Z_01fdefd_6936b6b0. Search provider/keyring integration not exercised.' },
@@ -245,7 +247,7 @@ export const suites = {
   search: ['startup', 'local-search'],
   find: ['startup', 'find-live', 'find-sizes', 'find-saved', 'find-no-clip'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
-  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards'],
+  workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards','menus-view-mode'],
   inventory: ['startup',...generatedNames],
   engine: ['startup', 'engine-restart', 'save-failure', 'support-bundle'],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],

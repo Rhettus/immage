@@ -31,7 +31,7 @@ import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
 import { supportBundle } from './specs/support-bundle.mjs';
-import { menus, menusGuards } from './specs/menus.mjs';
+import { menus, menusGuards, menusViewMode } from './specs/menus.mjs';
 import * as release0450 from './specs/release-0450.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 import { settingsStore } from './specs/settings-store.mjs';
@@ -125,6 +125,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'save-failure': saveFailure,
   'support-bundle': supportBundle,
   'menus-guards': menusGuards,
+  'menus-view-mode': menusViewMode,
   'hostile-text': hostileText,
   'settings-store': settingsStore,
   'space-pan': release0450.spacePanTools,

@@ -709,6 +709,8 @@ to another selection.
 Click the magnifier in the toolbar under the grid (shown in the grid only), the
 small icon at the right of a thumbnail's hover footer, or choose
 **View > Culling Preview**, to open the same preview without the keyboard.
+The menu command is available when the grid shows a local photo.
+**View > Full Screen Preview** is available for an open photo in the editor.
 The toolbar magnifier and the menu use the photo under the pointer, else the
 selected photo, else the first photo in the grid; the thumbnail icon opens
 that thumbnail's photo.

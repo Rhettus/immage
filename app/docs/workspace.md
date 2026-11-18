@@ -196,7 +196,11 @@ bug report; see [Troubleshooting](troubleshooting.md#support-bundle).
 
 On Windows and Linux, click a menu to open it. While one is open, moving the
 pointer over another menu opens that one. The arrow keys move through the
-items, Enter chooses the highlighted one and Escape closes the menu.
+enabled items, Enter chooses the highlighted one and Escape closes the menu.
+
+The View menu dims commands that are unavailable in the current view. Culling
+Preview requires a local photo in the grid. Full Screen Preview and Before /
+After require a photo in the editor.
 
 Menu items do nothing while a dialog is open, as the keys do. While you type
 in a text field, Edit's Undo, Redo, Cut, Copy, Paste and Select All act on

@@ -1852,7 +1852,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   background: none; border: none; border-radius: 5px; color: var(--text); font: inherit; font-size: var(--fs-body);
   text-align: left; white-space: nowrap; cursor: pointer;
 }
-.menubar-menu button.on { background: var(--inset); }
+.menubar-menu button.on:not(:disabled) { background: var(--inset); }
+.menubar-menu button:disabled { color: var(--text-3); cursor: default; }
 .menubar-keys, .menubar-arrow { color: var(--text-3); }
 .menubar-sep { height: 1px; margin: 4px 6px; background: var(--border, #333); }
 .menubar-has-sub { position: relative; }

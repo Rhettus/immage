@@ -840,7 +840,7 @@ export type Named = {
 	name: string,
 };
 
-export type NativeItem = { type: "item"; id: string; label: string; accel?: string | null } | { type: "separator" } | { type: "submenu"; label: string; items: NativeItem[] } | { type: "predefined"; role: NativeRole };
+export type NativeItem = { type: "item"; id: string; label: string; accel?: string | null; disabled?: boolean } | { type: "separator" } | { type: "submenu"; label: string; items: NativeItem[] } | { type: "predefined"; role: NativeRole };
 
 export type NativeMenu = {
 	label: string,

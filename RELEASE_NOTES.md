@@ -41,6 +41,8 @@ Improvements
 
 Bug fixes
 
+- View > Culling Preview is enabled only when the grid shows a local photo.
+  Full Screen Preview and other editor-only View commands are dimmed in the grid.
 - Find's analysis icon now shows how many photos are really waiting for Smart
   search analysis, and no longer says every photo is analysed while some are
   still pending. It stays visible, dimmed, without the CLIP model, a still arc

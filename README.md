@@ -36,7 +36,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer.
-- Cull in the grid with a quick preview, ratings, color labels and keywords.
+- Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords.
 - Drag photos onto a folder to move or copy them along with their sidecars.
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a

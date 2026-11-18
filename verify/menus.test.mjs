@@ -110,3 +110,21 @@ test('forPlatform leaves clean separators', () => {
   assert.ok(M.forPlatform(M.MENUS, true).some(m => m.label === 'Immage'));
   assert.ok(!M.forPlatform(M.MENUS, false).some(m => m.label === 'Immage' || m.label === 'Window'));
 });
+
+test('View menu availability follows the grid, editor, and crop states', () => {
+  const grid = M.disabledViewActions(true, true, true, false, false);
+  for (const id of ['culling-preview', 'compare', 'zoom-in', 'zoom-out']) assert.ok(!grid.has(id), id);
+  for (const id of ['fullscreen-preview', 'zoom-toggle', 'before-after', 'clipping', 'next-scope', 'info-overlay', 'canvas', 'soft-proof']) {
+    assert.ok(grid.has(id), id);
+  }
+  assert.ok(M.disabledViewActions(true, true, false, false, false).has('culling-preview'));
+  assert.ok(M.disabledViewActions(false, false, false, false, false).has('fullscreen-preview'));
+
+  const editor = M.disabledViewActions(false, true, false, false, false);
+  const items = M.nativeSpec(M.MENUS, editor).flatMap(m => m.items);
+  assert.equal(items.find(i => i.id === 'culling-preview').disabled, true);
+  assert.equal(items.find(i => i.id === 'fullscreen-preview').disabled, false);
+
+  const crop = M.disabledViewActions(false, true, false, true, false);
+  for (const id of ['grid', 'before-after', 'compare', 'zoom-in', 'zoom-out']) assert.ok(crop.has(id), id);
+});
