@@ -375,7 +375,7 @@ static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_p
   *tuning = 0;
   if(_equal(p, chr->as_shot) && p->preset == WB_D65_LATE) return WB_D65_LATE;
   if(_equal(p, chr->as_shot)) return WB_AS_SHOT;
-  if(_equal(p, chr->D65coeffs)) return WB_D65;
+  if(_equal(p, chr->wb.D65coeffs)) return WB_D65;
   const int count = dt_wb_presets_count();
   for(int j = 0; j < n; j++)
   {
@@ -466,7 +466,7 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
       _from_array(p, chr->as_shot);
       break;
     case WB_D65:
-      _from_array(p, chr->D65coeffs);
+      _from_array(p, chr->wb.D65coeffs);
       break;
     case WB_PRESET_USER:
       break;

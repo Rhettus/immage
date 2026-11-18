@@ -51,6 +51,7 @@
 #include "common/exif.h"
 #include "develop/blend.h"
 #include "develop/develop.h"
+#include "develop/frame.h"
 #include "develop/imageop.h"
 #include "develop/masks.h"
 #include "develop/pixelpipe_cache.h"
@@ -172,6 +173,14 @@ typedef struct preview_output_t {
   double elapsed_ms;
   gboolean completed;
 } preview_output_t;
+
+// a finished render as 8-bit BGRX, 4 * width bytes per row, for as long as it
+// is held (session_pixels_get, session_pixels_release)
+typedef struct session_pixels_t {
+  struct dt_frame_t *frame;
+  uint8_t *owned;
+  const uint8_t *bgra;
+} session_pixels_t;
 
 // a `thumb` with a `tag` runs here rather than in the main loop, so a
 // folder's thumbnails come in while the photo is edited and rendered.
@@ -408,6 +417,9 @@ void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,
                         const double req_scale, const int x, const int y, JsonArray *have,
                         int *ow, int *oh, int *ox_out, int *oy_out, dt_hash_t *kept, preview_output_t *output, char **err);
+gboolean session_pipe_has_output(const dt_dev_pixelpipe_t *pipe);
+gboolean session_pixels_get(dt_dev_pixelpipe_t *pipe, session_pixels_t *out);
+void session_pixels_release(session_pixels_t *pixels);
 gboolean session_write_ppm(const char *path, const uint8_t *in, const int w, const int h);
 gboolean session_write_rgba(const char *path, const uint8_t *in, const int w, const int h, double *timings);
 dt_iop_module_t *session_find_named(const char *op, const char *name);

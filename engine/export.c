@@ -1564,7 +1564,7 @@ static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first
   // the white balance temperature applied (its commit_params), divided out
   float unbalance[3];
   for(int c = 0; c < 3; c++)
-    unbalance[c] = !rendered && dev.chroma.wb_coeffs[c] > 0.0f ? 1.0f / dev.chroma.wb_coeffs[c] : 1.0f;
+    unbalance[c] = !rendered && pipe.wb.coeffs[c] > 0.0f ? 1.0f / pipe.wb.coeffs[c] : 1.0f;
   dt_dev_pixelpipe_get_dimensions(&pipe, &dev, pipe.iwidth, pipe.iheight, &pipe.processed_width,
                                   &pipe.processed_height);
   const float scale = max_edge > 0

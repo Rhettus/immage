@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Immage now renders with darktable's code from the 5.8 feature freeze. Photos
+  edited in this version should not be reopened in Immage 0.46 or earlier: those
+  versions drop the white balance, input color and demosaic steps saved by this
+  one.
 - Messages in the corners of the photo, such as the status text, errors and
   export summaries, fade after 15 seconds unless the pointer is over them. A
   click dismisses them at once.
