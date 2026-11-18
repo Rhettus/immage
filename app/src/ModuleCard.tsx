@@ -159,7 +159,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
       return [{ path: l.path, type: "int", min: wbCurrent.tune_min, max: wbCurrent.tune_max }, { ...l, soft: [wbCurrent.tune_min, wbCurrent.tune_max] }];
     }
     // temperature.c's own order; from image area (index 1) is not offered
-    const std: [string, number][] = [[tr("fields.module.wb.asShot"), 0], [tr("fields.module.wb.userModified"), 2], [tr("fields.module.wb.cameraReference"), 3], [tr("fields.module.wb.asShotToReference"), 4]];
+    const std: [string, number][] = [[tr("fields.module.wb.asShot"), 0], [tr("fields.module.wb.userModified"), 2], [tr("fields.module.wb.cameraReference"), 3]];
     const list = [...std, ...wbList.map((p): [string, number] => [fieldText(p.name), p.value])];
     const choices = list.some(([, v]) => v === value) ? list : [...list, [tr("fields.module.currentSetting"), value] as [string, number]];
     return [{ path: l.path, type: "int" }, { ...l, choices }];

@@ -11,6 +11,8 @@ Improvements
   edited in this version should not be reopened in Immage 0.46 or earlier: those
   versions drop the white balance, input color and demosaic steps saved by this
   one.
+- The Advanced white balance card has darktable's new Prepare data for color
+  calibration checkbox, which replaces the As shot to reference setting.
 - Clarity and Texture use darktable's new local contrast filter, so both can look
   a little different. Existing edits keep their settings, and their Base detail
   level moves to the value that matches the new filter.

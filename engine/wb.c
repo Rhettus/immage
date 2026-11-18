@@ -269,8 +269,9 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // reference, and 6 + k for the k-th camera preset (index 5 is the section
 // header, index 1 "from image area" needs the color picker and is not offered).
 // these are the client's numbers. since the module's version 5 "as shot to
-// reference" is as shot with late_correction, and a camera preset's stored
-// number is one lower (temperature.c, legacy_params)
+// reference" is as shot with late_correction, its own checkbox, and a camera
+// preset's stored number is one lower (temperature.c, legacy_params). the menu
+// no longer offers WB_D65_LATE: only an edit saved before still writes it
 #define WB_AS_SHOT 0
 #define WB_D65 3
 #define WB_D65_LATE 4
@@ -485,7 +486,7 @@ static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_p
 {
   *tuning = 0;
   const int mode = _params_mode(p, chr);
-  if(mode == WB_STORED_AS_SHOT) return p->late_correction ? WB_D65_LATE : WB_AS_SHOT;
+  if(mode == WB_STORED_AS_SHOT) return WB_AS_SHOT;
   if(mode == WB_D65) return WB_D65;
   if(mode != WB_STORED_UNKNOWN && mode < WB_STORED_NUM_STD) return WB_PRESET_USER;
   const int saved = mode - WB_STORED_FIRST_CAMERA;
@@ -511,6 +512,14 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
   const int setting = _match(img, &mod->dev->chroma, p, pr, n, &tune);
   *num = !strcmp(name, WB_SETTING) ? setting : tune;
   return TRUE;
+}
+
+// temperature.c: _update_preset, moving to as shot or a camera preset: the
+// flag is kept, except that camera reference ignores it and leaves it to be
+// set anew
+static void _leave_reference(dt_iop_module_t *mod, _wb_params_t *p)
+{
+  if(p->preset == WB_D65) p->late_correction = _cat_source(mod->dev) != DT_DEV_CAT_NONE;
 }
 
 // temperature.c: _preset_tune_callback. setting 2 keeps the coefficients, as
@@ -548,8 +557,9 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
     case WB_AS_SHOT:
     case WB_D65_LATE:
       _from_array(p, chr->as_shot);
+      _leave_reference(mod, p);
+      if(value == WB_D65_LATE) p->late_correction = TRUE;
       p->preset = WB_STORED_AS_SHOT;
-      p->late_correction = value == WB_D65_LATE;
       return TRUE;
     case WB_D65:
       _from_array(p, chr->wb.D65coeffs);
@@ -561,9 +571,7 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
       {
         double ch[4];
         if(_apply_tuning(img, &pr[value - WB_FIRST_CAMERA], 0, ch)) _from_array(p, ch);
-        // temperature.c: _update_preset keeps the flag, except that camera
-        // reference ignores it and leaves it to be set anew
-        if(p->preset == WB_D65) p->late_correction = _cat_source(mod->dev) != DT_DEV_CAT_NONE;
+        _leave_reference(mod, p);
         p->preset = WB_STORED_FIRST_CAMERA + value - WB_FIRST_CAMERA;
         return TRUE;
       }

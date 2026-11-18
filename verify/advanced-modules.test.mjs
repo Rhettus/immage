@@ -1379,10 +1379,14 @@ for (const [what, source] of wbPhotos) {
     const ref = await get(...coeffs);
     assert.equal(ref.wb_setting, 3, 'camera reference');
     assert.ok(!same(ref, shot), 'camera reference differs from as shot');
+    // an edit saved with the old "as shot to reference" setting
     await write({ wb_setting: 4 });
-    const late = await get(...coeffs);
-    assert.equal(late.wb_setting, 4, 'as shot to reference');
-    assert.ok(same(late, shot), 'as shot to reference starts from the as shot coefficients');
+    const late = await get(...coeffs, 'late_correction');
+    assert.equal(late.wb_setting, 0, 'the old setting reads as shot');
+    assert.ok(late.late_correction, 'the old setting prepares for color calibration');
+    assert.ok(same(late, shot), 'the old setting starts from the as shot coefficients');
+    await write({ late_correction: 0 });
+    assert.equal((await get('wb_setting')).wb_setting, 0, 'the checkbox does not change the setting');
     await write({ wb_setting: 0 });
     await write({ red: shot.red * 1.2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'an edit is user modified');
@@ -1406,7 +1410,7 @@ for (const [what, source] of wbPhotos) {
       await write({ wb_setting: 4 });
       await write({ wb_setting: presets[0].value });
       assert.ok((await get('late_correction')).late_correction, 'a camera preset keeps the preparation');
-      await write({ wb_setting: 0 });
+      await write({ wb_setting: 0, late_correction: 0 });
       await write({ wb_setting: presets[0].value });
       assert.ok(!(await get('late_correction')).late_correction, 'a camera preset keeps it off');
       await write({ wb_setting: 3 });
@@ -1415,15 +1419,15 @@ for (const [what, source] of wbPhotos) {
     }
 
     // the "white balance in the module" note (Session.wbInModule): temperature
-    // on, a setting other than camera reference and as shot to reference, and
+    // on, neither camera reference nor prepared for color calibration, and
     // color calibration off
     const inModule = async () => {
-      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting'], channelmixerrgb: ['illuminant'] } })).modules;
-      return !!r.temperature.enabled && ![3, 4].includes(r.temperature.params.wb_setting) && !r.channelmixerrgb.enabled;
+      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting', 'late_correction'], channelmixerrgb: ['illuminant'] } })).modules;
+      return !!r.temperature.enabled && r.temperature.params.wb_setting !== 3 && !r.temperature.params.late_correction && !r.channelmixerrgb.enabled;
     };
-    await write({ wb_setting: 4 });
-    assert.equal(await inModule(), false, 'as shot to reference is not the note');
-    await write({ wb_setting: 0 });
+    await write({ wb_setting: 0, late_correction: 1 });
+    assert.equal(await inModule(), false, 'prepared for color calibration is not the note');
+    await write({ late_correction: 0 });
     assert.equal(await inModule(), false, 'color calibration on is not the note');
     await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: {}, enabled: false });
     assert.equal(await inModule(), true, 'as shot with color calibration off is the note');

@@ -283,8 +283,8 @@ export class Session {
   onShapes: (() => void) | null = null;
 
   // the photo's white balance is set in the white balance module with color
-  // calibration off: temperature on, its setting neither camera reference nor
-  // as shot to reference (wb.c's wb_setting 3 and 4), channelmixerrgb off.
+  // calibration off: temperature on, neither camera reference (wb.c's
+  // wb_setting 3) nor prepared for color calibration, channelmixerrgb off.
   // the panels note it; refreshWb keeps it current (see changed)
   wbInModule = false;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
@@ -294,9 +294,9 @@ export class Session {
     if (this.dead || this.background) return;
     let now = false;
     try {
-      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting"], channelmixerrgb: ["illuminant"] }));
+      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting", "late_correction"], channelmixerrgb: ["illuminant"] }));
       const t = r.modules.temperature, c = r.modules.channelmixerrgb;
-      now = !!t?.enabled && ![3, 4].includes(t.params.wb_setting) && !c?.enabled;
+      now = !!t?.enabled && t.params.wb_setting !== 3 && !t.params.late_correction && !c?.enabled;
     } catch { return; }
     if (now === this.wbInModule || this.dead) return;
     this.wbInModule = now;
