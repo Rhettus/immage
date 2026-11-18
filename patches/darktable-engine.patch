@@ -1205,3 +1205,19 @@ index b92768d02c..20c006236a 100644
  #endif
  
    if(tiff == NULL) return 0;
+diff --git a/src/iop/colorout.c b/src/iop/colorout.c
+index 9547076132..321c1ba6a1 100644
+--- a/src/iop/colorout.c
++++ b/src/iop/colorout.c
+@@ -39,6 +39,11 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++// Ubuntu 22.04 ARM64 has littlecms 2.12, from before this name
++#if LCMS_VERSION < 2140
++#define cmsChannelsOfColorSpace cmsChannelsOf
++#endif
++
+ // max iccprofile file name length
+ // must be in synch with dt_colorspaces_color_profile_t
+ #define DT_IOP_COLOR_ICC_LEN 512
