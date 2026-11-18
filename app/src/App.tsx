@@ -134,7 +134,7 @@ import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filte
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
-import { ActivityBar, JobActivity, keepPointer } from "./ActivityBar";
+import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
 import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
@@ -268,6 +268,8 @@ export default function App() {
     valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
   useEffect(() => () => valueUpdates.current?.dispose(), []);
   const [status, setStatusRaw] = useState(t("app.status.openFolder"));
+  // changes with every status set, so the same words set again are shown again
+  const [statusStamp, setStatusStamp] = useState(0);
   // a command the engine's exit cut off reports it as an error; while the
   // engine restarts, and just after, that goes to the console: the restart
   // has its own words (engineEvent)
@@ -278,6 +280,7 @@ export default function App() {
       return;
     }
     setStatusRaw(s);
+    setStatusStamp((n) => n + 1);
   }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
@@ -3387,6 +3390,9 @@ export default function App() {
   const [engineNotice, setEngineNotice] = useState<EngineNotice>(null);
   // the last background save's failure, until a save works
   const [saveError, setSaveError] = useState<string | null>(null);
+  // the "keeps stopping" message faded away; shown again by the next failure
+  const [failedHidden, setFailedHidden] = useState(false);
+  useEffect(() => { if (engineNotice?.kind !== "failed") setFailedHidden(false); }, [engineNotice?.kind]);
   // what the page had open when the engine went down, until a restore is done
   const lost = useRef<{ path: string | null; copy: number | null; before: boolean; proof: Proof;
                         folder: string | null; search: ImmichSearch | null; filter: Filter } | null>(null);
@@ -4117,8 +4123,7 @@ export default function App() {
         void syncEditedKeywords(s.imgid, edited);
         if (edited) void fillEditedMeta(s.imgid);
       };
-      // kept on screen until a save works: the status line is cleared by the
-      // next frame painted, which follows a failed save within a second
+      // shown for a while (it fades after 15 seconds) or until a save works
       s.onSaveError = (e) => {
         if (session.current !== s) return;
         const why = e.replace(/^error:\s*/i, "");
@@ -6637,8 +6642,9 @@ export default function App() {
             </svg>
           )}
           <div className={`working${working ? " on" : ""}`} title={t("app.status.working")} aria-hidden={!working}><span /></div>
-          <div className="status" {...keepPointer}>{status}{isEngineExit(status) && <button className="status-action"
-            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
+          <Notice className="status" stamp={statusStamp} active={status !== ""} onDone={() => setStatusRaw("")}>
+            {status}{isEngineExit(status) && <button className="status-action"
+            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</Notice>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
@@ -6649,11 +6655,13 @@ export default function App() {
             </div>
           )}
           {saveError && (
-            <div className="activity waiting" data-save-error {...keepPointer}><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
+            <Notice className="activity waiting" data-save-error stamp={saveError} onDone={() => setSaveError(null)}>
+              <span className="failed">{t("app.status.saveError", { error: saveError })}</span></Notice>
           )}
-          {engineNotice?.kind === "failed" && (
-            <div className="activity waiting" {...keepPointer}><span className="failed">{t("app.status.engineKeepsStopping")}</span>
-              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></div>
+          {engineNotice?.kind === "failed" && !failedHidden && (
+            <Notice className="activity waiting" stamp={engineNotice} onDone={() => setFailedHidden(true)}>
+              <span className="failed">{t("app.status.engineKeepsStopping")}</span>
+              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></Notice>
           )}
           {(() => {
             // the folder's reading, then its thumbnails

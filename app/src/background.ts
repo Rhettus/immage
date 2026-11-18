@@ -29,9 +29,6 @@ export type Job = {
 // what a job did, and whether all went well
 export type Outcome = { text: string; ok: boolean; action?: Action };
 
-// how long a clean job's summary stays up
-const SUMMARY_MS = 30000;
-
 let jobs: Job[] = [];
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -63,13 +60,11 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
       return r;
     }
     update(id, { summary: s.text, failed: !s.ok, action: s.action ?? null });
-    if (s.ok) window.setTimeout(() => dismissJob(id), SUMMARY_MS);
     return r;
   } catch (e) {
     // a merge stopped from its Stop answers so (main.c, _merge_step)
     if (String(e) === "stopped") {
       update(id, { summary: `${jobs.find((j) => j.id === id)?.what ?? "the job"}: stopped`, failed: false });
-      window.setTimeout(() => dismissJob(id), SUMMARY_MS);
       return null;
     }
     // an engine that exited meanwhile is restarted; the rest of the job is not resumed

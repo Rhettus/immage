@@ -5,6 +5,12 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.47.0
 
+Improvements
+
+- Messages in the corners of the photo, such as the status text, errors and
+  export summaries, fade after 15 seconds unless the pointer is over them. A
+  click dismisses them at once.
+
 Bug fixes
 
 - After a similar-photo search, opening a photo no longer leaves an "Image

@@ -1905,6 +1905,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   padding: 5px 10px 6px; background: rgba(14, 14, 14, 0.75); border-radius: 6px;
   color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; pointer-events: auto;
 }
+.notice { transition: opacity 0.4s, background 0.1s; cursor: pointer; }
+.notice.fading { opacity: 0; }
 .activity:hover, .status:hover { background: rgba(34, 34, 34, 0.85); }
 .activity .progress {
   display: flex; flex-direction: column; gap: 4px; height: auto; margin: 0; background: none; border-radius: 0;

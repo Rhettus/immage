@@ -208,6 +208,16 @@ the text.
 in the toolbar under the filmstrip. See [History, undo and copying
 settings](history-and-sync.md).
 
+## Messages in the corners of the photo
+
+The status text at the bottom right and the notices at the bottom left (a
+finished export, a save error, "The engine keeps stopping") fade away after 15
+seconds. Rest the pointer on one to keep it; it fades 15 seconds after you move
+away. Click it, outside its buttons, to dismiss it at once. Work in progress,
+such as an export's progress, a search with its **Stop** button, or a
+waiting engine, stays until it finishes. Every button in these notices can be
+clicked, and clicking them does not zoom the photo.
+
 ## Checking interface regressions
 
 The optional [visible-app GUI suite](../../verify/gui/README.md) exercises a
