@@ -42,6 +42,7 @@ typedef struct
 {
   float coeff[4];
   int preset;
+  gboolean late_correction;
 } _wb_params_t;
 #define WB_PRESET_USER 2
 
@@ -265,13 +266,18 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // (dt_wb_presets_init runs in dt_init) each time. a setting is the combobox
 // index: 0 as shot, 2 user modified, 3 camera reference, 4 as shot to
 // reference, and 6 + k for the k-th camera preset (index 5 is the section
-// header, index 1 "from image area" needs the color picker and is not offered)
+// header, index 1 "from image area" needs the color picker and is not offered).
+// these are the client's numbers. since the module's version 5 "as shot to
+// reference" is as shot with late_correction, and a camera preset's stored
+// number is one lower (temperature.c, legacy_params)
 #define WB_AS_SHOT 0
 #define WB_D65 3
 #define WB_D65_LATE 4
 #define WB_NUM_STD 5
 #define WB_FIRST_CAMERA (WB_NUM_STD + 1)
 #define WB_MAX_PRESETS 50
+#define WB_STORED_AS_SHOT 0
+#define WB_STORED_FIRST_CAMERA 5
 
 typedef struct
 {
@@ -373,7 +379,7 @@ static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_p
                   const _preset_t *pr, const int n, int *tuning)
 {
   *tuning = 0;
-  if(_equal(p, chr->as_shot) && p->preset == WB_D65_LATE) return WB_D65_LATE;
+  if(_equal(p, chr->as_shot) && p->preset == WB_STORED_AS_SHOT && p->late_correction) return WB_D65_LATE;
   if(_equal(p, chr->as_shot)) return WB_AS_SHOT;
   if(_equal(p, chr->wb.D65coeffs)) return WB_D65;
   const int count = dt_wb_presets_count();
@@ -455,7 +461,7 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
     const int lo = dt_wb_preset(cur->min_ft_pos)->tuning, hi = dt_wb_preset(cur->max_ft_pos)->tuning;
     double ch[4];
     if(_apply_tuning(img, cur, CLAMP(value, lo, hi), ch)) _from_array(p, ch);
-    p->preset = setting;
+    p->preset = WB_STORED_FIRST_CAMERA + setting - WB_FIRST_CAMERA;
     return TRUE;
   }
 
@@ -464,7 +470,9 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
     case WB_AS_SHOT:
     case WB_D65_LATE:
       _from_array(p, chr->as_shot);
-      break;
+      p->preset = WB_STORED_AS_SHOT;
+      p->late_correction = value == WB_D65_LATE;
+      return TRUE;
     case WB_D65:
       _from_array(p, chr->wb.D65coeffs);
       break;
@@ -475,7 +483,9 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
       {
         double ch[4];
         if(_apply_tuning(img, &pr[value - WB_FIRST_CAMERA], 0, ch)) _from_array(p, ch);
-        break;
+        p->preset = WB_STORED_FIRST_CAMERA + value - WB_FIRST_CAMERA;
+        p->late_correction = FALSE;
+        return TRUE;
       }
       *err = g_strdup("unknown white balance setting");
       return FALSE;
