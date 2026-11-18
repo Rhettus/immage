@@ -151,7 +151,7 @@ pub fn start(
                 let p = &service.progress;
                 p.installed.store(installed, Ordering::Release);
                 if installed {
-                    if last_scan.map_or(true, |t| t.elapsed() >= SCAN_EVERY) {
+                    if last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
                         last_scan = Some(Instant::now());
                         let next = service.clone();
                         service.queue.submit("clip:scan".into(), move |job| {
@@ -165,7 +165,7 @@ pub fn start(
                     let wanted = p.wanted_ms.load(Ordering::Acquire);
                     if wanted != 0
                         && now_ms().saturating_sub(wanted) <= WANTED_FOR_MS
-                        && last_count.map_or(true, |t| t.elapsed() >= COUNT_EVERY)
+                        && last_count.is_none_or(|t| t.elapsed() >= COUNT_EVERY)
                     {
                         last_count = Some(Instant::now());
                         let selection = library_selection(&service.runtime);
