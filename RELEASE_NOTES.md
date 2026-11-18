@@ -14,7 +14,9 @@ Improvements
 - The Advanced white balance card has darktable's new Prepare data for color
   calibration checkbox, which replaces the As shot to reference setting.
 - Color calibration can take its illuminant from the white balance module,
-  darktable's new default for raw photos. Temp and Tint follow it.
+  darktable's new default for raw photos. Temp and Tint follow it. With any
+  other illuminant, the white balance card locks the controls that no longer
+  decide the colors.
 - Clarity and Texture use darktable's new local contrast filter, so both can look
   a little different. Existing edits keep their settings, and their Base detail
   level moves to the value that matches the new filter.

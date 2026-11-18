@@ -287,19 +287,24 @@ export class Session {
   // wb_setting 3) nor prepared for color calibration, channelmixerrgb off.
   // the panels note it; refreshWb keeps it current (see changed)
   wbInModule = false;
+  // color calibration adapts from its own illuminant, so darktable locks the
+  // white balance controls that no longer decide the colors
+  wbLocked = false;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
   async refreshWb() {
     clearTimeout(this.wbTimer);
     // a batch's background session shows no panels
     if (this.dead || this.background) return;
-    let now = false;
+    let now = false, locked = false;
     try {
-      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting", "late_correction"], channelmixerrgb: ["illuminant"] }));
+      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting", "late_correction", "wb_locked"], channelmixerrgb: ["illuminant"] }));
       const t = r.modules.temperature, c = r.modules.channelmixerrgb;
       now = !!t?.enabled && t.params.wb_setting !== 3 && !t.params.late_correction && !c?.enabled;
+      locked = !!t?.params.wb_locked;
     } catch { return; }
-    if (now === this.wbInModule || this.dead) return;
+    if ((now === this.wbInModule && locked === this.wbLocked) || this.dead) return;
     this.wbInModule = now;
+    this.wbLocked = locked;
     this.onModules?.();
   }
 

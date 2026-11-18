@@ -372,6 +372,9 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // the camera presets that fill the menu
 #define WB_SETTING "wb_setting"
 #define WB_TUNE "wb_tune"
+// read only: color calibration adapts from its own illuminant, so these
+// coefficients do not decide the colors (temperature.c, _update_controls_lock)
+#define WB_LOCKED "wb_locked"
 gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
                          double *num, char **err);
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);

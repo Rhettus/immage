@@ -3485,6 +3485,8 @@
   "fields.module.resetHint": "Reset to darktable's defaults",
   "fields.module.reset": "Reset {name}",
   "fields.module.wbNote": "color calibration is off, so this module sets the white balance",
+  "fields.module.wbLocked": "The white balance is controlled in the color calibration module",
+  "fields.module.wbLockedHow": "To use these controls, select the illuminant 'from the white balance module' in color calibration, or turn chromatic adaptation off there",
   "fields.bands.graph": "{module} {channel} wavelet curve",
   "fields.bands.coarse": "coarse",
   "fields.bands.fine": "fine",

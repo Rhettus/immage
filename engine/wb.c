@@ -637,6 +637,11 @@ static int _match(const dt_image_t *img, const dt_dev_chroma_t *chr, const _wb_p
 gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
                          double *num, char **err)
 {
+  if(!strcmp(name, WB_LOCKED))
+  {
+    *num = !from_defaults && _cat_source(mod->dev) == DT_DEV_CAT_OWN_ILLUMINANT;
+    return TRUE;
+  }
   dt_introspection_field_t *f = NULL;
   const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params,
                                            "red", &f, err);

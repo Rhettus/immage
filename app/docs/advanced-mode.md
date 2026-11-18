@@ -112,7 +112,9 @@ Besides exposure, the Basic group has these darktable modules:
 - **White balance**: darktable's **Prepare data for color calibration**
   checkbox, hidden in camera reference, its **Settings** list (as shot, user
   modified, camera reference, and the white balance presets darktable has for
-  your camera, such as Daylight or Cloudy), a **Finetune**
+  your camera, such as Daylight or Cloudy; while color calibration adapts from
+  its own illuminant, darktable locks the camera presets, Finetune and the
+  sliders below, as they no longer decide the colors), a **Finetune**
   slider for a camera preset that has a range, its **Temperature** and **Tint**
   sliders, and the channel coefficients, **Red**, **Green** and **Blue**, and **Emerald** on
   cameras with a fourth color channel. Temperature and tint are computed from

@@ -729,7 +729,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
   }
   if((!g_strcmp0(name, WB_TEMP) || !g_strcmp0(name, WB_TINT)) && !g_strcmp0(mod->op, "temperature"))
     return wb_read(mod, name, from_defaults, num, err);
-  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE)) && !g_strcmp0(mod->op, "temperature"))
+  if((!g_strcmp0(name, WB_SETTING) || !g_strcmp0(name, WB_TUNE) || !g_strcmp0(name, WB_LOCKED))
+     && !g_strcmp0(mod->op, "temperature"))
     return wb_setting_read(mod, name, from_defaults, num, err);
   if(files_is_field(mod, name)) return files_read(mod, name, from_defaults, num, err);
   if(cmap_is_field(mod, name)) return cmap_read(mod, name, from_defaults, num, err);

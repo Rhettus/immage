@@ -3485,6 +3485,8 @@
   "fields.module.resetHint": "Rétablir les valeurs par défaut de darktable",
   "fields.module.reset": "Réinitialiser {name}",
   "fields.module.wbNote": "La calibration des couleurs est désactivée ; ce module définit donc la balance des blancs",
+  "fields.module.wbLocked": "La balance des blancs est gérée dans le module Calibration des couleurs",
+  "fields.module.wbLockedHow": "Pour utiliser ces contrôles, sélectionnez l'illuminant « Du module Balance des blancs » dans Calibration des couleurs, ou désactivez-y l'adaptation chromatique",
   "fields.bands.graph": "Courbe d’ondelettes {module} {channel}",
   "fields.bands.coarse": "grossier",
   "fields.bands.fine": "fin",

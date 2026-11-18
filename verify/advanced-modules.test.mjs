@@ -1342,6 +1342,13 @@ for (const [what, source] of wbPhotos) {
     const custom = await cat('illuminant', 'x', 'y');
     assert.equal(custom.illuminant, 7);
     assert.ok(Math.abs(custom.x - reference.wb_x) < 1e-5 && Math.abs(custom.y - reference.wb_y) < 1e-5, 'custom starts from the illuminant it left');
+    // temperature.c, _update_controls_lock
+    const locked = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['wb_locked'] } })).modules['temperature@0'].params.wb_locked;
+    assert.ok(await locked(), 'its own illuminant locks the white balance');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 11 }, enabled: true });
+    assert.ok(!(await locked()), 'following the white balance module does not');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: false });
+    assert.ok(!(await locked()), 'color calibration off does not');
   });
 
   test(`Advanced white balance temperature and tint (${what})`, { skip: skip || false }, async (t) => {
