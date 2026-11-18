@@ -93,7 +93,7 @@ const schemaOf = (op: string) => {
   return s;
 };
 
-export type AdvancedEdit = (ids: string[], label?: string) => void;
+export type AdvancedEdit = (ids: string[], label?: string, gesture?: number) => void;
 
 // modules that do one job and share a card: the photo shows the one that is
 // on (or, with none on, the ones it has used), and the card's switch moves
@@ -254,9 +254,12 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                 photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} wbLocked={session?.wbLocked} trouble={i.op === "temperature" ? session?.wbTrouble : i.op === "channelmixerrgb" ? session?.catTrouble.get(i.priority) : 0} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
-                onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;
+                onFields={(edit, coalesce, id, gesture) => {
+                  const c = session!.context;
                   const size = { width: c.sensorWidth, height: c.sensorHeight };
                   const all = Object.entries(edit).reduce((acc, [path, v]) => ({ ...acc, ...editOf(layout, path, v, { ...state.params, ...acc }, size) }), {});
+                  if (gesture !== undefined && !session!.changesFields(i.op, i.priority, all)) return;
+                  record?.([`adv:${key}:${id}`], layout.title, gesture);
                   session!.setFields(i.op, i.priority, all, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
                 loadPresets={() => session!.loadPresets(i.op, i.priority)}
@@ -345,10 +348,11 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
           const c = s.context;
           s.setFields(i.op, i.priority, editOf(layout, path, value, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce);
         }}
-        onFields={(edit, coalesce, editId) => {
-          record?.([`mask:${mask}:${key}:${editId}`], layout.title);
+        onFields={(edit, coalesce, editId, gesture) => {
           const c = s.context, size = { width: c.sensorWidth, height: c.sensorHeight };
           const all = Object.entries(edit).reduce((acc, [path, value]) => ({ ...acc, ...editOf(layout, path, value, { ...state.params, ...acc }, size) }), {} as Record<string, number>);
+          if (gesture !== undefined && !s.changesFields(i.op, i.priority, all)) return;
+          record?.([`mask:${mask}:${key}:${editId}`], layout.title, gesture);
           s.setFields(i.op, i.priority, all, coalesce);
         }}
         onEnabled={(on) => { record?.([`mask:${mask}:${key}:enabled`], layout.title); s.setAdvancedEnabled(i.op, i.priority, on); }}

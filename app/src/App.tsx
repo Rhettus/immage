@@ -46,7 +46,7 @@ import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { easeZoom, ZOOM_EASE, KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
 import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
-import { pushBatchStep, truncateRedo } from "./undoStack";
+import { editGroup, pushBatchStep, startsEditStep, truncateRedo } from "./undoStack";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
@@ -4316,14 +4316,14 @@ export default function App() {
       .catch(() => { /* the photo closed meanwhile */ });
     return () => { live = false; };
   }, [editMode, historyRev]);
-  const record = (ids: string[], label?: string) => {
+  const record = (ids: string[], label?: string, gesture?: number) => {
     const s = session.current;
     if (!s || holdRecord.current) return;
     // what Immage gave a new photo stays its unedited state; this is the
     // user's own first change (auto tone's are made quietly)
     s.endBaseline();
-    const key = [...ids].sort().join(","), now = performance.now(), u = undo.current;
-    const step = key !== u.key || now - u.at > 1000;
+    const key = editGroup(ids, gesture), now = performance.now(), u = undo.current;
+    const step = startsEditStep(u, key, now, gesture);
     if (step) {
       u.past.push(snapshot(s, label ?? stepName(ids)));
       if (u.past.length > 200) discardPastes(u.past.splice(0, 1));
@@ -5248,7 +5248,7 @@ export default function App() {
   pastePreviousRef.current = () => pastePrevious();
   startOverRef.current = () => void startOver();
 
-  const changeMany = (entries: [string, number][], label?: string) => {
+  const changeMany = (entries: [string, number][], label?: string, gesture?: number) => {
     const s = session.current;
     entries = [...new Map(entries)];
     if (!entries.length || entries.every(([id, v]) => s?.values[id] === v)) return;
@@ -5260,7 +5260,8 @@ export default function App() {
       if (entries.some(([id]) => id.startsWith("vig_") && id !== "vig_amount")) vigMoved();
     }
     if (entries.some(([id]) => id.startsWith("tf_"))) tfMoved();
-    record(entries.map(([id]) => id), label);
+    if (gesture !== undefined) setAmount(null);
+    record(entries.map(([id]) => id), label, gesture);
     baseStale.current = true;
     setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
     session.current?.setMany(entries, dragging.current);
@@ -6896,6 +6897,17 @@ export default function App() {
                         onBrush={setBrush}
                         onOverlay={() => overlayEvent("key")}
                         onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
+                        onLocalMany={(entries, gesture) => {
+                          const s = session.current;
+                          const mask = s?.masks.find((m) => m.name === maskSel);
+                          if (!s || !mask || entries.every(([id, v]) => mask.values[id] === v)) return;
+                          adjusted();
+                          overlayEvent("adjust");
+                          record(entries.map(([id]) => `mask:${mask.name}:${id}`),
+                            `${mask.name}: ${t("fields.maskModule.colorGrading")}`, gesture);
+                          s.setLocalMany(mask.name, entries);
+                          syncMasks();
+                        }}
                         onRange={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
                         onDepth={(k, depth, feather) => { refined(); void editDepth(k, depth, feather); }}
                         onFeather={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}

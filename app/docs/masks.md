@@ -150,7 +150,8 @@ In Simple mode, the selected mask's sliders sit below its settings, in six group
 - **HSL**: **Hue**, **Saturation** and **Luminance** tabs, each with the
   eight color bands
 - **Color Grading**: **3-Way**, **Global** or **Sliders**, for shadows,
-  midtones, highlights and global
+  midtones, highlights and global. One Undo restores the hue and saturation
+  from before a wheel drag.
 - **Detail**: **Sharpening**, **Noise**, **Defringe**
 
 They work like the same sliders in [Adjustments](adjustments.md), only

@@ -325,7 +325,7 @@ The Color Grading group has these darktable modules:
 - **Color balance rgb**: the same instance as the Basic group's card, with
   **4 ways** first, since Simple's Color Grading wheels set its shadows lift,
   highlights gain, power and global offset. A change on one card shows on the
-  other.
+  other. One Undo restores the values from before a wheel drag.
 - **Color balance**: the **Mode** (lift, gamma, gain or slope, offset, power
   in ProPhoto RGB, or lift, gamma, gain in sRGB), then **Master**, with input
   and output saturation, the contrast fulcrum and contrast (not in the sRGB

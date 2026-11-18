@@ -93,13 +93,13 @@ export class AppDriver {
       ] });
     } finally { await this.command('DELETE', '/actions'); }
   }
-  async drag(from, to) {
+  async drag(from, to, moveDuration = 80) {
     await this.guard();
-    this.log({ action: 'drag', from, to });
+    this.log({ action: 'drag', from, to, moveDuration });
     const actions = [
       { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
       { type: 'pointerDown', button: 0 },
-      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: moveDuration, origin: 'viewport',
         x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) })),
       { type: 'pointerUp', button: 0 },
     ];

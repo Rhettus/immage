@@ -122,7 +122,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   family?: { label: string; options: FamilyOption[]; onPick: (op: string) => void };
   onField: (path: string, value: number, coalesce: boolean) => void;
   // several fields as one edit (a wheel's hue and chroma)
-  onFields: (edit: Record<string, number>, coalesce: boolean, id: string) => void;
+  onFields: (edit: Record<string, number>, coalesce: boolean, id: string, gesture?: number) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
   loadPresets: () => Promise<DtPreset[]>; onPreset: (name: string) => void;
@@ -348,7 +348,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
                     return (
                       <div className="module-card-wheel" data-wheel={wheel.hue}>
                         <ColorWheel hue={hue} sat={Math.min(100, Math.max(0, chroma / top * 100))} size="140px" disabled={fixed && !state.enabled}
-                                    onChange={(h, sat) => onFields({ [wheel.hue]: h, [wheel.chroma]: sat / 100 * top }, true, wheel.hue)} />
+                                    onChange={(h, sat, gesture) => onFields({ [wheel.hue]: h, [wheel.chroma]: sat / 100 * top }, true, wheel.hue, gesture)} />
                       </div>
                     );
                   })()}

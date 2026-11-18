@@ -124,6 +124,7 @@ export const cases = {
   'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
   curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},
+  'wheel-undo': { scope: 'Issue #61: one undo per uninterrupted wheel drag across a pause, separate undo for quick successive drags, redo and final preview in Simple, Masks and Advanced', liveValidated: true, verification: 'Linux ARM64, system WebKitGTK 2.54.2, viewport 2556x1248. Run 2026-11-18T23-53-47.999Z_5b1e905_645fd9a0.' },
   equalizer:{scope:'every channel and band keyboard change/reset',liveValidated:false},
   'saturation-curve':{scope:'Global Saturation on satcurvergb: the curve replaces the slider; each channel\'s end lift raises chroma or level, middle point add/double-click removal, Reset',liveValidated:true},
   masks:{scope:'manual shapes/ranges, Exposure effect, delete/reset',liveValidated:true,
@@ -250,7 +251,7 @@ export const suites = {
   workflows: ['startup','agx-presets','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards','menus-view-mode'],
   inventory: ['startup',...generatedNames],
   engine: ['startup', 'engine-restart', 'save-failure', 'support-bundle'],
-  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range'],
+  regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range', 'wheel-undo'],
   controls: ['startup', 'slider-input', 'slider-click', 'history', 'rail', 'sliders', 'module-options', 'module-switch'],
 };
 export function resolveCases(name) {

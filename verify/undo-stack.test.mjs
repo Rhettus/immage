@@ -2,7 +2,7 @@
 // Engine-free: Start over and ctrl+click compress (truncate) on the undo stack.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pushBatchStep, truncateRedo, UNDO_LIMIT } from '../app/src/undoStack.ts';
+import { editGroup, pushBatchStep, startsEditStep, truncateRedo, UNDO_LIMIT } from '../app/src/undoStack.ts';
 
 const stack = (past, future) => ({ past, future, key: 'exposure', at: 5 });
 
@@ -38,4 +38,23 @@ test('start over past is capped, dropping the oldest step for release', () => {
   assert.equal(u.past.length, UNDO_LIMIT);
   assert.deepEqual(dropped, [{ n: 0 }]);
   assert.equal(u.past.at(-1).n, 'new');
+});
+
+test('wheel edits share a step across a pause, and each new drag starts a step', () => {
+  const u = stack([], []);
+  const ids = ['cg_global_hue', 'cg_global_sat'];
+  const first = editGroup(ids, 1);
+  assert.equal(startsEditStep(u, first, 100, 1), true);
+  u.key = first;
+  u.at = 100;
+  assert.equal(startsEditStep(u, editGroup([...ids].reverse(), 1), 1500, 1), false);
+  assert.equal(startsEditStep(u, editGroup(ids, 2), 101, 2), true);
+  assert.equal(startsEditStep(u, editGroup(ids), 101), true);
+  assert.equal(startsEditStep(u, editGroup(['cg_shadows_hue', 'cg_shadows_sat'], 1), 101, 1), true);
+});
+
+test('ordinary edits still use the one-second grouping window', () => {
+  const u = stack([], []);
+  assert.equal(startsEditStep(u, editGroup(['exposure']), 1005), false);
+  assert.equal(startsEditStep(u, editGroup(['exposure']), 1006), true);
 });

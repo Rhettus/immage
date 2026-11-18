@@ -713,14 +713,29 @@ export class Session {
   // every map of the control: Highlights and Shadows have one per module the
   // photo's tool can be on, and pump() sends only the chosen one
   setLocal(name: string, id: string, v: number) {
-    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.setLocalMany(name, [[id, v]]);
+  }
+
+  setLocalMany(name: string, entries: [string, number][]) {
+    const [id] = entries[0] ?? [];
+    this.activeDetailControl = id && entries.length === 1 && this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
-    const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
-      || ((id === "mod_contrast" || id === "mod_saturation") && m.op === "colorbalancergb")).map((m) => m.op);
-    if (!ops.length) return;
     const mask = this.mask(name);
-    if (!mask || mask.values[id] === v) return;
-    const values = { ...mask.values, [id]: v };
+    if (!mask) return;
+    const updates: Values = {};
+    const ops = new Set<string>();
+    for (const [id, value] of entries) {
+      if (mask.values[id] === value) continue;
+      for (const map of localMaps) {
+        if (map.controls.includes(id) || map.choice?.control === id
+          || ((id === "mod_contrast" || id === "mod_saturation") && map.op === "colorbalancergb")) {
+          ops.add(map.op);
+          updates[id] = value;
+        }
+      }
+    }
+    if (!ops.size) return;
+    const values = { ...mask.values, ...updates };
     const changed = this.dirtySimple.get(name) ?? new Map<string, Params>();
     const moduleEdits = { ...mask.moduleEdits };
     for (const op of ops) {
@@ -732,7 +747,7 @@ export class Session {
     }
     this.masks = this.masks.map((m) => m.name === name ? { ...m, values, moduleEdits } : m);
     this.dirtySimple.set(name, changed);
-    this.markLocal(name, ops);
+    this.markLocal(name, [...ops]);
   }
 
   setInvert(name: string, invert: boolean) {
@@ -1258,6 +1273,11 @@ export class Session {
 
   // darktable fields of an instance, as one card edit sets them (editOf in
   // advancedLayout.ts); an edit switches the module on, as in darktable
+  changesFields(op: string, priority: number, params: Params) {
+    const card = this.advanced.get(`${op}#${priority}`);
+    return !card?.enabled || Object.entries(params).some(([path, value]) => card.params[path] !== value);
+  }
+
   setFields(op: string, priority: number, params: Params, coalesce = false) {
     this.setAdvanced(op, priority, params, true, coalesce);
   }

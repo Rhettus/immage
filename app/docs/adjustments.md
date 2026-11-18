@@ -258,8 +258,9 @@ System](zone-system.md).
 between **3-Way**, **Global** and **Sliders**.
 
 On a wheel, the angle is the hue and the distance from the middle is the
-saturation. Drag the dot; double-click a wheel to take its saturation back
-to 0.
+saturation. Drag the dot to see the change as you move. Undo restores both
+values from before the drag, and Redo reapplies the final values. Double-click
+a wheel to take its saturation back to 0.
 
 ![Color Grading, 3-Way view, with the shadows toward teal and the highlights toward orange](images/color-grading.png)
 <!-- screenshot: Color Grading, 3-Way view, warm highlights and cool shadows set -->

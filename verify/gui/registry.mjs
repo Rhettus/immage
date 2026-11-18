@@ -67,6 +67,7 @@ import { libraryWorkers } from './specs/library-workers.mjs';
 import { localSearch } from './specs/local-search.mjs';
 import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
 import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
+import { wheelUndo } from './specs/wheel-undo.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -88,6 +89,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-no-clip': findNoClip,
   'find-sizes': findSizes,
   'find-saved': findSaved,
+  'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,

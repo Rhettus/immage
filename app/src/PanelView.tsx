@@ -105,7 +105,7 @@ export type PanelProps = {
   photos?: ImageEntry[];
   panel: Panel; open: boolean; onToggle: (solo: boolean) => void; values: Record<string, number>;
   session: Session | null; disabled: boolean; onChange: (c: Control, v: number) => void;
-  onChangeMany: (entries: [string, number][], label?: string) => void; histograms: Snapshot<Histogram | null>;
+  onChangeMany: (entries: [string, number][], label?: string, gesture?: number) => void; histograms: Snapshot<Histogram | null>;
   onAuto?: () => void;
   detailLoupe?: React.ReactNode;
   presenceLoupe?: React.ReactNode;
@@ -341,7 +341,7 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
           {foreign && <div className="note">{t("fields.panel.foreignCurve")}</div>}
           {p.graph === "colorwheels" && (
             <GradingWheels prefix="cg" mode={wheels} onMode={setWheels} values={values} disabled={disabled}
-                           onChange={(es) => es.forEach(([id, v]) => onChange(controlById.get(id)!, v))}
+                           onChange={(entries, gesture) => onChangeMany(entries, undefined, gesture)}
                            lum={(id) => <Slider {...controlProps(controlById.get(id)!)} />} />
           )}
           {p.tabs && (

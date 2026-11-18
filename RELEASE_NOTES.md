@@ -41,6 +41,8 @@ Improvements
 
 Bug fixes
 
+- Each Color Grading wheel drag is a single undo step, including on masks
+  and in Advanced mode.
 - Module cards under Masks in Advanced mode show darktable presets. Applying
   one keeps the mask, its blend settings and the module's on/off state.
 - View > Culling Preview is enabled only when the grid shows a local photo.

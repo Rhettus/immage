@@ -101,6 +101,14 @@ test("Advanced mask Session lifecycle", { timeout: 300000 }, async (t) => {
     assert.ok(Math.abs((await params("Sky", "colorbalancergb", ["contrast"])).params.contrast-.1234567)<1e-7,
       "another Simple control on the same module preserves untouched Advanced fields");
 
+    s.setLocalMany("Sky", [["l_cg_global_hue", 135], ["l_cg_global_sat", 42]]);
+    await settle();
+    const graded = (await params("Sky", "colorbalancergb", ["global_H", "global_C", "contrast"])).params;
+    assert.equal(graded.global_H, 135);
+    assert.ok(Math.abs(graded.global_C - .084) < 1e-7);
+    assert.ok(Math.abs(graded.contrast - .1234567) < 1e-7,
+      "the wheel batch preserves other edits on the same module");
+
     const snapshot = structuredClone(s.masks);
     for (const hide of [true,false]) {
       s.setHidden("Sky", hide); await settle();

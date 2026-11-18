@@ -39,15 +39,17 @@ function disc(): ImageData {
   return img;
 }
 
+let nextGesture = 0;
+
 export function ColorWheel({ hue, sat, size, disabled, onChange }: {
   hue: number;   // 0-359, color balance rgb's angle
   sat: number;   // 0-100
   size: string;  // CSS width; the wheel keeps itself square
   disabled: boolean;
-  onChange: (hue: number, sat: number) => void;
+  onChange: (hue: number, sat: number, gesture: number) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const dragging = useRef(false);
+  const drag = useRef<{ pointer: number; gesture: number } | null>(null);
 
   useEffect(() => {
     const c = canvas.current!;
@@ -55,28 +57,38 @@ export function ColorWheel({ hue, sat, size, disabled, onChange }: {
     c.getContext("2d")!.putImageData(disc(), 0, 0);
   }, []);
 
-  const pick = (e: React.PointerEvent) => {
+  const pick = (e: React.PointerEvent, gesture: number) => {
     const r = canvas.current!.getBoundingClientRect();
     const dx = e.clientX - (r.left + r.width / 2);
     const dy = r.top + r.height / 2 - e.clientY;
     const radius = Math.min(1, Math.hypot(dx, dy) / (r.width / 2));
     const angle = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
-    onChange(Math.round(angle) % 360, Math.round(radius * 100));
+    onChange(Math.round(angle) % 360, Math.round(radius * 100), gesture);
+  };
+
+  const end = (e: React.PointerEvent) => {
+    if (drag.current?.pointer === e.pointerId) drag.current = null;
   };
 
   const a = (hue * Math.PI) / 180, k = sat / 100;
   return (
     <div className={`wheel${disabled ? " disabled" : ""}`} style={{ width: size }}
          onPointerDown={(e) => {
-           if (disabled) return;
-           (e.target as HTMLElement).setPointerCapture(e.pointerId);
-           dragging.current = true;
-           pick(e);
+           if (disabled || e.button !== 0 || drag.current) return;
+           e.currentTarget.setPointerCapture(e.pointerId);
+           const gesture = ++nextGesture;
+           drag.current = { pointer: e.pointerId, gesture };
+           pick(e, gesture);
          }}
-         onPointerMove={(e) => { if (dragging.current) pick(e); }}
-         onPointerUp={() => { dragging.current = false; }}
+         onPointerMove={(e) => {
+           const active = drag.current;
+           if (!disabled && active?.pointer === e.pointerId) pick(e, active.gesture);
+         }}
+         onPointerUp={end}
+         onPointerCancel={end}
+         onLostPointerCapture={end}
          // double-click resets, as everywhere else
-         onDoubleClick={() => !disabled && onChange(hue, 0)}>
+         onDoubleClick={() => !disabled && onChange(hue, 0, ++nextGesture)}>
       <canvas ref={canvas} />
       <span className="wheel-handle" style={{
         left: `${50 + 50 * k * Math.cos(a)}%`,
@@ -97,7 +109,7 @@ export function GradingWheels({ prefix, mode, onMode, values, disabled, onChange
   onMode: (mode: WheelMode) => void;
   values: Record<string, number>;
   disabled: boolean;
-  onChange: (entries: [string, number][]) => void;
+  onChange: (entries: [string, number][], gesture: number) => void;
   lum: (id: string) => React.ReactNode;   // a range's luminance slider, under its wheel
 }) {
   // one range's wheel and the luminance slider under it
@@ -107,7 +119,7 @@ export function GradingWheels({ prefix, mode, onMode, values, disabled, onChange
       <div className="wheel-cell" key={r}>
         <div className="wheel-title">{title}</div>
         <ColorWheel hue={values[hue] ?? 0} sat={values[sat] ?? 0} size="100%" disabled={disabled}
-                    onChange={(h, s) => onChange([[hue, h], [sat, s]])} />
+                    onChange={(h, s, gesture) => onChange([[hue, h], [sat, s]], gesture)} />
         <div className="wheel-readout">{`H ${Math.round(values[hue] ?? 0)}° · S ${Math.round(values[sat] ?? 0)}`}</div>
         <div className="wheel-lum">{lum(`${prefix}_${r}_lum`)}</div>
       </div>

@@ -21,6 +21,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Edit with familiar tone, color, detail and lens correction tools.
 - Switch to [Advanced mode](app/docs/advanced-mode.md) to work with darktable's own modules.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
+- Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
   In Advanced mode, apply darktable module presets within individual masks.
   Copied AI masks are recalculated for each destination photo.
