@@ -9,6 +9,7 @@ use crate::{
 };
 use serde_json::json;
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
@@ -17,16 +18,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// How Find's indicator sees the analysis backlog. Atomics only, so the
-/// status command, a sync one, never waits on the service, the queue or the
-/// cache. `pending` is -1 until a complete count; the times are milliseconds
-/// since `now_ms`'s epoch plus one, 0 meaning never.
+/// How Find's indicator sees the analysis backlog. The status command, a sync
+/// one, reads the atomics only, so it never waits on the service, the queue or
+/// the cache. `pending` is -1 until a complete count; the times are
+/// milliseconds since `now_ms`'s epoch plus one, 0 meaning never.
+/// `unavailable` holds the variants the scan found missing or offline, left
+/// out of `pending` until a later scan reaches them again. It is a leaf lock:
+/// held for memory work only, with no other lock taken inside it.
 struct Progress {
     installed: AtomicBool,
     pending: AtomicI64,
     running: AtomicUsize,
     last_work_ms: AtomicU64,
     wanted_ms: AtomicU64,
+    unavailable: Mutex<HashSet<i64>>,
 }
 impl Progress {
     fn new() -> Self {
@@ -36,6 +41,21 @@ impl Progress {
             running: AtomicUsize::new(0),
             last_work_ms: AtomicU64::new(0),
             wanted_ms: AtomicU64::new(0),
+            unavailable: Mutex::default(),
+        }
+    }
+    fn is_unavailable(&self, variant: i64) -> bool {
+        self.unavailable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&variant)
+    }
+    fn set_unavailable(&self, variant: i64, gone: bool) {
+        let mut set = self.unavailable.lock().unwrap_or_else(|e| e.into_inner());
+        if gone {
+            set.insert(variant);
+        } else {
+            set.remove(&variant);
         }
     }
 }
@@ -60,17 +80,22 @@ pub struct AnalysisProgress {
     pub paused: bool,
 }
 
-/// Counts a photo job while it runs, on every way out of its closure.
+/// Counts a photo job while it does real work, on every way out. Taken only
+/// once the job's checks pass: a photo that is missing, offline or changed is
+/// offered again at every scan and must not read as analysis in progress.
 struct RunGuard(Arc<Progress>);
 impl RunGuard {
     fn new(progress: &Arc<Progress>) -> Self {
         progress.running.fetch_add(1, Ordering::AcqRel);
         RunGuard(progress.clone())
     }
+    /// A result was stored, so the backlog really moved.
+    fn stored(&self) {
+        self.0.last_work_ms.store(now_ms(), Ordering::Release);
+    }
 }
 impl Drop for RunGuard {
     fn drop(&mut self) {
-        self.0.last_work_ms.store(now_ms(), Ordering::Release);
         self.0.running.fetch_sub(1, Ordering::AcqRel);
     }
 }
@@ -169,9 +194,13 @@ pub fn start(
                     {
                         last_count = Some(Instant::now());
                         let selection = library_selection(&service.runtime);
-                        if let Some(n) =
-                            count_backlog(&service.cache, &selection, &service.stop, COUNT_PAGE)
-                        {
+                        if let Some(n) = count_backlog(
+                            &service.cache,
+                            &selection,
+                            &service.stop,
+                            &p.unavailable,
+                            COUNT_PAGE,
+                        ) {
                             p.pending.store(n as i64, Ordering::Release);
                         }
                     }
@@ -214,8 +243,9 @@ impl Service {
         let selection = library_selection(&self.runtime);
         let quiet = self.engine.quiet_for();
         let mut shares = std::collections::HashMap::<PathBuf, bool>::new();
-        // pages of deferred share photos alone are passed over in this scan,
-        // so local photos after them are not held back a scan per page
+        let mut answers = std::collections::HashMap::<PathBuf, bool>::new();
+        // pages of deferred or unavailable photos alone are passed over in this
+        // scan, so local photos after them are not held back a scan per page
         for _ in 0..64 {
             let rows = self.cache.pending_analyses(*after, 32)?;
             *after = rows.last().map_or(0, |r| r.variant_id);
@@ -224,27 +254,33 @@ impl Service {
             }
             let mut offered = false;
             for row in rows {
-                if !selected(Path::new(&row.path), &selection) {
+                let path = Path::new(&row.path);
+                if !selected(path, &selection) {
                     continue;
                 }
-                if quiet < SHARE_QUIET {
-                    let dir = Path::new(&row.path)
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or_default();
-                    if *shares
-                        .entry(dir)
-                        .or_insert_with(|| crate::volumes::on_network(Path::new(&row.path)))
-                    {
-                        continue;
-                    }
+                let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+                let deferred = quiet < SHARE_QUIET
+                    && *shares
+                        .entry(dir.clone())
+                        .or_insert_with(|| crate::volumes::on_network(path));
+                let answered = *answers
+                    .entry(dir)
+                    .or_insert_with(|| crate::volumes::answering(path));
+                // a deferred photo is looked at only to see whether it came back,
+                // so a busy share is not asked about every photo at every scan
+                let marked = self.progress.is_unavailable(row.variant_id);
+                let gone = unavailable(path, answered, !deferred || marked);
+                if gone != marked {
+                    self.progress.set_unavailable(row.variant_id, gone);
+                }
+                if gone || deferred {
+                    continue;
                 }
                 offered = true;
                 if row.needs_metadata {
                     let service = self.clone();
                     self.queue
                         .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
-                            let _running = RunGuard::new(&service.progress);
                             if let Err(e) = service.refresh_metadata(&row, &job) {
                                 eprintln!("local analysis metadata: {e}");
                             }
@@ -260,7 +296,6 @@ impl Service {
                     let row = row.clone();
                     self.queue
                         .submit(format!("clip:edited:{}", row.variant_id), move |job| {
-                            let _running = RunGuard::new(&service.progress);
                             if let Err(e) = service.analyze(&row, "edited", &job) {
                                 eprintln!("local analysis: {e}");
                             }
@@ -292,6 +327,7 @@ impl Service {
         if original != &row.original {
             return Ok(());
         }
+        let running = RunGuard::new(&self.progress);
         let imgid = self.engine.cached_photo(&row.path, version);
         let reply = self
             .engine
@@ -307,15 +343,19 @@ impl Service {
                 fields.remove("imgid");
             }
             let metadata = serde_json::to_string(&image).map_err(|e| e.to_string())?;
-            job.commit(|| {
-                self.cache.finish_analysis_metadata(
-                    row,
-                    edited,
-                    &metadata,
-                    (ns, raw.as_deref(), offset),
-                )
-            })
-            .transpose()?;
+            let stored = job
+                .commit(|| {
+                    self.cache.finish_analysis_metadata(
+                        row,
+                        edited,
+                        &metadata,
+                        (ns, raw.as_deref(), offset),
+                    )
+                })
+                .transpose()?;
+            if stored == Some(true) {
+                running.stored();
+            }
         }
         Ok(())
     }
@@ -333,6 +373,7 @@ impl Service {
         if !current(row, subject, version) {
             return Ok(());
         }
+        let running = RunGuard::new(&self.progress);
         let imgid = self.engine.cached_photo(&row.path, version);
         let tag = self.engine.tag();
         let out = self.output.path(&format!("analysis-{tag}.jpg"));
@@ -399,27 +440,38 @@ impl Service {
         } else {
             &row.edited
         };
-        job.commit(|| {
-            self.cache.put_analysis(
-                row.variant_id,
-                subject,
-                expected,
-                crate::local_search::ANALYSIS_VERSION,
-                crate::local_search::MODEL_VERSION,
-                &bytes,
-            )
-        })
-        .transpose()?;
+        let stored = job
+            .commit(|| {
+                self.cache.put_analysis(
+                    row.variant_id,
+                    subject,
+                    expected,
+                    crate::local_search::ANALYSIS_VERSION,
+                    crate::local_search::MODEL_VERSION,
+                    &bytes,
+                )
+            })
+            .transpose()?;
+        if stored == Some(true) {
+            running.stored();
+        }
         Ok(())
     }
 }
-/// Photos waiting for metadata or an edited analysis in the selected folders.
-/// Pages by id with the cache lock held for one page at a time; None when
-/// stopped or on an error, so a partial count is never stored.
+/// Whether a photo cannot be reached now: its drive did not answer
+/// (`volumes::answering`), or, when `look` asks, the file cannot be read.
+fn unavailable(path: &Path, answered: bool, look: bool) -> bool {
+    !answered || (look && std::fs::metadata(path).is_err())
+}
+/// Photos waiting for metadata or an edited analysis in the selected folders,
+/// leaving out those the scan found missing or offline. Pages by id with the
+/// cache lock held for one page at a time; None when stopped or on an error,
+/// so a partial count is never stored.
 fn count_backlog(
     cache: &SearchCache,
     selection: &serde_json::Value,
     stop: &AtomicBool,
+    unavailable: &Mutex<HashSet<i64>>,
     page: u32,
 ) -> Option<u32> {
     let (mut after, mut total) = (0i64, 0u32);
@@ -432,11 +484,13 @@ fn count_backlog(
             return Some(total);
         };
         after = last.0;
+        let gone = unavailable.lock().unwrap_or_else(|e| e.into_inner());
         total = total.saturating_add(
             rows.iter()
-                .filter(|(_, path)| selected(Path::new(path), selection))
+                .filter(|(id, path)| !gone.contains(id) && selected(Path::new(path), selection))
                 .count() as u32,
         );
+        drop(gone);
         if (rows.len() as u32) < page {
             return Some(total);
         }
@@ -511,11 +565,11 @@ mod tests {
         let stop = AtomicBool::new(false);
         // page sizes smaller than, equal to and larger than the backlog agree
         for page in [1, 2, 7, 8, 1024] {
-            assert_eq!(count_backlog(&cache, &config, &stop, page), Some(5), "page {page}");
+            assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), page), Some(5), "page {page}");
         }
-        assert_eq!(count_backlog(&cache, &json!({"folders":[]}), &stop, 2), Some(0));
+        assert_eq!(count_backlog(&cache, &json!({"folders":[]}), &stop, &Mutex::default(), 2), Some(0));
         stop.store(true, Ordering::Release);
-        assert_eq!(count_backlog(&cache, &config, &stop, 2), None);
+        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 2), None);
     }
 
     #[test]
@@ -528,7 +582,7 @@ mod tests {
         cache.store_metadata(v.id, "{}").unwrap();
         let config = json!({"folders":["/photos"]});
         let stop = AtomicBool::new(false);
-        assert_eq!(count_backlog(&cache, &config, &stop, 8), Some(1));
+        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 8), Some(1));
         let row = cache.pending_analyses(0, 8).unwrap().remove(0);
         cache
             .put_analysis(
@@ -540,7 +594,7 @@ mod tests {
                 &[0u8; 4],
             )
             .unwrap();
-        assert_eq!(count_backlog(&cache, &config, &stop, 8), Some(0));
+        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 8), Some(0));
     }
 
     #[test]
@@ -555,6 +609,7 @@ mod tests {
         let guard = RunGuard::new(&c.progress);
         let s = c.status(false);
         assert!(s.active && s.running == 1);
+        guard.stored();
         drop(guard);
         let s = c.status(false);
         assert!(s.active && s.running == 0, "a finished job counts for a while");
@@ -562,6 +617,47 @@ mod tests {
             .last_work_ms
             .store(now_ms().saturating_sub(ACTIVE_FOR_MS + 1), Ordering::Release);
         assert!(!c.status(false).active);
+    }
+
+    #[test]
+    fn backlog_leaves_out_unavailable_photos_until_they_return() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        let a = cache
+            .upsert_variant("/photos/a.jpg", "", "s", "e", None, None, None)
+            .unwrap();
+        cache
+            .upsert_variant("/photos/b.jpg", "", "s", "e", None, None, None)
+            .unwrap();
+        let config = json!({"folders":["/photos"]});
+        let stop = AtomicBool::new(false);
+        let progress = Progress::new();
+        progress.set_unavailable(a.id, true);
+        assert_eq!(count_backlog(&cache, &config, &stop, &progress.unavailable, 8), Some(1));
+        progress.set_unavailable(a.id, false);
+        assert_eq!(count_backlog(&cache, &config, &stop, &progress.unavailable, 8), Some(2));
+    }
+
+    #[test]
+    fn a_photo_is_unavailable_when_missing_or_its_drive_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let here = dir.path().join("here.jpg");
+        std::fs::write(&here, b"photo").unwrap();
+        let gone = dir.path().join("gone.jpg");
+        assert!(!unavailable(&here, true, true));
+        assert!(unavailable(&gone, true, true));
+        assert!(unavailable(&here, false, true), "a silent drive is never touched");
+        assert!(!unavailable(&gone, true, false), "not looked at while deferred");
+    }
+
+    #[test]
+    fn a_job_that_stores_nothing_does_not_keep_the_indicator_working() {
+        let c = control();
+        c.progress.pending.store(1, Ordering::Release);
+        drop(RunGuard::new(&c.progress));
+        let s = c.status(false);
+        assert_eq!(s.pending, Some(1));
+        assert!(!s.active && s.running == 0, "a retry that stored nothing is waiting");
     }
 
     #[test]
@@ -574,7 +670,7 @@ mod tests {
         };
         assert!(early(&progress).is_err());
         assert_eq!(progress.running.load(Ordering::Acquire), 0);
-        assert_ne!(progress.last_work_ms.load(Ordering::Acquire), 0);
+        assert_eq!(progress.last_work_ms.load(Ordering::Acquire), 0);
         let p = progress.clone();
         let result = std::panic::catch_unwind(move || {
             let _running = RunGuard::new(&p);

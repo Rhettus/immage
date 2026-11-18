@@ -359,8 +359,10 @@ Searching the library and narrowing a folder both happen here.
   waiting beside it (the exact number is in its tooltip; from 10,000 it is
   shortened, for example 12K). A spinning arc means photos are being analysed.
   A still arc means photos are waiting but nothing is running just now, for
-  example while a network drive answers or between batches. A pause symbol
-  means analysis is paused, and a green check means every photo is analysed. While the
+  example while a network drive answers or between batches. Photos that are
+  missing or on a drive that is offline are not counted, and are analysed once
+  they are back. A pause symbol
+  means analysis is paused, and a green check means no photo is waiting. While the
   count is being worked out the tooltip says so. Click it to pause or resume,
   the same pause as **Pause / Resume** in Preferences > General > Background
   work. Before the model is downloaded the icon is dimmed and does nothing; its
