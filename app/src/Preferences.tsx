@@ -318,8 +318,8 @@ export function storeDraftSmallest(v: number) {
 
 // how many photos have their raws decoded ahead (App.tsx, prefetchNext):
 // in the direction last stepped, and as many behind it with `both`.
-// darktable's cache keeps at least 8 decoded raws (main.c, _prefetch), so
-// 3 each way and the open photo fit. one ahead unless set
+// darktable's cache keeps 8 decoded raws, or 5 on a small machine, where the
+// engine decodes only the nearest 4 (main.c, _cmd_prefetch). one ahead unless set
 export const READ_AHEAD_MAX = 3;
 const READ_AHEAD_KEY = "immage.readAhead";
 export type ReadAhead = { count: number; both: boolean };

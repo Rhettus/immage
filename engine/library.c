@@ -29,9 +29,9 @@
 // darktable starts none (control.c, dt_control_init). a new list replaces
 // the photos still waiting, not those being decoded. `open` of one of them
 // then finds the decoded raw in the mipmap cache, or waits on the decode
-// under way. the cache keeps 2 * dt_worker_threads() full raws, at least 8
-// (mipmap_cache.c, dt_mipmap_cache_init), so a list longer than 7 pushes
-// out the open photo's neighbors it decoded first
+// under way. the cache keeps dt_worker_threads() + 1 full raws, 5 or 8
+// (mipmap_cache.c, dt_mipmap_cache_init), so a longer list would push out
+// the open photo's neighbors it decoded first: main.c cuts it to fit
 //
 // a decode starts only while memory is not short and no export, merge or
 // print runs: the task is dropped otherwise, with the list, since the page

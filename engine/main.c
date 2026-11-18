@@ -415,7 +415,9 @@ static gboolean _cmd_prefetch(JsonObject *req, JsonBuilder *b, char **err)
 // the reply does not wait for the decode. `imgids` in the order to
 // decode them, or one `imgid`
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
-  const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+  // beyond what the cache holds beside the open photo, a decode only pushes
+  // out the neighbors decoded first
+  const guint n = ids ? MIN(json_array_get_length(ids), MIN(16, dt_worker_threads())) : 1;
   dt_imgid_t list[16];
   for(guint k = 0; k < n; k++)
     list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
