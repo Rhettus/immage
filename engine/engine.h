@@ -380,6 +380,7 @@ gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean 
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);
 void wb_mark_user(dt_iop_module_t *mod);
 void wb_show_own(dt_iop_module_t *mod);
+gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, double *num, char **err);
 // color calibration's illuminant "from the white balance module", as x and y
 #define WB_ILLUMINANT_X "wb_x"
 #define WB_ILLUMINANT_Y "wb_y"

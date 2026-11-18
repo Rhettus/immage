@@ -411,6 +411,19 @@ static dt_dev_cat_source_t _cat_source(dt_develop_t *dev)
   return source;
 }
 
+// the fourth coefficient as the card reads it. darktable copies all four of a
+// photo's own coefficients, and on a 3-color sensor the fourth of camera
+// reference is infinite: the params keep it, as darktable's do, but no JSON
+// reply can carry it, and darktable hides that slider there
+gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, double *num, char **err)
+{
+  dt_introspection_field_t *f = NULL;
+  const _wb_params_t *p = session_field_in(mod, from_defaults ? mod->default_params : mod->params, "red", &f, err);
+  if(!p) return FALSE;
+  *num = isfinite(p->coeff[3]) ? p->coeff[3] : 0.0;
+  return TRUE;
+}
+
 // temperature.c: _params_mode. legacy params have no mode: they take as shot or
 // camera reference if their coefficients are the photo's own for it
 static int _params_mode(const _wb_params_t *p, const dt_dev_chroma_t *chr)

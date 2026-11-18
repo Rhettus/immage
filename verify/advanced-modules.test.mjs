@@ -1407,6 +1407,7 @@ for (const [what, source] of wbPhotos) {
     const ref = await get(...coeffs);
     assert.equal(ref.wb_setting, 3, 'camera reference');
     assert.ok(!same(ref, shot), 'camera reference differs from as shot');
+    assert.ok(Number.isFinite((await get('various')).various), 'camera reference reads a fourth coefficient the reply can carry');
     // an edit saved with the old "as shot to reference" setting
     await write({ wb_setting: 4 });
     const late = await get(...coeffs, 'late_correction');
