@@ -1039,6 +1039,7 @@ gboolean session_presets(const char *op, const int priority, JsonBuilder *b, cha
 
   json_builder_set_member_name(b, "presets");
   json_builder_begin_array(b);
+  const gboolean mask_owned = !g_strcmp0(masks_instance_owner(mod), "mask");
   while(sqlite3_step(stmt) == SQLITE_ROW)
   {
     const gboolean builtin = sqlite3_column_int(stmt, 2) != 0;
@@ -1049,10 +1050,9 @@ gboolean session_presets(const char *op, const int priority, JsonBuilder *b, cha
     const int blend_size = sqlite3_column_bytes(stmt, 4);
     const int enabled = sqlite3_column_int(stmt, 6);
     // darktable's own match: a preset with no params is the defaults
-    const gboolean active = mod->enabled && enabled
-      && (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
+    const gboolean active = (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
                               : !memcmp(mod->params, op_params, MIN(op_params_size, mod->params_size)))
-      && dt_presets_module_blend_match(mod, blend, blend_size);
+      && (mask_owned || (mod->enabled && enabled && dt_presets_module_blend_match(mod, blend, blend_size)));
     const char *name = (const char *)sqlite3_column_text(stmt, 0);
     const char *description = (const char *)sqlite3_column_text(stmt, 3);
     json_builder_begin_object(b);
@@ -1080,14 +1080,15 @@ gboolean session_presets(const char *op, const int priority, JsonBuilder *b, cha
 // is not this engine's develop; the caller records the history item
 static gboolean _apply_preset(dt_iop_module_t *mod, const char *name, char **err)
 {
-  if(masks_instance_owner(mod))
+  const char *owner = masks_instance_owner(mod);
+  const gboolean mask_owned = !g_strcmp0(owner, "mask");
+  if(owner && !mask_owned)
   {
-    *err = g_strdup_printf("instance %d of '%s' belongs to %s", mod->multi_priority, mod->op,
-                           masks_instance_owner(mod));
+    *err = g_strdup_printf("instance %d of '%s' belongs to %s", mod->multi_priority, mod->op, owner);
     return FALSE;
   }
   // a preset replaces the blend params, which would orphan the drawn mask
-  if(mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
+  if(!mask_owned && mod->blend_params && dt_is_valid_maskid(mod->blend_params->mask_id))
   {
     *err = g_strdup("a preset cannot replace a drawn mask here");
     return FALSE;
@@ -1112,6 +1113,15 @@ static gboolean _apply_preset(dt_iop_module_t *mod, const char *name, char **err
   }
   const void *op_params = sqlite3_column_blob(stmt, 0);
   const int op_length = sqlite3_column_bytes(stmt, 0);
+  // The blend and instance name attach the module to its Immage mask.
+  // The switch is managed by the mask, including when it is hidden.
+  if(mask_owned)
+  {
+    memcpy(mod->params, op_params && op_length == mod->params_size ? op_params : mod->default_params,
+           mod->params_size);
+    sqlite3_finalize(stmt);
+    return TRUE;
+  }
   const int enabled = sqlite3_column_int(stmt, 1);
   const void *bl_params = sqlite3_column_blob(stmt, 2);
   const int bl_length = sqlite3_column_bytes(stmt, 2);

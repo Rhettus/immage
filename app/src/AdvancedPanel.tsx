@@ -20,6 +20,7 @@ import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 import type { ImageEntry } from "./library";
 import { t } from "./i18n";
 import { fieldText } from "./fieldText";
+import { presetLabel } from "./presetName";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
@@ -359,7 +360,11 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
             s.removeMaskModule(mask, i.op, i.priority);
           }
         }}
-        loadPresets={() => s.loadPresets(i.op, i.priority)} onPreset={() => {}}
+        loadPresets={() => s.loadPresets(i.op, i.priority)}
+        onPreset={(name) => {
+          record?.([`mask:${mask}:${key}:preset:${performance.now()}`], presetLabel(name));
+          s.applyPreset(i.op, i.priority, name);
+        }}
       />;
     })}
     {session && ready && choices.length > 0 && <AddModuleMenu group={`mask ${mask}`} choices={choices} onAdd={add} />}

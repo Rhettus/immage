@@ -41,6 +41,8 @@ Improvements
 
 Bug fixes
 
+- Module cards under Masks in Advanced mode show darktable presets. Applying
+  one keeps the mask, its blend settings and the module's on/off state.
 - View > Culling Preview is enabled only when the grid shows a local photo.
   Full Screen Preview and other editor-only View commands are dimmed in the grid.
 - Find's analysis icon now shows how many photos are really waiting for Smart

@@ -22,6 +22,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Switch to [Advanced mode](app/docs/advanced-mode.md) to work with darktable's own modules.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  In Advanced mode, apply darktable module presets within individual masks.
   Copied AI masks are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.

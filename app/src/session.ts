@@ -1330,8 +1330,8 @@ export class Session {
   }
 
   // apply a preset by its raw darktable name: module_state, so undo restores
-  // the instance as it was. the engine refuses it on an instance with a drawn
-  // mask or one a mask, look or shared tool owns; that reaches onError
+  // the instance as it was. For mask-owned cards the preset updates only
+  // the module parameters.
   applyPreset(op: string, priority: number, name: string) {
     this.setModuleState({ op, priority }, { preset: name });
   }
@@ -2071,6 +2071,12 @@ export class Session {
               mask: maskInstance.mask, invert: m?.invert ?? false, opacity: m?.opacity ?? 100,
               refine: m?.refine ?? null });
             this.instances = await commands.instances();
+            this.maskCardsStale = true;
+          }
+          if (maskInstance?.mask && (req.preset !== undefined || restore)) {
+            const refresh = this.maskCardRefresh.get(maskInstance.mask) ?? new Set<string>();
+            refresh.add(maskOpKey(maskInstance));
+            this.maskCardRefresh.set(maskInstance.mask, refresh);
             this.maskCardsStale = true;
           }
           this.changed();

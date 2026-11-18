@@ -556,8 +556,8 @@ they do in darktable, and open there.
 
 Mask-owned modules appear on their mask in the **Masks** panel, rather than in
 global Adjustments. Select a mask to edit its cards or choose **Add module**.
-Its cards offer Reset and Remove from mask, with one instance per module and
-no darktable presets menu. See [Advanced masking](masks.md#advanced-mode).
+Its cards offer the darktable presets menu, Reset and Remove from mask, with
+one instance per module. See [Advanced masking](masks.md#advanced-mode).
 Modules managed by looks do not get cards. Groups whose modules are not
 available yet show "No darktable modules yet".
 
@@ -578,14 +578,15 @@ between the two, in darktable's order. A preset in a submenu shows as
   the module or for another camera, lens or file format, are greyed out.
 - An empty list shows **No presets**.
 
-Choosing a preset replaces the instance's settings and blend settings with the
-preset's, switches the module on or off as the preset says, and opens the card.
-It is one undo step, named "Preset: <module>". darktable may rename the
+On a global card, choosing a preset replaces the instance's adjustment and
+blend settings, sets the module's switch to the preset's state, and opens the
+card. It is one undo step, named "Preset: <module>". darktable may rename the
 instance after the preset, unless you renamed it yourself.
 
-A preset cannot be applied to an instance that has a drawn mask, and a preset
-that carries a mask cannot be applied at all. Immage shows an error in both
-cases.
+On a card in the Masks panel, a preset applies only the module's adjustment
+settings and keeps the mask, blend settings, instance name and on/off state.
+Immage shows an error if a global card has a drawn mask or if a preset applied
+to a global card carries a mask.
 
 Not yet available: importing .dtpreset or .dtstyle files, saving the current
 settings as a preset, and reading presets from a separate darktable

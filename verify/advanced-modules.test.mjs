@@ -471,6 +471,27 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   const named = (await e.call({ cmd: 'instances' })).instances.find((i) => i.op === 'exposure' && i.priority === p1);
   assert.equal(named.name, 'mine');
   assert.equal(named.hand_edited, true);
+  // On a mask card, a preset changes params while keeping the attachment
+  // and the user's switch state, even when the module is off.
+  await e.call({ cmd: 'mask', name: 'Sky', shapes: [
+    { type: 'ellipse', x: .5, y: .5, rx: .3, ry: .3, angle: 0, feather: .2 },
+  ] });
+  await e.call({ cmd: 'set', op: 'exposure', instance: 'Sky', mask: 'Sky',
+    invert: true, opacity: 42, params: { exposure: .5 }, enabled: false });
+  const maskInstance = async () => (await e.call({ cmd: 'instances' })).instances.find((i) =>
+    i.op === 'exposure' && i.owner === 'mask' && i.mask === 'Sky');
+  const masked = await maskInstance();
+  assert.ok(masked);
+  const maskState = { cmd: 'module_state', op: 'exposure', priority: masked.priority };
+  const maskedPreset = await e.call({ ...maskState, preset: ML });
+  assert.notEqual(maskedPreset.was.params, maskedPreset.now.params);
+  assert.equal(maskedPreset.now.blend, maskedPreset.was.blend);
+  assert.equal(maskedPreset.now.enabled, false);
+  assert.equal((await maskInstance()).name, masked.name);
+  assert.equal((await e.call({ cmd: 'presets', op: 'exposure', priority: masked.priority }))
+    .presets.find((p) => p.name === ML).active, true);
+  assert.deepEqual((await e.call({ ...maskState, restore: maskedPreset.was })).now, maskedPreset.was);
+  assert.deepEqual((await e.call({ ...maskState, restore: maskedPreset.now })).now, maskedPreset.now);
   // the preset's params survive a save and reopen
   await e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: ML });
   await e.call({ cmd: 'save' });
@@ -478,6 +499,11 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   await e.call({ cmd: 'open', path: photo });
   assert.equal((await read('exposure')).params.mode, 1, 'the preset did not survive reopening');
   assert.equal((await read(`exposure@${p1}`)).params.mode, 1);
+  const reopenedMask = await maskInstance();
+  assert.ok(reopenedMask);
+  const reopenedPreset = await e.call({ ...maskState, priority: reopenedMask.priority });
+  assert.equal(reopenedPreset.now.params, maskedPreset.now.params);
+  assert.equal(reopenedPreset.now.enabled, false);
 });
 
 // every card layout (app/src/advancedLayout.ts) against darktable's schema:

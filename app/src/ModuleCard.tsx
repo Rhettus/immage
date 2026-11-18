@@ -225,7 +225,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
         </span>}
         {hidden && <span className="module-card-tag" title={tr("fields.module.hiddenHint")}>{tr("fields.module.hidden")}</span>}
         {(simple || (siblings > 1 && instance.priority === 0)) && <span className="module-card-tag" title={tr("fields.module.simpleHint")}>{tr("fields.module.simple")}</span>}
-        {!maskOwned && <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />}
+        <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
         <button className="module-card-reset" title={tr("fields.module.resetHint")} aria-label={tr("fields.module.reset", { name })}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />

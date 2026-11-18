@@ -99,8 +99,33 @@ export async function advancedMaskCards(t) {
     const colorZonesSelector = card('colorzones');
     const colorZones = await until(() => t.driver.observe(sel => !!document.querySelector(sel), colorZonesSelector), 'Color zones mask card added');
     assert(colorZones, 'the added module has a full card');
-    assert.equal(await t.driver.observe(() => !!document.querySelector('.mask-advanced-cards [data-module^="colorzones#"] .preset-menu')), false,
-      'mask cards do not show darktable presets');
+    const colorZonesPresets = `${colorZonesSelector} .preset-menu .module-card-menu`;
+    const colorZonesSwitch = `${colorZonesSelector} input.switch`;
+    const preset = '.context-menu [data-preset="_builtin_B&W: with red"]';
+    if (await t.driver.observe(sel => document.querySelector(sel)?.checked, colorZonesSwitch)) {
+      await click(t, colorZonesSwitch);
+    }
+    const beforePreset = await settledPhoto(t);
+    await click(t, colorZonesPresets);
+    await click(t, preset);
+    await click(t, colorZonesPresets);
+    await until(() => t.driver.observe(sel => document.querySelector(sel)?.getAttribute('aria-checked') === 'true', preset), 'applied mask preset is checked');
+    await t.driver.keys('\uE00C');
+    assert.equal(await t.driver.observe(sel => document.querySelector(sel)?.checked, colorZonesSwitch), false,
+      'applying a preset preserves the off switch');
+    await settledPhoto(t, p => p.hash === beforePreset.hash);
+    await click(t, colorZonesSwitch);
+    const afterPreset = await settledPhoto(t, p => p.hash !== beforePreset.hash);
+    const presetError = meanError(beforePreset, afterPreset);
+    assert(presetError > 1, `the Color zones preset changes rendered pixels (mean absolute error ${presetError})`);
+    assert.equal(await t.driver.observe(() => document.querySelector('.mask-list > li.on .name')?.textContent.trim()), maskName,
+      'the original mask remains selected');
+    await click(t, '.mask-list > li.on .eye');
+    await settledPhoto(t, p => p.hash === baseline.hash);
+    await click(t, '.mask-list > li.on .eye');
+    await settledPhoto(t, p => p.hash === afterPreset.hash);
+    t.measure({ name: 'mask-module-preset', mask: maskName, meanAbsoluteError: presetError });
+    await t.evidence('mask-module-preset');
 
     const cardMenu = `${card('colorzones')} .instance-menu .module-card-menu`;
     await click(t, cardMenu);

@@ -198,11 +198,13 @@ The available modules include:
 | Correction | Denoise (profiled), astrophoto denoise, surface blur, chromatic aberrations and haze removal |
 | Effects | Bloom, blurs, censorize, graduated density, grain, lowlight vision, soften, vignetting, watermark, composite and dither or posterize |
 
-Cards have the same settings as their global counterparts. Their instance menu
-offers **Reset** and **Remove from mask**; darktable presets and global instance
-management are unavailable here. Adding, removing and editing a module work
-with Undo and Redo. Hiding a mask or viewing Before temporarily switches off
-its adjustments while retaining their settings.
+Cards have the same settings as their global counterparts. Use the **darktable
+presets** button beside Reset to apply a module preset to the selected mask.
+It updates the module's adjustment settings and preserves the mask, its blend
+settings and the module's on/off state. The instance menu offers **Reset** and
+**Remove from mask**. Adding, removing and editing a module work with Undo and
+Redo, including preset changes. Hiding a mask or viewing Before temporarily
+switches off its adjustments while retaining their settings.
 
 Switching back to Simple keeps every edit rendering. Where a local slider
 exists, it edits the same settings as the card. An **N advanced edits** badge

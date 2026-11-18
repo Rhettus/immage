@@ -205,8 +205,18 @@ test("Advanced mask Session lifecycle", { timeout: 300000 }, async (t) => {
     assert.equal((await own("Neutral", "exposure")).enabled, true,
       "Add module enables a Simple-mapped module even before its first adjustment");
     i = await own("Neutral", "exposure");
-    await s.loadAdvanced(i.op, i.priority, ["exposure", "black"]);
+    await s.loadAdvanced(i.op, i.priority, ["exposure", "black", "mode"]);
     assert.equal(s.advanced.get(`${i.op}#${i.priority}`).enabled, true);
+    const preset = "_builtin_magic lantern defaults";
+    assert.ok((await s.loadPresets(i.op, i.priority)).some((p) => p.name === preset && p.applicable));
+    s.setHidden("Neutral", true); await settle();
+    s.applyPreset(i.op, i.priority, preset); await settle();
+    assert.equal(s.advanced.get(`${i.op}#${i.priority}`).params.mode, 1);
+    assert.ok(s.masks.find((m) => m.name === "Neutral").extra?.includes("exposure"));
+    assert.equal((await own("Neutral", "exposure")).enabled, false, "presets preserve hidden masks");
+    s.setHidden("Neutral", false); await settle();
+    assert.equal((await own("Neutral", "exposure")).enabled, true, "the card is still enabled after unhiding");
+    assert.equal((await params("Neutral", "exposure", ["mode"])).params.mode, 1);
     await s.close();
   } finally {
     await stopEngine();

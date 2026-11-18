@@ -209,10 +209,12 @@ const COMMANDS = {
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   color_profiles: () => request({ cmd: "color_profiles" }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
-  module_state: ({ op, priority, enabled, reset, restore }) => {
+  presets: ({ op, priority }) => request({ cmd: "presets", op, priority }),
+  module_state: ({ op, priority, enabled, reset, restore, preset }) => {
     const req = { cmd: "module_state", op, priority, reset: reset ?? false };
     if (enabled != null) req.enabled = enabled;
     if (restore != null) req.restore = restore;
+    if (preset != null) req.preset = preset;
     return request(req);
   },
   masks: async ({ fields }) => (await request({ cmd: "masks", fields })).masks,
