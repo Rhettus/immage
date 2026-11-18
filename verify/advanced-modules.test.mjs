@@ -1342,6 +1342,12 @@ for (const [what, source] of wbPhotos) {
     const custom = await cat('illuminant', 'x', 'y');
     assert.equal(custom.illuminant, 7);
     assert.ok(Math.abs(custom.x - reference.wb_x) < 1e-5 && Math.abs(custom.y - reference.wb_y) < 1e-5, 'custom starts from the illuminant it left');
+    // temperature.c, color_picker_apply reads the sensor's channels at the module's input
+    const { picker } = await e.call({ cmd: 'sample', x: .5, y: .5, box: [.45, .45, .55, .55], stage: 'temperature' });
+    assert.equal(picker.mean.length, 3, 'the picker reads the three channels the reply types');
+    assert.ok(Number.isFinite(picker.fourth), 'the fourth sensor channel comes apart');
+    assert.ok(picker.mean.every((v) => Number.isFinite(v) && v > 0), `picked ${picker.mean}`);
+
     // temperature.c, _update_controls_lock
     const locked = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['wb_locked'] } })).modules['temperature@0'].params.wb_locked;
     assert.ok(await locked(), 'its own illuminant locks the white balance');

@@ -1049,8 +1049,9 @@ static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
               json_object_get_double_member_with_default(req, "y", 0.5),
               json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
                 ? json_object_get_array_member(req, "box") : NULL,
-              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
-                ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
+              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor") ? _STAGE_NEGADOCTOR
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "temperature") ? _STAGE_TEMPERATURE
+                : _STAGE_ANCHOR,
               b, err))
     return FALSE;
   return TRUE;

@@ -290,6 +290,8 @@ export class Session {
   // color calibration adapts from its own illuminant, so darktable locks the
   // white balance controls that no longer decide the colors
   wbLocked = false;
+  // the white balance card asks the viewer to pick an area of the photo
+  onWbAreaPick: (() => void) | null = null;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
   async refreshWb() {
     clearTimeout(this.wbTimer);

@@ -306,8 +306,8 @@ export const LAYOUTS: ModuleLayout[] = [
     // does; an edit of either sets the coefficients and the card reads them
     // again; a raw with no color matrix reads 0 and hides them. the settings
     // combobox and finetune slider are engine fields too (wb.c): the menu is
-    // as shot, user modified, camera reference and this photo's camera presets
-    // (from image area needs the color picker and is left out); finetune shows
+    // as shot, from image area (a box dragged over the photo), user modified,
+    // camera reference and this photo's camera presets; finetune shows
     // for a camera preset that has a range. camera reference ignores the
     // preparation for color calibration, and darktable hides its checkbox there
     op: "temperature", group: "basic", title: "White balance",

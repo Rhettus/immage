@@ -110,8 +110,9 @@ on one side shows on the other.
 Besides exposure, the Basic group has these darktable modules:
 
 - **White balance**: darktable's **Prepare data for color calibration**
-  checkbox, hidden in camera reference, its **Settings** list (as shot, user
-  modified, camera reference, and the white balance presets darktable has for
+  checkbox, hidden in camera reference, its **Settings** list (as shot, from image area,
+  which picks a neutral area you drag over the photo, as the eyedropper button
+  does, user modified, camera reference, and the white balance presets darktable has for
   your camera, such as Daylight or Cloudy; while color calibration adapts from
   its own illuminant, darktable locks the camera presets, Finetune and the
   sliders below, as they no longer decide the colors), a **Finetune**

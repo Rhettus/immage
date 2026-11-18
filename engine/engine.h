@@ -244,6 +244,7 @@ typedef enum _stage_t
   _STAGE_ASHIFT,
   _STAGE_NEGADOCTOR,
   _STAGE_COLORMAPPING,
+  _STAGE_TEMPERATURE,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in

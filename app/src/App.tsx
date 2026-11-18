@@ -61,7 +61,7 @@ import { begin, end, track, useWorking } from "./activity";
 import { runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
-import { anchored, neutralize, whitePatch, type WB } from "./wb";
+import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
 
 
 
@@ -2832,6 +2832,12 @@ export default function App() {
   const [picking, setPickingState] = useState(false);
   const pickingRef = useRef(false);
   const setPicking = (on: boolean) => { pickingRef.current = on; setPickingState(on); };
+  // the white balance card's picker: a box dragged over the photo, or a click
+  const [wbPicking, setWbPickingState] = useState(false);
+  const wbPickingRef = useRef(false);
+  const setWbPicking = (on: boolean) => { wbPickingRef.current = on; setWbPickingState(on); };
+  const wbDrag = useRef<{ ix: number; iy: number; x: number; y: number } | null>(null);
+  const [wbBox, setWbBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const refineWB = (px: Uint8ClampedArray, width: number, height: number) => {
     const t = wbTarget.current, s = session.current;
@@ -4060,6 +4066,7 @@ export default function App() {
         baseLowRes.current = false;
         prefetchNext(s);
       };
+      s.onWbAreaPick = () => { setWbPicking(true); setStatus(t("fields.module.wb.pickAreaHint")); };
       s.onCopy = (f) => {
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
@@ -4674,7 +4681,7 @@ export default function App() {
     showRight("negative");
   };
   // what a box holds at negadoctor's input, once the edits ahead of it are in
-  const negSample = async (box: [number, number, number, number]): Promise<Stats> => {
+  const negSample = async (box: [number, number, number, number], stage = "negadoctor"): Promise<Stats> => {
     const s = session.current!;
     let stopped = false;
     while (!s.idle && session.current === s) {
@@ -4682,9 +4689,21 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 30));
     }
     try {
-      return (await commands.sample((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box, "negadoctor")).picker!;
+      return (await commands.sample((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box, stage)).picker!;
     } finally {
       if (stopped) resumeBase();
+    }
+  };
+  // temperature.c, color_picker_apply: the coefficients that make the area neutral
+  const pickWbArea = async (box: [number, number, number, number]) => {
+    const s = session.current;
+    if (!s) return;
+    try {
+      const { mean, fourth } = await negSample(box, "temperature") as Stats & { fourth?: number | null };
+      record(["adv:temperature#0:wb_pick"], "White balance");
+      s.setFields("temperature", 0, pickedCoefficients([...mean, fourth ?? 0]));
+    } catch (e) {
+      setStatus(t("app.status.sampleError", { error: e }));
     }
   };
   // tone mappers from darktable that no slider covers, and modules a
@@ -5475,6 +5494,15 @@ export default function App() {
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
+    if (wbPickingRef.current) {
+      const { sx, sy } = paneXY(e.clientX, e.clientY);
+      const { ix, iy } = imageAt(sx, sy);
+      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        wbDrag.current = { ix, iy, x: e.clientX, y: e.clientY };
+      }
+      return;
+    }
     if (pickingRef.current) {
       const { sx, sy } = paneXY(e.clientX, e.clientY);
       const { ix, iy } = imageAt(sx, sy);
@@ -5487,6 +5515,12 @@ export default function App() {
   };
   const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     moveProbe(e);
+    if (wbDrag.current) {
+      const v = viewer.current!.getBoundingClientRect(), d = wbDrag.current;
+      setWbBox({ left: Math.min(d.x, e.clientX) - v.left, top: Math.min(d.y, e.clientY) - v.top,
+                 width: Math.abs(e.clientX - d.x), height: Math.abs(e.clientY - d.y) });
+      return;
+    }
     if (lineRef.current) {
       const v = viewer.current!.getBoundingClientRect();
       lineRef.current = { ...lineRef.current, x1: e.clientX - v.left, y1: e.clientY - v.top };
@@ -5505,6 +5539,18 @@ export default function App() {
     placeLayers();
   };
   const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (wbDrag.current) {
+      const d = wbDrag.current, { sx, sy } = paneXY(e.clientX, e.clientY), { ix, iy } = imageAt(sx, sy);
+      const clamp = (v: number) => Math.min(1, Math.max(0, v));
+      wbDrag.current = null;
+      setWbBox(null);
+      setWbPicking(false);
+      // a click reads a few pixels round the point
+      const clicked = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4, r = clicked ? 0.004 : 0;
+      void pickWbArea([clamp(Math.min(d.ix, ix) - r), clamp(Math.min(d.iy, iy) - r),
+                       clamp(Math.max(d.ix, ix) + r), clamp(Math.max(d.iy, iy) + r)]);
+      return;
+    }
     if (lineRef.current) { finishStraighten(); return; }
     const d = drag.current;
     drag.current = null;
@@ -5935,6 +5981,7 @@ export default function App() {
         else if (e.key === "x" || e.key === "X") chooseAspect(cropRef.current.aspect, !cropRef.current.portrait);
         return;
       }
+      if (wbPickingRef.current && e.key === "Escape") { wbDrag.current = null; setWbBox(null); setWbPicking(false); return; }
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
       if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
@@ -6388,10 +6435,11 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
+          {wbBox && <div className="wb-area-box" style={wbBox} />}
           {sheet && (
             <div className="print-sheet" data-print-page={`${printPage!.page.width}x${printPage!.page.height}`}
                  style={sheet.page}>

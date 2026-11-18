@@ -113,6 +113,15 @@ export function writeWB(wb: WB, defaults: Params): Params {
   return { illuminant: ILLUMINANT_CUSTOM, x, y, temperature: wb.temp };
 }
 
+// white balance's coefficients for a picked area, green the reference
+// (temperature.c, color_picker_apply); `mean` is the sensor's channels there
+export function pickedCoefficients(mean: number[]) {
+  const at = (c: number) => mean[c] ?? 0;
+  const gnormal = at(1) > 0.001 ? 1 / at(1) : 1;
+  const coeff = (c: number) => Math.max(0, Math.min(8, (at(c) > 0.001 ? 1 / at(c) : 1) / gnormal));
+  return { red: coeff(0), green: 1, blue: coeff(2), various: coeff(3) };
+}
+
 // the illuminant a Temp/Tint stands for, as writeWB() would set it
 export function illuminantXY(wb: WB): [number, number] {
   return wb.tint === 0 ? blackbodyXY(wb.temp) : tinted(wb.temp, -wb.tint * TINT_SCALE);

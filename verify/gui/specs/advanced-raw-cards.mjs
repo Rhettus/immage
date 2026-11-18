@@ -6,7 +6,7 @@ import { settledPhoto } from './smoke.mjs';
 import { Blocked } from '../support/scenario.mjs';
 import { click } from '../support/controls.mjs';
 import { panel } from '../support/scenario.mjs';
-import { meanError, inAdvanced, openCard, turnOn, exists, choice, pick, type, readoutOf } from '../support/cards.mjs';
+import { meanError, inAdvanced, openCard, turnOn, exists, choice, pick, type, readoutOf, dragAt } from '../support/cards.mjs';
 import { bandsCase } from './advanced-curve-cards.mjs';
 
 // the cards that need a raw photo: Raw denoise's wavelet curves, and white
@@ -89,13 +89,27 @@ export async function advancedRawCards(t) {
     await until(lockNote, 'its own illuminant locks the white balance card');
     await until(tempLocked, 'Temperature is greyed while locked');
     await t.evidence('wb-locked');
+    assert(!(await choice(t, wb.sel, 'adv:wb_setting')).options.some(o => o.label === 'From image area'), 'locked, the card offers no area picker');
     await pick(t, cc.sel, 'adv:illuminant', fromWb);
     await until(async () => !await lockNote(), 'following the white balance module unlocks the card');
     await until(async () => !await tempLocked(), 'Temperature is free again');
-    await settledPhoto(t);
+    const unpicked = await settledPhoto(t);
+
+    // 5. From image area: a box dragged over the photo sets the coefficients
+    assert((await choice(t, wb.sel, 'adv:wb_setting')).options.some(o => o.label === 'From image area'), 'the Settings menu offers From image area');
+    await click(t, `${wb.sel} [data-control-id="adv:wb_pick"]`);
+    await until(() => exists(t, 'main.viewer.picking'), 'the viewer waits for an area');
+    await dragAt(t, 'main.viewer canvas.layer.sharp', [.62, .12], [.7, .2]);
+    await until(async () => !await exists(t, 'main.viewer.picking'), 'the pick ends');
+    await until(async () => (await choice(t, wb.sel, 'adv:wb_setting')).current === 'User modified', 'the picked coefficients are user modified');
+    const picked = await settledPhoto(t, p => meanError(p, unpicked) > .2);
+    t.measure({ name: 'wb-area-pick', meanAbsoluteError: meanError(picked, unpicked) });
+    await t.evidence('wb-area-pick');
+    await pick(t, wb.sel, 'adv:wb_setting', /^Camera reference$/);
+    await settledPhoto(t, p => meanError(p, picked) > .2);
   });
 
-  // 5. Simple's Temp shows the illuminant taken from the white balance module,
+  // 6. Simple's Temp shows the illuminant taken from the white balance module,
   // left at camera reference above
   await panel(t, 'basic');
   const tempAfter = await until(simpleTemp, 'Simple Temp reads again');
