@@ -718,6 +718,8 @@ gboolean session_read_field(dt_iop_module_t *mod, const char *name,
   if(!from_defaults && !g_strcmp0(mod->op, "temperature")) wb_show_own(mod);
   if(!g_strcmp0(name, "various") && !g_strcmp0(mod->op, "temperature"))
     return wb_various_read(mod, from_defaults, num, err);
+  if(!g_strcmp0(name, WB_TROUBLE) && (!g_strcmp0(mod->op, "temperature") || !g_strcmp0(mod->op, "channelmixerrgb")))
+    return wb_trouble_read(mod, num);
   if((!g_strcmp0(name, WB_ILLUMINANT_X) || !g_strcmp0(name, WB_ILLUMINANT_Y)) && !g_strcmp0(mod->op, "channelmixerrgb"))
     return wb_illuminant_read(mod, name, from_defaults, num);
   if(!g_strcmp0(mod->op, "colorin")

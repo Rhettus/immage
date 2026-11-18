@@ -109,6 +109,8 @@ on one side shows on the other.
 
 Besides exposure, the Basic group has these darktable modules:
 
+- **White balance** and **Color calibration** show darktable's warnings when the
+  two modules disagree, with the reason in the warning's tooltip.
 - **White balance**: darktable's **Prepare data for color calibration**
   checkbox, hidden in camera reference, its **Settings** list (as shot, from image area,
   which picks a neutral area you drag over the photo, as the eyedropper button

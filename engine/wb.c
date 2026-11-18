@@ -547,6 +547,92 @@ gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboole
   return TRUE;
 }
 
+// channelmixerrgb.c: _set_trouble_messages. darktable keeps its warnings in the
+// GUI, so they are worked out here from what it would see
+enum { _TROUBLE_NONE, _TROUBLE_UNPREPARED, _TROUBLE_DOUBLE_CAT, _TROUBLE_TWICE, _TROUBLE_MISSING };
+
+// whether a mask limits this instance (_commit_params's is_blending)
+static gboolean _instance_blends(const dt_iop_module_t *mod)
+{
+  const dt_develop_mask_mode_t mode = mod->blend_params ? mod->blend_params->mask_mode : DEVELOP_MASK_DISABLED;
+  return (mode & DEVELOP_MASK_ENABLED) && mode >= DEVELOP_MASK_MASK;
+}
+
+// the instance darktable registers for chromatic adaptation
+// (_declare_cat_on_pipe): the first in the pipe that adapts without a mask
+static dt_iop_module_t *_registered_cat(dt_develop_t *dev)
+{
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(!dt_iop_module_is(mod, "channelmixerrgb") || mod->iop_order == INT_MAX) continue;
+    if(mod->enabled && !_instance_blends(mod) && _cat_field(mod, "adaptation") != DT_ADAPTATION_RGB
+       && _cat_field(mod, "illuminant") != DT_ILLUMINANT_PIPE)
+      return mod;
+  }
+  return NULL;
+}
+
+static dt_iop_module_t *_temperature(dt_develop_t *dev)
+{
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+    if(dt_iop_module_is(l->data, "temperature")) return l->data;
+  return NULL;
+}
+
+// the warning on instance `cat`, and in *on_wb the one it puts on white balance
+static int _cat_trouble(dt_iop_module_t *cat, int *on_wb)
+{
+  *on_wb = _TROUBLE_NONE;
+  dt_develop_t *dev = cat->dev;
+  const dt_iop_module_t *wb_mod = _temperature(dev);
+  dt_iop_module_t *registered = _registered_cat(dev);
+  dt_dev_wb_t wb;
+  _wb_applied(dev, FALSE, &wb);
+  const gboolean d65 = wb.late_correction || dt_dev_equal_chroma(wb.coeffs, wb.D65coeffs);
+  const gboolean wb_on = wb_mod && wb_mod->enabled;
+  const gboolean applies = _instance_cat_source(cat) != DT_DEV_CAT_NONE;
+  if(wb_on && !wb.camera_reference && !d65 && applies && _cat_field(cat, "illuminant") == DT_ILLUMINANT_FROM_WB)
+  {
+    if(registered == cat || !registered) *on_wb = _TROUBLE_UNPREPARED;
+    return _TROUBLE_UNPREPARED;
+  }
+  if(!wb_mod || !registered || !applies) return _TROUBLE_NONE;
+  if(_instance_cat_source(registered) != DT_DEV_CAT_NONE && wb_on && registered != cat && !_instance_blends(cat))
+    return _TROUBLE_DOUBLE_CAT;
+  if(registered == cat && wb_on && !d65)
+  {
+    *on_wb = _TROUBLE_TWICE;
+    return _TROUBLE_TWICE;
+  }
+  if(registered->enabled && !wb_on && wb_mod->default_enabled)
+  {
+    *on_wb = _TROUBLE_MISSING;
+    return _TROUBLE_MISSING;
+  }
+  return _TROUBLE_NONE;
+}
+
+gboolean wb_trouble_read(dt_iop_module_t *mod, double *num)
+{
+  *num = _TROUBLE_NONE;
+  if(dt_iop_module_is(mod, "channelmixerrgb"))
+  {
+    int on_wb;
+    *num = _cat_trouble(mod, &on_wb);
+    return TRUE;
+  }
+  for(const GList *l = mod->dev->iop; l && *num == _TROUBLE_NONE; l = g_list_next(l))
+  {
+    dt_iop_module_t *cat = l->data;
+    if(!dt_iop_module_is(cat, "channelmixerrgb") || cat->iop_order == INT_MAX) continue;
+    int on_wb;
+    _cat_trouble(cat, &on_wb);
+    *num = on_wb;
+  }
+  return TRUE;
+}
+
 // channelmixerrgb.c: _get_d65_correction_ratios
 static void _d65_ratios(const dt_image_t *img, const dt_dev_wb_t *wb, dt_aligned_pixel_t ratios)
 {

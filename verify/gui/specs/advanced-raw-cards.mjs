@@ -65,8 +65,10 @@ export async function advancedRawCards(t) {
     const toggled = await settledPhoto(t, p => meanError(p, before) > .2);
     t.measure({ name: 'wb-preparation', meanAbsoluteError: meanError(toggled, before) });
     await t.evidence('wb-preparation');
+    await until(() => exists(t, `${wb.sel} [data-module-trouble="1"]`), 'darktable\'s warning shows while white balance is not prepared');
     await click(t, `${prepare} input`);
     await until(async () => await checked() === was, 'the preparation checkbox returns');
+    await until(async () => !await exists(t, `${wb.sel} [data-module-trouble]`), 'the warning goes');
     await settledPhoto(t);
     await pick(t, wb.sel, 'adv:wb_setting', /^Camera reference$/);
     await until(async () => !await exists(t, prepare), 'camera reference hides the preparation checkbox');

@@ -290,6 +290,10 @@ export class Session {
   // color calibration adapts from its own illuminant, so darktable locks the
   // white balance controls that no longer decide the colors
   wbLocked = false;
+  // darktable's warnings on the white balance card and, by instance, on color
+  // calibration's (wb.c, wb_trouble_read); 0 is none
+  wbTrouble = 0;
+  catTrouble = new Map<number, number>();
   // the white balance card asks the viewer to pick an area of the photo
   onWbAreaPick: (() => void) | null = null;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
@@ -297,16 +301,26 @@ export class Session {
     clearTimeout(this.wbTimer);
     // a batch's background session shows no panels
     if (this.dead || this.background) return;
-    let now = false, locked = false;
+    let now = false, locked = false, trouble = 0;
+    const cats = new Map<number, number>();
     try {
-      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting", "late_correction", "wb_locked"], channelmixerrgb: ["illuminant"] }));
+      const priorities = this.instances.filter((i) => i.op === "channelmixerrgb").map((i) => i.priority);
+      const r = await traced("get_params", () => commands.getParams({
+        temperature: ["wb_setting", "late_correction", "wb_locked", "wb_trouble"], channelmixerrgb: ["illuminant"],
+        ...Object.fromEntries(priorities.map((p) => [`channelmixerrgb@${p}`, ["wb_trouble"]])) }));
+      for (const p of priorities) cats.set(p, r.modules[`channelmixerrgb@${p}`]?.params.wb_trouble ?? 0);
       const t = r.modules.temperature, c = r.modules.channelmixerrgb;
       now = !!t?.enabled && t.params.wb_setting !== 3 && !t.params.late_correction && !c?.enabled;
       locked = !!t?.params.wb_locked;
+      trouble = t?.params.wb_trouble ?? 0;
     } catch { return; }
-    if ((now === this.wbInModule && locked === this.wbLocked) || this.dead) return;
+    const same = now === this.wbInModule && locked === this.wbLocked && trouble === this.wbTrouble
+      && JSON.stringify([...cats]) === JSON.stringify([...this.catTrouble]);
+    if (same || this.dead) return;
     this.wbInModule = now;
     this.wbLocked = locked;
+    this.wbTrouble = trouble;
+    this.catTrouble = cats;
     this.onModules?.();
   }
 

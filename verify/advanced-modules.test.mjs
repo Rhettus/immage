@@ -1348,6 +1348,29 @@ for (const [what, source] of wbPhotos) {
     assert.ok(Number.isFinite(picker.fourth), 'the fourth sensor channel comes apart');
     assert.ok(picker.mean.every((v) => Number.isFinite(v) && v > 0), `picked ${picker.mean}`);
 
+    // channelmixerrgb.c, _set_trouble_messages
+    const trouble = async () => { const m = (await e.call({ cmd: 'get', modules: { temperature: ['wb_trouble'], 'channelmixerrgb@0': ['wb_trouble'] } })).modules; return [m.temperature.params.wb_trouble, m['channelmixerrgb@0'].params.wb_trouble]; };
+    const wbSet = (params, enabled = true) => e.call({ cmd: 'set', op: 'temperature', priority: 0, params, enabled });
+    const catSet = (params) => e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params, enabled: true });
+    await catSet({ illuminant: 11 });
+    await wbSet({ wb_setting: 0, late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared for color calibration, no warning');
+    await wbSet({ late_correction: 0 });
+    assert.deepEqual(await trouble(), [1, 1], 'not prepared for the illuminant from white balance');
+    await catSet({ illuminant: 7 });
+    assert.deepEqual(await trouble(), [3, 3], 'white balance applied twice');
+    await wbSet({ late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared, its own illuminant is fine');
+    const second = (await e.call({ cmd: 'instance', action: 'new', op: 'channelmixerrgb', priority: 0 })).priority;
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: second, params: { adaptation: 1, illuminant: 7 }, enabled: true });
+    const cats = (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': ['wb_trouble'], [`channelmixerrgb@${second}`]: ['wb_trouble'] } })).modules;
+    assert.deepEqual([cats['channelmixerrgb@0'].params.wb_trouble, cats[`channelmixerrgb@${second}`].params.wb_trouble].sort(), [0, 2], 'the later of two adapting instances warns of a double CAT');
+    await e.call({ cmd: 'instance', action: 'delete', op: 'channelmixerrgb', priority: second });
+    await wbSet({}, false);
+    assert.deepEqual(await trouble(), [4, 4], 'white balance missing');
+    await wbSet({ wb_setting: 3 });
+    await catSet({ illuminant: 7 });
+
     // temperature.c, _update_controls_lock
     const locked = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['wb_locked'] } })).modules['temperature@0'].params.wb_locked;
     assert.ok(await locked(), 'its own illuminant locks the white balance');

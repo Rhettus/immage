@@ -376,6 +376,10 @@ gboolean wb_write(dt_iop_module_t *mod, const char *name, const double num, char
 // read only: color calibration adapts from its own illuminant, so these
 // coefficients do not decide the colors (temperature.c, _update_controls_lock)
 #define WB_LOCKED "wb_locked"
+// read only, on temperature and each color calibration instance: the warning
+// darktable shows on that module (channelmixerrgb.c, _set_trouble_messages)
+#define WB_TROUBLE "wb_trouble"
+gboolean wb_trouble_read(dt_iop_module_t *mod, double *num);
 gboolean wb_setting_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults,
                          double *num, char **err);
 gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double num, char **err);

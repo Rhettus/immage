@@ -13,6 +13,8 @@ Improvements
   one.
 - The Advanced white balance card has darktable's new Prepare data for color
   calibration checkbox, which replaces the As shot to reference setting.
+- The Advanced white balance and color calibration cards show darktable's
+  warnings when the two modules work against each other.
 - The Advanced white balance card can pick its coefficients from an area of the
   photo, with the From image area setting or its eyedropper.
 - Color calibration can take its illuminant from the white balance module,
