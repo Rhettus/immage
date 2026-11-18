@@ -438,37 +438,28 @@ Each list counts only the photos your other choices leave: tick a camera, and
 
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. The footer is always visible below the list:
-it shows how many photos match, **Load** (saved filters), **Save filter…** and, in
-the popup, **Show N**, which closes Find and shows the matches in the grid (the
-popup's separate count is left out when there is no room, as **Show N** carries
-the number). To clear the search words, empty the search box. Esc folds an open
-filter and returns to its row; with none open, Esc or a click away closes the
-popup and the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
+it shows how many photos match, **Load** (saved filters) and **Save filter…**. To clear
+the search words, empty the search box. Esc folds an open filter and returns to
+its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder clears the filters, sets Search in back to This folder
 and clears the search words, so a folder left on Rejected only never looks
 empty and the stars and ticks filter the folder you open.
 
-### Find in the grid
+### Where Find appears
 
 ![The Find column in the grid, with a rating and a file type filter on](images/library-find.png)
 
-In the grid, Find is not a popup. It fills the right-hand panel, titled
-**Find** like the other panels (with auto-hide on, the pin is at the end of
-the title row), with the same layout as the popup (search, the Filters list and the
-footer's saved filters), locked in place: it cannot be dragged and has no close button, and
-Esc does not close it. Esc in its search box leaves the box; Esc again leaves
-the grid, as it does anywhere else. The toolbar's **Find** button shows the
-panel if it was hidden (or slid away by auto-hide) and puts the cursor in the
-search box. Leaving the grid brings back the editing panel, and the popup
-below is used again. In the grid's Print panel, the **Find** button opens the
-popup.
+Find is part of the grid. It fills the right-hand panel, titled **Find** like
+the other panels (with auto-hide on, the pin is at the end of the title row). It
+cannot be moved or undocked and has no close button, and Esc does not close it.
+Esc in its search box leaves the box; Esc again leaves the grid, as it does
+anywhere else.
 
-### Position
-
-Outside the grid, Find is a popup docked beside the grid, full height, with
-the filters in one scrolling list. Drag the grip beside the search box to move it; it
-remembers its place. Double-click the grip to put it back at the grid's edge.
+The toolbar's **Find** button goes to the grid from any view, shows the panel if
+it was hidden (or slid away by auto-hide) and puts the cursor in the search box.
+From the Print panel it returns the column to Find. Leaving the grid brings back
+the editing panel, and any filters you set stay on.
 
 ### Saved filters
 

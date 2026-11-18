@@ -838,7 +838,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 70;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1960,20 +1960,17 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .filter-immich { padding: 4px 10px 0; }
 .filter-immich .switch { justify-self: start; }
 
-/* Find popup: search and where to look, then the filters as an accordion: a row
-   each, its editor opening beneath it, all in one scroll region above the footer */
-.find-pop {
-  position: fixed; z-index: 60; display: flex; flex-direction: column; overflow: hidden;
-  background: var(--panel); border-radius: var(--radius-panel); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  font-size: var(--fs-small);
-}
+/* Find, the grid's right-hand column: search and where to look, then the filters as
+   an accordion: a row each, its editor opening beneath it, all in one scroll region
+   above the footer */
+.find-pop { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; font-size: var(--fs-small); }
 .find-pop .field {
   min-width: 0; padding: 6px 9px; background: var(--inset); border: 1px solid transparent;
   border-radius: 7px; color: var(--text); font: inherit; user-select: text; outline: none;
 }
 .find-pop .field:focus { border-color: var(--focus, #555); }
 .find-pop .field.find { display: block; width: 100%; margin: 0 0 6px; }
-.find-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--inset, #262626); }
+.find-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 0 12px 10px; border-bottom: 1px solid var(--inset, #262626); }
 .find-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .find-row .find-text { flex: 1 1 auto; width: auto; }
 /* one line at every width: the segmented control and the label keep their size, the select truncates */
@@ -1988,16 +1985,13 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .find-where { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); }
 .find-where .field { flex: 0 1 auto; width: auto; max-width: 160px; }
 .find-pop :is(button, input, select, summary):focus-visible { outline: 2px solid var(--focus, #f5f5f5); outline-offset: -2px; }
-.find-grip { flex: none; width: 18px; text-align: center; color: var(--text-3); user-select: none; }
-.find-filters-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px 4px; }
-.find-pop.locked .find-filters-head { padding-inline: 12px; }
+.find-filters-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px; }
 .find-filters-head h2 { flex: none; margin: 0; font-size: var(--fs-body); font-weight: 600; }
 .find-active { flex: 1; min-width: 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .find-clear { padding: 2px 8px; background: none; border: none; border-radius: 6px; color: var(--text); font: inherit; cursor: pointer; }
 .find-clear:hover:not(:disabled) { background: var(--hover); }
 .find-clear:disabled { color: var(--text-2); opacity: 0.6; cursor: default; }
-.find-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 14px 20px; }
-.find-pop.locked .find-scroll { padding-inline: 12px; }
+.find-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 12px 20px; }
 .fr-group-title {
   padding: 10px 2px 5px; color: var(--text-2); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
@@ -2085,17 +2079,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 @keyframes find-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .find-spin { animation-duration: 3s; } }
-/* the popup's footer carries the number in Show N: the count text yields when it is narrow */
-.find-pop:not(.locked) { container-type: inline-size; }
-@container (max-width: 420px) { .find-foot .find-count-text { display: none; } }
-/* the dock: a column at the grid's inline end */
-.find-grip { cursor: grab; touch-action: none; }
-
-/* the head's first row stays on one line: the search box takes what the grip and the indicator leave */
+/* the head's first row stays on one line: the search box takes what the indicator leaves */
 .find-row .find-text { flex: 1 1 0; min-width: 0; }
-/* locked: the grid's right-hand panel, in its column and not over the grid */
-.find-pop.locked { position: static; z-index: auto; flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; background: none; }
-.find-pop.locked .find-head { padding-inline: 12px; padding-block-start: 0; }
 .find-tip {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; background: var(--inset);
   border-radius: 8px; color: var(--text-2); line-height: 1.4;

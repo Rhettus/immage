@@ -95,7 +95,7 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, findButtonRef, onFindMenu, savedMenu,
+export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
                    layout, zoomBar, viewTools, onLayout, ref, pin, grid }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
@@ -106,7 +106,6 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   onFind: (next: FindState, now?: boolean) => void;
   findOpen: boolean;
   onToggleFind: () => void;                 // the Find button opens and closes the popup; in the grid it shows the column
-  findButtonRef: React.RefObject<HTMLButtonElement | null>;  // the popup's anchor
   onFindMenu?: (e: React.MouseEvent) => void; // right-click on Find while search results show
   savedMenu: (button: React.ReactNode) => React.ReactNode;   // the Saved menu, with its button drawn here
   layout: Layout; zoomBar: React.ReactNode;
@@ -181,7 +180,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
         <span className="sep" />
         {/* Find and its saved filters, as a split button */}
         <div className="find-split">
-          <button ref={findButtonRef} className={`tool find-button${count > 0 ? " on" : ""}${findOpen ? " open" : ""}`} data-tour="find"
+          <button className={`tool find-button${count > 0 ? " on" : ""}${findOpen ? " open" : ""}`} data-tour="find"
                   aria-expanded={findOpen} title={t("library.find.title")} onClick={onToggleFind} onContextMenu={onFindMenu}>
             {count > 0 ? t("library.find.titleCount", { count }) : t("library.find.title")}
           </button>

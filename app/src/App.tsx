@@ -405,8 +405,6 @@ export default function App() {
   const immichBaseRef = useRef(immichBase);
   immichBaseRef.current = immichBase;
   const find: FindState = { search: immichForm, filter };
-  const [findOpen, setFindOpen] = useState(false);
-  const findButton = useRef<HTMLButtonElement>(null);
   // the saved filter the Find state came from, and its dialogs
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveDialog, setSaveDialog] = useState(false);
@@ -6197,16 +6195,20 @@ export default function App() {
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
-  // the toolbar's Find button: the popup, or in the grid the column, shown if hidden, with the box focused
+  // the toolbar's Find button: Find is the grid's right-hand column, so this goes to
+  // the grid (from Print, back to that column), shows the column if hidden and
+  // puts the cursor in the box
   const toggleFind = () => {
-    if (!findLocked) { setFindOpen((o) => !o); return; }
+    if (!grid) setGrid(true);
+    if (rightMode === "print") setRightMode("adjust");
     if (!layout.right) toggleSide("right");
     revealedRef.current = { ...revealedRef.current, right: true };
     setRevealed(revealedRef.current);
     setFindFocus((n) => n + 1);
   };
-  useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
-  const renderFind = (locked: boolean) => (
+  // spent on leaving, or coming back to the grid would take the keyboard for the box
+  useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
+  const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
               smart={smartAvailable(clipReady, !!immichBase)}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
@@ -6215,7 +6217,6 @@ export default function App() {
               } : undefined}
               count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
-              onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
               saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                 button={<>{t("library.find.saved.load")}<ChevronDown size={12} strokeWidth={1.8} /></>}
                                 onManage={() => setManageSaved(true)} />}
@@ -6223,20 +6224,7 @@ export default function App() {
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              anchor={() => findButton.current?.getBoundingClientRect()}
-              bounds={() => {
-                // the photo area: across the filmstrip, clear of a side panel shown over
-                // it (auto-hide), from the top of the viewer to the toolbar
-                const sr = stripSlot.current?.getBoundingClientRect();
-                if (!sr) return undefined;
-                const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
-                return {
-                  left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
-                  right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
-                  top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
-                  bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
-                };
-              }} locked={locked} focusToken={findFocus} pin={locked ? pinButton("right") : undefined} />
+              focusToken={findFocus} pin={pinButton("right")} />
   );
   const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
 
@@ -6723,8 +6711,8 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked ? layout.right : findOpen}
-                 onToggleFind={toggleFind} findButtonRef={findButton}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.right}
+                 onToggleFind={toggleFind}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
@@ -6756,7 +6744,6 @@ export default function App() {
                    </div>
                  </>}
                  onLayout={toggleSide} />
-        {findOpen && !findLocked && renderFind(false)}
         {saveDialog && <SaveDialog initial="" onCancel={() => setSaveDialog(false)}
                                    onSave={(name) => { setSavedId(addSaved(name, find).id); setSaveDialog(false); }} />}
         {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
@@ -6767,7 +6754,7 @@ export default function App() {
       <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
       <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
-        {findLocked && renderFind(true)}
+        {findLocked && renderFind()}
         {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
         <div style={{ display: findLocked ? "none" : "contents" }}>
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>

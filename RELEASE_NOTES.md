@@ -10,9 +10,9 @@ Improvements
 - Messages in the corners of the photo, such as the status text, errors and
   export summaries, fade after 15 seconds unless the pointer is over them. A
   click dismisses them at once.
-- Find's popup now has one docked layout beside the grid. The Minimize and
-  Fill sizes were removed; drag the grip to move it, and double-click the grip
-  to put it back.
+- Find now lives only in the grid, as its right-hand panel, and can no longer
+  float over the photo or the Adjustments panel. The toolbar's Find button
+  goes to the grid from any view and puts the cursor in the search box.
 - Find's filters are a single list: click a filter's row and its options open
   right beneath it, one at a time, with what each is set to shown on the row
   and an x to turn it off. The chips are gone. A Filters header counts the

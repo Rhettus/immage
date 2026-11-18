@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// the Find popup: the words to search for and where to look, then every filter
-// as a row that opens its editor right beneath it (an accordion, one open at a
-// time, in one scroll region), and a footer with the count and the saved
-// filters. In the grid view it is drawn `locked`, in place of the right-hand
-// panel's contents, as the Dock body alone. Every change applies at once (the
-// state is findModel.ts's; App.tsx runs it). The rows are FindFilters.tsx's,
-// the editors FindEditors.tsx's
+// the grid's Find panel, in the right-hand column: the words to search for and
+// where to look, then every filter as a row that opens its editor right beneath
+// it (an accordion, one open at a time, in one scroll region), and a footer with
+// the count and the saved filters. Every change applies at once (the state is
+// findModel.ts's; App.tsx runs it). The rows are FindFilters.tsx's, the editors
+// FindEditors.tsx's
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { commands, type Named } from "./commands";
 import {
   chips, clearCategory, clearFilters, GROUPS, reach, searchIn, serverPickers, visibleCategories, withSearchIn,
@@ -19,16 +17,11 @@ import type { ImageEntry } from "./library";
 import { AnalysisStatus } from "./AnalysisStatus";
 import type { ImmichSearch } from "./immich";
 import { formatNumber, t } from "./i18n";
-import { loadLayout, placeRect, posFor, storeLayout, type FindLayout } from "./findLayout";
 import { FilterEditor } from "./FindEditors";
 import { categoryTitle, editorId, FilterGroup, FilterRow, GROUP_TITLE, rowId, summarize } from "./FindFilters";
 
-// ---- the popup (or, locked, the grid's side panel) -------------------------------------------------------
-
-type Bounds = { left: number; right: number; top: number; bottom: number };
-
-export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, onShow, onClose, saved, savedLine,
-                            onSaveNew, anchor, bounds, locked, focusToken, pin, smart, clipTip }: {
+export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, saved, savedLine,
+                            onSaveNew, focusToken, pin, smart, clipTip }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
@@ -38,34 +31,18 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   count: number | null;         // live result count, null while unknown
   busy: boolean;                // a search is running
   notes: string[];              // extra notes from App (e.g. Immich skipped)
-  onShow: () => void;           // Show N: close and show the grid
-  onClose: () => void;          // Escape / click away
   saved?: React.ReactNode;      // the Load filter menu button, footer
   savedLine?: React.ReactNode;  // the saved-filter name line, in the search header
   onSaveNew?: () => void;       // footer Save filter…
-  anchor: () => DOMRect | undefined;   // the toolbar Find button, to place the popup above
-  bounds: () => Bounds | undefined;    // the grid area
-  // the grid's right-hand panel: drawn in place, filling its container, at the dock's
-  // full body, with no grip or Escape/click-away closing
-  locked?: boolean;
   clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
-  pin?: React.ReactNode;        // locked: the right panel's pin button (auto-hide), in the title row
-  focusToken?: number;          // a change focuses the search box (the toolbar's Find button in the grid)
+  pin?: React.ReactNode;        // the right panel's pin button (auto-hide), in the title row
+  focusToken?: number;          // a change focuses the search box (the toolbar's Find button)
 }) {
   const pop = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  const anchorRef = useRef(anchor);
-  anchorRef.current = anchor;
   const text = useRef<HTMLInputElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  const [, relayout] = useState(0);
   // the filter whose editor is open; values do not depend on it
   const [expanded, setExpanded] = useState<CategoryKey | null>(null);
-  // where the dock was dragged to
-  const [layout, setLayout] = useState<FindLayout>(loadLayout);
-  const rtl = document.dir === "rtl";
-  const move = (next: FindLayout) => { setLayout(next); storeLayout(next); };
   const { search: s, filter: f } = state;
   const r = reach(s, immichAvailable);
   const server = serverPickers(s, immichAvailable);
@@ -104,56 +81,32 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     }
   }, [openKey]);
 
-  // Escape closes an open editor first, then (popup) the popup, except from the
-  // search box, where it does what it always did; presses outside close it, the
-  // filters staying; presses in the lists the selects open (portaled out of the
-  // popup) and on the toolbar's button (which toggles it) are not outside
+  // Escape closes an open editor first, except from the search box, and only
+  // while the user is in the panel: otherwise it leaves the grid, as it does elsewhere
   const touched = useRef(false);
   useEffect(() => {
     // a click does not focus a button in macOS's web view, so the last press says
     // whether a key with nothing focused is the panel's
     const touch = (e: PointerEvent) => { touched.current = !!pop.current?.contains(e.target as Node); };
-    const away = (e: PointerEvent) => {
-      const el = e.target as Element;
-      // the save and manage dialogs App draws over it are not outside either
-      if (pop.current?.contains(el) || el.closest?.(".select-menu, .context-menu, .modal-backdrop")) return;
-      const a = anchorRef.current();
-      if (a && e.clientX >= a.left && e.clientX <= a.right && e.clientY >= a.top && e.clientY <= a.bottom) return;
-      close.current();
-    };
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || document.querySelector(".select-menu, .context-menu, .modal-backdrop")) return;
       const open = openRef.current;
       const from = e.target as Node;
-      // in the grid the key is the panel's only while the user is in it
-      const ours = !locked || pop.current?.contains(from) || (from === document.body && touched.current);
+      const ours = pop.current?.contains(from) || (from === document.body && touched.current);
       if (open && from !== text.current && ours) {
         e.preventDefault();
         e.stopImmediatePropagation();
         toggleRef.current(open);
         document.getElementById(rowId(open))?.focus();
-        return;
       }
-      if (locked) return;
-      // the key is Find's: App's own Escape (leaving the grid, the preview) must not run too
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      close.current();
     };
-    const resize = () => relayout((n) => n + 1);
     window.addEventListener("keydown", esc, true);
     window.addEventListener("pointerdown", touch, true);
-    if (!locked) {
-      window.addEventListener("pointerdown", away, true);
-      window.addEventListener("resize", resize);
-    }
     return () => {
       window.removeEventListener("pointerdown", touch, true);
-      window.removeEventListener("pointerdown", away, true);
       window.removeEventListener("keydown", esc, true);
-      window.removeEventListener("resize", resize);
     };
-  }, [locked]);
+  }, []);
 
   useEffect(() => {
     if (!focusToken) return;
@@ -188,33 +141,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   const patchSearch = (p: Partial<ImmichSearch>) => send({ ...state, search: { ...s, ...p } });
   const names = { people, tags, albums };
 
-  // inside the grid area, where the dock's dragged offset puts it: always
-  // clamped, so a smaller window or area never leaves it out of reach
-  const area = bounds() ?? { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
-  const at = placeRect(area, rtl, layout.pos);
-  // the grip drags the dock
-  const drag = (e: React.PointerEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
-    const grip = e.currentTarget;
-    grip.setPointerCapture(e.pointerId);
-    const grab = { x: e.clientX - at.left, y: e.clientY - at.top };
-    const go = (m: PointerEvent) => {
-      const b = bounds() ?? area;
-      setLayout({ pos: posFor(b, rtl, { left: m.clientX - grab.x, top: m.clientY - grab.y }) });
-    };
-    const up = () => {
-      grip.removeEventListener("pointermove", go);
-      grip.removeEventListener("pointerup", up);
-      grip.removeEventListener("pointercancel", up);
-      setLayout((l) => { storeLayout(l); return l; });
-    };
-    grip.addEventListener("pointermove", go);
-    grip.addEventListener("pointerup", up);
-    grip.addEventListener("pointercancel", up);
-  };
-  const resetPos = () => move({ pos: null });
-
-
   const notice = [
     ...(lacks.length > 0 && r.immich ? [t("library.search.missingPermissions", {
       permissions: lacks.join(", "),
@@ -233,21 +159,19 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     <span className="find-count-text">{count === null ? "…" : t("library.find.count", { n: count, count: formatNumber(count) })}</span>
     {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
   </>;
-  const popup = (
-    <div className={`find-pop${locked ? " locked" : ""}`} ref={pop} role="dialog" aria-label={t("library.find.title")}
-         style={locked ? undefined : { left: at.left, top: at.top, width: at.width, height: at.height }}>
-      {locked && <div className="panel-head"><h1>{t("library.find.title")}</h1>{pin && <div className="head-tools">{pin}</div>}</div>}
+  return (
+    <div className="find-pop" ref={pop} role="search" aria-label={t("library.find.title")}>
+      <div className="panel-head"><h1>{t("library.find.title")}</h1>{pin && <div className="head-tools">{pin}</div>}</div>
       <div className="find-head">
         <div className="find-row">
-          {!locked && <span className="find-grip" aria-hidden="true" onPointerDown={drag} onDoubleClick={resetPos}>⠿</span>}
-          <input className="field find-text" type="search" spellCheck={false} autoFocus={!locked} ref={text} value={s.text}
+          <input className="field find-text" type="search" spellCheck={false} ref={text} value={s.text}
                  aria-label={t("library.search.title")}
                  placeholder={smart ? t("library.search.example") : t("library.search.filenameExample")}
                  onChange={(e) => send({ ...state, search: { ...s, text: e.target.value } }, false)}
                  onKeyDown={(e) => {
                    if (e.key === "Enter") send(state, true);
-                   // locked, Escape only leaves the box: the next one leaves the grid, as it does elsewhere
-                   else if (e.key === "Escape" && locked) e.currentTarget.blur();
+                   // Escape only leaves the box: the next one leaves the grid, as it does elsewhere
+                   else if (e.key === "Escape") e.currentTarget.blur();
                  }} />
           <AnalysisStatus />
         </div>
@@ -320,11 +244,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
         <span className="find-count" aria-live="polite">{countText}</span>
         {saved}
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
-        {!locked && <button className="btn small primary find-show" onClick={onShow}>
-          {count === null ? t("library.find.show") : t("library.find.showCount", { n: count, count: formatNumber(count) })}
-        </button>}
       </div>
     </div>
   );
-  return locked ? popup : createPortal(popup, document.body);
 }

@@ -141,13 +141,13 @@ is written beside the raw.
 
 ## Searching
 
-Immich search is part of **Find**, the toolbar's search and filter popup. After
+Immich search is part of **Find**, the grid's search and filter panel. After
 configuring an Immich server and key, **Search in** offers **Immich** and
 **Both** (this computer's photos and Immich together) besides **This folder**
 and **All folders**. Local search remains available without a server; see
 [Library](library.md#find).
 
-<!-- screenshot: Find popup docked beside the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, the People filter open under its row with one person ticked -->
+<!-- screenshot: the Find panel in the grid, Search in set to Immich, Smart search "sunset on a beach", the Immich library picker visible, the People filter open under its row with one person ticked -->
 
 - The **Immich library** picker chooses what to search: **External libraries**
   (the default), **All photos**, or one library.
