@@ -4,10 +4,16 @@
 import { type Job, dismissJob, stopJob } from "./background";
 import { t } from "./i18n";
 
+// the viewer's own pointer handling (zoom on click) stays off a box over it
+export const keepPointer = {
+  onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+  onPointerUp: (e: React.PointerEvent) => e.stopPropagation(),
+};
+
 // the activity line's progress bar
 export function ActivityBar({ what, done, total }: { what: string; done: number; total: number }) {
   return (
-    <div className="activity">
+    <div className="activity" {...keepPointer}>
       <span>{total ? t("library.activity.progress", { what, done: done.toLocaleString(), total: total.toLocaleString() }) : t("library.activity.reading")}</span>
       <div className="bar"><div style={{ width: `${total ? (100 * done) / total : 0}%` }} /></div>
     </div>
@@ -17,11 +23,9 @@ export function ActivityBar({ what, done, total }: { what: string; done: number;
 // a background export or merge (background.ts): its progress and Stop, then
 // what it did
 export function JobActivity({ job }: { job: Job }) {
-  // the viewer's own pointer handling (zoom on click) stays off it
-  const keep = (e: React.PointerEvent) => e.stopPropagation();
   const action = job.action;
   return (
-    <div className="activity waiting" onPointerDown={keep} onPointerUp={keep}>
+    <div className="activity waiting" {...keepPointer}>
       {job.summary === null ? <>
         {job.stage ? (
           // a merge's own stage, with a bar when it has steps to count

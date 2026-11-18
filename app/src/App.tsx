@@ -134,7 +134,7 @@ import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filte
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
-import { ActivityBar, JobActivity } from "./ActivityBar";
+import { ActivityBar, JobActivity, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
 import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
@@ -6637,35 +6637,31 @@ export default function App() {
             </svg>
           )}
           <div className={`working${working ? " on" : ""}`} title={t("app.status.working")} aria-hidden={!working}><span /></div>
-          <div className="status">{status}{isEngineExit(status) && <button className="status-action"
-            onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
+          <div className="status" {...keepPointer}>{status}{isEngineExit(status) && <button className="status-action"
             onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
           {engineNotice?.kind === "slow" && (
-            <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
-                 onPointerUp={(e) => e.stopPropagation()}>
+            <div className="activity waiting" {...keepPointer}>
               <span>{t("app.status.engineNotAnswering")}</span>
               <button onClick={hideEngineNotice}>{t("app.status.wait")}</button>
               <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatus(t("app.status.error", { error: e }))); }}>{t("app.status.restart")}</button>
             </div>
           )}
           {saveError && (
-            <div className="activity" data-save-error><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
+            <div className="activity waiting" data-save-error {...keepPointer}><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
           )}
           {engineNotice?.kind === "failed" && (
-            <div className="activity"><span className="failed">{t("app.status.engineKeepsStopping")}</span>
+            <div className="activity waiting" {...keepPointer}><span className="failed">{t("app.status.engineKeepsStopping")}</span>
               <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></div>
           )}
           {(() => {
             // the folder's reading, then its thumbnails
-            if (immich?.busy) return <div className="activity"><span>{t("app.status.searching")}</span>
+            if (immich?.busy) return <div className="activity waiting" {...keepPointer}><span>{t("app.status.searching")}</span>
               <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus(t("app.status.searchStopped")); }}>{t("app.status.stop")}</button></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
-              // the viewer's own pointer handling (zoom on click) stays off it
-              <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
-                   onPointerUp={(e) => e.stopPropagation()}>
+              <div className="activity waiting" {...keepPointer}>
                 <span>{t("app.status.waiting", { name: w.name, progress: w.total > 1 ? t("app.status.waitingProgress", { back: w.back, total: w.total }) : "" })}</span>
                 <button onClick={() => void commands.pluginCancel(w.token)}>{t("app.status.stopWaiting")}</button>
               </div>

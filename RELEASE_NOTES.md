@@ -9,6 +9,8 @@ Bug fixes
 
 - After a similar-photo search, opening a photo no longer leaves an "Image
   query" box in the lower left that could not be dismissed.
+- Buttons in the lower-left notices, such as Stop while searching, can now be
+  clicked.
 
 ## 0.46.0
 
