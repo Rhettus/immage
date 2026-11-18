@@ -63,6 +63,8 @@ jobs:
         run: python3 -I scripts/test_sync_darktable_locales.py
       - name: upstream copy checks
         run: python3 -I scripts/test_check_upstream_copies.py
+      - name: ONNX Runtime fetch checks
+        run: python3 -I scripts/test_fetch_onnxruntime.py
       - name: gitleaks
         run: |
           v=8.30.1
