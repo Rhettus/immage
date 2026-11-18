@@ -86,9 +86,9 @@ export async function filters(t) {
   const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row .fr-title')].map(e=>e.textContent));
   assert(categories.length>0);
   for(const name of categories){
-    const row=name=>[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name);
-    if(!await t.driver.observe(name=>row(name)?.getAttribute('aria-expanded')==='true',name)){
-      const point=await until(()=>t.driver.observe(name=>{const e=row(name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter row');
+    // observe() sends only each callback's source, so every callback finds its row itself
+    if(!await t.driver.observe(name=>[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name)?.getAttribute('aria-expanded')==='true',name)){
+      const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter row');
       await t.driver.point(point.x,point.y);
     }
     const open=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row[aria-expanded="true"] .fr-title')].map(e=>e.textContent));assert.deepEqual(open,[name]);

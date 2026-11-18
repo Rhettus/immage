@@ -148,7 +148,7 @@ export async function siteShots(t) {
     await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'loupe view');
   });
 
-  // Find in the grid, locked in the right-hand column in the sidebar's place,
+  // Find in the grid, as the right-hand column in the sidebar's place,
   // with a rating and a file type chip on (selectors as in specs/find.mjs).
   // Filters are cleared and the loupe restored afterwards for the steps that follow.
   await attempt(t, 'find', async () => {
@@ -167,7 +167,7 @@ export async function siteShots(t) {
       await pause(1500); // thumbnails
       const all = await photos();
       await click(t, '.find-button');
-      await until(() => present(`${pop}.locked`), 'Find in the right-hand column');
+      await until(() => present(pop), 'Find in the right-hand column');
       await pause(400);
       await click(t, `${pop} .fe-stars button[aria-label="3 stars and up"]`);
       await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-pop .fr-row.on').length) >= 1, 'rating row on');

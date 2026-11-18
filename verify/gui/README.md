@@ -74,36 +74,40 @@ acceptance are provided.
 
 ## Local search and Find cases
 
-`--case local-search` (or `--suite search`) checks filename search without an
-Immich server or CLIP model, through the Find popup: Search in offers This
-folder and All folders only, Filename mode, the words typed and Enter pressed
-(there is no Search button). Use the bundled sample JPEG as the configured
-fixture; the runner copies it into isolated app state. The case waits for a
-cached local result and thumbnail, closes the popup with Show, rates only that
-disposable copy, retains a rating filter (its Rating & flags row stays on in Find),
-and returns to its folder. Rewritten for the inline filter rows; not yet run live.
-Local per-run GUI approval rules still apply.
+Find exists only in the grid, as the right-hand column (`.find-pop` in `aside.right`,
+`role="search"`). The toolbar's Find button enters the grid from any view, shows the
+column, and focuses its box; pressing it again in the grid keeps Find open. Leaving the
+grid (the rail's Library button) removes the column and brings the Adjustments panel
+back, and filters stay on. There is no popup, no Show N, no grip, and no Escape or
+click-away close. Find's rows are `.fr-row` (`.on` when active, `aria-expanded` when
+open), with `.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`.
 
-`--case find-no-clip` (the `find` suite also runs it) checks the grid's locked Find
-column in the isolated profile, which has no CLIP model: no Smart/Filename
-switch, the file-name placeholder, narrowing by a file-name fragment, the CLIP tip
-(its Set up button opens Preferences > General at the local photo cache card;
-dismissing hides it, also after re-entering the grid), the head row's controls on
-one centre line, and no Show more like this in the photo menu. `find-live` also
-covers the rail Library button and the toolbar magnifier. Neither has run live yet.
+`--case local-search` (or `--suite search`) checks filename search without an Immich
+server or CLIP model: Search in offers This folder and All folders only, Filename mode,
+the words typed and Enter pressed (there is no Search button). It waits for a cached
+local result and thumbnail, rates only the disposable copy, retains a rating filter,
+and returns to its folder.
 
-`--suite find` runs `find-live` (a filter narrows the grid as it is set; a filter
-row turns on and its x turns it off; one editor is open at a time under its row;
-the Filters header's Clear keeps the search words; the locked right-hand column Find
-becomes in the grid: no Show N, grip or close, Escape only leaves its box),
-`find-sizes` (in the filmstrip view, where Find is the popup: its one docked layout
-and place, dragging the grip, remembered place, double-click reset) and `find-saved`
-(Save filter…, changed and Update, Alt+1 after Clear, Manage). `find-live` has the
-runner copy the fixture to `find-01` to `find-03`. The `filters` and `camera-body`
-cases open Find's rows and their inline editors. There are no chips and no separate
-value pane: selectors are `.fr-row` (`.on` when active, `aria-expanded` when open),
-`.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`. All of these were rewritten
-for the inline filters and have not run live.
+`--case find-no-clip` (the `find` suite also runs it) checks the grid's Find column in
+the isolated profile, which has no CLIP model: the Smart/Filename switch shown with
+Smart unavailable (tooltip, no effect on click), the dimmed analysis indicator, the
+file-name placeholder, narrowing by a file-name fragment, the CLIP tip (its Set up
+button opens Preferences > General at the local photo cache card; dismissing hides it,
+also after re-entering the grid), the head row's controls on one centre line, and no
+Show more like this in the photo menu.
+
+`--suite find` runs `find-live` (a filter narrows the grid as it is set; a filter row
+turns on and its x turns it off; one editor is open at a time under its row; the Filters
+title bar's reset icon (Clear search and filters) clears every filter and the search words, keeping Search in and the mode; the column is titled Find and, with auto-hide,
+its pin ends the title row; the Library button enters and leaves the grid; the magnifier
+opens the culling preview), `find-sizes` (Find only in the grid: no column in the
+filmstrip view; the toolbar button enters the grid, shows Find in `aside.right` and
+focuses the box; Adjustments hides while Find shows; Find is not a floating popup and has
+no grip or Show N; from the Print panel the same button brings Find back; leaving the
+grid removes Find and restores Adjustments), `find-saved` (Save filter…, changed and
+Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera-body`
+cases open Find's rows and their inline editors. Whether each case has passed live is
+recorded in `suites.mjs` (`liveValidated`) and its verification note.
 
 ## Positive hot-pixel fixture
 

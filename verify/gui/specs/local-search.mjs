@@ -57,13 +57,9 @@ export async function localSearch(t) {
   `indexed local result and cached thumbnail for ${filename}`, 60000);
   assert.equal(found.stars, 5, 'the local result exposes editable rating controls');
   await t.evidence('local-search-result');
-  // Show closes the popup and shows the grid, where Find is the locked right-hand
-  // column; the search and its words stay. Already in the grid, the locked
-  // column has no Show button.
-  if (await t.driver.observe(s => !!document.querySelector(s), `${pop}:not(.locked) .find-show`)) {
-    await click(t, `${pop} .find-show`);
-    await until(() => t.driver.observe(s => !document.querySelector(s), `${pop}:not(.locked)`), 'Find popup closes with Show');
-  }
+  // Find is the grid's right-hand column: the result is in the grid, with the search and
+  // its words kept. The column has no Show button; it stays while the grid is shown.
+  assert(!await t.driver.observe(s => !!document.querySelector(s), `${pop} .find-show`), 'Find has no Show button');
 
   // Set a rating on the copied fixture, then filter the search through the
   // real toolbar. The local result should survive because its saved rating is
