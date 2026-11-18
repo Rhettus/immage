@@ -24,6 +24,7 @@
 // Keep it identical to temperature.c, quirks included.
 
 #include "engine.h"
+#include "common/illuminants.h"
 #include "common/wb_presets.h"
 
 // for the Kelvin conversions, as temperature.c:43; the tables are static
@@ -372,6 +373,41 @@ static gboolean _apply_tuning(const dt_image_t *img, const _preset_t *pr, const 
   return FALSE;
 }
 
+static int _cat_field(dt_iop_module_t *mod, const char *name)
+{
+  dt_introspection_field_t *f = NULL;
+  char *err = NULL;
+  const int *value = session_field_in(mod, mod->params, name, &f, &err);
+  g_free(err);
+  return value ? *value : 0;
+}
+
+// channelmixerrgb.c: _applies_cat and _cat_proxy_source
+static dt_dev_cat_source_t _instance_cat_source(dt_iop_module_t *mod)
+{
+  if(!mod->enabled || dt_image_is_monochrome(&mod->dev->image_storage)) return DT_DEV_CAT_NONE;
+  const int illuminant = _cat_field(mod, "illuminant");
+  const gboolean forced_cat = illuminant == DT_ILLUMINANT_CAMERA || illuminant == DT_ILLUMINANT_FROM_WB;
+  if(illuminant == DT_ILLUMINANT_PIPE
+     || (_cat_field(mod, "adaptation") == DT_ADAPTATION_RGB && !forced_cat))
+    return DT_DEV_CAT_NONE;
+  return illuminant == DT_ILLUMINANT_FROM_WB ? DT_DEV_CAT_FROM_WB : DT_DEV_CAT_OWN_ILLUMINANT;
+}
+
+// develop.c: _cat_source. darktable asks through a proxy that only color
+// calibration's gui_init sets, so dt_dev_cat_is_active() is FALSE without a GUI
+static dt_dev_cat_source_t _cat_source(dt_develop_t *dev)
+{
+  dt_dev_cat_source_t source = DT_DEV_CAT_NONE;
+  for(const GList *l = dev->iop; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *mod = l->data;
+    if(dt_iop_module_is(mod, "channelmixerrgb") && mod->iop_order != INT_MAX)
+      source = MAX(source, _instance_cat_source(mod));
+  }
+  return source;
+}
+
 // temperature.c: gui_update's matching of the coefficients to an entry; it
 // only reads (darktable also stores the preset it settles on, which the next
 // edit would overwrite anyway)
@@ -483,8 +519,10 @@ gboolean wb_setting_write(dt_iop_module_t *mod, const char *name, const double n
       {
         double ch[4];
         if(_apply_tuning(img, &pr[value - WB_FIRST_CAMERA], 0, ch)) _from_array(p, ch);
+        // temperature.c: _update_preset keeps the flag, except that camera
+        // reference ignores it and leaves it to be set anew
+        if(p->preset == WB_D65) p->late_correction = _cat_source(mod->dev) != DT_DEV_CAT_NONE;
         p->preset = WB_STORED_FIRST_CAMERA + value - WB_FIRST_CAMERA;
-        p->late_correction = FALSE;
         return TRUE;
       }
       *err = g_strdup("unknown white balance setting");

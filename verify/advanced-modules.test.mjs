@@ -1388,6 +1388,21 @@ for (const [what, source] of wbPhotos) {
     await write({ wb_setting: 2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
 
+    // temperature.c, _update_preset: a camera preset keeps "prepare data for
+    // color calibration", and leaving camera reference sets it from whether
+    // color calibration adapts
+    if (presets.length) {
+      await write({ wb_setting: 4 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'a camera preset keeps the preparation');
+      await write({ wb_setting: 0 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok(!(await get('late_correction')).late_correction, 'a camera preset keeps it off');
+      await write({ wb_setting: 3 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'leaving camera reference prepares for color calibration');
+    }
+
     // the "white balance in the module" note (Session.wbInModule): temperature
     // on, a setting other than camera reference and as shot to reference, and
     // color calibration off
