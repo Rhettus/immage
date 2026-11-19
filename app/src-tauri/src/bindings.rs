@@ -160,6 +160,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::module_schema,
         crate::edit_cmds::instances,
         crate::edit_cmds::presets,
+        crate::edit_cmds::module_preset_import,
         crate::edit_cmds::instance,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,

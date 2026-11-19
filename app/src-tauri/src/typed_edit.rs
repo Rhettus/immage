@@ -474,6 +474,7 @@ pub struct PresetsReply {
 #[derive(Serialize, Deserialize, Type)]
 pub struct DtPreset {
     pub name: String,
+    pub version: i64,
     pub description: String,
     pub builtin: bool,
     pub applicable: bool,

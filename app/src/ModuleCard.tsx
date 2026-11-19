@@ -8,7 +8,7 @@ import { PresetMenu } from "./PresetMenu";
 import { FamilySwitch, type FamilyOption } from "./FamilySwitch";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, Slider, Toggle } from "./Controls";
-import { colorProfiles, wbPresets, type AdvancedState, type ColorProfiles } from "./session";
+import { colorProfiles, wbPresets, type AdvancedState, type ColorProfiles, type ModulePresetChange } from "./session";
 import type { DtPreset, Instance, ModuleSchema, SchemaField, WbPreset } from "./commands";
 import type { Control, Turn } from "./manifest";
 import { FlipIcon, RotateIcon } from "./icons";
@@ -95,11 +95,11 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, wbLocked, trouble, onField, onFields, onEnabled, onReset, onInstance, loadPresets, onPreset, onTurn }: {
+export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, wbLocked, trouble, onField, onFields, onEnabled, onReset, onInstance, loadPresets, importPreset, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
-  // mask cards have a smaller action menu and no darktable preset menu
+  // mask cards have a smaller instance action menu
   maskOwned?: boolean;
   // a Simple mask adjustment also writes this module instance
   simple?: boolean;
@@ -126,7 +126,9 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   onFields: (edit: Record<string, number>, coalesce: boolean, id: string, gesture?: number) => void;
   onEnabled: (on: boolean) => void; onReset: () => void;
   onInstance: (c: InstanceChoice, name?: string) => void;
-  loadPresets: () => Promise<DtPreset[]>; onPreset: (name: string) => void;
+  loadPresets: (change?: ModulePresetChange) => Promise<DtPreset[]>;
+  importPreset: (xml: string) => Promise<DtPreset[]>;
+  onPreset: (name: string) => void;
   onTurn?: (how: Turn) => void;
 }) {
   const edited = instance.hand_edited || state.enabled !== instance.default_enabled;
@@ -226,7 +228,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
         </span>}
         {hidden && <span className="module-card-tag" title={tr("fields.module.hiddenHint")}>{tr("fields.module.hidden")}</span>}
         {(simple || (siblings > 1 && instance.priority === 0)) && <span className="module-card-tag" title={tr("fields.module.simpleHint")}>{tr("fields.module.simple")}</span>}
-        <PresetMenu name={name} load={loadPresets} onPick={(n) => { setFold(true); onPreset(n); }} />
+        {!schema.flags.hidden && <PresetMenu name={name} load={loadPresets} importPreset={importPreset} onPick={(n) => { setFold(true); onPreset(n); }} />}
         <button className="module-card-reset" title={tr("fields.module.resetHint")} aria-label={tr("fields.module.reset", { name })}
                 onClick={(e) => { e.stopPropagation(); onReset(); }}>
           <RotateCcw size={14} strokeWidth={1.8} />

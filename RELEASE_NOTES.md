@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Import darktable `.dtpreset` files and save, apply, or delete your own
+  Advanced module presets, including on module cards inside masks.
 - The lightbox can show embedded camera previews for edited RAWs in Fit.
   Use 100% detail to inspect the edited image.
 - The lightbox toolbar uses icons for Camera previews, Keywords, and Edit.

@@ -145,8 +145,29 @@ pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: Str
 // open photo (the engine's session_presets); `module_state` applies one
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64) -> Result<PresetsReply, String> {
-    let reply = state.engine("presets").request(json!({ "cmd": "presets", "op": op, "priority": priority }))?;
+pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64,
+                            action: Option<String>, name: Option<String>, version: Option<i64>, imgid: Option<i64>)
+    -> Result<PresetsReply, String> {
+    let mut req = json!({ "cmd": "presets", "op": op, "priority": priority });
+    if let Some(action) = action { req["action"] = json!(action); }
+    if let Some(name) = name { req["name"] = json!(name); }
+    if let Some(version) = version { req["version"] = json!(version); }
+    if let Some(imgid) = imgid { req["imgid"] = json!(imgid); }
+    let reply = state.engine("presets").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
+}
+
+// The webview supplies the contents of a user-selected file.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn module_preset_import(state: State<'_, AppState>, op: String, priority: i64,
+                                        imgid: i64, xml: String) -> Result<PresetsReply, String> {
+    if xml.len() > 1024 * 1024 || xml.contains('\0') {
+        return Err("invalid or oversized darktable preset".into());
+    }
+    let reply = state.engine("presets").request(json!({
+        "cmd": "presets", "op": op, "priority": priority, "imgid": imgid, "action": "import", "xml": xml,
+    }))?;
     serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
 }
 

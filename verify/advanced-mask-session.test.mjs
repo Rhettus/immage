@@ -225,6 +225,14 @@ test("Advanced mask Session lifecycle", { timeout: 300000 }, async (t) => {
     s.setHidden("Neutral", false); await settle();
     assert.equal((await own("Neutral", "exposure")).enabled, true, "the card is still enabled after unhiding");
     assert.equal((await params("Neutral", "exposure", ["mode"])).params.mode, 1);
+    const name = "Mask Exposure";
+    const saved = (await s.loadPresets(i.op, i.priority, { action: "save", name })).find(p => p.name === name);
+    assert.ok(saved?.active);
+    s.applyPreset(i.op, i.priority, name); await settle();
+    assert.equal((await own("Neutral", "exposure")).name, i.name);
+    assert.equal((await own("Neutral", "exposure")).enabled, true);
+    const remaining = await s.loadPresets(i.op, i.priority, { action: "delete", name, version: saved.version });
+    assert.ok(!remaining.some(p => p.name === name));
     await s.close();
   } finally {
     await stopEngine();

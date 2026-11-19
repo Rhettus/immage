@@ -874,12 +874,13 @@ calls `Session.switchModule`, the old instance off and the other module's
 priority 0 on. A layout's `choices` names an int field's hand-filled combobox
 (`dt_bauhaus_combobox_add`).
 
-[PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's darktable presets
+[PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's module presets
 menu. It loads the engine's `presets` list when opened (darktable's order,
 shipped presets then the user's, a check on the active one) and applies a pick
 with `Session.applyPreset`, which sends `module_state` with the raw preset name;
-undo restores the instance like a reset. `presetLabel` (presetName.ts) drops
-the `_builtin_` prefix and shows `|` as `›`. The pump reloads `instances` after
+undo restores the instance like a reset. The same menu saves and deletes user
+presets in `data.presets`. Saving waits for queued edits so it captures the
+current instance. `presetLabel` formats built-in names for display. The pump reloads `instances` after
 a preset or restore, since darktable relabels the instance from its preset.
 
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position

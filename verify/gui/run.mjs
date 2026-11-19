@@ -161,6 +161,10 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  if (selectedCases.includes('advanced-presets')) {
+    await copyFile(join(root, 'verify/gui/support/exposure.dtpreset'), join(fixtures, 'exposure.dtpreset'));
+    report.modulePresetFixture = 'Exposure preset from the darktable exporter';
+  }
   if (selectedCases.includes('color-profiles')) {
     const { narrowPrinterProfile } = await import('./support/icc.mjs');
     for (const [role, name] of [['in', 'scanner'], ['out', 'working']]) {

@@ -996,10 +996,221 @@ static gboolean _unbase64_into(const char *text, void *dst, const size_t size)
 // rows for this photo's camera, lens and exposure, built-in ones last unless
 // `modules/default_presets_first`, and the built-ins left out when
 // `plugins/darkroom/hide_default_presets` is set. a name keeps its "|" levels
-gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err)
+static gboolean _preset_has_mask(const dt_develop_blend_params_t *blend)
 {
+  return blend && ((blend->mask_mode & (DEVELOP_MASK_MASK | DEVELOP_MASK_RASTER))
+                   || dt_is_valid_maskid(blend->mask_id));
+}
+
+// An INSERT protects existing user and built-in presets via the unique
+// name/operation/version index. Immage's presets are applied manually.
+static gboolean _write_preset(const dt_iop_module_t *mod, const char *name,
+                              const char *description, const void *params, const int params_size,
+                              const gboolean enabled, const dt_develop_blend_params_t *blend,
+                              const char *instance_name, const gboolean renamed,
+                              const gboolean save, const int version, char **err)
+{
+  const char *sql = save
+    ? "INSERT INTO data.presets"
+      " (name, operation, op_version, description, op_params, enabled, blendop_params, blendop_version,"
+      "  multi_priority, multi_name, multi_name_hand_edited, model, maker, lens,"
+      "  iso_min, iso_max, exposure_min, exposure_max, aperture_min, aperture_max,"
+      "  focal_length_min, focal_length_max, writeprotect, autoapply, filter, def, format)"
+      " VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, '%', '%', '%',"
+      "  0, 1e6, 0, 1e6, 0, 1e6, 0, 1e6, 0, 0, 0, 0, 0)"
+    : "DELETE FROM data.presets WHERE name = ?1 AND operation = ?2 AND op_version = ?3 AND writeprotect = 0";
+  sqlite3 *db = dt_database_get(darktable.db);
+  sqlite3_stmt *stmt = NULL;
+  int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+  if(rc == SQLITE_OK)
+  {
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, mod->op, -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 3, version);
+    if(save)
+    {
+      sqlite3_bind_text(stmt, 4, description, -1, SQLITE_STATIC);
+      sqlite3_bind_blob(stmt, 5, params, params_size, SQLITE_STATIC);
+      sqlite3_bind_int(stmt, 6, enabled);
+      sqlite3_bind_blob(stmt, 7, blend, sizeof(*blend), SQLITE_STATIC);
+      sqlite3_bind_int(stmt, 8, dt_develop_blend_version());
+      sqlite3_bind_text(stmt, 9, instance_name, -1, SQLITE_STATIC);
+      sqlite3_bind_int(stmt, 10, renamed);
+    }
+    rc = sqlite3_step(stmt);
+  }
+  const gboolean changed = rc == SQLITE_DONE && sqlite3_changes(db) == 1;
+  if(!changed)
+    *err = g_strdup(rc == SQLITE_DONE ? "user preset does not exist" : sqlite3_errmsg(db));
+  sqlite3_finalize(stmt);
+  return changed;
+}
+
+static gboolean _change_preset(const dt_iop_module_t *mod, const char *action,
+                               const char *name, const int version, char **err)
+{
+  const gboolean save = !g_strcmp0(action, "save");
+  if(!name || !*name || (!save && g_strcmp0(action, "delete")))
+  {
+    *err = g_strdup("invalid preset action or name");
+    return FALSE;
+  }
+  const char *owner = masks_instance_owner(mod);
+  const gboolean mask_owned = !g_strcmp0(owner, "mask");
+  const dt_develop_blend_params_t *blend = mask_owned ? mod->default_blendop_params : mod->blend_params;
+  if(save && ((owner && !mask_owned) || _preset_has_mask(blend)))
+  {
+    *err = g_strdup("this module uses settings tied to the current photo");
+    return FALSE;
+  }
+  return _write_preset(mod, name, "", mod->params, mod->params_size, mask_owned || mod->enabled,
+                       blend, name, FALSE, save, save ? mod->version() : version, err);
+}
+
+static xmlNodePtr _preset_element(xmlNodePtr parent, const char *tag)
+{
+  for(xmlNodePtr child = parent ? parent->children : NULL; child; child = child->next)
+    if(child->type == XML_ELEMENT_NODE && !xmlStrcmp(child->name, BAD_CAST tag)) return child;
+  return NULL;
+}
+
+static char *_preset_text(xmlNodePtr parent, const char *tag)
+{
+  xmlNodePtr node = _preset_element(parent, tag);
+  xmlChar *value = node ? xmlNodeGetContent(node) : NULL;
+  char *text = g_strdup(value ? (const char *)value : "");
+  xmlFree(value);
+  return text;
+}
+
+// darktable writes hex or a gzNN prefix followed by zlib-compressed base64.
+// Use a bounded destination so inputs cannot grow beyond the expected blob.
+static int _decode_preset_blob(const char *text, void *dst, const gsize capacity)
+{
+  const size_t len = strlen(text);
+  if(g_str_has_prefix(text, "gz"))
+  {
+    if(len < 5 || !g_ascii_isdigit(text[2]) || !g_ascii_isdigit(text[3])) return -1;
+    gsize compressed_size, read = 0, written = 0;
+    g_autofree guchar *compressed = g_base64_decode(text + 4, &compressed_size);
+    g_autoptr(GZlibDecompressor) decoder = g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB);
+    const GConverterResult result = g_converter_convert(G_CONVERTER(decoder), compressed, compressed_size,
+      dst, capacity, G_CONVERTER_INPUT_AT_END, &read, &written, NULL);
+    return result == G_CONVERTER_FINISHED && read == compressed_size ? (int)written : -1;
+  }
+  if(len % 2 || len / 2 > capacity) return -1;
+  int decoded_size = 0;
+  g_autofree unsigned char *decoded = dt_exif_xmp_decode(text, len, &decoded_size);
+  if(!decoded) return -1;
+  memcpy(dst, decoded, decoded_size);
+  return decoded_size;
+}
+
+static gboolean _import_preset(dt_iop_module_t *mod, const char *xml, char **err)
+{
+  const size_t len = xml ? strlen(xml) : 0;
+  if(!len || len > 1024 * 1024)
+  {
+    *err = g_strdup("missing or oversized darktable preset");
+    return FALSE;
+  }
+  xmlDocPtr doc = xmlReadMemory(xml, len, NULL, NULL, XML_PARSE_NONET | XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
+  xmlNodePtr root = doc ? xmlDocGetRootElement(doc) : NULL;
+  xmlNodePtr preset = root && !doc->intSubset && !doc->extSubset
+    && !xmlStrcmp(root->name, BAD_CAST "darktable_preset") ? _preset_element(root, "preset") : NULL;
+  if(!preset || !_preset_element(preset, "op_params"))
+  {
+    if(doc) xmlFreeDoc(doc);
+    *err = g_strdup("invalid darktable preset file");
+    return FALSE;
+  }
+  g_autofree char *name = _preset_text(preset, "name");
+  g_autofree char *operation = _preset_text(preset, "operation");
+  g_autofree char *version = _preset_text(preset, "op_version");
+  g_autofree char *params_text = _preset_text(preset, "op_params");
+  g_autofree char *enabled = _preset_text(preset, "enabled");
+  g_autofree char *blend_text = _preset_text(preset, "blendop_params");
+  g_autofree char *blend_version = _preset_text(preset, "blendop_version");
+  g_autofree char *description = _preset_text(preset, "description");
+  g_autofree char *label = _preset_text(preset, "multi_name");
+  g_autofree char *renamed = _preset_text(preset, "multi_name_hand_edited");
+  xmlFreeDoc(doc);
+
+  if(!*g_strstrip(name) || g_strcmp0(operation, mod->op))
+  {
+    *err = g_strdup("the preset has no name or belongs to a different darktable module");
+    return FALSE;
+  }
+  char *end = NULL;
+  if(g_ascii_strtoll(version, &end, 10) != mod->version() || *end)
+  {
+    *err = g_strdup("the preset was exported with an incompatible darktable module version");
+    return FALSE;
+  }
+  g_autofree void *params = *params_text ? g_malloc(mod->params_size + 1) : NULL;
+  if(params && _decode_preset_blob(params_text, params, mod->params_size + 1) != mod->params_size)
+  {
+    *err = g_strdup("the preset contains invalid adjustment data");
+    return FALSE;
+  }
+  dt_develop_blend_params_t blend;
+  if(*blend_text)
+  {
+    unsigned char raw[4096];
+    const int size = _decode_preset_blob(blend_text, raw, sizeof(raw));
+    const int version_number = g_ascii_strtoll(blend_version, &end, 10);
+    const int current = dt_develop_blend_version();
+    gboolean invalid = *end || size <= 0 || version_number <= 0 || version_number > current;
+    if(!invalid && version_number == current)
+    {
+      invalid = size != sizeof(blend);
+      if(!invalid) memcpy(&blend, raw, sizeof(blend));
+    }
+    else if(!invalid)
+    {
+#ifdef IMMAGE_STYLE_BLEND_READER
+      invalid = dt_develop_blend_params_read(mod, raw, size, version_number, &blend, -1, TRUE, NULL);
+#else
+      invalid = dt_develop_blend_legacy_params(mod, raw, version_number, &blend, current, size);
+#endif
+    }
+    if(invalid)
+    {
+      *err = g_strdup("the preset contains invalid or unsupported blend data");
+      return FALSE;
+    }
+  }
+  if(*blend_text && _preset_has_mask(&blend))
+  {
+    *err = g_strdup("the preset contains a drawn or raster mask");
+    return FALSE;
+  }
+  return _write_preset(mod, name, description, params, params ? mod->params_size : 0,
+                       !strcmp(enabled, "1"), *blend_text ? &blend : NULL,
+                       *label ? label : name, !strcmp(renamed, "1"), TRUE, mod->version(), err);
+}
+
+gboolean session_presets(const char *op, const int priority, const char *action, const char *name,
+                         const int version, const dt_imgid_t imgid, const char *xml,
+                         JsonBuilder *b, char **err)
+{
+  if(dt_is_valid_imgid(imgid) && imgid != _s.imgid)
+  {
+    *err = g_strdup("the active photo changed");
+    return FALSE;
+  }
   dt_iop_module_t *mod = session_module_at(op, priority, err);
   if(!mod) return FALSE;
+  if(dt_iop_is_hidden(mod))
+  {
+    *err = g_strdup("this module has no preset menu");
+    return FALSE;
+  }
+  if(!g_strcmp0(action, "import"))
+  {
+    if(!_import_preset(mod, xml, err)) return FALSE;
+  }
+  else if(action && !_change_preset(mod, action, name, version, err)) return FALSE;
   const dt_image_t *image = &_s.dev.image_storage;
   const gboolean default_first = dt_conf_get_bool("modules/default_presets_first");
   const gboolean hide_default = dt_conf_get_bool("plugins/darkroom/hide_default_presets");
@@ -1050,20 +1261,24 @@ gboolean session_presets(const char *op, const int priority, JsonBuilder *b, cha
     const int blend_size = sqlite3_column_bytes(stmt, 4);
     const int enabled = sqlite3_column_int(stmt, 6);
     // darktable's own match: a preset with no params is the defaults
-    const gboolean active = (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
-                              : !memcmp(mod->params, op_params, MIN(op_params_size, mod->params_size)))
-      && (mask_owned || (mod->enabled && enabled && dt_presets_module_blend_match(mod, blend, blend_size)));
-    const char *name = (const char *)sqlite3_column_text(stmt, 0);
+    const int preset_version = sqlite3_column_int(stmt, 5);
+    const gboolean active = preset_version == mod->version()
+      && (op_params_size == 0 ? !memcmp(mod->params, mod->default_params, mod->params_size)
+                              : (op_params_size == mod->params_size && !memcmp(mod->params, op_params, mod->params_size)))
+      && (mask_owned || (mod->enabled == enabled && dt_presets_module_blend_match(mod, blend, blend_size)));
+    const char *preset_name = (const char *)sqlite3_column_text(stmt, 0);
     const char *description = (const char *)sqlite3_column_text(stmt, 3);
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "name");
-    json_builder_add_string_value(b, name ? name : "");
+    json_builder_add_string_value(b, preset_name ? preset_name : "");
     json_builder_set_member_name(b, "description");
     json_builder_add_string_value(b, description ? description : "");
     json_builder_set_member_name(b, "builtin");
     json_builder_add_boolean_value(b, builtin);
     json_builder_set_member_name(b, "applicable");
-    json_builder_add_boolean_value(b, sqlite3_column_int(stmt, 5) == mod->version());
+    json_builder_add_boolean_value(b, preset_version == mod->version());
+    json_builder_set_member_name(b, "version");
+    json_builder_add_int_value(b, preset_version);
     json_builder_set_member_name(b, "active");
     json_builder_add_boolean_value(b, active);
     json_builder_end_object(b);
@@ -2104,7 +2319,7 @@ gboolean session_module_schema(const char *op, JsonBuilder *b, char **err)
   json_builder_begin_object(b);
   engine_add_bool(b, "one_instance", flags & IOP_FLAGS_ONE_INSTANCE);
   engine_add_bool(b, "deprecated", flags & IOP_FLAGS_DEPRECATED);
-  engine_add_bool(b, "hidden", flags & IOP_FLAGS_HIDDEN);
+  engine_add_bool(b, "hidden", dt_iop_is_hidden(mod));
   engine_add_bool(b, "supports_blending", flags & IOP_FLAGS_SUPPORTS_BLENDING);
   engine_add_bool(b, "no_masks", flags & IOP_FLAGS_NO_MASKS);
   engine_add_bool(b, "no_history", flags & IOP_FLAGS_NO_HISTORY_STACK);

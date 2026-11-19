@@ -197,7 +197,8 @@ parts that exist are offered:
 - **Edit presets** and **Export presets**: your Develop and export presets.
 - **Looks**: the looks in your looks folder, counted with their size.
 - **Edit In plugins**: your plugin list.
-- **Keywords & darktable data**: the keywords and darktable's library data.
+- **Keywords & darktable data**: keywords, saved Advanced module presets,
+  and other darktable library data.
 
 The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
 XMP sidecars are never included: they are your files, so back them up with your

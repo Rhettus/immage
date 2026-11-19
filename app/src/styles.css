@@ -470,6 +470,8 @@ section h3 { margin: 7px 0 5px; font-size: var(--fs-body); font-weight: 600; col
 .context-menu.module-menu button .check { width: 12px; color: var(--text-2); font-size: var(--fs-small); }
 .context-menu.module-menu button .tag { color: var(--text-3); }
 .context-menu.module-menu button .name { flex: 1; text-align: left; }
+.module-preset-row { display: flex; }
+.context-menu.module-menu .module-preset-delete { width: auto; flex: none; }
 .context-menu.module-menu button:disabled { color: var(--text-3); cursor: default; }
 .context-menu.module-menu button:disabled:hover { background: none; }
 

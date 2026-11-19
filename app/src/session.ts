@@ -29,6 +29,8 @@ export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" |
 export type InstanceEntry = { op: string; priority: number; name: string; mask?: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
+export type ModulePresetChange = { action: "save"; name: string } | { action: "delete"; name: string; version: number };
+
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
 export const wbPresets = () => traced("wb_presets", () => commands.wbPresets());
@@ -1344,9 +1346,22 @@ export class Session {
     this.setModuleState({ op, priority }, { reset: true, enabled: true });
   }
 
-  // darktable's presets of a card's instance, in darktable's menu order
-  loadPresets(op: string, priority: number) {
-    return traced("presets", () => commands.presets(op, priority)).then((r) => r.presets);
+  async loadPresets(op: string, priority: number, change?: ModulePresetChange) {
+    // Capture the actual module bytes after any queued slider or instance edits.
+    if (change?.action === "save") {
+      this.flushEdits();
+      await this.settled();
+    }
+    const r = await traced("presets", () => commands.presets(
+      op, priority, change?.action ?? null, change?.name ?? null,
+      change?.action === "delete" ? change.version : null, this.imgid));
+    return r.presets;
+  }
+
+  async importModulePreset(op: string, priority: number, xml: string) {
+    const r = await traced("module_preset_import", () =>
+      commands.modulePresetImport(op, priority, this.imgid, xml));
+    return r.presets;
   }
 
   // apply a preset by its raw darktable name: module_state, so undo restores

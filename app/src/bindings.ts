@@ -150,7 +150,8 @@ export const commands = {
 	watermarks: () => __TAURI_INVOKE<Watermarks>("watermarks"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
-	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
+	presets: (op: string, priority: number, action: string | null, name: string | null, version: number | null, imgid: number | null) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority, action, name, version, imgid }),
+	modulePresetImport: (op: string, priority: number, imgid: number, xml: string) => __TAURI_INVOKE<PresetsReply>("module_preset_import", { op, priority, imgid, xml }),
 	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
@@ -398,6 +399,7 @@ export type DepthMap = {
 
 export type DtPreset = {
 	name: string,
+	version: number,
 	description: string,
 	builtin: boolean,
 	applicable: boolean,

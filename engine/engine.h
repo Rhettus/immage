@@ -432,7 +432,9 @@ gboolean session_set(const char *op, const char *field, JsonNode *value,
 gboolean session_module_state(const char *op, const int priority, const gboolean has_enabled,
                               const gboolean enabled, const gboolean reset, JsonObject *restore,
                               const char *preset, JsonBuilder *b, char **err);
-gboolean session_presets(const char *op, const int priority, JsonBuilder *b, char **err);
+gboolean session_presets(const char *op, const int priority, const char *action, const char *name,
+                         const int version, const dt_imgid_t imgid, const char *xml,
+                         JsonBuilder *b, char **err);
 dt_hash_t session_frame_hash(const dt_hash_t pipe_hash);
 void session_settle(dt_dev_pixelpipe_t *pipe);
 gboolean session_render(dt_dev_pixelpipe_t *pipe, const int devid, const int bw, const int bh,

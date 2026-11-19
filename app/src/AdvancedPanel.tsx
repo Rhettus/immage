@@ -263,7 +263,8 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   record?.([`adv:${key}:${id}`], layout.title, gesture);
                   session!.setFields(i.op, i.priority, all, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
-                loadPresets={() => session!.loadPresets(i.op, i.priority)}
+                loadPresets={(change) => session!.loadPresets(i.op, i.priority, change)}
+                importPreset={(xml) => session!.importModulePreset(i.op, i.priority, xml)}
                 onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />
             );
@@ -365,7 +366,8 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
             s.removeMaskModule(mask, i.op, i.priority);
           }
         }}
-        loadPresets={() => s.loadPresets(i.op, i.priority)}
+        loadPresets={(change) => s.loadPresets(i.op, i.priority, change)}
+        importPreset={(xml) => s.importModulePreset(i.op, i.priority, xml)}
         onPreset={(name) => {
           record?.([`mask:${mask}:${key}:preset:${performance.now()}`], presetLabel(name));
           s.applyPreset(i.op, i.priority, name);

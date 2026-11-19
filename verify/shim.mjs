@@ -209,7 +209,7 @@ const COMMANDS = {
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   color_profiles: () => request({ cmd: "color_profiles" }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
-  presets: ({ op, priority }) => request({ cmd: "presets", op, priority }),
+  presets: ({ op, priority, action, name, version, imgid }) => request({ cmd: "presets", op, priority, action, name, version, imgid }),
   module_state: ({ op, priority, enabled, reset, restore, preset }) => {
     const req = { cmd: "module_state", op, priority, reset: reset ?? false };
     if (enabled != null) req.enabled = enabled;

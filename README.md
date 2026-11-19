@@ -26,7 +26,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
-  In Advanced mode, apply darktable module presets within individual masks.
+  In Advanced mode, apply built-in presets, import darktable `.dtpreset`
+  files, and save or delete your own module presets, including within masks.
   Copied AI masks are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.

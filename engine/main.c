@@ -792,7 +792,12 @@ static gboolean _cmd_module_state(JsonObject *req, JsonBuilder *b, char **err)
 static gboolean _cmd_presets(JsonObject *req, JsonBuilder *b, char **err)
 {
   return session_presets(json_object_get_string_member_with_default(req, "op", NULL),
-                         json_object_get_int_member_with_default(req, "priority", 0), b, err);
+                         json_object_get_int_member_with_default(req, "priority", 0),
+                         json_object_get_string_member_with_default(req, "action", NULL),
+                         json_object_get_string_member_with_default(req, "name", NULL),
+                         json_object_get_int_member_with_default(req, "version", -1),
+                         json_object_get_int_member_with_default(req, "imgid", -1),
+                         json_object_get_string_member_with_default(req, "xml", NULL), b, err);
 }
 
 static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)

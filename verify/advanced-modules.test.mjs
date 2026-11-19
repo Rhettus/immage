@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 // the app's own imports leave out the .ts the bundler adds
 registerHooks({
@@ -508,6 +509,79 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   const reopenedPreset = await e.call({ ...maskState, priority: reopenedMask.priority });
   assert.equal(reopenedPreset.now.params, maskedPreset.now.params);
   assert.equal(reopenedPreset.now.enabled, false);
+});
+
+test('Advanced user presets survive restart and can be applied and deleted', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-userpreset-'));
+  const photo = join(work, 'stairs.jpg');
+  const otherPhoto = join(work, 'other.jpg');
+  copyFileSync(SAMPLE, photo);
+  copyFileSync(SAMPLE, otherPhoto);
+  let e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const presets = (fields = {}) => e.call({ cmd: 'presets', op: 'exposure', priority: 0, ...fields });
+  const name = 'Éclairage';
+  const { imgid } = await e.call({ cmd: 'open', path: photo });
+  await e.call({ cmd: 'set', op: 'exposure', params: { exposure: .7 }, enabled: true });
+  const state = { cmd: 'module_state', op: 'exposure', priority: 0 };
+  const before = (await e.call(state)).now;
+  const { presets: list } = await presets({ action: 'save', name, imgid });
+  const saved = list.find((p) => p.name === name);
+  assert.equal(saved?.active, true);
+  assert.equal(saved.builtin, false);
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(work, 'config', 'data.db'), { readOnly: true });
+  const { blendop_version: blendVersion } = db.prepare('SELECT blendop_version FROM presets WHERE name = ? AND operation = ?').get(name, 'exposure');
+  db.close();
+  const data = Buffer.from(before.params, 'base64');
+  const blend = Buffer.from(before.blend, 'base64').toString('hex');
+  const gz = `gz01${deflateSync(data).toString('base64')}`;
+  const darktablePreset = ({ title = 'From &amp; darktable', operation = 'exposure', version = saved.version,
+                             params = gz } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
+<darktable_preset version="1.0"><preset><name>${title}</name><description>A preset from darktable</description>
+<operation>${operation}</operation><op_params>${params}</op_params><op_version>${version}</op_version>
+<enabled>1</enabled><autoapply>1</autoapply><filter>1</filter><maker>Another camera</maker>
+<blendop_params>${blend}</blendop_params><blendop_version>${blendVersion}</blendop_version>
+<multi_name>Imported exposure</multi_name><multi_name_hand_edited>1</multi_name_hand_edited></preset></darktable_preset>`;
+  const importedName = 'From & darktable';
+  const importPreset = (xml) => presets({ action: 'import', xml, imgid });
+  const imported = (await importPreset(darktablePreset())).presets.find(p => p.name === importedName);
+  assert.equal(imported?.active, true);
+  assert.equal(imported.builtin, false);
+  assert.equal(imported.description, 'A preset from darktable');
+  await assert.rejects(importPreset(darktablePreset()), /UNIQUE/);
+  await assert.rejects(importPreset(darktablePreset({ operation: 'agx' })), /different darktable module/);
+  await assert.rejects(importPreset(darktablePreset({ version: saved.version + 1 })), /incompatible/);
+  await assert.rejects(importPreset(darktablePreset({ params: 'gz00broken' })), /invalid adjustment data/);
+  await assert.rejects(importPreset(darktablePreset({ params: '000' })), /invalid adjustment data/);
+  await assert.rejects(importPreset('<!DOCTYPE darktable_preset><darktable_preset/>'), /invalid darktable preset/);
+  const builtin = list.find((p) => p.builtin && p.applicable);
+  assert.ok(builtin);
+  await assert.rejects(presets({ action: 'delete', name: builtin.name, version: builtin.version }), /user preset/);
+  await assert.rejects(presets({ action: 'save', name: builtin.name }), /UNIQUE/);
+  await assert.rejects(presets({ action: 'save', name }), /UNIQUE/);
+  await assert.rejects(presets({ action: 'save', name: 'Wrong photo', imgid: imgid + 1000 }), /active photo changed/);
+  assert.deepEqual((await e.call(state)).now, before, 'preset management leaves the photo state alone');
+
+  const exited = new Promise((resolve) => e.child.once('exit', resolve));
+  e.stop();
+  await exited;
+  e = new Engine(work);
+  await e.call({ cmd: 'open', path: otherPhoto });
+  assert.ok((await presets()).presets.some((p) => p.name === name));
+  const { now } = await e.call({ ...state, preset: name });
+  assert.equal(now.params, before.params);
+  assert.equal(now.blend, before.blend);
+  assert.equal(now.enabled, before.enabled);
+  const removed = await presets({ action: 'delete', name, version: saved.version });
+  assert.ok(!removed.presets.some((p) => p.name === name));
+  assert.ok(removed.presets.some((p) => p.name === builtin.name));
+  assert.deepEqual((await e.call(state)).now, now, 'deleting a preset preserves the applied edit');
+  assert.ok(removed.presets.some((p) => p.name === importedName), 'import persists on another photo after restart');
+  const restored = await e.call({ ...state, preset: importedName });
+  assert.deepEqual(restored.now, before, 'the exported settings load byte for byte');
+  await presets({ action: 'delete', name: importedName, version: imported.version });
+
 });
 
 // every card layout (app/src/advancedLayout.ts) against darktable's schema:
