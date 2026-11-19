@@ -245,6 +245,8 @@ can help with a NAS or fast disk, but fewer may be quicker on a busy drive.
   takes its name. A move removes the original only once every file of
   that photo has been verified. A photo whose copy fails or doesn't match
   stays where it was, with nothing left behind in the destination.
+  On macOS, Immage uses the standard file flush if an SMB share rejects
+  the macOS full flush. This also applies to folder transfers.
 - **On the same drive.** A move renames the files, which is instant.
 
 The work runs in the background, under the photo, with a progress bar and

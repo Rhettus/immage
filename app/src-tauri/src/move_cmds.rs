@@ -705,6 +705,28 @@ fn sync_dir(dir: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_dir: &Path) {}
 
+fn sync_transfer_file(file: &File) -> std::io::Result<()> {
+    let result = file.sync_all();
+    #[cfg(target_os = "macos")]
+    if result.as_ref().is_err_and(|e| {
+        matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EOPNOTSUPP))
+    }) {
+        use std::os::fd::AsRawFd;
+
+        // Some SMB shares support fsync but reject sync_all's F_FULLFSYNC.
+        loop {
+            if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
+                return Ok(());
+            }
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
+    result
+}
+
 // `from` into `target` through a part file: written and flushed, read back
 // and its checksum compared with what was read, then renamed into place.
 // `expect` is a base64 SHA-1 the bytes must also match (Immich's)
@@ -763,7 +785,7 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
         ctx.bytes.fetch_add(n as u64, Ordering::SeqCst);
         ctx.activity.fetch_add(1, Ordering::SeqCst);
     }
-    if let Err(e) = out.sync_all() {
+    if let Err(e) = sync_transfer_file(&out) {
         drop(out);
         return Err(fail(format!("{}: {e}", target.display())));
     }
