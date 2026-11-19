@@ -15,13 +15,15 @@ spec.loader.exec_module(mod)
 
 
 class Headers(unittest.TestCase):
+    def setUp(self):
+        self.upright_pattern = {path: pattern for path, _, pattern in mod.COPIES}["engine/upright.c"]
+
     def test_wrapped_comment(self):
         text = "// are copied here unchanged from src/iop/ashift.c at\n// 69498129cd (constants)\n"
-        pattern = mod.COPIES[0][2]
-        self.assertEqual(mod.recorded_revision(text, pattern), "69498129cd")
+        self.assertEqual(mod.recorded_revision(text, self.upright_pattern), "69498129cd")
 
     def test_missing(self):
-        self.assertIsNone(mod.recorded_revision("// nothing\n", mod.COPIES[0][2]))
+        self.assertIsNone(mod.recorded_revision("// nothing\n", self.upright_pattern))
 
     def test_every_real_header_names_a_revision(self):
         for path, _, pattern in mod.COPIES:
