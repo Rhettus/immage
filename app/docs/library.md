@@ -247,6 +247,11 @@ can help with a NAS or fast disk, but fewer may be quicker on a busy drive.
   stays where it was, with nothing left behind in the destination.
   On macOS, Immage uses the standard file flush if an SMB share rejects
   the macOS full flush. This also applies to folder transfers.
+  When a share rejects the no-overwrite rename during a folder transfer,
+  Immage creates each new destination file exclusively, then flushes and
+  verifies it before removing any originals. The final filename can be
+  visible while it is being written. If this step fails, Immage attempts
+  to remove the incomplete file.
 - **On the same drive.** A move renames the files, which is instant.
 
 The work runs in the background, under the photo, with a progress bar and

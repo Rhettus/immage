@@ -62,6 +62,8 @@ Bug fixes
 - Fixed photo and folder transfers to macOS SMB shares that reject the full
   file flush. Immage falls back to the standard flush and still verifies the
   copy before removing originals.
+- Folder transfers can create and verify new files on macOS SMB shares that
+  reject no-overwrite renames. Existing destination files stay protected.
 - Folder transfers skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`
   when copying files. If copying fails, Immage cleans up newly created empty
   destination folders when the drive is reachable.

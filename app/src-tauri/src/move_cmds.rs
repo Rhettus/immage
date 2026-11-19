@@ -733,6 +733,47 @@ fn sync_transfer_file(file: &File, path: &Path) -> Result<(), String> {
     result.map_err(|error| transfer_io_error("sync_all", path, error))
 }
 
+// macOS SMB can reject both exclusive rename and hard links. Exclusive
+// creation still protects a destination that appeared after confirmation.
+#[cfg(any(target_os = "macos", test))]
+fn publish_by_exclusive_copy(part: &Path, target: &Path, expected: &str,
+                             mtime: Option<std::time::SystemTime>, ctx: &Ctx) -> Result<(), String> {
+    let mut input = File::open(part).map_err(|e| transfer_io_error("open verified temporary file", part, e))?;
+    let mut output = std::fs::OpenOptions::new().write(true).create_new(true).open(target)
+        .map_err(|e| transfer_io_error("create destination without replacement", target, e))?;
+    let result = (|| {
+        let mut buf = vec![0; CHUNK];
+        loop {
+            if ctx.cancelled() { return Err(CANCELLED.into()); }
+            let n = match input.read(&mut buf) {
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                result => result.map_err(|e| transfer_io_error("read verified temporary file", part, e))?,
+            };
+            if n == 0 { break; }
+            output.write_all(&buf[..n]).map_err(|e| transfer_io_error("write destination", target, e))?;
+            // These bytes were counted during the first copy.
+            ctx.activity.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(t) = mtime {
+            let _ = output.set_modified(t);
+        }
+        sync_transfer_file(&output, target)?;
+        drop_cache(&output);
+        drop(output);
+        if sums(target, Some(ctx))?.sha256 != expected {
+            return Err(format!("{}: checksum mismatch after copying", target.display()));
+        }
+        if ctx.cancelled() { return Err(CANCELLED.into()); }
+        Ok(())
+    })();
+    if result.is_err() {
+        if let Err(e) = std::fs::remove_file(target) {
+            let _ = transfer_io_error("remove incomplete destination", target, e);
+        }
+    }
+    result
+}
+
 // `from` into `target` through a part file: written and flushed, read back
 // and its checksum compared with what was read, then renamed into place.
 // `expect` is a base64 SHA-1 the bytes must also match (Immich's)
@@ -814,9 +855,21 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
     if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
     before_publish(target).map_err(fail)?;
     if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
-    let publish = if replace { std::fs::rename(&part, target) } else { rename_no_replace(&part, target) };
-    let operation = if replace { "rename temporary file" } else { "rename temporary file without replacement" };
-    publish.map_err(|e| fail(transfer_io_error(operation, target, e)))?;
+    if replace {
+        std::fs::rename(&part, target)
+            .map_err(|e| fail(transfer_io_error("rename temporary file", target, e)))?;
+    } else if let Err(e) = rename_no_replace(&part, target) {
+        #[cfg(target_os = "macos")]
+        if matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EOPNOTSUPP)) {
+            publish_by_exclusive_copy(&part, target, &read, mtime, ctx).map_err(fail)?;
+            if let Err(e) = std::fs::remove_file(&part) {
+                let _ = transfer_io_error("remove verified temporary file", &part, e);
+            }
+            sync_dir(target.parent().unwrap_or(Path::new(".")));
+            return Ok(read);
+        }
+        return Err(fail(transfer_io_error("rename temporary file without replacement", target, e)));
+    }
     sync_dir(target.parent().unwrap_or(Path::new(".")));
     Ok(read)
 }
@@ -2036,6 +2089,26 @@ mod tests {
             move |u, ctx| transfer_photo(u, &task_dest, true, false, ctx, &no_open), |_| {}, |_| {});
         drop(permits);
         assert!(recovered.failed.is_empty());
+    }
+
+    #[test]
+    fn exclusive_publish_preserves_existing_files_and_cleans_up_failed_copies() {
+        let d = test_dir("exclusive-publish");
+        let target = d.join("dest/photo.ORF");
+        let part = part_of(&target);
+        std::fs::write(&part, b"verified photo").unwrap();
+        let expected = sums(&part, None).unwrap().sha256;
+
+        std::fs::write(&target, b"existing photo").unwrap();
+        assert!(publish_by_exclusive_copy(&part, &target, &expected, None, &ctx()).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"existing photo");
+
+        std::fs::remove_file(&target).unwrap();
+        assert!(publish_by_exclusive_copy(&part, &target, "bad checksum", None, &ctx()).is_err());
+        assert!(!target.exists());
+
+        publish_by_exclusive_copy(&part, &target, &expected, None, &ctx()).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"verified photo");
     }
 
     #[test]
