@@ -111,11 +111,10 @@ test('lightbox keeps a fixed 80% viewport frame across photos and zoom modes', (
 });
 
 const sessionSource = readFileSync(new URL('../app/src/session.ts', import.meta.url), 'utf8');
-const saveStart = sessionSource.indexOf('  async saveForPreview() {');
-const saveEnd = sessionSource.indexOf('  async close()', saveStart);
-const saveSource = sessionSource.slice(saveStart, saveEnd).replace('  async saveForPreview()', 'async function saveForPreview()');
+const saveMethod = /^  async saveForPreview\(\) \{\n([\s\S]*?)^  \}/m.exec(sessionSource);
+assert.ok(saveMethod, 'finds the Session.saveForPreview method');
 const saveForPreview = new Function('traced', 'commands', 'window',
-  `${saveSource}; return saveForPreview;`)((_, fn) => fn(), {save: async () => ({edited:true})}, {clearTimeout(){}});
+  `return async function saveForPreview() {\n${saveMethod[1]}};`)((_, fn) => fn(), {save: async () => ({edited:true})}, {clearTimeout(){}});
 test('an unchanged editor never delays preview waiting for its background rendering', async () => {
   const owner = {unsaved:false, dirty:new Set(), modulePending:[],
     settled() { throw Error('must not wait for unrelated rendering'); }};
