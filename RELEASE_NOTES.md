@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Rename photos individually or in bulk from the Library grid. See the batch
+  count and one example built from photo info and sequence numbers. Edits and
+  sidecars follow the new names.
 - Immage now renders with darktable's code from the 5.8 feature freeze. Photos
   edited in this version should not be reopened in Immage 0.46 or earlier: those
   versions drop the white balance, input color and demosaic steps saved by this

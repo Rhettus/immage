@@ -136,13 +136,14 @@ import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
 import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
+import { RenameDialog } from "./RenameDialog";
 import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type Value } from "./commands";
-import { t, t as translate } from "./i18n";
+import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
+import { formatNumber, t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
 
@@ -548,6 +549,7 @@ export default function App() {
     setStatus(message);
     return message;
   };
+  const [renameGroups, setRenameGroups] = useState<ImageEntry[][] | null>(null);
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; imgid: number | null; targets: ImageEntry[] } | null>(null);
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
@@ -3720,6 +3722,88 @@ export default function App() {
     const arrived = now === dest || (includeSubRef.current && within(dest, now));
     if (stayed || arrived) await showFolder(now, true);
   };
+  const startRename = (targets: ImageEntry[]) => {
+    const stacks = new Map<string, ImageEntry[]>();
+    const byId = new Map(imagesRef.current.map((photo) => [photo.imgid, photo]));
+    for (const [id, companions] of partnersRef.current) {
+      const raw = byId.get(id);
+      if (!raw || isRemote(raw)) continue;
+      const group = [raw, ...companions.filter((i) => !isRemote(i))];
+      for (const photo of group) stacks.set(photo.path, group);
+    }
+    const order = new Map(shownRef.current.map((photo, n) => [photo.imgid, n]));
+    const sorted = [...targets].sort((a, b) => (order.get(a.imgid) ?? Infinity) - (order.get(b.imgid) ?? Infinity));
+    const seen = new Set<string>();
+    const groups: ImageEntry[][] = [];
+    for (const photo of sorted) {
+      if (seen.has(photo.path)) continue;
+      const stack = stacks.get(photo.path);
+      const group = stack?.map((member) => member.path === photo.path ? photo : member) ?? [photo];
+      groups.push(group);
+      for (const member of group) seen.add(member.path);
+    }
+    if (groups.length) setRenameGroups(groups);
+  };
+
+  const applyRename = async (items: RenameItem[]) => {
+    const folder = folderRef.current;
+    const search = combined.current?.getState();
+    const query = search?.query as SearchQuery | null | undefined;
+    const selected = imagesRef.current.filter((photo) => selectionRef.current.has(photo.imgid));
+    const anchor = imagesRef.current.find((photo) => photo.imgid === pickAnchor.current);
+    await openChain.current;
+    const active = imagesRef.current.find((photo) => isOpen(photo))
+      ?? (openCell && isOpen(openCell) ? openCell : null);
+    const leaving = !!active && items.some((item) => item.path === active.path);
+    if (leaving) {
+      if (croppingRef.current) leaveCrop(true);
+      await closePhoto(true);
+    }
+
+    const result = await commands.renameFiles(items).catch(async (error) => {
+      if (leaving) await openFile(active.path, active.imgid);
+      throw error;
+    });
+
+    const moved = new Map(result.rows
+      .filter((row) => !row.error && row.oldPath !== row.newPath)
+      .map((row) => [row.oldPath, row.newPath]));
+    const refresh = moved.size > 0 || result.rows.some((row) => row.error);
+    if (refresh) {
+      loader.current!.clear();
+      updateImages(imagesRef.current.filter((photo) => !moved.has(photo.path)));
+      if (search && query && search.generation === combined.current?.getState().generation) {
+        const enabled = (["local", "immich"] as const).filter(source => search.sources[source].status !== "idle");
+        await combined.current!.search(query, enabled);
+      } else if (folder && folder === folderRef.current && !immichRef.current) {
+        await showFolder(folder, true);
+      }
+    }
+
+    const identity = (path: string, version?: number) => JSON.stringify([path, version ?? 0]);
+    const refreshed = new Map(imagesRef.current.map((photo) => [identity(photo.path, photo.version), photo]));
+    const matching = (photo: ImageEntry) => refreshed.get(identity(moved.get(photo.path) ?? photo.path, photo.version));
+    if (leaving) {
+      const path = moved.get(active.path) ?? active.path;
+      let restored = matching(active);
+      if (!restored && active.copy) {
+        // A name-based Find query may no longer include the renamed copy.
+        const photos = await openFolder(parentDir(path)).catch(() => []);
+        restored = photos.find((photo) => photo.path === path && photo.version === active.version);
+      }
+      if (restored) await openFile(restored.path, restored.imgid);
+      else if (!active.copy) await openFile(path);
+    }
+    if (refresh) {
+      setSelection(new Set(selected.flatMap((photo) => {
+        const match = matching(photo);
+        return match ? [match.imgid] : [];
+      })));
+      pickAnchor.current = anchor ? matching(anchor)?.imgid ?? null : null;
+    }
+    if (moved.size) setStatus(t("dialogs.rename.success", { n: moved.size, count: formatNumber(moved.size) }));
+    return result.rows;
+  };
   const deleteRejected = async (list: ImageEntry[]) => {
     if (!list.length) return;
     const n = list.length;
@@ -3807,10 +3891,10 @@ export default function App() {
   };
 
   // no photo open: the last one was deleted
-  const closePhoto = async () => {
+  const closePhoto = async (confirmSave = false) => {
     const s = session.current;
     if (!s) return;
-    await s.close();
+    await s.close(confirmSave);
     session.current = null;
     currentRef.current = null;
     setCurrent(null);
@@ -7305,6 +7389,7 @@ export default function App() {
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
+    {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);
@@ -7327,6 +7412,8 @@ export default function App() {
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
+                  onRename={grid && local.length > 0 && local.length === fileMenu.targets.length
+                    ? () => startRename(local) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}

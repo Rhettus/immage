@@ -50,10 +50,11 @@ export function useMenuClose(onClose: () => void) {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-export function FileMenu({ onSimilar, onKeywords, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
+export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   onSimilar?: () => void;
   onKeywords?: () => void;
+  onRename?: () => void;
   // the photos it rates: the rating and the label bits all of them share, whether all are rejected;
   // null when none can be rated (Immich results)
   rate: { rating: number | null; labels: number; rejected: boolean;
@@ -148,6 +149,7 @@ export function FileMenu({ onSimilar, onKeywords, rate, captureCount, onCaptureT
         </div>
         <div className="menu-sep" />
       </>}
+      {onRename && <button onClick={() => { onClose(); onRename(); }}>{t("library.menu.rename")}</button>}
       {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>{t("library.menu.adjustCapture")}</button>}
       {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>{t("library.menu.undoCapture")}</button>}
       {copyable > 0 && <>

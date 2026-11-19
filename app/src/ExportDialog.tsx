@@ -18,7 +18,7 @@ import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, 
          type LucideIcon } from "lucide-react";
 import { ColorPick, FrameEditor } from "./ExportFrame";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
-import { expand, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
+import { DATE_FORMATS, expand, fileTokenNames, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
 import { engineText } from "./engineState";
 import {
@@ -36,8 +36,6 @@ export const FILE_MANAGER = navigator.userAgent.includes("Windows") ? "Explorer"
 // (main.c), so it is offered only where Preferences finds a GPU
 const UPSCALE_MODEL = "upscale-realplksr";
 
-const DATE_FORMATS = ["YYYYMMDD", "YYYY-MM-DD", "YYYY_MM_DD", "YYMMDD", "DD-MM-YYYY", "MM-DD-YYYY"];
-
 // the preview is the export made smaller, at most this long
 const PREVIEW_EDGE = 1400;
 // how many previews the dialog keeps to show again
@@ -54,12 +52,6 @@ const OPEN_DEFAULT: Record<SectionId, boolean> = {
   destination: true, name: false, format: true, frame: true, keywords: false, metadata: false,
 };
 
-// a file name's photo info, as the menu names it
-const FILE_TOKEN_NAMES: Record<string, string> = {
-    filename: t("dialogs.export.fileToken.originalName"), title: t("dialogs.export.fileToken.title"), caption: t("dialogs.export.fileToken.caption"), creator: t("dialogs.export.fileToken.creator"), copyright: t("dialogs.export.fileToken.copyright"),
-  datecaptured: t("dialogs.export.fileToken.dateTaken"), timecaptured: t("dialogs.export.fileToken.timeTaken"), year: t("dialogs.export.fileToken.year"), month: t("dialogs.export.fileToken.month"), day: t("dialogs.export.fileToken.day"),
-  camera: t("dialogs.export.fileToken.camera"), lens: t("dialogs.export.fileToken.lens"), iso: t("dialogs.export.fileToken.iso"), rating: t("dialogs.export.fileToken.rating"), seq: t("dialogs.export.fileToken.sequence"),
-};
 const loadOpen = (): Record<SectionId, boolean> => {
   try {
     const raw = JSON.parse(settings.get("immage.export.open") ?? "{}");
@@ -313,6 +305,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, naming, onClose]);
+
+  const tokenNames = fileTokenNames();
 
   // the file name the export gives the photo numbered `seq` of `total`,
   // without its extension
@@ -683,7 +677,7 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                       if (e.target.value) set("template", `${s.template}{${e.target.value}}`);
                     }}>
                       <option value="">{t("dialogs.export.insertPhotoInfo")}</option>
-                      {TOKENS.map((t) => <option key={t} value={t}>{FILE_TOKEN_NAMES[t] ?? t}</option>)}
+                      {TOKENS.map((t) => <option key={t} value={t}>{tokenNames[t] ?? t}</option>)}
                     </select>
                   </div>
                   <div className="row">

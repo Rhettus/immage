@@ -481,6 +481,14 @@ confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
 
+## Renaming photos in the Library grid
+
+`--case rename-photos` uses three disposable copies of the launch fixture. It
+checks that an existing filename blocks confirmation, then renames one photo
+and checks its bytes and XMP rating. It selects two photos, checks the photo
+count and one filename example, checks that selection follows the new
+names, and finds one renamed photo by its new filename.
+
 ## Recent library and culling workflows
 
 The focused cases added for the 0.46.0 library changes are `move-photos`,

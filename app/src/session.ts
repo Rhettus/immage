@@ -2382,16 +2382,17 @@ export class Session {
     this.onSaved?.(r.edited);
   }
 
-  async close() {
+  async close(confirmSave = false) {
     if (this.dead) return;
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     this.peek(null);
     await this.settled();
-    if (!this.unsaved) return;
-    this.unsaved = false;
+    // Rename needs a save acknowledgment even if the autosave already started.
+    if (!this.unsaved && !confirmSave) return;
     const r = await traced("save", () => commands.save());
+    this.unsaved = false;
     this.onSaved?.(r.edited);
   }
 }

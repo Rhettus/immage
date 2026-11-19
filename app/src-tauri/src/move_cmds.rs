@@ -880,6 +880,43 @@ fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open
     transfer_photo_indexed(u, dest, copy, keep, ctx, open, None)
 }
 
+type SearchSnapshot = (crate::search_cache::Asset, Vec<crate::search_cache::Variant>);
+
+fn search_snapshot(index: &crate::search_cache::SearchCache, source: &Path) -> Option<SearchSnapshot> {
+    let variants = index.path_variants(source.to_str()?).ok()?;
+    let asset = index.asset(variants.first()?.asset_id).ok()??;
+    let listed = Mutex::new(crate::cache::Listed::default());
+    for v in &variants {
+        let version = if v.copy_key.is_empty() { 0 } else { v.copy_key.strip_prefix("version:")?.parse().ok()? };
+        let (original, edited) = crate::cache::listed_metadata_fingerprints(&listed, source, version)?;
+        if original != asset.original_fingerprint || edited != v.edited_fingerprint {
+            // A recent rating/save may have invalidated only edited results.
+            // Refresh stamps before moving so unchanged original analysis
+            // can still travel with the verified file.
+            index.upsert_variant(source.to_str()?, &v.copy_key, &original, &edited, None, None, None).ok()?;
+        }
+    }
+    let variants = index.path_variants(source.to_str()?).ok()?;
+    let asset = index.asset(variants.first()?.asset_id).ok()??;
+    Some((asset, variants))
+}
+
+fn transfer_search_snapshot(
+    index: &crate::search_cache::SearchCache, (asset, variants): SearchSnapshot,
+    target: &Path, moved: bool,
+) -> Result<bool, String> {
+    let listed = Mutex::new(crate::cache::Listed::default());
+    let matches = variants.iter().all(|v| {
+        let version = if v.copy_key.is_empty() { Some(0) } else { v.copy_key.strip_prefix("version:").and_then(|s| s.parse().ok()) };
+        version.and_then(|version| crate::cache::listed_metadata_fingerprints(&listed, target, version))
+            .is_some_and(|(original, edited)| original == asset.original_fingerprint && edited == v.edited_fingerprint)
+    });
+    if matches {
+        return index.transferred(&asset.path, &text(target), &asset.original_fingerprint, &variants, moved);
+    }
+    Ok(false)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener,
     index: Option<&crate::search_cache::SearchCache>) -> TransferResult {
@@ -922,38 +959,11 @@ fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &C
     if ctx.cancelled() { return Err(CANCELLED.into()); }
     let rename = u.files[0].from.as_ref()
         .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), dest));
-    let snapshot = index.and_then(|index| {
-        let source = u.files.first()?.from.as_ref()?;
-        let variants = index.path_variants(source.to_str()?).ok()?;
-        let asset = index.asset(variants.first()?.asset_id).ok()??;
-        let listed = Mutex::new(crate::cache::Listed::default());
-        for v in &variants {
-            let version = if v.copy_key.is_empty() { 0 } else { v.copy_key.strip_prefix("version:")?.parse().ok()? };
-            let (original, edited) = crate::cache::listed_metadata_fingerprints(&listed, source, version)?;
-            if original != asset.original_fingerprint || edited != v.edited_fingerprint {
-                // A recent rating/save may have invalidated only edited results.
-                // Refresh stamps before moving so unchanged original analysis
-                // can still travel with the verified file.
-                index.upsert_variant(source.to_str()?, &v.copy_key, &original, &edited, None, None, None).ok()?;
-            }
-        }
-        let variants = index.path_variants(source.to_str()?).ok()?;
-        let asset = index.asset(variants.first()?.asset_id).ok()??;
-        Some((asset, variants))
-    });
+    let snapshot = index.and_then(|index| search_snapshot(index, u.files.first()?.from.as_ref()?));
     let result = transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open)?;
-    if let (Some(index), Some((asset, variants))) = (index, snapshot) {
-        let target = dest.join(&selected[0]);
-        let listed = Mutex::new(crate::cache::Listed::default());
-        let matches = variants.iter().all(|v| {
-            let version = if v.copy_key.is_empty() { Some(0) } else { v.copy_key.strip_prefix("version:").and_then(|s| s.parse().ok()) };
-            version.and_then(|version| crate::cache::listed_metadata_fingerprints(&listed, &target, version))
-                .is_some_and(|(original, edited)| original == asset.original_fingerprint && edited == v.edited_fingerprint)
-        });
-        if matches {
-            if let Err(e) = index.transferred(&asset.path, &text(&target), &asset.original_fingerprint, &variants, result.0) {
-                eprintln!("search cache transfer: {e}");
-            }
+    if let (Some(index), Some(snapshot)) = (index, snapshot) {
+        if let Err(e) = transfer_search_snapshot(index, snapshot, &dest.join(&selected[0]), result.0) {
+            eprintln!("search cache transfer: {e}");
         }
     }
     Ok(Some(result))
@@ -1172,6 +1182,447 @@ impl Drop for CancelEntry<'_> {
 pub(crate) fn move_cancel(state: State<'_, AppState>, job: u64) {
     if let Some(c) = state.move_cancels.lock().unwrap().get(&job) {
         c.store(true, Ordering::SeqCst);
+    }
+}
+
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RenameItem {
+    imgid: i64,
+    path: String,
+    stem: String,
+}
+
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RenameRow {
+    old_path: String,
+    new_path: String,
+    error: Option<String>,
+}
+
+#[derive(Serialize, Type)]
+pub(crate) struct RenameResult {
+    rows: Vec<RenameRow>,
+}
+
+fn rename_stem_valid(stem: &str) -> bool {
+    let device = stem.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
+    let numbered_device = ["COM", "LPT"].iter().any(|prefix| {
+        device.strip_prefix(prefix).is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"))
+    });
+    !stem.is_empty() && !stem.ends_with(['.', ' '])
+        && !stem.chars().any(|c| c.is_control() || "/\\:*?\"<>|".contains(c))
+        && !matches!(device.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        && !numbered_device
+}
+
+fn rename_destinations(unit: &Unit, stem: &str) -> Result<Vec<PathBuf>, String> {
+    if !rename_stem_valid(stem) {
+        return Err("Invalid filename".into());
+    }
+    let photo = &unit.files[0].rel;
+    let old_stem = photo.file_stem().and_then(|s| s.to_str()).ok_or("Invalid original filename")?;
+    unit.files.iter().map(|file| {
+        let name = file.rel.file_name().and_then(|s| s.to_str()).ok_or("Invalid sidecar filename")?;
+        let suffix = name.strip_prefix(old_stem).ok_or("Unrecognized sidecar name")?;
+        let new_name = format!("{stem}{suffix}");
+        if new_name.len() > 255 {
+            return Err("Filename is too long".into());
+        }
+        Ok(file.rel.with_file_name(new_name))
+    }).collect()
+}
+
+#[cfg(target_os = "linux")]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
+    let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
+    let result = unsafe {
+        libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+    };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+#[cfg(target_os = "macos")]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
+    let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+#[cfg(target_os = "windows")]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn MoveFileW(from: *const u16, to: *const u16) -> i32;
+    }
+    let from: Vec<_> = from.as_os_str().encode_wide().chain([0]).collect();
+    let to: Vec<_> = to.as_os_str().encode_wide().chain([0]).collect();
+    if unsafe { MoveFileW(from.as_ptr(), to.as_ptr()) } != 0 { Ok(()) }
+    else { Err(std::io::Error::last_os_error()) }
+}
+
+struct PlannedRename {
+    row: RenameRow,
+    unit: Option<Unit>,
+    names: Vec<PathBuf>,
+}
+
+fn existing_target(from: &Path, target: &Path) -> Result<(), String> {
+    if from == target { return Ok(()); }
+    match target.symlink_metadata() {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("{}: {e}", target.display())),
+        Ok(_) => {}
+    }
+    // On a case-insensitive volume the destination can be the source's own directory entry.
+    if reservation_key(from) == reservation_key(target) {
+        let entries = std::fs::read_dir(from.parent().ok_or("Missing source folder")?)
+            .map_err(|e| e.to_string())?;
+        let mut names = Vec::new();
+        for entry in entries {
+            let name = entry.map_err(|e| e.to_string())?.file_name();
+            if reservation_key(Path::new(&name)) == reservation_key(Path::new(target.file_name().unwrap())) {
+                names.push(name);
+            }
+        }
+        if names.len() == 1 && Some(names[0].as_os_str()) == from.file_name() {
+            return Ok(());
+        }
+    }
+    Err(format!("Already exists: {}", target.display()))
+}
+
+fn verify_sidecar_ownership(unit: &Unit, dir: &Path, names: &[PathBuf]) -> Result<(), String> {
+    let photo = &unit.files[0].rel;
+    for (file, name) in unit.files.iter().zip(names).skip(1) {
+        for (sidecar, owner) in [(&file.rel, photo), (name, &names[0])] {
+            let unversioned = sidecar.with_extension("");
+            if unversioned != *owner {
+                existing_target(Path::new(""), &dir.join(unversioned))?;
+            }
+        }
+    }
+    for owner in [photo, &names[0]] {
+        let Some(stem) = owner.file_stem().and_then(|stem| stem.to_str()) else { continue };
+        if let Some((base, version)) = stem.rsplit_once('_') {
+            if !base.is_empty() && !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()) {
+                let mut possible_parent = owner.with_file_name(base);
+                if let Some(extension) = owner.extension() {
+                    possible_parent.as_mut_os_string().push(".");
+                    possible_parent.as_mut_os_string().push(extension);
+                }
+                // A file named like this photo's version would share its sidecar.
+                existing_target(&dir.join(photo), &dir.join(possible_parent))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+// An orphaned version at the destination would otherwise attach to the renamed photo.
+fn check_rename_sidecar_namespace(unit: &Unit, dir: &Path, names: &[PathBuf]) -> Result<(), String> {
+    let target = &names[0];
+    let stem = target.file_stem().and_then(|s| s.to_str()).ok_or("Invalid target name")?;
+    let extension = target.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let original_extension = if extension.is_empty() { String::new() } else { format!(".{extension}") };
+    let xmp_end = format!("{original_extension}.xmp").to_lowercase();
+    let data_end = format!("{original_extension}.dtdata").to_lowercase();
+    let stem = stem.to_lowercase();
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let filename = entry.file_name().to_string_lossy().to_lowercase();
+        let Some((version, minimum)) = filename.strip_prefix(&stem).and_then(|suffix| {
+            suffix.strip_suffix(&xmp_end).map(|v| (v, 2))
+                .or_else(|| suffix.strip_suffix(&data_end).map(|v| (v, 1)))
+        }) else { continue; };
+        let belongs = version.is_empty() || version.strip_prefix('_')
+            .is_some_and(|digits| digits.len() >= minimum && digits.bytes().all(|b| b.is_ascii_digit()));
+        if belongs && !unit.files.iter().any(|file| file.from.as_deref() == Some(entry.path().as_path())) {
+            return Err(format!("A destination sidecar already exists: {}", entry.path().display()));
+        }
+    }
+    Ok(())
+}
+
+fn plan_rename(app: &AppHandle, items: Vec<RenameItem>) -> Vec<PlannedRename> {
+    let state = app.state::<AppState>();
+    let mut plans = Vec::new();
+    let mut reached = HashMap::new();
+    let mut sources = HashSet::new();
+    for item in items {
+        let path = Path::new(&item.path);
+        let mut row = RenameRow { old_path: item.path.clone(), new_path: item.path.clone(), error: None };
+        if !sources.insert(item.path.clone()) { continue; }
+        let details = (|| -> Result<(Unit, Vec<PathBuf>), String> {
+            let dir = path.parent().filter(|_| path.is_absolute()).ok_or("Invalid source path")?;
+            if !*reached.entry(dir.to_owned()).or_insert_with(|| volumes::answering(dir)) {
+                return Err(format!("Folder is unavailable: {}", dir.display()));
+            }
+            if item.imgid <= 0 { return Err("Expected a local photo".into()); }
+            let meta = state.engine("rename").request(json!({ "cmd": "meta", "imgid": item.imgid }))?;
+            if meta["image"]["path"].as_str() != Some(item.path.as_str()) {
+                return Err("The selected photo has changed".into());
+            }
+            if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
+                return Err("The source is no longer a regular file".into());
+            }
+            let sidecars = state.engine("rename").request(json!({ "cmd": "sidecars", "imgid": item.imgid }))?;
+            let files = sidecars["files"].as_array().ok_or("Could not list sidecars")?
+                .iter().filter_map(|file| file.as_str()).map(PathBuf::from).collect();
+            let unit = local_unit(path, vec![item.imgid], files, dir, false);
+            let names = rename_destinations(&unit, &item.stem)?;
+            row.new_path = text(&dir.join(&names[0]));
+            for (file, name) in unit.files.iter().zip(&names) {
+                let from = file.from.as_ref().unwrap();
+                if !from.symlink_metadata().is_ok_and(|m| m.is_file()) {
+                    return Err(format!("Not a regular file: {}", from.display()));
+                }
+                existing_target(from, &dir.join(name))?;
+            }
+            if row.old_path != row.new_path {
+                verify_sidecar_ownership(&unit, dir, &names)?;
+                check_rename_sidecar_namespace(&unit, dir, &names)?;
+            }
+            Ok((unit, names))
+        })();
+        match details {
+            Ok((unit, names)) => plans.push(PlannedRename { row, unit: Some(unit), names }),
+            Err(error) => {
+                row.error = Some(error);
+                plans.push(PlannedRename { row, unit: None, names: Vec::new() });
+            }
+        }
+    }
+
+    let mut claims = HashMap::new();
+    let mut conflicts = HashSet::new();
+    for (i, plan) in plans.iter().enumerate() {
+        let dir = Path::new(&plan.row.old_path).parent().unwrap_or(Path::new(""));
+        if let Some(unit) = &plan.unit {
+            for (file, name) in unit.files.iter().zip(&plan.names) {
+                let from = file.from.as_ref().unwrap();
+                let paths = [reservation_path(from), reservation_path(&dir.join(name))];
+                for path in paths {
+                    if let Some(other) = claims.insert(reservation_key(&path), i) {
+                        if other != i {
+                            conflicts.extend([i, other]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for i in conflicts {
+        plans[i].row.error = Some("Two selected files or sidecars use the same path".into());
+    }
+    plans
+}
+
+fn rename_unit_files(unit: &Unit, dir: &Path, names: &[PathBuf]) -> Result<(), String> {
+    let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let result = (|| -> Result<(), String> {
+        verify_sidecar_ownership(unit, dir, names)?;
+        check_rename_sidecar_namespace(unit, dir, names)?;
+        // Publish the photo last so a watcher cannot import the new path before its edits arrive.
+        let pairs = unit.files.iter().zip(names);
+        for (file, name) in pairs.clone().skip(1).chain(pairs.take(1)) {
+            let from = file.from.as_ref().unwrap();
+            let to = dir.join(name);
+            existing_target(from, &to)?;
+            if *from == to { continue; }
+            let expected = std::fs::symlink_metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+            if !expected.is_file() { return Err(format!("Not a regular file: {}", from.display())); }
+            let mut current = from.clone();
+            if reservation_key(from) == reservation_key(&to) {
+                let tmp = dir.join(format!(".immage-rename-{}-{}", std::process::id(), MARKER.fetch_add(1, Ordering::Relaxed)));
+                rename_no_replace(from, &tmp).map_err(|e| format!("{}: {e}", from.display()))?;
+                moved.push((from.clone(), tmp.clone()));
+                current = tmp;
+            }
+            rename_no_replace(&current, &to).map_err(|e| format!("{}: {e}", to.display()))?;
+            moved.push((current, to.clone()));
+            let actual = std::fs::symlink_metadata(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            if !actual.is_file() || crate::cache::stamp(&actual) != crate::cache::stamp(&expected) {
+                return Err(format!("Could not verify renamed file: {}", to.display()));
+            }
+        }
+        Ok(())
+    })();
+
+    if let Err(mut error) = result {
+        for (from, to) in moved.into_iter().rev() {
+            if let Err(e) = rename_no_replace(&to, &from) {
+                error.push_str(&format!("; {} could not be restored to {}: {e}", to.display(), from.display()));
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn rename_preview(app: AppHandle, items: Vec<RenameItem>) -> Result<RenameResult, String> {
+    tauri::async_runtime::spawn_blocking(move || RenameResult {
+        rows: plan_rename(&app, items).into_iter().map(|p| p.row).collect(),
+    }).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn rename_files(app: AppHandle, items: Vec<RenameItem>) -> Result<RenameResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut plans = plan_rename(&app, items);
+        let state = app.state::<AppState>();
+        let mut stopped = plans.iter().any(|p| p.row.error.is_some());
+        for plan in &mut plans {
+            if plan.row.old_path == plan.row.new_path || plan.row.error.is_some() { continue; }
+            if stopped {
+                plan.row.error = Some("Rename was not performed".into());
+                continue;
+            }
+            let unit = plan.unit.as_ref().unwrap();
+            let source = Path::new(&plan.row.old_path);
+            let target = Path::new(&plan.row.new_path);
+            let dir = source.parent().unwrap();
+            let Some(_reservation) = DestinationReservation::try_new(dir, &plan.names, unit) else {
+                plan.row.error = Some("A file is in use by another transfer".into());
+                stopped = true;
+                continue;
+            };
+            let index = state.search_cache.as_deref();
+            let snapshot = index.and_then(|index| search_snapshot(index, source));
+            if let Err(error) = rename_unit_files(unit, dir, &plan.names) {
+                plan.row.error = Some(error);
+                stopped = true;
+                continue;
+            }
+            if let Err(e) = state.engine("rename_files").request(json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
+                eprintln!("could not forget renamed photo {}: {e}", source.display());
+            }
+            if let Some(index) = index {
+                let preserved = snapshot
+                    .and_then(|snapshot| transfer_search_snapshot(index, snapshot, target, true).ok())
+                    == Some(true);
+                if !preserved {
+                    // Re-import through the ordinary metadata path so a Find result
+                    // remains discoverable even when there was no reusable index row.
+                    let _ = index.remove_path(&plan.row.old_path);
+                    let rebuilt = state.tagged.request_until(
+                        state.tagged.tag(), json!({ "cmd": "import", "files": [&plan.row.new_path] }),
+                        STALL, || false,
+                    );
+                    match rebuilt {
+                        Ok(reply) => if let Some(images) = reply["images"].as_array() {
+                            let listed = Mutex::new(crate::cache::Listed::default());
+                            crate::library_cmds::index_imported_metadata(Some(index), &listed, images);
+                        },
+                        Err(error) => eprintln!("could not reindex renamed photo {}: {error}", target.display()),
+                    }
+                }
+            }
+        }
+        RenameResult { rows: plans.into_iter().map(|p| p.row).collect() }
+    }).await.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+
+    #[test]
+    fn rename_keeps_versioned_edits_and_preserves_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("Photo.CR3");
+        let sidecars = ["Photo.CR3.xmp", "Photo_01.CR3.xmp", "Photo_01.CR3.dtdata"]
+            .map(|name| dir.path().join(name));
+        std::fs::write(&photo, "raw").unwrap();
+        for (i, path) in sidecars.iter().enumerate() {
+            std::fs::write(path, i.to_string()).unwrap();
+        }
+        let unit = local_unit(&photo, vec![1], sidecars.to_vec(), dir.path(), false);
+        let names = rename_destinations(&unit, "photo").unwrap();
+        rename_unit_files(&unit, dir.path(), &names).unwrap();
+        let entries: HashSet<_> = std::fs::read_dir(dir.path()).unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(entries, ["photo.CR3", "photo.CR3.xmp", "photo_01.CR3.xmp", "photo_01.CR3.dtdata"]
+            .map(str::to_string).into_iter().collect());
+        assert_eq!(std::fs::read(dir.path().join("photo.CR3")).unwrap(), b"raw");
+        assert_eq!(std::fs::read(dir.path().join("photo_01.CR3.dtdata")).unwrap(), b"2");
+    }
+
+    #[test]
+    fn rename_rolls_back_when_sidecar_is_missing_and_rejects_orphans() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("A.NEF");
+        let xmp = dir.path().join("A.NEF.xmp");
+        let numbered = dir.path().join("A_01.NEF.xmp");
+        std::fs::write(&photo, "original").unwrap();
+        std::fs::write(&xmp, "edit").unwrap();
+        std::fs::write(&numbered, "copy edit").unwrap();
+        let unit = local_unit(&photo, vec![1], vec![xmp.clone(), numbered.clone()], dir.path(), false);
+        let names = rename_destinations(&unit, "B").unwrap();
+        let orphan = dir.path().join("B_09.NEF.xmp");
+        std::fs::write(&orphan, "unrelated").unwrap();
+        assert!(rename_unit_files(&unit, dir.path(), &names).is_err());
+        assert_eq!(std::fs::read(&orphan).unwrap(), b"unrelated");
+        std::fs::remove_file(orphan).unwrap();
+        std::fs::remove_file(numbered).unwrap();
+        assert!(rename_unit_files(&unit, dir.path(), &names).is_err());
+        assert_eq!(std::fs::read(&photo).unwrap(), b"original");
+        assert_eq!(std::fs::read(&xmp).unwrap(), b"edit");
+        assert!(!dir.path().join("B.NEF").exists());
+        assert!(!dir.path().join("B.NEF.xmp").exists());
+    }
+
+    #[test]
+    fn verified_rename_rebases_search_metadata_and_keeps_clip_analysis() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("before.NEF");
+        let target = dir.path().join("after.NEF");
+        std::fs::write(&source, b"raw").unwrap();
+        let listed = Mutex::new(crate::cache::Listed::default());
+        let (original, edited) = crate::cache::listed_metadata_fingerprints(&listed, &source, 0).unwrap();
+        let index = crate::search_cache::SearchCache::open(&dir.path().join("search.sqlite")).unwrap();
+        let row = index.upsert_variant(&text(&source), "", &original, &edited, None, None, None).unwrap();
+        index.store_metadata(row.id, &json!({"path": text(&source), "filename": "before.NEF"}).to_string()).unwrap();
+        index.put_analysis(row.id, "original", &original, 1, "test-model", b"original").unwrap();
+        index.put_analysis(row.id, "edited", &edited, 1, "test-model", b"edited").unwrap();
+
+        let snapshot = search_snapshot(&index, &source).unwrap();
+        let unit = local_unit(&source, vec![1], Vec::new(), dir.path(), false);
+        let names = rename_destinations(&unit, "after").unwrap();
+        rename_unit_files(&unit, dir.path(), &names).unwrap();
+        assert!(transfer_search_snapshot(&index, snapshot, &target, true).unwrap());
+
+        assert!(!source.exists());
+        assert!(index.path_variants(&text(&source)).unwrap().is_empty());
+        let updated = index.variant(&text(&target), "").unwrap().unwrap();
+        assert_eq!((updated.asset_id, updated.id), (row.asset_id, row.id));
+        let rows = index.path_metadata(&text(&target)).unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&rows[0].3).unwrap();
+        assert_eq!(metadata["filename"], "after.NEF");
+        assert_eq!(metadata["path"], text(&target));
+        assert_eq!(index.analysis(row.id, "original", 1, "test-model").unwrap(), Some(b"original".to_vec()));
+        assert_eq!(index.analysis(row.id, "edited", 1, "test-model").unwrap(), Some(b"edited".to_vec()));
+    }
+
+    #[test]
+    fn rename_never_replaces_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&target, "target").unwrap();
+        assert!(rename_no_replace(&source, &target).is_err());
+        assert_eq!(std::fs::read(source).unwrap(), b"source");
+        assert_eq!(std::fs::read(target).unwrap(), b"target");
     }
 }
 

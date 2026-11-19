@@ -90,6 +90,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::move_cmds::move_plan,
         crate::move_cmds::move_files,
         crate::move_cmds::move_cancel,
+        crate::move_cmds::rename_preview,
+        crate::move_cmds::rename_files,
         crate::export_cmds::export_existing,
         crate::export_cmds::export_preview,
         crate::export_cmds::export_presets_load,

@@ -81,6 +81,8 @@ export const commands = {
 	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
 	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
 	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
+	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
+	renameFiles: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_files", { items }),
 	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
 	exportPreview: (item: ExportItem, options: ExportOptions, cap: number) => __TAURI_INVOKE<ArrayBuffer>("export_preview", { item, options, cap }),
 	exportPresetsLoad: () => __TAURI_INVOKE<PresetsFile | null>("export_presets_load"),
@@ -1078,6 +1080,22 @@ export type Refine = {
 	blur: number,
 	detail: number,
 	contrast: number,
+};
+
+export type RenameItem = {
+	imgid: number,
+	path: string,
+	stem: string,
+};
+
+export type RenameResult = {
+	rows: RenameRow[],
+};
+
+export type RenameRow = {
+	oldPath: string,
+	newPath: string,
+	error: string | null,
 };
 
 export type RenderRequest = {

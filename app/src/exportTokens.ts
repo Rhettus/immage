@@ -14,6 +14,15 @@ export const EMPTY_META: Meta = { title: "", description: "", creator: "", right
 export const TOKENS = ["filename", "title", "caption", "creator", "copyright", "datecaptured", "timecaptured",
                        "year", "month", "day", "camera", "lens", "iso", "rating", "seq"];
 
+export const DATE_FORMATS = ["YYYYMMDD", "YYYY-MM-DD", "YYYY_MM_DD", "YYMMDD", "DD-MM-YYYY", "MM-DD-YYYY"];
+
+// a file name's photo info, as the menu names it
+export const fileTokenNames = (): Record<string, string> => ({
+  filename: t("dialogs.export.fileToken.originalName"), title: t("dialogs.export.fileToken.title"), caption: t("dialogs.export.fileToken.caption"), creator: t("dialogs.export.fileToken.creator"), copyright: t("dialogs.export.fileToken.copyright"),
+  datecaptured: t("dialogs.export.fileToken.dateTaken"), timecaptured: t("dialogs.export.fileToken.timeTaken"), year: t("dialogs.export.fileToken.year"), month: t("dialogs.export.fileToken.month"), day: t("dialogs.export.fileToken.day"),
+  camera: t("dialogs.export.fileToken.camera"), lens: t("dialogs.export.fileToken.lens"), iso: t("dialogs.export.fileToken.iso"), rating: t("dialogs.export.fileToken.rating"), seq: t("dialogs.export.fileToken.sequence"),
+});
+
 // the photo info a caption can show, in groups, each with its name in the
 // menu (LRMogrify's token names, so its templates carry over)
 export const TEXT_TOKENS: [string, [string, string][]][] = [

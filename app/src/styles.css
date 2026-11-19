@@ -1119,6 +1119,11 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   background: var(--accent); color: var(--window); font-size: var(--fs-micro); font-weight: 700; text-align: center;
 }
 .photo-drag.copy .count::before { content: "+ "; }
+.rename-example { overflow-wrap: anywhere; }
+.rename-preview { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.rename-preview :is(th, td) { padding: 6px; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.rename-preview td { border-block-start: 1px solid var(--ui-border-444444, #444); }
+
 .modal.move-photos .move-dest { display: block; color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
 .modal.move-photos .move-clashes { list-style: none; margin: 0; padding: 0; max-height: 200px; overflow-y: auto; }
 .modal.move-photos .move-clashes .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

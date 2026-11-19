@@ -756,3 +756,25 @@ inside the same frame. Keywording is also available from the grid photo's
 context menu. With a multi-selection, right-clicking a selected photo keeps the
 selection as the keyword target; right-clicking an unselected photo targets only
 that photo and leaves the selection intact.
+
+## Rename photos
+
+In the Library grid or local Find results, right-click a photo and choose
+**Rename…**. Right-click inside a selection to rename the selected photos
+together. Immage keeps stacked RAW and JPEG partners on the same base name and
+renames a file only once when its virtual copies are selected as well.
+
+Type a new name or build one using the same photo info as the
+[Export filename pattern](export.md#file-name). For example, `{caption}-{seq}`
+combines the caption with a number in grid order, starting at `001`.
+`{originalname}` and `{filename}` both give the existing name before the
+extension. For a selection, the dialog shows how many photos are targeted.
+The example shows the new filename for the first photo, and Immage checks
+every proposed name before you confirm.
+
+Files stay in their folders and keep their extensions. Immage renames their XMP
+and edit-data sidecars too. If another file or sidecar already uses a proposed
+name, change the pattern before confirming. Immage verifies the new photo and
+sidecar paths before reporting success. If a rename fails partway through a
+batch, the dialog shows which files were renamed and where it stopped. Find
+results and thumbnails update to use the new paths.

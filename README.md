@@ -39,6 +39,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer.
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords.
+- Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos onto a folder to move or copy them along with their sidecars.
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a

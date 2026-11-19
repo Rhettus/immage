@@ -262,7 +262,7 @@ fn cached_folder_metadata(
 // Keep the already-extracted EXIF/library metadata in the disposable local
 // index. The engine's imgid is deliberately omitted: it exists only for this
 // process and must never become the persistent search identity.
-fn index_imported_metadata(
+pub(crate) fn index_imported_metadata(
     index: Option<&crate::search_cache::SearchCache>,
     listed: &std::sync::Mutex<cache::Listed>,
     images: &[Value],

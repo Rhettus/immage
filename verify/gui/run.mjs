@@ -254,6 +254,10 @@ try {
     report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
       files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
   }
+  if (selectedCases.includes('rename-photos')) {
+    const { renameFixtures } = await import('./specs/rename-photos.mjs');
+    report.renameFixtures = await renameFixtures(fixtures, copiedFixture);
+  }
   // the guide's Library grid shot needs a folder of photos: copies of the fixture
   if (selectedCases.includes('site-shots') && process.env.SITE_SHOTS?.split(',').map(s => s.trim()).includes('library-grid')) {
     const stem = basename(copiedFixture).replace(/\.[^.]+$/, ''), ext = basename(copiedFixture).slice(stem.length);

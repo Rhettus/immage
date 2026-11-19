@@ -1382,3 +1382,36 @@ filesystem stamps and JSON preparation happen outside `Job::commit`; only the
 SQLite compare-and-swap runs inside its publication guard. Tagged `meta` uses the
 thumbnail worker pool and background yield; untagged `meta` keeps the normal
 foreground path. Source stat runs before taking the global Exiv2/cache lock.
+
+## Library file rename
+
+The grid snapshots its local selection in display order. Each physical file
+gets one proposed stem. Stacked RAW/JPEG partners share a stem and sequence
+number. The dialog uses the Export filename expander for token patterns and
+submits the same proposed stems for validation and execution. The dialog
+displays one example, while validation checks the full batch.
+
+The typed `rename_preview` and `rename_files` commands resolve each handle
+against its expected path on a blocking worker. Both check the photo, versioned
+XMP files, edit-data sidecars, and destination names. The execution path runs
+after the frontend saves and closes any affected editor session and rediscovers
+sidecars at that point. It uses the existing Move reservations and platform
+no-replace operations. Case-only changes pass through a temporary name in the
+same folder.
+
+Execution verifies each destination's file type, size, and modification stamp
+before accepting the group. A group failure reverses completed steps in reverse
+order, reports any paths that could not be restored, and stops the rest of the
+batch. Previously completed groups remain renamed. A process interruption can
+leave an operation between steps.
+
+The reservation table mutex is released before file or database work. A
+verified search relocation preserves asset and variant IDs and CLIP analyses,
+and rewrites cached paths and filenames. If the fingerprints fail verification,
+the ordinary import path rebuilds the renamed entry. The frontend reloads the
+folder or Find query and resolves the selection and editor by path and version.
+The thumbnail cache naturally uses new keys because its keys include the path.
+
+Run the rename and transfer tests with `cargo test --locked move_cmds` from
+`app/src-tauri`. The tests cover no-overwrite behavior, rollback, sidecar
+contents, and search relocation with stored original and edited embeddings.
