@@ -50,6 +50,7 @@ struct Tree {
     display_target: PathBuf,
     dirs: Vec<PathBuf>,
     files: Vec<PathBuf>,
+    system_files: Vec<(PathBuf, Metadata)>,
     links: u32,
     merge: bool,
     _reservation: Option<DestinationReservation>,
@@ -143,6 +144,7 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
         display_target,
         dirs: vec![PathBuf::new()],
         files: Vec::new(),
+        system_files: Vec::new(),
         links: 0,
         merge,
         _reservation: reservation,
@@ -175,6 +177,12 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
                 directory_at(&tree.target.join(&rel), &dest_mount)?;
                 tree.dirs.push(rel);
             } else if kind.is_file() {
+                if is_system_file(&rel) {
+                    if let Some(m) = regular(&path)? {
+                        tree.system_files.push((rel, m));
+                    }
+                    continue;
+                }
                 if rel.to_str().is_none() {
                     return Err(format!(
                         "{} cannot be displayed in the confirmation",
@@ -194,6 +202,12 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
     }
     tree.files.sort_unstable();
     Ok(tree)
+}
+
+fn is_system_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == ".DS_Store" || name.eq_ignore_ascii_case("Thumbs.db"))
 }
 
 fn directory_at(path: &Path, mount: &Option<String>) -> Result<bool, String> {
@@ -379,12 +393,27 @@ fn fallback_rename(e: &io::Error) -> bool {
     {
         matches!(
             e.raw_os_error(),
-            Some(libc::EXDEV | libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)
-        )
+            Some(libc::EXDEV | libc::EINVAL | libc::ENOSYS | libc::ENOTSUP)
+        ) || e.raw_os_error() == Some(libc::EOPNOTSUPP)
     }
     #[cfg(windows)]
     {
         e.raw_os_error() == Some(17)
+    }
+}
+
+#[derive(Default)]
+struct CreatedDirectories(Vec<PathBuf>);
+
+impl Drop for CreatedDirectories {
+    fn drop(&mut self) {
+        for path in self.0.iter().rev() {
+            // A merge can include pre-existing folders and verified copies.
+            // Remove only directories we created, and only while empty.
+            if validate_parent(path).is_ok() {
+                let _ = fs::remove_dir(path);
+            }
+        }
     }
 }
 
@@ -423,11 +452,14 @@ fn transfer(
         check_aliases(&tree.source, parent, &tree.target, ctx)?;
     }
     let mount = volumes::mount_identity(parent);
+    let tree = Arc::new(tree);
+    let mut created = CreatedDirectories::default();
     for rel in &tree.dirs {
         tick(ctx)?;
         let path = tree.target.join(rel);
         if !directory_at(&path, &mount)? {
             io_at(&path, fs::create_dir(&path))?;
+            created.0.push(path);
         }
     }
     let approved: HashMap<_, _> = overwrite
@@ -454,7 +486,6 @@ fn transfer(
             here: false,
         });
     }
-    let tree = Arc::new(tree);
     let worker_tree = tree.clone();
     // Worker results hold only the two stat snapshots, keyed by relative
     // path. The mutex never covers a stat, copy, emit, or index operation.
@@ -562,6 +593,9 @@ fn transfer(
             validate_file(&tree.source.join(rel), original)?;
             validate_file(&tree.target.join(rel), verified)?;
         }
+        // Once source removal starts, destination directories may be the
+        // only remaining copy of the original directory structure.
+        created.0.clear();
         for (i, (rel, original, verified)) in placed.iter().enumerate() {
             tick(ctx)?;
             let source = tree.source.join(rel);
@@ -569,6 +603,14 @@ fn transfer(
             validate_file(&tree.target.join(rel), verified)?;
             io_at(&source, fs::remove_file(&source))?;
             progress(i + 1, placed.len(), 0, 0, "removing");
+        }
+        for (rel, original) in &tree.system_files {
+            tick(ctx)?;
+            let path = tree.source.join(rel);
+            if metadata(&path)?.is_some() {
+                validate_file(&path, original)?;
+                io_at(&path, fs::remove_file(&path))?;
+            }
         }
         for rel in tree.dirs.iter().rev() {
             tick(ctx)?;
@@ -581,6 +623,7 @@ fn transfer(
         }
         result.source_removed = metadata(&tree.source)?.is_none();
     }
+    created.0.clear();
     // For a merge, an untransferred sidecar can share a stamp with a
     // different edit. Wait for a retry to complete before re-keying those.
     if summary.skipped.is_empty() {
@@ -904,11 +947,89 @@ mod tests {
         let source = PathBuf::from(&req.source);
         let target = PathBuf::from(&req.dest).join("2026-05");
         fs::create_dir(&target).unwrap();
+        fs::create_dir(target.join("existing")).unwrap();
         fs::create_dir(target.join(".hidden")).unwrap();
         fs::write(source.join("notes.txt"), b"notes").unwrap();
         assert!(run(walk(req, true, &ctx).unwrap(), vec![], &ctx, &caches.thumbs).is_err());
         assert_eq!(fs::read(source.join(".hidden")).unwrap(), b"metadata");
         assert_eq!(fs::read(source.join("notes.txt")).unwrap(), b"notes");
+        assert!(target.join("existing").is_dir());
+        assert_eq!(fs::read(target.join("notes.txt")).unwrap(), b"notes");
+        assert!(!target.join("empty").exists());
+    }
+
+    #[test]
+    fn failure_during_setup_removes_the_new_destination_tree() {
+        let (_dir, req, caches) = fixture();
+        let ctx = context();
+        let tree = walk(req, true, &ctx).unwrap();
+        let target = tree.target.clone();
+        fs::remove_file(tree.source.join(".hidden")).unwrap();
+        assert!(transfer(
+            tree,
+            true,
+            vec![],
+            1,
+            &caches.thumbs,
+            &ctx,
+            |_, _, _, _, _| {},
+            |_, _, _| {}
+        )
+        .is_err());
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn copy_and_merge_move_skip_system_files() {
+        let (_dir, req, caches) = fixture();
+        let ctx = context();
+        let source = PathBuf::from(&req.source);
+        let target = PathBuf::from(&req.dest).join("2026-05");
+        for rel in [
+            ".DS_Store",
+            "empty/.DS_Store",
+            "Thumbs.db",
+            "empty/THUMBS.DB",
+        ] {
+            fs::write(source.join(rel), b"finder").unwrap();
+        }
+        let tree = walk(
+            FolderMoveRequest {
+                source: req.source.clone(),
+                dest: req.dest.clone(),
+            },
+            true,
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(tree.files, [PathBuf::from(".hidden")]);
+        transfer(
+            tree,
+            true,
+            vec![],
+            1,
+            &caches.thumbs,
+            &ctx,
+            |_, _, _, _, _| {},
+            |_, _, _| {},
+        )
+        .unwrap();
+        for rel in [
+            ".DS_Store",
+            "empty/.DS_Store",
+            "Thumbs.db",
+            "empty/THUMBS.DB",
+        ] {
+            assert!(!target.join(rel).exists());
+            assert!(source.join(rel).exists());
+        }
+        fs::write(target.join(".DS_Store"), b"destination finder").unwrap();
+        let result = run(walk(req, true, &ctx).unwrap(), vec![], &ctx, &caches.thumbs).unwrap();
+        assert!(result.source_removed);
+        assert_eq!(
+            fs::read(target.join(".DS_Store")).unwrap(),
+            b"destination finder"
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -921,6 +1042,7 @@ mod tests {
         }
         req.dest = text(other.path());
         let source = PathBuf::from(&req.source);
+        fs::write(source.join(".DS_Store"), b"finder").unwrap();
         let ctx = context();
         let result = run(walk(req, true, &ctx).unwrap(), vec![], &ctx, &caches.thumbs).unwrap();
         assert!(result.source_removed);
@@ -929,5 +1051,6 @@ mod tests {
             b"metadata"
         );
         assert!(!source.exists());
+        assert!(!other.path().join("2026-05/.DS_Store").exists());
     }
 }

@@ -278,12 +278,15 @@ The transfer includes photos and their sidecars, other regular files including
 hidden files, and empty subfolders. Symbolic links stay at the source. A move
 keeps the source folder if it still contains links or skipped files.
 
-A move on the same drive can rename the whole folder. For a copy, a move
-across drives, or a merge, Immage copies files in parallel using
+A move on the same drive can rename the whole folder, including Finder’s
+`.DS_Store` and Windows Explorer’s `Thumbs.db` files. For a copy, a move across
+drives, or a merge, Immage skips those files at every level, including uppercase
+and mixed-case spellings of `Thumbs.db`. It copies the other files in parallel using
 **Preferences > Performance > Memory > Library workers** and reads back each
 copy to verify its checksum. A move starts removing originals only after the
-copy phase succeeds. If you stop during copying, the originals stay and
-verified copies can be reused when you retry. If you stop during removal,
+copy phase succeeds. If copying fails or stops, the originals stay, verified
+copies can be reused when you retry, and Immage removes the empty destination
+folders it created when the drive is reachable. If you stop during removal,
 some originals may still be present. Use **Retry** or drag the folder again
 to continue. After a completed move, the Folders panel follows the new path.
 Cached Library thumbnails follow verified photos, including their virtual

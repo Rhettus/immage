@@ -55,6 +55,9 @@ Performance
 
 Bug fixes
 
+- Folder transfers skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`
+  when copying files. If copying fails, Immage cleans up newly created empty
+  destination folders when the drive is reachable.
 - Find finishes indexing photos that have only numbered darktable XMP sidecars.
 - Each Color Grading wheel drag is a single undo step, including on masks
   and in Advanced mode.
