@@ -47,6 +47,7 @@ import { advancedHidden } from './specs/advanced-hidden.mjs';
 import { advancedSync } from './specs/advanced-sync.mjs';
 import { advancedEditors } from './specs/advanced-editors.mjs';
 import { advancedColorCards } from './specs/advanced-color-cards.mjs';
+import { advancedChecker } from './specs/advanced-checker.mjs';
 import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
 import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
 import { advancedFileCards } from './specs/advanced-file-cards.mjs';
@@ -150,6 +151,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-sync': advancedSync,
   'advanced-editors': advancedEditors,
   'advanced-color-cards': advancedColorCards,
+  'advanced-checker': advancedChecker,
   'advanced-curve-cards': advancedCurveCards,
   'advanced-raw-cards': advancedRawCards,
   'advanced-file-cards': advancedFileCards,

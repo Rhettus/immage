@@ -17,6 +17,7 @@ import { ColorWheel } from "./ColorWheel";
 import { ModuleCurves } from "./ModuleCurves";
 import { ModuleLevels } from "./ModuleLevels";
 import { ModulePatches } from "./ModulePatches";
+import { ModuleChecker } from "./ModuleChecker";
 import { ModuleClusters } from "./ModuleClusters";
 import { ModuleBands } from "./ModuleBands";
 import { ModuleGraph } from "./ModuleGraph";
@@ -362,6 +363,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
               );
             });
           })()}
+          {open && !maskOwned && !simple && layout.op === "channelmixerrgb" && layout.group === "basic" && settle && (
+            <ModuleChecker key={instance.priority} priority={instance.priority} state={state}
+                           settle={settle} onFields={onFields} />
+          )}
         </div>
       </Collapse>
     </div>

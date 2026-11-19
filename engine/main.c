@@ -1363,6 +1363,7 @@ static const eng_cmd_t _commands[] =
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
   { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
+  { "checker_analyze", checker_analyze, _CMD_NEEDS_OPEN },
   { "colormapping_acquire", _cmd_colormapping_acquire, _CMD_NEEDS_OPEN },
   { "lut_folder", _cmd_lut_folder, 0 },
   { "thumb_threads", _cmd_thumb_threads, 0 },

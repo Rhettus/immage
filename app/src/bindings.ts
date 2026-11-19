@@ -143,6 +143,7 @@ export const commands = {
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
 	lutFiles: (priority: number, pick: boolean) => __TAURI_INVOKE<LutFiles | null>("lut_files", { priority, pick }),
+	checkerAnalyze: (chart: number, priority: number, optimization: number, scale: number, boxPoints: number[] | null, validate: boolean, imgid: number | null) => __TAURI_INVOKE<CheckerReply>("checker_analyze", { chart, priority, optimization, scale, boxPoints, validate, imgid }),
 	colormappingAcquire: (which: string, n: number) => __TAURI_INVOKE<ColormappingClusters>("colormapping_acquire", { which, n }),
 	lutFolder: (folder: string) => __TAURI_INVOKE<null>("lut_folder", { folder }),
 	pickFolder: (start: string) => __TAURI_INVOKE<string | null>("pick_folder", { start }),
@@ -346,6 +347,14 @@ export type ChannelStats = {
 	min: number,
 	mean: number,
 	max: number,
+};
+
+export type CheckerReply = {
+	radius: number | null,
+	ratio: number | null,
+	centers: number[] | null,
+	report: number[] | null,
+	fields: { [key in string]: number } | null,
 };
 
 export type ChosenFile = {

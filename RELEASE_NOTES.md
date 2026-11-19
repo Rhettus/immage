@@ -24,6 +24,9 @@ Improvements
   warnings when the two modules work against each other.
 - The Advanced white balance card can pick its coefficients from an area of the
   photo, with the From image area setting or its eyedropper.
+- Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced
+  Color calibration. Align the chart overlay, review the measured color error,
+  and apply the computed illuminant and channel matrix.
 - Color calibration can take its illuminant from the white balance module,
   darktable's new default for raw photos. Temp and Tint follow it. With any
   other illuminant, the white balance card locks the controls that no longer

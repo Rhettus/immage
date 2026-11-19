@@ -2257,7 +2257,7 @@ static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_m
     {
       if(pc->module->iop_order >= negadoctor->iop_order) break;
     }
-    else if(stage == _STAGE_COLORMAPPING || stage == _STAGE_TEMPERATURE)
+    else if(stage == _STAGE_COLORMAPPING || stage == _STAGE_TEMPERATURE || stage == _STAGE_CHECKER_INPUT)
     {
       // the anchor is the module itself: its input, not its output
       if(pc->module->iop_order >= anchor->iop_order) break;
@@ -2278,9 +2278,9 @@ static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_m
   return piece;
 }
 
-static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
+static gboolean _working_at_module(_working_t *w, const _stage_t stage, dt_iop_module_t *anchor, char **err)
 {
-  dt_iop_module_t *anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, _MASK_ANCHOR, 0);
+  if(!anchor) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, _MASK_ANCHOR, 0);
   // without a placement, what is unplaced is the anchor's output
   dt_iop_module_t *placement = stage == _STAGE_UNPLACED ? session_find_named(_ZONE_PLACEMENT_OP, _ZONE_PLACEMENT_NAME) : NULL;
   dt_iop_module_t *ashift = stage == _STAGE_ASHIFT ? dt_iop_get_module_by_op_priority(_s.dev.iop, "ashift", 0) : NULL;
@@ -2436,7 +2436,7 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   }
   // ahead of colorin there is no working profile, nor need of one: line
   // detection reads the camera's RGB as it is
-  if(stage != _STAGE_ASHIFT
+  if(stage != _STAGE_ASHIFT && stage != _STAGE_CHECKER_INPUT && stage != _STAGE_CHECKER_OUTPUT
      && !dt_develop_blendif_init_masking_profile(piece, &w->profile, DEVELOP_BLEND_CS_RGB_SCENE))
   {
     *err = g_strdup("no masking profile");
@@ -2449,6 +2449,16 @@ static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
   w->piece = piece;
   w->dsc = dsc;
   return TRUE;
+}
+
+static gboolean _working_at(_working_t *w, const _stage_t stage, char **err)
+{
+  return _working_at_module(w, stage, NULL, err);
+}
+
+gboolean masks_working_checker(_working_t *w, dt_iop_module_t *module, gboolean output, char **err)
+{
+  return _working_at_module(w, output ? _STAGE_CHECKER_OUTPUT : _STAGE_CHECKER_INPUT, module, err);
 }
 
 gboolean masks_working(_working_t *w, char **err)

@@ -43,6 +43,24 @@ def hostile_xmp():
             '</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>')
 
 
+# The pre-2014 24-patch chart, centered inside the overlay's initial box.
+CHECKER_COLORS = tuple(tuple(bytes.fromhex(rgb)) for rgb in (
+    "735244", "c29682", "627a9d", "576c43", "8580b1", "67bdaa",
+    "d67e2c", "505ba6", "c15a63", "5e3c6c", "9dbc40", "e0a32e",
+    "383d96", "469449", "af363c", "e7c71f", "bb5695", "0885a1",
+    "f3f3f2", "c8c8c8", "a0a0a0", "7a7a79", "555555", "343434",
+))
+
+
+def checker_pixel(x, y):
+    x, y = (x - 0.1) / 0.8, (y - 0.1) / 0.8
+    col, row = int(x * 6), int(y * 4)
+    if (0 <= col < 6 and 0 <= row < 4
+            and abs(x * 6 - col - 0.5) < 0.41 and abs(y * 4 - row - 0.5) < 0.41):
+        return CHECKER_COLORS[row * 6 + col]
+    return (36, 36, 36)
+
+
 def tiff(width, height, pattern, orientation=1, serial="", hostile=False):
     # Baseline little-endian TIFF, one uncompressed RGB strip, EXIF body serial.
     tags = [(256, 4, width), (257, 4, height), (258, 3, [8, 8, 8]),
@@ -105,6 +123,8 @@ def tiff(width, height, pattern, orientation=1, serial="", hostile=False):
             if pattern == "endpoints":
                 v = 0 if x < width // 2 else 255
                 rgb = (v, v, v)
+            elif pattern == "checker":
+                rgb = checker_pixel(x / width, y / height)
             elif pattern == "negative":
                 rgb = (255 - x * 180 // width, 190 - y * 130 // height, 120 - (x + y) * 80 // (width + height))
             else:
@@ -119,6 +139,7 @@ def generate(destination):
         "landscape": (640, 480, "color", 1, "BODY-A"),
         "portrait": (640, 480, "color", 6, "BODY-A"),
         "endpoints": (640, 480, "endpoints", 1, ""),
+        "checker": (768, 512, "checker", 1, ""),
         "negative": (640, 480, "negative", 1, ""),
         "camera-a": (640, 480, "color", 1, "BODY-A"),
         "camera-b": (640, 480, "color", 1, "BODY-B"),

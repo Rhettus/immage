@@ -1752,3 +1752,64 @@ for (const [sensor, exts, def, other] of [['xtrans', ['raf'], 1025, 1026], ['bay
     assert.ok(!a.equals(b), `methods ${def} and ${other} render the same 100% crop`);
   });
 }
+
+test('Color calibration profiles and validates a photographed chart', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advchecker-'));
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+
+  const { centers, radius, ratio } = await (async () => {
+    const sample = join(work, 'sample.jpg');
+    copyFileSync(SAMPLE, sample);
+    await e.call({ cmd: 'open', path: sample });
+    const charts = await Promise.all([0, 1, 2, 3, 4].map(chart => e.call({ cmd: 'checker_analyze', layout: true, chart })));
+    assert.deepEqual(charts.map(chart => chart.centers.length / 2), [24, 24, 24, 48, 48]);
+    return charts[0];
+  })();
+  const colors = [
+    '735244', 'c29682', '627a9d', '576c43', '8580b1', '67bdaa',
+    'd67e2c', '505ba6', 'c15a63', '5e3c6c', '9dbc40', 'e0a32e',
+    '383d96', '469449', 'af363c', 'e7c71f', 'bb5695', '0885a1',
+    'f3f3f2', 'c8c8c8', 'a0a0a0', '7a7a79', '555555', '343434',
+  ].map(color => Buffer.from(color, 'hex'));
+  const box = [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9];
+  const results = [];
+  // Uniform patch interiors should give the same fit across the engine's
+  // preview-size cap. Apply the fit before sampling the module's output.
+  for (const width of [768, 1536]) {
+    const height = width * 2 / 3;
+    const pixels = Buffer.alloc(width * height * 3, 36);
+    for (let patch = 0; patch < colors.length; patch++) {
+      const x = 0.1 + 0.8 * centers[2 * patch], y = 0.1 + 0.8 * centers[2 * patch + 1];
+      const rx = 0.78 * radius, ry = rx / ratio;
+      for (let j = Math.floor((y - ry) * height); j < Math.ceil((y + ry) * height); j++) {
+        const start = (j * width + Math.floor((x - rx) * width)) * 3;
+        const end = (j * width + Math.ceil((x + rx) * width)) * 3;
+        pixels.fill(colors[patch], start, end);
+      }
+    }
+    const path = join(work, `chart-${width}.ppm`);
+    writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`), pixels]));
+    const { imgid } = await e.call({ cmd: 'open', path });
+    const write = params => e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params, enabled: true });
+    await write({});
+    const fit = await e.call({ cmd: 'checker_analyze', box, imgid });
+    assert.ok(fit.report[0] < fit.report[2], 'the fit improves mean color error');
+    assert.equal(fit.fields.illuminant, 7, 'the fit selects a custom illuminant');
+    const params = { ...fit.fields, checker_box_set: 1, ...Object.fromEntries(box.map((v, index) => [`checker_box[${index}]`, v])) };
+    await write(params);
+    const checked = await e.call({ cmd: 'checker_analyze', box, imgid, validate: true });
+    assert.equal(checked.fields, undefined, 'validation only measures the output');
+    assert.ok(checked.report[0] < fit.report[2], 'the module output improves mean color error');
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path, imgid });
+    const saved = (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': Object.keys(params) } })).modules['channelmixerrgb@0'].params;
+    for (const [key, value] of Object.entries(params))
+      assert.ok(Math.abs(saved[key] - value) < 1e-4, `${key} survives saving and reopening`);
+    results.push({ fit: fit.report[0], checked: checked.report[0] });
+    await assert.rejects(e.call({ cmd: 'checker_analyze', box: Array(8).fill(0.5) }), /invalid color checker corners/);
+  }
+  assert.ok(Math.abs(results[0].fit - results[1].fit) < 0.03, 'the fit agrees across source resolutions');
+  assert.ok(Math.abs(results[0].checked - results[1].checked) < 0.03, 'validation agrees across source resolutions');
+});

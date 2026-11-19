@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -163,6 +163,20 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     }
     let reply = state.engine("upright").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn checker_analyze(
+    state: State<'_, AppState>, chart: Number, priority: Number, optimization: Number,
+    scale: Number, box_points: Option<Vec<Number>>, validate: bool, imgid: Option<i64>,
+) -> Result<CheckerReply, String> {
+    let reply = state.engine("checker_analyze").request(json!({
+        "cmd": "checker_analyze", "chart": chart, "priority": priority,
+        "optimization": optimization, "scale": scale, "layout": box_points.is_none(),
+        "box": box_points, "validate": validate, "imgid": imgid,
+    }))?;
+    serde_json::from_value(reply).map_err(|e| format!("checker_analyze: unexpected reply: {e}"))
 }
 
 // the Color mapping card's acquire as source or target (the engine's

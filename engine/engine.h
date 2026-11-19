@@ -235,7 +235,8 @@ typedef struct _working_t
 // in it; the Zone System placement's input, which it has not placed yet;
 // rotate and perspective's input, larger, for Upright's line detection; or
 // negadoctor's input, the negative as its pickers read it; or color
-// mapping's input, in Lab, which its acquire buttons analyze
+// mapping's input, in Lab, which its acquire buttons analyze; or the selected
+// color calibration instance's input or output for chart profiling
 typedef enum _stage_t
 {
   _STAGE_ANCHOR,
@@ -245,6 +246,8 @@ typedef enum _stage_t
   _STAGE_NEGADOCTOR,
   _STAGE_COLORMAPPING,
   _STAGE_TEMPERATURE,
+  _STAGE_CHECKER_INPUT,
+  _STAGE_CHECKER_OUTPUT,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -405,6 +408,9 @@ gboolean files_write(dt_iop_module_t *mod, const char *name, const double num, c
 void files_set_lut_folder(const char *folder);
 gboolean files_lut(JsonObject *req, JsonBuilder *b, char **err);
 gboolean files_watermarks(JsonBuilder *b, char **err);
+gboolean masks_working_checker(_working_t *w, dt_iop_module_t *module, gboolean output, char **err);
+gboolean checker_analyze(JsonObject *req, JsonBuilder *b, char **err);
+
 // cmapping.c: color mapping's acquired clusters, edited as the number the
 // engine gives them: `cm_source` and `cm_target` (0 is none), and the acquire
 // itself, which analyzes the module's input and replies that number

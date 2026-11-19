@@ -7,6 +7,7 @@ import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 
 
 
+import { CheckerViewer } from "./ModuleChecker";
 import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
 import { advancedEdits } from "./advancedEdits";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
@@ -2475,7 +2476,7 @@ export default function App() {
       layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
       if (!mb) continue;
       layerStyle(mb, "left", `${ox / dpr}px`);
       layerStyle(mb, "top", `${oy / dpr}px`);
@@ -2698,6 +2699,13 @@ export default function App() {
   const uprightBusyRef = useRef(false);
   const guideBox = useRef<HTMLDivElement>(null);
   const negBox = useRef<HTMLDivElement>(null);
+  const checkerBox = useRef<HTMLDivElement | null>(null);
+  const [checkerHost, setCheckerHost] = useState<HTMLDivElement | null>(null);
+  const setCheckerBox = useCallback((el: HTMLDivElement | null) => {
+    checkerBox.current = el;
+    setCheckerHost(el);
+  }, []);
+  const [checkerActive, setCheckerActive] = useState<string | null>(null);
   // the guides where they show, mapped from the input image after each frame
   const [guidesShown, setGuidesShown] = useState<Guide[]>([]);
   const baseOf = (r: UprightFit): [string, number][] =>
@@ -6511,6 +6519,9 @@ export default function App() {
   }, [photoDir]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
+    <CheckerViewer.Provider value={{ host: current && !grid && !cropping && !preview && !before && !holding
+      && !sheet && !cellsPage && baMode === "off" && compare === null ? checkerHost : null,
+      active: checkerActive, setActive: setCheckerActive, photo: current }}>
     <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
     {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label={t("app.action.pasting")}
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
@@ -6638,7 +6649,7 @@ export default function App() {
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
         <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
-              onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!onLoupePickDown(e)) onStraightenDown(e); }}
+              onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!(e.target as Element).closest(".checker-corner") && !onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
           {wbBox && <div className="wb-area-box" style={wbBox} />}
@@ -6746,6 +6757,7 @@ export default function App() {
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
               </div>
             )}
+            <div className="mask-box checker-box" ref={setCheckerBox} />
             {negWhole && !cropping && full.current && (
               <div className="mask-box" ref={negBox}>
                 {negArea && (
@@ -7649,6 +7661,7 @@ export default function App() {
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
     </div>
+    </CheckerViewer.Provider>
   );
 }
 

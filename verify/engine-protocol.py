@@ -55,7 +55,7 @@ ROOT = background.ROOT
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object analysis_preview baseline_end before cancel_base capture_times clip_embed close color_profiles
-colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget forget_folder get
+checker_analyze colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget forget_folder get
 hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
@@ -204,6 +204,9 @@ def photo_edits(img):
     """Requests on the open photo's edit: every one answers `no image open`
     with none."""
     return [
+        R('checker_analyze', chart=0, layout=True, label='checker_analyze chart layout'),
+        R('checker_analyze', box=[0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9], scale=0.9,
+          label='checker_analyze profile estimate'),
         R('history'), R('history', saved=True, label='history saved'),
         R('get', label='get none'),
         R('get', modules={'exposure': ['exposure']}, label='get exposure'),
@@ -287,6 +290,8 @@ def photo_edits(img):
           label='spot_source circle'),
         R('sample', label='sample default'),
         R('sample', x=0.25, y=0.75, box=[0.2, 0.2, 0.4, 0.4], label='sample box'),
+        R('checker_analyze', chart=6, layout=True, label='checker_analyze unknown chart'),
+        R('checker_analyze', box=[0.5] * 8, label='checker_analyze invalid box'),
         R('colormapping_acquire', which='source', n=3, label='colormapping_acquire source'),
         R('colormapping_acquire', which='target', n=5, label='colormapping_acquire target'),
         R('colormapping_acquire', which='bogus', n=3, label='colormapping_acquire unknown side'),

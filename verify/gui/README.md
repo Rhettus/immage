@@ -109,6 +109,12 @@ Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera
 cases open Find's rows and their inline editors. Whether each case has passed live is
 recorded in `suites.mjs` (`liveValidated`) and its verification note.
 
+## Color calibration chart
+
+Run `--case advanced-checker --fixture checker` to check the chart overlay and
+corner dragging, then compute, apply, validate and undo the profile on a
+synthetic 24-patch target.
+
 ## Positive hot-pixel fixture
 
 Ordinary RAW photos may have no visible hot pixels. Generate an isolated,

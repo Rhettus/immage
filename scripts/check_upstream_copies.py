@@ -25,6 +25,11 @@ DARKTABLE = ROOT / "darktable"
 # \s+ lets the header's comment wrapping fall between words.
 COPIES = [
     (
+        "engine/checker.c",
+        ["src/iop/channelmixerrgb.c", "src/chart/common.c"],
+        r"copied\s+from\s+src/iop/channelmixerrgb\.c\s+at\s+([0-9a-f]{7,40})",
+    ),
+    (
         "engine/upright.c",
         ["src/iop/ashift.c", "src/iop/ashift_lsd.c", "src/iop/ashift_nmsimplex.c"],
         r"copied\s+here\s+unchanged\s+from\s+src/iop/ashift\.c\s+at\s+([0-9a-f]{7,40})",

@@ -7,6 +7,7 @@ import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import type { Turn } from "./manifest";
+import { checkerBoxPaths } from "./ModuleChecker";
 import { patchPaths } from "./colorchecker";
 import { clusterPaths } from "./colormapping";
 import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
@@ -115,7 +116,7 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
   const levels = layout.levels ? [0, 1, 2].flatMap((c) => [0, 1, 2].map((k) => `levels[${c}][${k}]`)) : [];
   const b = layout.bands;
   const bands = b ? Array.from({ length: b.channels }, (_, c) => Array.from({ length: b.count }, (__, k) => [`x[${c}][${k}]`, `y[${c}][${k}]`]).flat()).flat() : [];
-  return [...layout.fields.flatMap(layoutPaths), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.clusters ? clusterPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+  return [...layout.fields.flatMap(layoutPaths), ...(layout.op === "channelmixerrgb" ? ["x", "y", ...checkerBoxPaths] : []), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.clusters ? clusterPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 

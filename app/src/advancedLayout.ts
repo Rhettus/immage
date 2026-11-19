@@ -331,8 +331,7 @@ export const LAYOUTS: ModuleLayout[] = [
     // what the CAT page shows. the auto-detect illuminants (8, 9) need
     // AI_ACTIVATED, which channelmixerrgb.c leaves undefined. left out: the
     // hue and chroma sliders of the custom illuminant (darktable converts
-    // them to x and y), the CCT label, picker, area color mapping and color
-    // checker sections; an "as shot in camera" illuminant greys adaptation
+    // them to x and y), the CCT label, picker and area color mapping; an "as shot in camera" illuminant greys adaptation
     // out, which depends on the photo
     op: "channelmixerrgb", group: "basic", title: "Color calibration",
     fields: CALIBRATION,

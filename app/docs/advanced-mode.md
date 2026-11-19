@@ -142,9 +142,25 @@ Besides exposure, the Basic group has these darktable modules:
   input channels into each output channel; **Colorfulness**, **Brightness** and
   **Gray** set the input weights of each, all with **Normalize channels**. Not
   yet on the card: the hue and chroma of a custom illuminant, the color
-  picker, area color mapping and color checker calibration. Simple's Black &
+  picker and area color mapping. Simple's Black &
   White conversion uses an instance of its own, which shows in the B&W group
   rather than here.
+
+  To profile a photographed chart, enable **Color calibration** and open
+  **Calibrate with a color checker**. Select your Xrite, Calibrite, or Datacolor
+  chart and drag the four overlay handles to its outer corners, starting at
+  the top left and going clockwise. Fit the photo to see all four handles
+  when the box first appears.
+  Select **Optimize for** to prioritize specific colors or minimize color error.
+  Adjust **Patch scale** so the outlined sampling areas stay within the patches
+  and clear shadows or reflections. **Recompute** measures the chart at the
+  module's input and shows the estimated illuminant, channel matrix, and average
+  and maximum ΔE (color error) before and after correction. **Accept** applies
+  the profile as one undoable edit. **Validate** measures the chart at the
+  module's output so you can check the calibration after applying it. Immage
+  saves the chart corners with the photo's Color calibration settings after a
+  successful measurement, so you can return to the same alignment later.
+
 - **Highlight reconstruction**: **Method** and **Clipping threshold**, then
   the settings of the method chosen: segmentation's combine, candidating and
   rebuild (with strength and noise level), or guided laplacians' noise level,

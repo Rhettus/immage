@@ -141,6 +141,15 @@ pub struct UprightReply {
     pub fit: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Type)]
+pub struct CheckerReply {
+    pub radius: Option<Number>,
+    pub ratio: Option<Number>,
+    pub centers: Option<Vec<Number>>,
+    pub report: Option<Vec<Number>>,
+    pub fields: Option<BTreeMap<String, Number>>,
+}
+
 // `colormapping_acquire`: the clusters found. mean and var are a, b pairs
 // for the five slots, weight one per slot (the first n are used)
 #[derive(Serialize, Deserialize, Type)]
