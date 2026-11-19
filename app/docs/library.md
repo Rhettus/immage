@@ -812,7 +812,11 @@ Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
 toggle zoom. Embedded detail is limited to the camera preview's native
 resolution. Double-click opens the displayed photo in the editor.
 
-Turn on **Camera previews** in the lightbox toolbar to use embedded camera
+The tag icon opens **Keywords** (also available with **K**), and the sliders
+icon opens the photo in the editor.
+
+Turn on **Camera previews** with the camera icon in the lightbox toolbar. The
+icon is highlighted when the option is on. This uses embedded camera
 previews for edited RAWs in Fit, including during read-ahead. The toggle
 starts off when you open the Library grid. If a camera preview is unavailable,
 Fit shows the edited render. **100%** still shows the edited image. Your saved

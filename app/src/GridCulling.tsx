@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { X } from "lucide-react";
+import { Camera, SlidersHorizontal, Tag, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
@@ -373,11 +373,14 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
             <span className="culling-photo-count">{formatNumber(images.indexOf(current) + 1)}/{formatNumber(images.length)}</span>
           </div>
           <div className="culling-actions">
-            <button type="button" aria-pressed={cameraPreviews} className="culling-camera-preview"
+            <button type="button" className="tool" aria-pressed={cameraPreviews}
+              aria-label={t("library.culling.cameraPreviews")}
               title={t("library.culling.cameraPreviewsHint")}
-              onClick={() => setCameraPreviews(value => !value)}>{t("library.culling.cameraPreviews")}</button>
-            <button onClick={() => void keywords([current])}>{t("library.culling.keywords")}</button>
-            <button onClick={() => onEdit(current)}>{t("library.culling.edit")}</button>
+              onClick={() => setCameraPreviews(value => !value)}><Camera size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-label={t("library.culling.keywords")}
+              title={t("library.culling.keywords")} onClick={() => void keywords([current])}><Tag size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-label={t("library.culling.edit")}
+              title={t("library.culling.edit")} onClick={() => onEdit(current)}><SlidersHorizontal size={16} aria-hidden="true" /></button>
             <button type="button" className="tool" aria-label={t("library.culling.close")}
               title={t("library.culling.close")} onClick={() => setPhoto(null)}><X size={16} aria-hidden="true" /></button>
           </div>

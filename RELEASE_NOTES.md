@@ -9,6 +9,8 @@ Improvements
 
 - The lightbox can show embedded camera previews for edited RAWs in Fit.
   Use 100% detail to inspect the edited image.
+- The lightbox toolbar uses icons for Camera previews, Keywords, and Edit.
+  The camera icon highlights when Camera previews is active.
 - The Advanced mode button shows a green dot for active module edits that
   Simple cannot show. Hover over the button to see the module names.
 - Drag whole folders onto another folder, including a NAS destination. Immage

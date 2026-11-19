@@ -452,6 +452,34 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(hasPreview), 'toolbar button opens the culling preview');
   const opened = await t.driver.observe(lightboxName);
   assert(opened && opened.startsWith(cells[1].title), `opened on the selected photo (${opened} vs ${cells[1].title})`);
+  const actions = '.culling-actions';
+  const camera = `${actions} button[aria-label="Camera previews"]`;
+  const keywords = `${actions} button[aria-label="Keywords (K)"]`;
+  const edit = `${actions} button[aria-label="Edit"]`;
+  const icons = await t.driver.observe(selectors => selectors.map(selector => {
+    const button = document.querySelector(selector);
+    return !!button?.querySelector('svg') && !button.textContent.trim() && !!button.title;
+  }), [camera, keywords, edit]);
+  assert(icons.every(Boolean), 'camera, keywords and edit are icon buttons with tooltips');
+  const cameraState = selector => {
+    const button = document.querySelector(selector);
+    return { pressed: button.getAttribute('aria-pressed'), color: getComputedStyle(button).color };
+  };
+  const off = await t.driver.observe(cameraState, camera);
+  assert.equal(off.pressed, 'false', 'camera previews start off');
+  await click(t, camera);
+  await t.driver.move(button.x, button.y);
+  const on = await t.driver.observe(cameraState, camera);
+  assert.equal(on.pressed, 'true', 'camera button enables camera previews');
+  assert.notEqual(on.color, off.color, 'active camera icon is highlighted');
+  await t.evidence('culling-camera-preview-active');
+  await click(t, camera);
+  assert.equal((await t.driver.observe(cameraState, camera)).pressed, 'false', 'camera button disables camera previews');
+  await click(t, keywords);
+  const dialog = '[data-grid-keywords-dialog]';
+  await until(() => t.driver.observe(selector => !!document.querySelector(selector), dialog), 'tag icon opens Keywords');
+  await click(t, `${dialog} button[aria-label="Close (F / Esc)"]`);
+  await until(() => t.driver.observe(selector => !document.querySelector(selector), dialog), 'Keywords closes');
   await t.evidence('culling-toolbar-button');
   await t.driver.keys('\uE00C');
   await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
@@ -465,8 +493,8 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(hasPreview), 'thumbnail icon opens the culling preview');
   const second = await t.driver.observe(lightboxName);
   assert(second && second.startsWith(cells[2].title), `opened on the clicked photo (${second} vs ${cells[2].title})`);
-  await t.driver.keys('\uE00C');
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes again');
+  await click(t, edit);
+  await until(() => t.driver.observe(() => !document.querySelector('.culling-lightbox, .filmstrip.grid')), 'sliders icon opens the editor');
   t.measure({ name: 'grid-culling-controls', toolbar: opened, thumbnail: second });
 }
 
