@@ -260,11 +260,14 @@ fn reconcile(
             });
         }
         for v in old {
-            if let Some(version) = v
-                .copy_key
-                .strip_prefix("version:")
-                .and_then(|n| n.parse::<i64>().ok())
-            {
+            let version = if v.copy_key.is_empty() {
+                Some(0)
+            } else {
+                v.copy_key
+                    .strip_prefix("version:")
+                    .and_then(|n| n.parse::<i64>().ok())
+            };
+            if let Some(version) = version {
                 if !versions.contains(&version) {
                     job.commit(|| index.remove_variant(path, &v.copy_key))
                         .transpose()?;
@@ -399,6 +402,22 @@ mod tests {
             .unwrap()));
         rx.recv_timeout(Duration::from_secs(3)).unwrap().unwrap();
     }
+    #[test]
+    fn only_numbered_sidecars_replace_a_stale_version_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = Arc::new(SearchCache::open(&dir.path().join("index.sqlite")).unwrap());
+        let root = dir.path().join("photos");
+        std::fs::create_dir(&root).unwrap();
+        let photo = root.join("PA150006.ORF");
+        std::fs::write(&photo, b"raw").unwrap();
+        std::fs::write(root.join("PA150006_01.ORF.xmp"), b"edit").unwrap();
+        let path = photo.to_str().unwrap();
+        index.upsert_variant(path, "", "old", "old", None, None, None).unwrap();
+        run(index.clone(), root, Some("/"), "/", true, vec![]);
+        assert!(index.variant(path, "").unwrap().is_none());
+        assert!(index.variant(path, "version:1").unwrap().is_some());
+    }
+
     #[test]
     fn offline_wrong_mount_unknown_mount_and_incomplete_scans_never_delete() {
         let dir = tempfile::tempdir().unwrap();

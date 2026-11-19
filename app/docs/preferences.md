@@ -464,7 +464,8 @@ that follows the optional CLIP model (see Smart search (CLIP) in General).
 
 - **Metadata** shows cached photos, versions, metadata records and analyses.
   **Clear** removes these disposable records; browsing and later startup checks
-  refill the cache. **Rebuild** also queues a fresh check of your saved folders.
+  refill the cache. **Rebuild** clears these records together, then queues a
+  fresh check of your saved folders. The counts refill as background work runs.
   Neither action changes your photos or sidecars. Model files are retained.
 - **Pause / Resume** controls new background file checks and analysis. Active
   work finishes, and browsing remains available. The pause setting is remembered

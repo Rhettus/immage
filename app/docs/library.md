@@ -152,6 +152,9 @@ background work is paused. Active grid filters update immediately
 when metadata changes. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
+A photo with only numbered darktable XMP sidecars is indexed under those saved
+versions. Keeping the numbered sidecar preserves its edits and metadata.
+
 Local search includes cached originals and saved virtual copies, using only
 current metadata and model-versioned analysis. Temporary previews are not saved
 copy versions. If the photo index changes while a search runs (during

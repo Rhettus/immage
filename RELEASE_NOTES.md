@@ -39,8 +39,13 @@ Improvements
   lists scroll in their own box. Load and Save filter stay at the bottom with
   the photo count.
 
+Performance
+
+- Clearing or rebuilding the local photo cache is faster for large libraries.
+
 Bug fixes
 
+- Find finishes indexing photos that have only numbered darktable XMP sidecars.
 - Each Color Grading wheel drag is a single undo step, including on masks
   and in Advanced mode.
 - Module cards under Masks in Advanced mode show darktable presets. Applying

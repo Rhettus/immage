@@ -355,7 +355,13 @@ impl Listed {
     pub fn versions(&self, photo: &Path) -> Option<Vec<i64>> {
         if !self.dirs.contains(photo.parent()?) { return None; }
         let mut versions = self.sidecar_versions.get(photo).cloned().unwrap_or_default();
-        versions.push(0); versions.sort_unstable(); versions.dedup();
+        // Darktable uses the first numbered sidecar as the imported image
+        // when there is no unnumbered sidecar.
+        if versions.is_empty() || self.stamps.contains_key(&sidecar(photo, 0)) {
+            versions.push(0);
+        }
+        versions.sort_unstable();
+        versions.dedup();
         Some(versions)
     }
 
@@ -741,6 +747,15 @@ mod tests {
             (sidecar(&photo, 1_000_000), Some("snapshot".into())),
         ]);
         assert_eq!(listed.versions(&photo), Some(vec![0, 2]));
+    }
+
+    #[test]
+    fn listed_versions_use_the_only_numbered_sidecar() {
+        let dir = test_dir("cache-numbered-sidecar");
+        let photo = dir.join("PA150006.ORF");
+        let mut listed = Listed::default();
+        listed.add(&dir, [(sidecar(&photo, 1), Some("edit".into()))]);
+        assert_eq!(listed.versions(&photo), Some(vec![1]));
     }
 
     // a name from the folder's listing is the one a stat gives, so the

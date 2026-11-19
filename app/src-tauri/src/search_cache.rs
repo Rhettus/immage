@@ -835,12 +835,14 @@ impl SearchCache {
     /// Clear disposable rows while retaining root identity and AUTOINCREMENT
     /// sequences. Late work cannot accidentally target a newly reused ID.
     pub fn clear(&self) -> Result<(), String> {
-        self.db
+        let mut db = self.db
             .lock()
-            .map_err(|_| "search cache lock poisoned")?
-            .execute_batch("DELETE FROM assets; DELETE FROM render_failures;")
+            .map_err(|_| "search cache lock poisoned")?;
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        // Delete analyses once so foreign-key cascades do not repeatedly scan them.
+        tx.execute_batch("DELETE FROM analyses; DELETE FROM assets; DELETE FROM render_failures;")
             .map_err(|e| e.to_string())?;
-        Ok(())
+        tx.commit().map_err(|e| e.to_string())
     }
     pub fn assets(&self) -> Result<Vec<Asset>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;

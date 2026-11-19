@@ -1236,6 +1236,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let photo = temp.path().join("a.tif");
         std::fs::write(&photo, b"pixels").unwrap();
+        std::fs::write(temp.path().join("a.tif.xmp"), b"original edit").unwrap();
         let index = crate::search_cache::SearchCache::open(&temp.path().join("cache.sqlite")).unwrap();
         let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
         let mut original = fixture[2]["reply"]["images"][0].clone();
