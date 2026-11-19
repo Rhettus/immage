@@ -916,6 +916,19 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
+    pub(crate) fn folder_assets(&self, folder: &Path) -> Result<Vec<Asset>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let prefix = folder.to_string_lossy();
+        let mut query = db.prepare(
+            "SELECT id,path,original_fingerprint FROM assets WHERE substr(path,1,length(?1))=?1"
+        ).map_err(|e| e.to_string())?;
+        let rows = query.query_map([prefix.as_ref()], |r| Ok(Asset {
+            id: r.get(0)?, path: r.get(1)?, original_fingerprint: r.get(2)?,
+        })).map_err(|e| e.to_string())?;
+        let assets: Vec<Asset> = rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+        Ok(assets.into_iter().filter(|asset| Path::new(&asset.path).starts_with(folder)).collect())
+    }
+
     pub fn path_variants(&self, path: &str) -> Result<Vec<Variant>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
         let mut q=db.prepare("SELECT variants.id,asset_id,copy_key,edited_fingerprint,capture_time_ns,capture_time_raw,timezone_offset_seconds

@@ -727,6 +727,66 @@ gboolean library_forget(const dt_imgid_t imgid, char **err)
   return TRUE;
 }
 
+// Drop imported IDs under a moved folder. No filesystem calls are needed.
+gboolean library_forget_folder(const char *path, char **err)
+{
+  if(!path || !*path)
+  {
+    *err = g_strdup("missing folder path");
+    return FALSE;
+  }
+  sqlite3 *db = dt_database_get(darktable.db);
+  sqlite3_stmt *stmt = NULL;
+#ifdef G_OS_WIN32
+#define FOLDER_MATCH "replace(folder, char(92), '/') = replace(?1, char(92), '/') OR " \
+                     "substr(replace(folder, char(92), '/'), 1, length(?1) + 1) = replace(?1, char(92), '/') || '/'"
+#else
+#define FOLDER_MATCH "folder = ?1 OR substr(folder, 1, length(?1) + 1) = ?1 || '/'"
+#endif
+  if(sqlite3_prepare_v2(db, "SELECT id FROM main.images WHERE film_id IN "
+                       "(SELECT id FROM main.film_rolls WHERE " FOLDER_MATCH ")", -1, &stmt, NULL) != SQLITE_OK)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    return FALSE;
+  }
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+  GArray *ids = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
+  int step;
+  while((step = sqlite3_step(stmt)) == SQLITE_ROW)
+  {
+    dt_imgid_t id = sqlite3_column_int(stmt, 0);
+    g_array_append_val(ids, id);
+  }
+  sqlite3_finalize(stmt);
+  if(step != SQLITE_DONE)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    g_array_free(ids, TRUE);
+    return FALSE;
+  }
+  for(guint i = 0; i < ids->len; i++)
+  {
+    const dt_imgid_t id = g_array_index(ids, dt_imgid_t, i);
+    if(_s.open && _s.imgid == id) session_close_session();
+    dt_image_remove(id);
+  }
+  g_array_free(ids, TRUE);
+  if(sqlite3_prepare_v2(db, "DELETE FROM main.film_rolls WHERE (" FOLDER_MATCH ") AND "
+                      "NOT EXISTS (SELECT 1 FROM main.images WHERE film_id = main.film_rolls.id)",
+                      -1, &stmt, NULL) != SQLITE_OK)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    return FALSE;
+  }
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+  step = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+#undef FOLDER_MATCH
+  if(step == SQLITE_DONE) return TRUE;
+  *err = g_strdup(sqlite3_errmsg(db));
+  return FALSE;
+}
+
 // every sidecar of the file `imgid` belongs to, all versions' and any left
 // over, as darktable deletes with the file (control_jobs.c, _delete_job_run())
 // the photo's xmp sidecars: file.ext.xmp and file_NN.ext.xmp. darktable's

@@ -1,3 +1,5 @@
+pub(crate) mod folder;
+
 // moving and copying photos into a folder, from a thumbnail dropped on the
 // Folders panel. each photo goes with its sidecars (every version's XMP and
 // the .dtdata), as one unit: copied beside the destination name, flushed,
@@ -116,7 +118,9 @@ impl DestinationReservation {
             .get_or_init(|| Mutex::new(HashSet::new()))
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        if keys.iter().any(|p| reserved.contains(p)) {
+        if keys.iter().any(|p| reserved.contains(p) || reserved.iter().any(|r| {
+            r.strip_prefix("\0").is_some_and(|root| Path::new(p).starts_with(root))
+        })) {
             return None;
         }
         reserved.extend(keys.iter().cloned());
@@ -706,6 +710,25 @@ fn sync_dir(_dir: &Path) {}
 // `expect` is a base64 SHA-1 the bytes must also match (Immich's)
 fn copy_verified(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime: Option<std::time::SystemTime>,
                  ctx: &Ctx) -> Result<(), String> {
+    copy_verified_with(from, target, expect, mtime, ctx, |_| Ok(()), true).map(|_| ())
+}
+
+fn copy_verified_into(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime: Option<std::time::SystemTime>,
+                      ctx: &Ctx, overwrite: Option<&str>) -> Result<String, String> {
+    copy_verified_with(from, target, expect, mtime, ctx, |target| {
+        if let Some(expected) = overwrite {
+            if !target.symlink_metadata().is_ok_and(|m| m.is_file())
+                || sums(target, Some(ctx))?.sha256 != expected {
+                return Err(format!("{} changed after confirmation", target.display()));
+            }
+        }
+        Ok(())
+    }, overwrite.is_some())
+}
+
+fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime: Option<std::time::SystemTime>,
+                      ctx: &Ctx, before_publish: impl FnOnce(&Path) -> Result<(), String>,
+                      replace: bool) -> Result<String, String> {
     let part = part_of(target);
     let fail = |e: String| {
         let _ = std::fs::remove_file(&part);
@@ -761,9 +784,12 @@ fn copy_verified(from: &mut dyn Read, target: &Path, expect: Option<&str>, mtime
         return Err(fail(format!("{}: download does not match Immich's checksum", target.display())));
     }
     if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
-    std::fs::rename(&part, target).map_err(|e| fail(format!("{}: {e}", target.display())))?;
+    before_publish(target).map_err(fail)?;
+    if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
+    let publish = if replace { std::fs::rename(&part, target) } else { rename_no_replace(&part, target) };
+    publish.map_err(|e| fail(format!("{}: {e}", target.display())))?;
     sync_dir(target.parent().unwrap_or(Path::new(".")));
-    Ok(())
+    Ok(read)
 }
 
 // what a unit left in the destination, undone if it fails part way

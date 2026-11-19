@@ -1113,6 +1113,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none;
   display: flex; align-items: flex-start; opacity: 0.9;
 }
+.photo-drag > svg { width: 18px; height: 18px; color: white; }
 .photo-drag canvas { border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5); }
 .photo-drag .count {
   margin-left: -10px; margin-top: -8px; min-width: 20px; padding: 1px 6px; border-radius: 10px;

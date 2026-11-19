@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Drag whole folders onto another folder, including a NAS destination. Immage
+  verifies the entire copy phase before removing originals and uses your Library
+  worker setting to transfer files in parallel. Cached thumbnails and virtual
+  copies follow the photos.
 - Rename photos individually or in bulk from the Library grid. See the batch
   count and one example built from photo info and sequence numbers. Edits and
   sidecars follow the new names.

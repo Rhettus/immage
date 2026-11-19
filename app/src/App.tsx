@@ -16,6 +16,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
 import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
@@ -58,7 +59,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { runInBackground, runMerge, runMove, useJobs } from "./background";
+import { nextJobId, runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
@@ -142,7 +143,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
+import { commands, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
 import { formatNumber, t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
@@ -575,6 +576,11 @@ export default function App() {
   // photos dropped on a folder, waiting for the confirmation (MoveDialog)
   const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
                                                  plan: MovePlan | null; error: string | null } | null>(null);
+  const [folderMoveDialog, setFolderMoveDialog] = useState<{
+    job: number; req: FolderMoveRequest; copy: boolean; plan: FolderMovePlan | null; error: string | null;
+  } | null>(null);
+  const [folderTransfer, setFolderTransfer] = useState<{ source: string; target: string } | null>(null);
+  const folderMoveBusy = useRef(false);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
   const [editMode, setEditMode] = useState(loadEditMode);
@@ -3658,7 +3664,7 @@ export default function App() {
   // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
   // what moving them there would do, for the confirmation
   const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
-    if (!list.length || moveDialog) return;
+    if (!list.length || moveDialog || folderMoveDialog) return;
     const req: MoveRequest = {
       sources: list.map((i) => (isRemote(i) && i.remote
         ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
@@ -3721,6 +3727,104 @@ export default function App() {
     const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
     const arrived = now === dest || (includeSubRef.current && within(dest, now));
     if (stayed || arrived) await showFolder(now, true);
+  };
+  const askFolderMove = (source: string, dest: string, copy: boolean) => {
+    if (folderMoveBusy.current) return;
+    folderMoveBusy.current = true;
+    const req = { source, dest };
+    const job = nextJobId();
+    setFolderMoveDialog({ job, req, copy, plan: null, error: null });
+    void commands.folderMovePlan(job, req).then(
+      (plan) => setFolderMoveDialog((d) => d?.job === job ? { ...d, plan } : d),
+      (error) => setFolderMoveDialog((d) => d?.job === job ? { ...d, error: String(error) } : d),
+    );
+  };
+  const closeFolderMove = () => {
+    if (folderMoveDialog && !folderMoveDialog.plan) void commands.moveCancel(folderMoveDialog.job);
+    folderMoveBusy.current = false;
+    setFolderMoveDialog(null);
+  };
+  const confirmFolderMove = async (copy: boolean, overwrite: FolderConflict[]) => {
+    const d = folderMoveDialog;
+    if (!d?.plan || folderTransfer) return;
+    const { req, plan } = d;
+    const gone = (i: ImageEntry) => !isRemote(i) && within(i.path, req.source);
+    setFolderMoveDialog(null);
+    setFolderTransfer({ source: req.source, target: plan.target });
+    if (!copy) {
+      const current = currentRef.current;
+      pendingDeletes.current.add(gone);
+      updateImages(imagesRef.current);
+      try {
+        if (current && within(current.path, req.source)) await leavePhoto(gone);
+      } catch (error) {
+        pendingDeletes.current.delete(gone);
+        folderMoveBusy.current = false;
+        setFolderTransfer(null);
+        if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
+        setStatus(t("app.status.moveError", { error }));
+        return;
+      }
+    }
+    const named = { name: baseName(req.source) };
+    const retry = { label: t("dialogs.common.retry"), run: () => askFolderMove(req.source, req.dest, copy) };
+    const outcome = await runMove(
+      t(copy ? "dialogs.folderMove.copying" : "dialogs.folderMove.moving", named), plan.files,
+      async (job) => {
+        try {
+          return { result: await commands.folderMove(job, req, copy, overwrite), error: null };
+        } catch (error) {
+          return { result: null, error: String(error) };
+        }
+      },
+      ({ result, error }) => {
+        if (!result) return {
+          text: error === "cancelled" ? t("dialogs.folderMove.stopped", named)
+            : t("dialogs.folderMove.failed", { ...named, error }),
+          ok: false, action: retry,
+        };
+        if (result.skipped || (!copy && !result.sourceRemoved)) return {
+          text: result.skipped ? t("dialogs.folderMove.partial", {
+            ...named, n: result.skipped, number: formatNumber(result.skipped),
+          }) : t("dialogs.folderMove.sourceRemains", named),
+          ok: false, action: retry,
+        };
+        return { text: t(copy ? "dialogs.folderMove.copied" : "dialogs.folderMove.moved", named), ok: true,
+          action: { label: t("dialogs.folderMove.show"), run: () => { void showFolder(result.target); setGrid(true); } } };
+      }, t("app.status.moveError", { error: named.name }),
+    );
+    pendingDeletes.current.delete(gone);
+    folderMoveBusy.current = false;
+    setFolderTransfer(null);
+    const result = outcome?.result;
+    const now = folderRef.current;
+    if (result?.sourceRemoved) {
+      const target = result.target;
+      const rebase = (path: string) => within(path, req.source) ? target + path.slice(req.source.length) : path;
+      const mapped = [...new Set(foldersRef.current.map(rebase))];
+      const roots = mapped.filter((path) => !within(path, target)
+        || !mapped.some((other) => path !== other && within(path, other)));
+      foldersRef.current = roots;
+      setFolders(roots);
+      const last = loadLibrary().image;
+      saveLibrary({ folders: roots, ...(last ? { image: rebase(last) } : {}) });
+      const open = new Set([...expandedRef.current].map(rebase));
+      expandedRef.current = open;
+      setExpandedTo(open);
+      const concealed = new Set([...hiddenRef.current].map(rebase));
+      hiddenRef.current = concealed;
+      setHidden(concealed);
+      saveLibrary({ hidden: [...concealed] });
+      addPathToLibrary(target);
+      if (now && !immichRef.current && within(now, req.source)) {
+        await showFolder(rebase(now));
+        return;
+      }
+    } else setFolderRefresh((n) => n + 1);
+    if (now && !immichRef.current && (within(now, req.source) || within(now, plan.target)
+      || (includeSubRef.current && (within(req.source, now) || within(plan.target, now))))) {
+      await showFolder(now, true);
+    }
   };
   const startRename = (targets: ImageEntry[]) => {
     const stacks = new Map<string, ImageEntry[]>();
@@ -6484,7 +6588,10 @@ export default function App() {
               </label>
               <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
-                          refresh={folderRefresh}
+                          refresh={folderRefresh} transfer={folderTransfer}
+                          onDropFolder={(source, dest, copy) => {
+                            if (!folderMoveDialog && !moveDialog && !folderTransfer) askFolderMove(source, dest, copy);
+                          }}
                           icon={<FolderIcon />} driveIcon={<DriveIcon />} networkIcon={<NetworkIcon />}
                           onFold={(m) => {
                             const next = new Set(foldedVolumes);
@@ -7387,6 +7494,8 @@ export default function App() {
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
+    {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
+      onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}

@@ -179,6 +179,13 @@ export class AppDriver {
     const png = await this.command('GET', '/screenshot');
     await writeFile(path, Buffer.from(png, 'base64'));
   }
+  async screenshotElement(path, selector) {
+    await this.guard();
+    const element = await this.command('POST', '/element', { using: 'css selector', value: selector });
+    const id = element['element-6066-11e4-a52e-4f735466cecf'];
+    const png = await this.command('GET', `/element/${id}/screenshot`);
+    await writeFile(path, Buffer.from(png, 'base64'));
+  }
   async keys(...keys) {
     await this.guard();
     this.log({ action: 'keys', keys });

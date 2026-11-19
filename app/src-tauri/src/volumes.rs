@@ -53,6 +53,26 @@ fn describe(path: &str, online: bool) -> Volume {
 // Mount-table-only identity for background scans: never asks a server.
 pub fn mount_identity(path: &Path) -> Option<String> { drive_of(path).map(|v|v.mount) }
 
+// Snapshot mount points once for a recursive walk. Individual entries may
+// themselves be file mounts, which cannot be detected from the parent's device.
+pub(crate) fn mount_points() -> std::collections::HashSet<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_to_string("/proc/self/mounts").unwrap_or_default().lines()
+            .filter_map(|line| line.split_whitespace().nth(1))
+            .map(|path| std::path::PathBuf::from(unescape(path))).collect()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        mounts().into_iter().map(|(_, path, _, _)| std::path::PathBuf::from(path)).collect()
+    }
+    #[cfg(windows)]
+    {
+        // Junctions and other reparse points are found by symlink_metadata.
+        std::collections::HashSet::new()
+    }
+}
+
 // whether the path is on a network share, from the mount table alone
 pub fn on_network(path: &Path) -> bool { drive_of(path).is_some_and(|v| v.network) }
 
@@ -268,11 +288,15 @@ fn drive_of(path: &Path) -> Option<Volume> {
     use windows::Win32::Storage::FileSystem::GetDriveTypeW;
     const DRIVE_REMOTE: u32 = 4;
     let p = path.to_string_lossy();
-    let (mount, network) = if let Some(rest) = p.strip_prefix(r"\\") {
+    let unc = p.strip_prefix(r"\\?\UNC\").or_else(|| {
+        if p.starts_with(r"\\?\") { None } else { p.strip_prefix(r"\\") }
+    });
+    let (mount, network) = if let Some(rest) = unc {
         let mut parts = rest.splitn(3, '\\');
         (format!(r"\\{}\{}\", parts.next()?, parts.next().unwrap_or_default()), true)
     } else {
-        let root = format!("{}\\", p.get(..2).filter(|d| d.ends_with(':'))?);
+        let drive = p.strip_prefix(r"\\?\").unwrap_or(&p);
+        let root = format!("{}\\", drive.get(..2).filter(|d| d.ends_with(':'))?);
         let remote = unsafe { GetDriveTypeW(&HSTRING::from(root.as_str())) } == DRIVE_REMOTE;
         (root, remote)
     };

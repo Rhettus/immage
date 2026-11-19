@@ -515,6 +515,7 @@ GList *library_image_versions(const dt_imgid_t imgid);
 gboolean library_copy(const dt_imgid_t src, JsonBuilder *b, char **err);
 gboolean library_remove_copy(const dt_imgid_t imgid, JsonBuilder *b, char **err);
 gboolean library_forget(const dt_imgid_t imgid, char **err);
+gboolean library_forget_folder(const char *path, char **err);
 gboolean library_sidecars(const dt_imgid_t imgid, JsonBuilder *b, char **err);
 gboolean library_unpack(const char *archive, const char *dir, char **err);
 gboolean library_folder(const char *dir, const gboolean recursive, JsonBuilder *b, char **err);

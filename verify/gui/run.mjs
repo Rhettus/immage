@@ -4,14 +4,14 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
-import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppDriver, until } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
-import { pathFree } from './support/privacy.mjs';
+import { pathFree, visiblePath } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
 import { Journal } from './support/journal.mjs';
 import { parseProcessStat, sampleProcesses } from './support/process-memory.mjs';
@@ -254,6 +254,20 @@ try {
     report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
       files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
   }
+  let crossFolderTarget = null;
+  if (selectedCases.includes('move-folders')) {
+    const { folderMoveFixtures } = await import('./specs/move-folders.mjs');
+    await folderMoveFixtures(fixtures, copiedFixture);
+    if ((await stat(tmpdir())).dev !== (await stat(fixtures)).dev) {
+      crossFolderTarget = await mkdtemp(join(tmpdir(), 'immage-folder-destination-'));
+      const runtime = join(profile, 'data', 'app.immage');
+      await mkdir(runtime, { recursive: true });
+      await writeFile(join(runtime, 'settings.json'), JSON.stringify({
+        'immage.library': JSON.stringify({ folders: [fixtures, crossFolderTarget], expanded: [fixtures] }),
+      }));
+      report.folderMoveCrossFilesystem = crossFolderTarget;
+    }
+  }
   if (selectedCases.includes('rename-photos')) {
     const { renameFixtures } = await import('./specs/rename-photos.mjs');
     report.renameFixtures = await renameFixtures(fixtures, copiedFixture);
@@ -494,8 +508,16 @@ try {
       // move one such file into this case's evidence folder (the profile is on the same filesystem)
       runtimeAside: async function (file, to) { const dest = join(caseDir, to); await rename(this.runtimeFile(file), dest); journal.event('runtime-file-moved', { case: name, file, to: dest }); return dest; },
       // this run's own copied fixture folder and darktable config folder, for cases that add files to them
-      fixtureDir: fixtures, configDir: join(profile, 'data', 'app.immage', 'config'),
+      fixtureDir: fixtures, crossFolderTarget, configDir: join(profile, 'data', 'app.immage', 'config'),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
+      thumbnailCacheEntry: async (path, version) => {
+        if (!path.startsWith(fixtures + '/')) throw Error('Thumbnail probe must use a disposable fixture');
+        const cache = join(profile, 'cache', 'app.immage', 'thumbs');
+        const key = hash(Buffer.from([path, version, 240].join('\0')));
+        const name = await readFile(join(cache, key + '.last'), 'utf8').catch(() => '');
+        if (!/^[a-f0-9]{64}\.jpg$/.test(name)) return null;
+        return stat(join(cache, name)).then(({ ino }) => ino, () => null);
+      },
       benchmarkReport: async filename => {
         // Read only the known report folder inside this run's isolated profile.
         // Never follow an arbitrary path supplied by the app's status text.
@@ -512,10 +534,12 @@ try {
         const result = { name: check, status: passed ? 'pass' : 'failure', ...details };
         c.subchecks.push(result); journal.event('subcheck', { case: name, ...result }); journal.checkpoint(report);
         return passed;
-      }, evidence: async label => {
-      const withheld = await pathFree(driver);
+      }, evidence: async (label, selector) => {
+      const withheld = selector ? await driver.observe(visiblePath, selector) : await pathFree(driver);
       if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
-      await driver.screenshot(join(caseDir, `${label}.png`));
+      const path = join(caseDir, `${label}.png`);
+      if (selector) await driver.screenshotElement(path, selector);
+      else await driver.screenshot(path);
       const environment=await driver.observe(()=>({userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],scale:devicePixelRatio,theme:document.documentElement.className,canvasTheme:document.querySelector('main.viewer')?.className,font:getComputedStyle(document.body).fontFamily,fonts:document.fonts.status}));
       await writeFile(join(caseDir,`${label}.png.json`),JSON.stringify({run:id,case:name,environment:{platform:process.platform,arch:process.arch,webview:report.drivers.installedWebKit,...environment}},null,2)+'\n');
       journal.event('screenshot', { case: name, label });

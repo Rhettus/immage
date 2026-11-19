@@ -622,6 +622,11 @@ static gboolean _cmd_forget(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_forget_folder(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return library_forget_folder(json_object_get_string_member_with_default(req, "path", NULL), err);
+}
+
 static gboolean _cmd_sidecars(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!library_sidecars(json_object_get_int_member_with_default(req, "imgid", 0), b, err)) return FALSE;
@@ -1342,6 +1347,7 @@ static const eng_cmd_t _commands[] =
   { "copy", _cmd_copy, 0 },
   { "remove_copy", _cmd_remove_copy, 0 },
   { "forget", _cmd_forget, 0 },
+  { "forget_folder", _cmd_forget_folder, 0 },
   { "sidecars", _cmd_sidecars, 0 },
   { "version", _cmd_version, 0 },
   { "hdr_merge", _cmd_hdr_merge, 0 },

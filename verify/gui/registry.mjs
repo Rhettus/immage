@@ -54,6 +54,7 @@ import { panelPeek } from './specs/panel-peek.mjs';
 import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
+import { moveFolders } from './specs/move-folders.mjs';
 import { renamePhotos } from './specs/rename-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
 import { libraryMenuRate } from './specs/library-menu-rate.mjs';
@@ -92,6 +93,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-saved': findSaved,
   'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
+  'move-folders': moveFolders,
   'rename-photos': renamePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,

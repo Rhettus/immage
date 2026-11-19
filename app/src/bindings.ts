@@ -81,6 +81,8 @@ export const commands = {
 	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
 	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
 	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
+	folderMovePlan: (job: number, req: FolderMoveRequest) => __TAURI_INVOKE<FolderMovePlan>("folder_move_plan", { job, req }),
+	folderMove: (job: number, req: FolderMoveRequest, copy: boolean, overwrite: FolderConflict[]) => __TAURI_INVOKE<FolderMoveSummary>("folder_move", { job, req, copy, overwrite }),
 	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
 	renameFiles: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_files", { items }),
 	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
@@ -475,6 +477,38 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+export type FolderConflict = {
+	path: string,
+	checksum: string,
+	bytes: number,
+};
+
+export type FolderMovePlan = {
+	target: string,
+	files: number,
+	photos: number,
+	subfolders: number,
+	links: number,
+	identical: number,
+	merge: boolean,
+	instant: boolean,
+	network: boolean,
+	bytes: number,
+	free: number | null,
+	conflicts: FolderConflict[],
+};
+
+export type FolderMoveRequest = {
+	source: string,
+	dest: string,
+};
+
+export type FolderMoveSummary = {
+	target: string,
+	sourceRemoved: boolean,
+	skipped: number,
 };
 
 export type FolderReply = {

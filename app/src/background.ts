@@ -9,6 +9,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { commands, type ExportReply } from "./commands";
+import { formatNumber, t } from "./i18n";
 import { engineText } from "./engineState";
 
 export type Action = { label: string; run: () => void };
@@ -41,8 +42,10 @@ const update = (id: number, change: Partial<Job>) => {
 // export still runs in Rust
 let next = Date.now();
 
+export const nextJobId = () => next++;
+
 const start = (what: string, total: number, cancel: Job["cancel"]) => {
-  const id = next++;
+  const id = nextJobId();
   jobs = [...jobs, { id, what, done: 0, total, stage: null, cancel, stopping: false, summary: null, failed: false,
                      action: null }];
   emit();
@@ -120,16 +123,20 @@ export const bytesText = (n: number) => {
 // (move_cmds.rs, "move-progress")
 export async function runMove<R>(what: string, total: number, run: (job: number) => Promise<R>,
                                  summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
-  moving ??= listen<{ job: number; done: number; total: number; bytes: number; bytesTotal: number }>("move-progress",
-    (e) => {
-      const { job, done, total, bytes, bytesTotal } = e.payload;
-      const size = bytesTotal ? ` · ${bytesText(bytes)} of ${bytesText(bytesTotal)}` : "";
-      update(job, { done: bytesTotal ? bytes : done, total: bytesTotal || total,
-                    stage: `${Math.min(done + 1, total).toLocaleString()} of ${total.toLocaleString()}${size}` });
-    });
-  await moving;
   const id = start(what, total, "move");
-  return track(id, () => run(id), summarize, failed);
+  moving ??= listen<{ job: number; done: number; total: number; bytes: number; bytesTotal: number; phase?: string }>("move-progress",
+    (e) => {
+      const { job, done, total, bytes, bytesTotal, phase } = e.payload;
+      const count = t("dialogs.folderMove.progress", {
+        current: formatNumber(Math.min(done, total)), total: formatNumber(total),
+      });
+      const size = bytesTotal ? t("dialogs.folderMove.progress", { current: bytesText(bytes), total: bytesText(bytesTotal) }) : "";
+      const label = phase === "removing" ? t("dialogs.folderMove.removingPhase")
+        : phase === "copying" ? t("dialogs.folderMove.copyingPhase") : "";
+      update(job, { done: bytesTotal ? bytes : done, total: bytesTotal || total,
+                    stage: [label, count, size].filter(Boolean).join(" · ") });
+    });
+  return track(id, async () => { await moving; return run(id); }, summarize, failed);
 }
 
 // `run` as job `what`, which cannot be stopped; `failed` heads its error

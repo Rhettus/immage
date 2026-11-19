@@ -259,6 +259,38 @@ A transfer that stops answering for 30 seconds ends the job and stops new
 transfers. Activity on another photo does not hide a stalled transfer.
 Blocked transfers continue to count against the worker cap until they return.
 
+## Moving and copying folders
+
+Press and hold the name of a folder in **Folders**, then drag it onto the
+folder that should contain it. Rest on a closed destination to open it, or
+press Esc to cancel the drag. The source, its current parent, its descendants
+and offline folders cannot take the drop. Hold Alt when you drop, or select
+**Keep the originals** in the confirmation, to copy the folder.
+
+The confirmation shows the full destination path, item counts and any conflicts.
+If a folder with the same name already exists there, Immage merges the folders.
+Identical files are reused. For different files with the same name, **Skip**
+keeps both files where they are. Skipping a photo or one of its sidecars also
+keeps that photo’s file set together at the source. Select **Overwrite** to
+replace the destination file after the incoming copy verifies.
+
+The transfer includes photos and their sidecars, other regular files including
+hidden files, and empty subfolders. Symbolic links stay at the source. A move
+keeps the source folder if it still contains links or skipped files.
+
+A move on the same drive can rename the whole folder. For a copy, a move
+across drives, or a merge, Immage copies files in parallel using
+**Preferences > Performance > Memory > Library workers** and reads back each
+copy to verify its checksum. A move starts removing originals only after the
+copy phase succeeds. If you stop during copying, the originals stay and
+verified copies can be reused when you retry. If you stop during removal,
+some originals may still be present. Use **Retry** or drag the folder again
+to continue. After a completed move, the Folders panel follows the new path.
+Cached Library thumbnails follow verified photos, including their virtual
+copies. Each virtual copy keeps its own sidecar and can be opened for editing
+at the destination.
+
+
 ## The filmstrip and the grid
 
 The filmstrip under the photo shows the open folder, in the order the
