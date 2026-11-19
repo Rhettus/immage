@@ -3457,6 +3457,8 @@
   "library.toolbar.editedOnly": "photos retouchées seules : cliquer pour afficher uniquement les non retouchées",
   "library.culling.updateError": "Certaines photos n’ont pas pu être mises à jour. Réessayez.",
   "library.culling.preview": "Aperçu du tri",
+  "library.culling.cameraPreviews": "Aperçus du boîtier",
+  "library.culling.cameraPreviewsHint": "En vue ajustée, afficher l’aperçu du boîtier pour les RAW modifiés si disponible. La vue de détail conserve vos retouches.",
   "library.culling.previous": "Photo précédente (flèche gauche)",
   "library.culling.next": "Photo suivante (flèche droite)",
   "library.culling.close": "Fermer (F / Échap)",

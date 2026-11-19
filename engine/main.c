@@ -405,7 +405,9 @@ static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   if(!dest || !library_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
                       json_object_get_int_member_with_default(req, "size", 256),
-                      json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, err))
+                      json_object_get_boolean_member_with_default(req, "proof", FALSE),
+                      json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
+                      json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, err))
     return FALSE;
   return TRUE;
 }

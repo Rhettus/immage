@@ -5,13 +5,14 @@ import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
 import { commands } from "./commands";
 import { cullingKey, fallbackPhoto, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
-import { LABEL_COLORS, fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
+import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { t } from "./i18n";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, prepare, onEdit, onMeta, onKeywords }: {
+export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
+  activeEditorId?: number;
   prepare: (id: number) => Promise<void>; onEdit: (image: ImageEntry) => void;
   onMeta: (image: ImageEntry, fields: Partial<ImageEntry>) => void;
   onKeywords: (id: number, keywords: string[]) => void;
@@ -25,6 +26,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const direction = useRef<1 | -1>(1);
   const queue = useRef(new PreviewQueue());
   const previews = useRef(new Map<string, ImageBitmap>());
+  const pendingPreviews = useRef(new Map<string, Promise<ImageBitmap | null>>());
   const previewEpoch = useRef(0);
   const [windowSize, setWindowSize] = useState({width: window.innerWidth, height: window.innerHeight});
   const animation = useRef<{ frame: number; width: number; height: number } | null>(null);
@@ -34,6 +36,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const keywordGeneration = useRef(0);
   const [retry, setRetry] = useState(0);
   const [detail, setDetail] = useState(false);
+  const [cameraPreviews, setCameraPreviews] = useState(false);
   const [photo, setPhoto] = useState<number | null>(null);
   const [targets, setTargets] = useState<ImageEntry[]>([]);
   const [lists, setLists] = useState<string[][]>([]);
@@ -48,6 +51,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   zoomRef.current = zoom;
   const setZoom = (value: number | null) => { zoomRef.current = value; setZoomState(value); };
   const detailed = zoom !== null;
+  const cameraFit = cameraPreviews && !detailed;
   const current = images.find(i => i.imgid === photo);
   // The frame is fixed for the window size, independent of photo or preview
   // dimensions, so swapping photos and zooming never moves the toolbar.
@@ -204,6 +208,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useLayoutEffect(() => {
     if (!current) {
       ++previewEpoch.current;
+      pendingPreviews.current.clear();
       for (const bitmap of previews.current.values()) bitmap.close();
       previews.current.clear();
       return;
@@ -218,6 +223,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     const box = viewport.current;
     const size = detailed ? 0 : Math.ceil(Math.max(box?.clientWidth ?? window.innerWidth * .86,
       box?.clientHeight ?? window.innerHeight * .86) * devicePixelRatio);
+
     const draw = (bitmap: ImageBitmap) => {
       if (!stale && canvas.current) {
         if (!detailed && viewport.current && canvas.current) {
@@ -243,27 +249,53 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       canvas.current.width = small.width; canvas.current.height = small.height;
       canvas.current.getContext("2d")?.drawImage(small, 0, 0);
     }
+    const cameraPreviewFor = (entry: ImageEntry, requested: number) =>
+      cameraFit && requested > 0 && entry.edited && fileKind(entry.filename) === "RAW";
     const key = (entry: ImageEntry, requested: number) =>
-      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested]);
+      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested, cameraPreviewFor(entry, requested)]);
     const load = async (entry: ImageEntry, requested: number, foreground = false) => {
       const id = key(entry, requested);
       const cached = previews.current.get(id);
       if (cached) return cached;
-      const bitmap = await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry, false, foreground);
-      if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
-      if (requested === 0) return bitmap;
-      previews.current.set(id, bitmap);
-      while (previews.current.size > 8) {
-        const oldest = previews.current.keys().next().value!;
-        previews.current.get(oldest)!.close(); previews.current.delete(oldest);
+
+      // Native detail belongs to its caller. The active editor can save edits
+      // before a foreground load without changing the grid entry's version.
+      const share = requested !== 0 && entry.imgid !== activeEditorId;
+      const pending = pendingPreviews.current;
+      const existing = share ? pending.get(id) : undefined;
+      if (existing) return existing;
+
+      const request = (async () => {
+        const kind = fileKind(entry.filename);
+        const preferSource = requested > 0 && !entry.edited && (kind === "RAW" || kind === "JPEG");
+        const cameraPreview = cameraPreviewFor(entry, requested);
+        const disk = await fetchCachedThumb(entry, requested, preferSource, cameraPreview);
+        const bitmap = disk ?? await fetchThumb(entry.imgid, requested, entry, false, foreground, preferSource, cameraPreview);
+        if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
+        if (requested === 0) return bitmap;
+        // In the active editor case an independent load may already have
+        // filled this key. Retire its bitmap before taking ownership.
+        previews.current.get(id)?.close();
+        previews.current.set(id, bitmap);
+        while (previews.current.size > 8) {
+          const oldest = previews.current.keys().next().value!;
+          previews.current.get(oldest)!.close(); previews.current.delete(oldest);
+        }
+        return bitmap;
+      })();
+      if (!share) return request;
+      pending.set(id, request);
+      try {
+        return await request;
+      } finally {
+        if (pending.get(id) === request) pending.delete(id);
       }
-      return bitmap;
     };
     const show = async () => {
       const cached = previews.current.get(key(current, size));
       if (cached) draw(cached);
       else {
-        // Not behind the queue: a neighbor already reading ahead must not delay the shown photo.
+        // A foreground preview starts independently of the speculative queue.
         await prepare(current.imgid);
         if (stale) return;
         const bitmap = await load(current, size, true);
@@ -274,19 +306,23 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       if (stale) return;
       setDetail(detailed); setBusy(false);
       if (detailed) return;
-      // Let navigation settle before starting speculative native rendering.
+      const { count, both } = loadReadAhead();
+      const neighbors = previewNeighbors(images, current.imgid, direction.current, count, both);
+      if (!neighbors.length) return;
+      const next = images[images.indexOf(current) + direction.current];
+      // Give the next edited photo the full viewing time to render, once
+      // the current Fit preview is ready. Keep the timer cancellable.
       timer = setTimeout(() => {
-        const { count, both } = loadReadAhead();
-        for (const neighbor of previewNeighbors(images, current.imgid, direction.current, count, both)) {
+        for (const neighbor of neighbors) {
           void q.enqueue(async () => { await load(neighbor, size); }).catch(() => {});
         }
-      }, 180);
+      }, next?.edited ? 0 : 180);
     };
     void show().catch(e => { if (!stale) { setError(String(e)); setBusy(false); } });
     return () => { stale = true; clearTimeout(timer); q.replace(); };
-  }, [current?.imgid, current?.version, current?.edited, detailed, retry]);
+  }, [current?.imgid, current?.path, current?.version, current?.edited, activeEditorId, detailed, cameraFit, retry]);
   useEffect(() => { setZoom(null); }, [photo]);
-  useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
+  useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; pendingPreviews.current.clear(); for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
   useEffect(() => {
     if (targets.length && lists.length === targets.length)
       document.querySelector<HTMLInputElement>("[data-grid-keywords-dialog] input")?.focus();
@@ -320,6 +356,9 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
         <div>{current.filename} · {images.indexOf(current) + 1}/{images.length}
           <button onClick={() => setPhoto(null)}>{t("library.culling.close")}</button><button onClick={() => void keywords([current])}>{t("library.culling.keywords")}</button>
           <button onClick={() => { zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); }}>{detailed ? t("library.toolbar.fit") : "100%"}</button>
+          <button type="button" aria-pressed={cameraPreviews} className="culling-camera-preview"
+            title={t("library.culling.cameraPreviewsHint")}
+            onClick={() => setCameraPreviews(value => !value)}>{t("library.culling.cameraPreviews")}</button>
           <button onClick={() => onEdit(current)}>{t("library.culling.edit")}</button>
 </div>
         <div ref={viewport} style={{ flex: 1, overflow: "auto", minHeight: 0,

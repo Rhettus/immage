@@ -533,7 +533,8 @@ gboolean library_import_queue(JsonParser *parser);
 void library_import_wait(void);
 gboolean library_import_metadata_pending(void);
 gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err);
-gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
+gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof,
+                       const gboolean prefer_source, const gboolean camera_preview, const char *out,
                        JsonBuilder *b, char **err);
 extern GThreadPool *library_thumb_pool;
 void library_thumb_run(gpointer data, gpointer user_data);

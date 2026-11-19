@@ -790,21 +790,37 @@ and color swatches as the main grid bar. Click a star to rate (click the same
 star again to clear), or click a swatch to toggle that color label. Rating
 clears rejection, as it does elsewhere in the app. Purple is available by click.
 
-Unedited RAW previews use the embedded camera preview; edited photos use the
-processed thumbnail pipeline. An uncached edited preview can take time to
-render. Scroll over the photo to zoom smoothly toward **4:1**, anchored under
-the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
+Fit uses the largest compatible embedded camera preview for unedited RAWs.
+It scales it down to fit the lightbox and can use it even if it is smaller
+than the viewport. For unedited JPEGs, Fit decodes the main image at a size
+suitable for the lightbox and applies its orientation. If the camera preview
+is unavailable or a JPEG needs color management, Fit uses the render path.
+Edited photos show previews made with their edits by default. An uncached
+render can take time. Scroll over the photo to zoom smoothly toward **4:1**,
+anchored under the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
 **100%** when crossing it and returns to Fit when zoomed out. Single-click the
 photo or press **Z** to toggle Fit and **100%** detail; the button does the same.
 Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
 toggle zoom. Embedded detail is limited to the camera preview's native
 resolution. Double-click opens the displayed photo in the editor.
+
+Turn on **Camera previews** in the lightbox toolbar to use embedded camera
+previews for edited RAWs in Fit, including during read-ahead. The toggle
+starts off when you open the Library grid. If a camera preview is unavailable,
+Fit shows the edited render. **100%** still shows the edited image. Your saved
+edits and ratings are unaffected.
+
 The existing grid thumbnail appears immediately at Fit size while a larger preview loads,
 so sharper pixels do not make the photo grow. Nearby screen previews stay in memory
 while the lightbox is open and appear immediately when revisited.
-After navigation settles briefly, screen-sized previews are prepared one at a time
-in the background using
+Screen-sized previews are prepared one at a time in the background using
 Preferences’ **Read ahead** count, in the last arrow-navigation direction.
+If the next photo in that direction is edited, read-ahead starts as soon as
+the current Fit preview is ready. Otherwise it waits briefly for navigation
+to settle.
+Moving to a photo while its matching Fit preview is loading uses the same
+request. A photo with an active editor session can load separately so culling
+can prepare its current edits.
 Enable **Read ahead both ways** to prepare the same count in the opposite direction.
 Setting Read ahead to zero disables both directions;
 native detail loads only when requested. Cached previews are reused until the

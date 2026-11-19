@@ -178,7 +178,7 @@ and one undo after Done.
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` and `fullDraftK` in App.tsx; the latter also sizes `exactView`, the detail sliders' whole-view draft), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale"; `settledScale()` does the same for the settled Fit frame (`viewAt(1)` in App.tsx), behind "Fit frames at the screen's scale" (on by default). |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `session_module_state`). |
-| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` is the pure targeting and bounded scheduling: one active request, one replaceable foreground request and a bounded list of neighbors, kept in memory. |
+| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` selects the neighboring photos and runs one speculative request at a time. See [Culling preview strategy](#culling-preview-strategy). |
 | [folderEdits.ts](../../src/folderEdits.ts) | `FolderEdits`: keeps only the fields changed (`patchImage`) while a folder read runs, and reapplies them to each arriving batch and the final list, so rating, label and reject changes survive the read's older snapshots. |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 | [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
@@ -236,6 +236,33 @@ and one undo after Done.
 | [FindFilters.tsx](../../src/FindFilters.tsx) | Find's filter list: `FilterGroup`, `FilterRow` (a button with `aria-expanded` and `aria-controls`, its summary from `summarize`, a sibling clear button, the Immich tag and the `excludes` warning) and `categoryTitle`. |
 | [FindEditors.tsx](../../src/FindEditors.tsx) | The editors a row opens: `FilterEditor` (one per `CategoryKey`: stars, color labels, Rejected radios, Ticks lists, Exposure tabs, Captured, the Immich pickers), writing through findModel.ts's functions; facets are computed only for the open one. |
 | [savedFilters.ts](../../src/savedFilters.ts), [SavedFilterMenus.tsx](../../src/SavedFilterMenus.tsx) | Saved filters (`immage.savedFilters`, part of the Preferences & library backup): store, `savedForDigit` for Alt+1 to Alt+9, and the Saved menu, save dialog and Manage dialog. |
+
+### Culling preview strategy
+
+| File type | Fit preview | 100% detail |
+|---|---|---|
+| Unedited JPEG (`.jpg`, `.jpeg`, `.jpe`) | Decode the main JPEG with decoder downsampling when possible, apply EXIF orientation, and resize to Fit. Use the thumbnail render pipeline for unsupported JPEGs and those with an ICC profile or non-sRGB EXIF color space. | Render at native resolution. |
+| Unedited RAW (ORF, ARW, CR3, NEF, DNG, and others) | Extract the largest usable embedded camera preview, apply orientation, and shrink it if needed. A smaller camera preview retains its native dimensions and scales for display. Use the thumbnail render pipeline if extraction fails or the preview is unsuitable. | Use the embedded preview at its native resolution when usable. Otherwise render at native resolution. |
+| Edited RAW | Render with edits by default. With **Camera previews** enabled, use the same embedded preview path as unedited RAWs and fall back to the edited render. | Render at native resolution with the photo's edits. |
+| Edited JPEG | Render the Fit preview with the photo's edits. | Render at native resolution with the photo's edits. |
+| Other supported formats (TIFF, PNG, HEIF, and others) | Use the thumbnail render pipeline. | Render at native resolution. |
+
+Fit requests the longer viewport dimension in device pixels. The grid
+thumbnail can appear immediately as a placeholder. Fit checks the lightbox's
+bitmap cache and then Immage's disk cache before requesting an engine frame.
+The disk cache uses the original and sidecar stamps, virtual-copy version,
+and requested size. Source-based Fit previews have their own cache keys
+within the thumbnail cache. The edited-RAW camera mode has its own bitmap,
+in-flight, and disk cache keys. The frame reply does not wait for JPEG
+encoding or the disk write.
+
+Read-ahead uses the filtered grid order and the last arrow direction. It
+prepares Fit previews one at a time and can join a matching in-flight request
+when the user moves to that photo. If the next photo is edited, read-ahead
+is scheduled as soon as the current Fit preview is ready. Otherwise it waits
+180 ms for navigation to settle. Native detail is requested on demand.
+
+[Lightbox](../../src/GridCulling.tsx) · [Rust thumbnail commands](../../src-tauri/src/library_cmds.rs) · [Engine preview implementation](../../../engine/library.c)
 
 ### Export
 

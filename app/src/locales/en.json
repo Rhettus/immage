@@ -3457,6 +3457,8 @@
   "library.toolbar.editedOnly": "only edited photos: click to show only unedited ones",
   "library.culling.updateError": "Some photos could not be updated. Retry the change.",
   "library.culling.preview": "Culling preview",
+  "library.culling.cameraPreviews": "Camera previews",
+  "library.culling.cameraPreviewsHint": "In Fit, show the camera preview for edited RAWs when available. Detail still shows your edits.",
   "library.culling.previous": "Previous photo (left arrow key)",
   "library.culling.next": "Next photo (right arrow key)",
   "library.culling.close": "Close (F / Esc)",

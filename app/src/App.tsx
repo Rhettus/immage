@@ -6548,6 +6548,7 @@ export default function App() {
     {grid && <GridCulling key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
       anchor={pickAnchor.current}
       thumbnail={id => loader.current?.get(id)}
+      activeEditorId={session.current?.imgid}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
       onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}

@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The lightbox can show embedded camera previews for edited RAWs in Fit.
+  Use 100% detail to inspect the edited image.
 - The Advanced mode button shows a green dot for active module edits that
   Simple cannot show. Hover over the button to see the module names.
 - Drag whole folders onto another folder, including a NAS destination. Immage
@@ -50,6 +52,14 @@ Improvements
 
 Performance
 
+- The culling lightbox uses the largest embedded camera preview for unedited
+  RAWs when available, avoiding a RAW render even if the preview is smaller
+  than the lightbox.
+- The culling lightbox decodes compatible unedited JPEGs directly from the
+  main image at Fit size for faster sharp previews.
+- Culling starts read-ahead sooner when the next photo is edited. Moving to
+  a photo whose Fit preview is already loading reuses the in-progress preview,
+  avoiding a second engine request and frame transfer.
 - Clearing or rebuilding the local photo cache is faster for large libraries.
 
 Bug fixes

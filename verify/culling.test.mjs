@@ -87,12 +87,12 @@ test('Z toggles Fit and 100% on the displayed photo', () => {
 
 test('first paint borrows the exact virtual-copy thumbnail without closing it', () => {
   const begin = component.indexOf('    const small = thumbnail(current.imgid);');
-  const end = component.indexOf('    const key = (entry:', begin);
+  const end = component.indexOf('    const cameraPreviewFor = (entry:', begin);
   const paint = new Function('thumbnail', 'current', 'detailed', 'canvas', 'setPaintSize', 'viewport', component.slice(begin, end));
   const calls = [];
   const bitmaps = new Map([[1, {width: 240, height: 160}], [2, {width: 160, height: 240}]]);
   const canvas = {current: {width: 0, height: 0, style: {}, getContext: () => ({drawImage: b => calls.push(b)})}};
-  paint(id => bitmaps.get(id), {imgid: 2}, false, canvas, () => {}, {current:{clientWidth:800,clientHeight:600}});
+  paint(id => bitmaps.get(id), {imgid: 2}, false, canvas, () => {}, {current:{clientWidth:800,clientHeight:600}}, () => {});
   assert.deepEqual(calls, [bitmaps.get(2)]);
   assert.equal(canvas.current.height, 240);
   assert.equal(canvas.current.style.height, "600px");
@@ -190,10 +190,50 @@ test('Space-click and a pan-release click never toggle zoom', () => {
   click({detail:1});
 });
 
-const loaderStart = component.indexOf('    const key = (entry:');
+const loaderStart = component.indexOf('    const cameraPreviewFor = (entry:');
 const loaderEnd = component.indexOf('    const show = async', loaderStart);
 const loaderSource = transformSync('loader.ts', component.slice(loaderStart, loaderEnd)).code;
-const makeLoader = new Function('env', `with(env) { ${loaderSource}; return load; }`);
+const makeLoader = env => new Function('env', `with(env) { ${loaderSource}; return load; }`)({
+  activeEditorId: undefined, pendingPreviews: {current: new Map()}, cameraFit: false,
+  fileKind: filename => filename?.endsWith('.ORF') ? 'RAW' : 'JPEG', ...env,
+});
+test('camera preview mode keeps edited RAW Fit previews separate and leaves detail edited', async () => {
+  const requests = [];
+  const env = {
+    previews:{current:new Map()}, epoch:0, previewEpoch:{current:0},
+    fetchCachedThumb:async (_entry, _size, _source, camera) => {
+      requests.push(['disk', camera]); return null;
+    },
+    fetchThumb:async (_id, _size, _entry, _proof, _foreground, _source, camera) => {
+      requests.push(['engine', camera]); return {close() {}};
+    },
+  };
+  const entry = {imgid:1, filename:'photo.ORF', edited:true};
+  const normal = makeLoader(env);
+  const camera = makeLoader({...env, cameraFit:true});
+  const edited = await normal(entry, 800);
+  assert.notEqual(await camera(entry, 800), edited);
+  assert.equal(await normal(entry, 800), edited);
+  await camera(entry, 0);
+  await camera({imgid:2, filename:'photo.JPG', edited:true}, 800);
+  assert.deepEqual(requests, [false, true, false, false].flatMap(mode => [['disk', mode], ['engine', mode]]));
+});
+test('Fit requests source pixels for unedited RAW and JPEG files', async () => {
+  const calls = [];
+  const load = makeLoader({
+    previews:{current:new Map()}, epoch:0, previewEpoch:{current:0},
+    fetchCachedThumb:async (_entry, _size, embedded) => { calls.push(['disk', embedded]); return null; },
+    fetchThumb:async (_id, _size, _entry, _proof, _foreground, embedded) => {
+      calls.push(['engine', embedded]); return {close() {}};
+    },
+  });
+  await load({imgid:1, filename:'photo.ORF', edited:false}, 800);
+  await load({imgid:2, filename:'photo.ORF', edited:true}, 800);
+  await load({imgid:3, filename:'photo.JPG', edited:false}, 800);
+  await load({imgid:1, filename:'photo.ORF', edited:false}, 0);
+  await load({imgid:4, filename:'photo.JPG', edited:true}, 800);
+  assert.deepEqual(calls, [true, false, true, false, false].flatMap(source => [['disk', source], ['engine', source]]));
+});
 test('preview memory cache reuses pixels, bounds ownership and separates virtual copies', async () => {
   let reads = 0, closes = 0;
   const env = {previews:{current:new Map()}, epoch:0, previewEpoch:{current:0},
@@ -213,6 +253,30 @@ test('preview memory cache reuses pixels, bounds ownership and separates virtual
   assert.equal(env.previews.current.size,before,'native detail is not retained');
   detail.close();
 });
+test('foreground joins a matching native read-ahead request and can retry a failed render', async () => {
+  let rejects;
+  const renders = [];
+  const pendingPreviews = {current: new Map()};
+  const env = {previews:{current:new Map()}, pendingPreviews, epoch:0, previewEpoch:{current:0},
+    fetchCachedThumb:async () => null,
+    fetchThumb:(_id, _size, _entry, _proof, foreground) => {
+      renders.push(foreground);
+      if (!foreground) return new Promise((_resolve, reject) => { rejects = reject; });
+      return Promise.resolve({close(){}});
+    }};
+  const entry = {imgid:1,path:'raw',version:0};
+  const background = makeLoader(env)(entry, 800);
+  const foreground = makeLoader(env)(entry, 800, true);
+  const results = Promise.allSettled([background, foreground]);
+  await Promise.resolve();
+  assert.deepEqual(renders, [false]);
+  rejects(Error('render failed'));
+  assert.deepEqual((await results).map(result => result.reason.message), ['render failed', 'render failed']);
+  assert.equal(pendingPreviews.current.size, 0);
+  assert.ok(await makeLoader(env)(entry, 800, true));
+  assert.deepEqual(renders, [false, true]);
+});
+
 test('closing lightbox disposes late preview results instead of retaining them', async () => {
   let finish, closed=false;
   const env={previews:{current:new Map()},epoch:0,previewEpoch:{current:0},
@@ -230,13 +294,16 @@ test('cached foreground draws immediately even while native speculative work is 
   const end=component.indexOf('    void show().catch', start);
   const source=transformSync('show.ts',component.slice(start,end)).code;
   const pixels={}; const calls=[];
-  const env={current:{imgid:2},size:800,key:()=> 'second',
+  const current={imgid:2};
+  const next={imgid:3,edited:true};
+  const env={current,images:[current,next],direction:{current:1},size:800,key:()=> 'second',
     previews:{current:new Map([['second',pixels]])},stale:false,detailed:false,
     q:{enqueue(){throw Error('cached foreground must bypass native queue');}},
     draw:b=>calls.push(b),setDetail(){},setBusy(){},
-    setTimeout:()=>123,timer:undefined};
+    loadReadAhead:()=>({count:1,both:false}),previewNeighbors,
+    setTimeout:(_run,delay)=>{calls.push(delay); return 123;},timer:undefined};
   await new Function('env',`with(env) { ${source}; return show(); }`)(env);
-  assert.deepEqual(calls,[pixels]);
+  assert.deepEqual(calls,[pixels,0]);
 });
 
 const state = (o = {}) => ({ photo: null, keywordsOpen: false, writing: false, blocked: false,

@@ -892,21 +892,24 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>, proof: Option<bool>,
-               foreground: Option<bool>) -> Result<bindings::Frame, String> {
+               foreground: Option<bool>, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
     let proof = proof.unwrap_or(false);
+    let prefer_source = size > 0 && !proof && prefer_source.unwrap_or(false);
+    let camera_preview = size > 0 && !proof && camera_preview.unwrap_or(false);
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+    let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "out": out }))
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out }))
             .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);
@@ -937,7 +940,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                if thumbs.write(&name, &jpeg).is_ok() && size > 0 {
+                if thumbs.write(&name, &jpeg).is_ok() && size > 0 && !prefer_source && !camera_preview {
                     thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
                 }
             }
@@ -946,22 +949,36 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     Ok(bindings::Frame(Response::new(out)))
 }
 
+// Keep source-based Fit previews distinct from ordinary rendered thumbnails.
+fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool) -> String {
+    if camera_preview {
+        format!("camera-{name}")
+    } else if prefer_source {
+        format!("fit-{name}")
+    } else {
+        name
+    }
+}
+
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
 // for the photo as it is now: as the open folder's listing found it, else
 // as a stat finds it. the engine is not asked
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
-                                 size: u32) -> Result<bindings::Frame, String> {
+                                 size: u32, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
+    let prefer_source = size > 0 && prefer_source.unwrap_or(false);
+    let camera_preview = size > 0 && camera_preview.unwrap_or(false);
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let photo = Path::new(&path);
         let name = cache::listed_thumb_name(&listed, photo, version, size)?;
+        let name = preview_cache_name(name, prefer_source, camera_preview);
         let bytes = thumbs.read(&name)?;
         // a cache from before known thumbnails learns them as it is read
-        if size > 0 { thumbs.set_known(photo, version, size, &name); }
+        if size > 0 && !prefer_source && !camera_preview { thumbs.set_known(photo, version, size, &name); }
         Some(bytes)
     }).await.map_err(|e| e.to_string())?;
     Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))
