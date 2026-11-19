@@ -505,9 +505,11 @@ press Enter or after a short pause. The footer is always visible below the list:
 it shows how many photos match, **Load** (saved filters) and **Save filter…**. Esc
 folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
-Opening another folder clears the filters, sets Search in back to This folder
-and clears the search words, so a folder left on Rejected only never looks
-empty and the stars and ticks filter the folder you open.
+Opening another folder sets **Search in** to **This folder** and clears the
+search words. Your filters apply to each folder you open. A folder can look
+empty if none of its photos match. Use Find’s reset button to clear all filters
+or the **✕** on a filter row to clear that filter. Immich-specific filters resume
+when you switch back to a search that uses them.
 
 ### Where Find appears
 

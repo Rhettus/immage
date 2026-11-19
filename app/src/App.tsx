@@ -433,7 +433,6 @@ export default function App() {
     window.clearTimeout(immichTimer.current);
     const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
     // back to the open folder, as choosing it does, with the filter on at once
-    // (showFolder starts a new folder unfiltered, so the filter is set after it)
     if (leaving) void showFolder(folderRef.current!);
     immichFormRef.current = next.search; setImmichForm(next.search);
     filterRef.current = next.filter; setFilter(next.filter);
@@ -3103,9 +3102,7 @@ export default function App() {
     if (!again) {
       shownGen.current++;
       loader.current!.clear();
-      // a new folder starts unfiltered: one left on Rejected only looked empty
-      setFilter(NO_FILTER);
-      // and the search half back to this folder, so the stars and ticks filter it live
+      // Return to browsing this folder with the current filters.
       const fs = folderSearch(immichFormRef.current);
       immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
       showSkip(false);
@@ -3427,7 +3424,7 @@ export default function App() {
   useEffect(() => { if (engineNotice?.kind !== "failed") setFailedHidden(false); }, [engineNotice?.kind]);
   // what the page had open when the engine went down, until a restore is done
   const lost = useRef<{ path: string | null; copy: number | null; before: boolean; proof: Proof;
-                        folder: string | null; search: ImmichSearch | null; filter: Filter } | null>(null);
+                        folder: string | null; search: ImmichSearch | null } | null>(null);
   const restoreGen = useRef(0);
   const engineEventRef = useRef<(e: EngineEvent) => void>(() => {});
   engineEventRef.current = (e) => {
@@ -3438,7 +3435,7 @@ export default function App() {
       lost.current ??= {
         path: cur?.path ?? null,
         copy: cur && imagesRef.current.find((i) => isOpen(i, cur))?.copy ? imagesRef.current.find((i) => isOpen(i, cur))?.version ?? null : null,
-        before: beforeRef.current, proof: proofRef.current, folder: folderRef.current, search: immichRef.current?.search ?? null, filter,
+        before: beforeRef.current, proof: proofRef.current, folder: folderRef.current, search: immichRef.current?.search ?? null,
       };
       // nothing more goes to an engine that is gone
       session.current?.abandon();
@@ -3468,8 +3465,6 @@ export default function App() {
       }
       else if (l.folder) {
         await showFolder(l.folder);
-        // a new folder starts unfiltered; this is the same one, read again
-        setFilter(l.filter);
       }
       if (stale()) return;
       if (l.proof.mode !== "off") {

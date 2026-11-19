@@ -64,6 +64,7 @@ Performance
 
 Bug fixes
 
+- Library filters stay active when you switch folders.
 - When launched from Terminal, Immage logs the failed filesystem operation
   and path for photo and folder transfers to help diagnose errors on SMB shares.
 - Grid's Find panel and the editing panel have their own toolbar buttons and

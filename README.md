@@ -41,7 +41,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
-  remembers its own width and visibility separately from the editing panel.
+  keeps filters active across folder changes and remembers its own width and
+  visibility separately from the editing panel.
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
