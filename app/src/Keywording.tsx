@@ -115,13 +115,13 @@ export function KeywordChips({ keywords, onRemove }: { keywords: string[]; onRem
   );
 }
 
-export function KeywordingPanel({ keywords, known, onAdd, onRemove, open, onToggle }: {
+export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true, onToggle }: {
   keywords: string[] | null;     // the open photo's; null while there is none
   known: string[];               // every keyword ever used
   onAdd: (names: string[]) => void;
   onRemove: (name: string) => void;
-  open: boolean;
-  onToggle: (alt: boolean) => void;
+  open?: boolean;
+  onToggle?: (alt: boolean) => void;
 }) {
   const [recent, setRecent] = useState(loadRecent);
   const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
@@ -136,6 +136,24 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open, onTogg
   };
 
   if (!keywords) return null;
+  const content = (
+    <div className={onToggle ? "kw-body" : "keyword-dialog-content"}>
+      <KeywordChips keywords={keywords} onRemove={onRemove} />
+      <KeywordInput attached={attached} known={known} onAdd={add} />
+      {recent.length > 0 && (
+        <>
+          <div className="kw-label">{t("library.keywording.recent")}</div>
+          <div className="kw-recent">
+            {recent.map((k) => (
+              <button key={k} className={attached.has(k) ? "on" : ""} title={path(k)}
+                      onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+  if (!onToggle) return content;
   return (
     <div className="panel keywording">
       <div className={`panel-title${open ? " open" : ""}`} onClick={(e) => onToggle(e.altKey)}>
@@ -143,23 +161,7 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open, onTogg
         <svg className={`chevron${open ? " open" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg>
       </div>
-      {open && (
-        <div className="kw-body">
-          <KeywordChips keywords={keywords} onRemove={onRemove} />
-          <KeywordInput attached={attached} known={known} onAdd={add} />
-          {recent.length > 0 && (
-            <>
-              <div className="kw-label">{t("library.keywording.recent")}</div>
-              <div className="kw-recent">
-                {recent.map((k) => (
-                  <button key={k} className={attached.has(k) ? "on" : ""} title={path(k)}
-                          onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {open && content}
     </div>
   );
 }

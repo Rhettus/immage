@@ -2902,6 +2902,14 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 
 
 /* A floating culling surface; the library remains visible behind its scrim. */
+/* The keyword dialog follows the preview in DOM order and paints above it. */
+.modal-backdrop.culling-backdrop,
+.culling-backdrop + [data-grid-keywords-dialog] { z-index: 1000; }
+.modal-backdrop.culling-backdrop { background: rgba(0, 0, 0, .65); }
+.keyword-dialog-fields { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+.keyword-dialog-content { font-size: var(--fs-small); }
+.keyword-dialog-content .kw-suggest { position: static; margin-block-start: 3px; }
+
 .culling-lightbox {
   max-width: 80%;
   max-height: 80%;
@@ -2915,12 +2923,36 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   padding: 12px;
   box-sizing: border-box;
 }
-.culling-lightbox > div:first-child {
+.culling-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding-bottom: 8px;
+  padding-block-end: 8px;
+}
+.culling-photo-info {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.culling-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.culling-photo-count {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.culling-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-inline-start: auto;
 }
 
 .culling-camera-preview[aria-pressed="true"] {
@@ -2955,7 +2987,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .culling-arrow:disabled { opacity: .1; cursor: default; }
 
 .culling-bottom-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   flex: none;
@@ -2963,7 +2996,10 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   padding-top: 8px;
   border-top: 1px solid var(--border, #555);
 }
-.culling-status { margin-left: auto; font-size: 12px; color: var(--text-2); }
+.culling-rating-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.culling-rating-controls .tool-group { flex-wrap: wrap; }
+.culling-status { text-align: end; overflow-wrap: anywhere; font-size: 12px; color: var(--text-2); }
+[data-grid-keywords-dialog] .modal-body { padding-block-end: 16px; }
 
 /* Keep saved directories compact regardless of library size. */
 .cache-directories { height: 160px; overflow-y: auto; margin-top: 10px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; }

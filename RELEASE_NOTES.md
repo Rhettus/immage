@@ -65,6 +65,10 @@ Performance
 Bug fixes
 
 - Library filters stay active when you switch folders.
+- The Keywords dialog opens in front of the culling preview and uses the
+  standard dialog layout. The preview toolbar groups the filename and photo
+  position separately from its controls and uses the editor’s zoom slider in
+  the center of the bottom bar. Both windows close with an X icon.
 - When launched from Terminal, Immage logs the failed filesystem operation
   and path for photo and folder transfers to help diagnose errors on SMB shares.
 - Grid's Find panel and the editing panel have their own toolbar buttons and

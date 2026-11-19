@@ -786,7 +786,10 @@ editor. The frame and toolbar stay in place as you browse, zoom, and wait for
 more preview detail. Click the dimmed area to close it. Otherwise the first
 selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
 arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
-rating, X toggles rejection, 6–9 toggle color labels, and K keywords the displayed photo.
+rating, X toggles rejection, and 6–9 toggle color labels. The top bar keeps
+the filename and position together beside the preview controls. Press **K** or
+click **Keywords** to open keywording over the lightbox for the displayed photo.
+Click **×** to close the dialog and return to the preview.
 The grid selection is preserved. The lightbox bottom bar has the same star icons
 and color swatches as the main grid bar. Click a star to rate (click the same
 star again to clear), or click a swatch to toggle that color label. Rating
@@ -801,7 +804,10 @@ Edited photos show previews made with their edits by default. An uncached
 render can take time. Scroll over the photo to zoom smoothly toward **4:1**,
 anchored under the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
 **100%** when crossing it and returns to Fit when zoomed out. Single-click the
-photo or press **Z** to toggle Fit and **100%** detail; the button does the same.
+photo or press **Z** to toggle Fit and **100%** detail. The centered bottom zoom slider
+works like the editor’s. Fit is in the middle, with smaller sizes to the left
+and up to **400%** to the right. Double-click the zoom control to toggle Fit
+and **100%**.
 Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
 toggle zoom. Embedded detail is limited to the camera preview's native
 resolution. Double-click opens the displayed photo in the editor.

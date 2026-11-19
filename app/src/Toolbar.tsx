@@ -56,8 +56,10 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
 }) {
   const range = useRef<HTMLInputElement>(null);
   const label = useRef<HTMLSpanElement>(null);
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
   const toPos = (z: number) => {
-    const f = fit();
+    const f = fitRef.current();
     if (z >= f) return f >= ZOOM_MAX ? 0 : (1000 * Math.log(z / f)) / Math.log(ZOOM_MAX / f);
     return Math.max(-1000, (1000 * Math.log(z / f)) / Math.log(ZOOM_OUT));
   };
@@ -68,6 +70,7 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   return (
     <div className="tool-group zoom-bar" title={t("library.toolbar.zoomHint")} onDoubleClick={onToggle}>
       <input ref={range} type="range" min={-1000} max={1000} step={1} defaultValue={0} disabled={disabled}
+             aria-label={t("library.toolbar.zoomHint")}
              onChange={(e) => {
                const p = Number(e.target.value), f = fit();
                onZoom(Math.abs(p) < 25 ? "fit" : p > 0 ? f * (ZOOM_MAX / f) ** (p / 1000) : f * ZOOM_OUT ** (p / 1000));
