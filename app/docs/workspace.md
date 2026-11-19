@@ -176,7 +176,12 @@ the photo:
   steps through them.
 
 The toolbar under the filmstrip also has buttons to show or hide the
-Library panel, the filmstrip and the Adjustments panel.
+Library panel and the filmstrip. In Grid view, the **Find panel** button
+shows or hides Find. In the photo editing view, the **Adjustments panel**
+button controls the editing panel. Immage remembers each panel's width and
+whether it is open when you switch views or relaunch. If you use auto-hide,
+each panel also remembers its own pin. Click its toolbar toggle to reopen a
+closed panel, or hover over the right rail to reveal one that has slid away.
 
 ## Menus
 

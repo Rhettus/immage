@@ -78,7 +78,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type PanelPins, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -306,6 +306,7 @@ export default function App() {
   };
   const toggleSide = (k: PanelKey) => {
     slide();
+    if ((k === "find" || k === "right") && !layout[k]) revealRightPanel();
     setLayout((l) => ({ ...l, [k]: !l[k] }));
   };
   // Lightroom's Tab and ⇧Tab: the panels away, and back as they were
@@ -336,7 +337,7 @@ export default function App() {
     if (leaving) setGrid(false);
     if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
-    if (!layout.right) toggleSide("right");
+    if (!layout.right && !(leaving && mode === "adjust")) toggleSide("right");
   };
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
   const [metaText, setMetaText] = useState<TextFields | null>(null);
@@ -487,9 +488,13 @@ export default function App() {
   // toolbar, below) and away a moment after the pointer leaves it, so the
   // photo keeps the whole window and never re-renders as panels come and go
   const [autoHide, setAutoHide] = useState(loadAutoHide);
-  const [pins, setPins] = useState<Pins>(loadPins);
+  const [pins, setPins] = useState<PanelPins>(loadPins);
   const [revealed, setRevealed] = useState<Pins>({ left: false, right: false, strip: false });
   const revealedRef = useRef(revealed);
+  const revealRightPanel = () => {
+    revealedRef.current = { ...revealedRef.current, right: true };
+    setRevealed(revealedRef.current);
+  };
   const leftAside = useRef<HTMLElement>(null);
   const rightAside = useRef<HTMLElement>(null);
   const rail = useRef<HTMLElement>(null);
@@ -505,7 +510,7 @@ export default function App() {
     return () => ro.disconnect();
   }, []);
   const floatingRef = useRef<Pins>({ left: false, right: false, strip: false });
-  const pinButton = (side: keyof Pins) => autoHide && (
+  const pinButton = (side: keyof PanelPins) => autoHide && (
     <button className={`tool pin${pins[side] ? " on" : ""}`}
             title={pins[side] ? t("app.pin.unpin") : t("app.pin.pin")}
             onClick={() => setPins((p) => { const n = { ...p, [side]: !p[side] }; storePins(n); return n; })}>
@@ -655,6 +660,12 @@ export default function App() {
   const rightOpen = layout.right && (!grid || rightMode === "print");
   // in the grid the right-hand column holds Find, locked in place, in the tools' stead
   const findLocked = grid && rightMode !== "print";
+  const rightPanel = findLocked ? "find" : "right";
+  const rightWidthKey = findLocked ? "findWidth" : "rightWidth";
+  const rightWidth = layout[rightWidthKey];
+  const rightPanelOpen = layout[rightPanel];
+  const rightPanelRef = useRef<"find" | "right">(rightPanel);
+  rightPanelRef.current = rightPanel;
   const [findFocus, setFindFocus] = useState(0);
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
@@ -6082,7 +6093,7 @@ export default function App() {
           return next;
         });
       },
-      "hide-panels": () => { hidePanels(["left", "right"]); },
+      "hide-panels": () => { hidePanels(["left", rightPanelRef.current]); },
       "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
       "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
       "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
@@ -6167,7 +6178,7 @@ export default function App() {
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        if (e.shiftKey) hidePanels(["left", "right", "strip"]); else run("hide-panels");
+        if (e.shiftKey) hidePanels(["left", rightPanelRef.current, "strip"]); else run("hide-panels");
         return;
       }
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
@@ -6453,7 +6464,7 @@ export default function App() {
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
     left: autoHide && !touring && !preview && layout.left && !pins.left,
-    right: autoHide && !touring && !preview && layout.right && !pins.right,
+    right: autoHide && !touring && !preview && rightPanelOpen && !pins[rightPanel],
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
@@ -6463,9 +6474,8 @@ export default function App() {
   const toggleFind = () => {
     if (!grid) setGrid(true);
     if (rightMode === "print") setRightMode("adjust");
-    if (!layout.right) toggleSide("right");
-    revealedRef.current = { ...revealedRef.current, right: true };
-    setRevealed(revealedRef.current);
+    if (layout.find) revealRightPanel();
+    else toggleSide("find");
     setFindFocus((n) => n + 1);
   };
   // spent on leaving, or coming back to the grid would take the keyboard for the box
@@ -6486,9 +6496,9 @@ export default function App() {
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              focusToken={findFocus} pin={pinButton("right")} />
+              focusToken={findFocus} pin={pinButton("find")} />
   );
-  const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
+  const docked = { left: layout.left && !floating.left, right: rightPanelOpen && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
   // arrow keys), and keeps to the photos still listed
@@ -6548,7 +6558,7 @@ export default function App() {
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`
-          + ` ${docked.right ? 8 : 0}px ${docked.right ? layout.rightWidth : 0}px 8px 44px`,
+          + ` ${docked.right ? 8 : 0}px ${docked.right ? rightWidth : 0}px 8px 44px`,
     }}>
       <div className={`slot left-slot${layout.left ? "" : " closed"}${floating.left ? " floating" : ""}`
                       + `${floating.left && revealed.left ? " revealed" : ""}`}>
@@ -6945,7 +6955,7 @@ export default function App() {
                // would hide its first or last column (the panels' edges are the
                // viewer's, styles.css: auto-hide), and covers the photo in the gap
                ...(grid && floating.left && revealed.left ? { left: layout.leftWidth, background: "var(--window)" } : {}),
-               ...(grid && floating.right && revealed.right ? { right: layout.rightWidth, background: "var(--window)" } : {}),
+               ...(grid && floating.right && revealed.right ? { right: rightWidth, background: "var(--window)" } : {}),
              } : undefined}
              className={`strip-slot${layout.strip || grid ? "" : " closed"}${floating.strip ? " floating" : ""}`
                         + `${floating.strip && revealed.strip ? " revealed" : ""}${grid ? " grid" : ""}`}>
@@ -6981,7 +6991,7 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.right}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
@@ -7019,11 +7029,11 @@ export default function App() {
         {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
       </section>
 
-      <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
-                onChange={(v) => setLayout((l) => ({ ...l, rightWidth: v }))} />
-      <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
+      <Splitter axis="x" value={rightWidth} min={280} max={620} invert hidden={!docked.right}
+                onChange={(v) => setLayout((l) => ({ ...l, [rightWidthKey]: v }))} />
+      <div className={`slot right-slot${rightPanelOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
-      <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
+      <aside className="right" ref={rightAside} style={{ width: rightWidth }}>
         {findLocked && renderFind()}
         {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
         <div style={{ display: findLocked ? "none" : "contents" }}>

@@ -378,13 +378,14 @@ export function loadAutoHide(): boolean {
 export function storeAutoHide(on: boolean) {
   try { settings.set(AUTO_HIDE_KEY, on ? "1" : "0"); } catch { /* not kept */ }
 }
-export function loadPins(): Pins {
+export type PanelPins = Pins & { find: boolean };
+export function loadPins(): PanelPins {
   try {
     const v = JSON.parse(settings.get(PINS_KEY) ?? "null");
-    return { left: !!v?.left, right: !!v?.right, strip: !!v?.strip };
-  } catch { return { left: false, right: false, strip: false }; }
+    return { left: !!v?.left, right: !!v?.right, strip: !!v?.strip, find: !!(v?.find ?? v?.right) };
+  } catch { return { left: false, right: false, strip: false, find: false }; }
 }
-export function storePins(p: Pins) {
+export function storePins(p: PanelPins) {
   try { settings.set(PINS_KEY, JSON.stringify(p)); } catch { /* not kept */ }
 }
 

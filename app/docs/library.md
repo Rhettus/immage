@@ -501,8 +501,11 @@ anywhere else.
 
 The toolbar's **Find** button goes to the grid from any view, shows the panel if
 it was hidden (or slid away by auto-hide) and puts the cursor in the search box.
-From the Print panel it returns the column to Find. Leaving the grid brings back
-the editing panel, and any filters you set stay on.
+From the Print panel it returns the column to Find. Use the **Find panel**
+icon beside the filmstrip button to show or hide Find, and drag the panel's
+inner edge to resize it. Find remembers its width and whether it was open
+independently of the editing panel, even when you relaunch Immage. The
+filters stay on when you hide Find or leave the grid.
 
 ### Saved filters
 

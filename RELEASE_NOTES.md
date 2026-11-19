@@ -54,6 +54,9 @@ Performance
 
 Bug fixes
 
+- Grid's Find panel and the editing panel have their own toolbar buttons and
+  remember their widths, visibility and auto-hide pins independently. Their
+  toolbar buttons also reveal them when reopened with auto-hide on.
 - Fixed photo and folder transfers to macOS SMB shares that reject the full
   file flush. Immage falls back to the standard flush and still verifies the
   copy before removing originals.

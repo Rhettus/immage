@@ -109,6 +109,12 @@ Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera
 cases open Find's rows and their inline editors. Whether each case has passed live is
 recorded in `suites.mjs` (`liveValidated`) and its verification note.
 
+`--case find-panel-memory` exercises the bottom toolbar's view-specific toggles,
+drags both panel splitters to different widths, and checks that switching views
+preserves each panel's width and open or closed state. With auto-hide on, it
+opens Find from the toolbar, moves into the panel, then checks that the panel
+hides when the pointer leaves and returns when the pointer rests over the rail.
+
 ## Color calibration chart
 
 Run `--case advanced-checker --fixture checker` to check the chart overlay and

@@ -3451,6 +3451,7 @@
   "library.toolbar.libraryPanel": "panneau de la bibliothèque",
   "library.toolbar.filmstripLabel": "pellicule",
   "library.toolbar.adjustmentsPanel": "panneau des réglages",
+  "library.toolbar.findPanel": "panneau de recherche",
   "library.toolbar.starsAndUp": "{count} étoiles et plus",
   "library.toolbar.rejectedHidden": "photos rejetées masquées : cliquer pour les afficher seules",
   "library.toolbar.editedOnly": "photos retouchées seules : cliquer pour afficher uniquement les non retouchées",

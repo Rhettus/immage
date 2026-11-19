@@ -5,7 +5,7 @@
 // focuses the box, and leaving the grid (the Library button) hides it. Everything is
 // driven by WebDriver pointer and key actions inside the test webview.
 import assert from 'node:assert/strict';
-import { click } from '../support/controls.mjs';
+import { click, reveal } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 
@@ -316,6 +316,94 @@ export async function findSizes(t) {
   await closeFind(t);
   assert(await adjustmentsVisible(t), 'the Adjustments panel is back outside the grid');
   t.measure({ name: 'find-sizes' });
+}
+
+export async function findPanelMemory(t) {
+  const toggle = kind => `.view-tools button[data-panel-toggle="${kind}"]`;
+  const adjust = toggle('right');
+  const find = toggle('find');
+  const library = '.rail .library-toggle';
+  const waitForPanel = async (active, inactive, content, grid, open, expectedWidth) => {
+    const state = await until(() => t.driver.observe((a, other, panel, inGrid, isOpen, width) => {
+      const button = document.querySelector(a);
+      const slot = document.querySelector('.right-slot');
+      const aside = slot?.querySelector('aside.right');
+      if (!button || document.querySelector(other) || !aside || !!document.querySelector('.filmstrip.grid') !== inGrid) return null;
+      const visible = !slot.classList.contains('closed') && !!aside.querySelector(panel)?.getBoundingClientRect().height;
+      const panelWidth = aside.getBoundingClientRect().width;
+      const slotWidth = slot.getBoundingClientRect().width;
+      return visible === isOpen && button.getAttribute('aria-pressed') === String(isOpen)
+        && Math.abs(slotWidth - (isOpen ? panelWidth : 0)) <= 1
+        && (!isOpen || width === null || Math.abs(panelWidth - width) <= 1)
+        ? { width: panelWidth, title: button.title } : null;
+    }, active, inactive, content, grid, open, expectedWidth ?? null),
+    `${grid ? 'Find' : 'Adjustments'} ${open ? 'open' : 'closed'}${expectedWidth === undefined ? '' : ` at ${expectedWidth}px`}`);
+    assert(state.title.trim(), 'panel toggle has a tooltip');
+    return state;
+  };
+  const adjustments = (open, width) => waitForPanel(adjust, find, '.panels', false, open, width);
+  const findPanel = (open, width) => waitForPanel(find, adjust, pop, true, open, width);
+  const resize = async (width, readPanel) => {
+    const before = await readPanel(true);
+    const handle = await reveal(t, '.splitter.x:has(+ .right-slot)');
+    const from = { x: Math.round(handle.x), y: Math.round(handle.y) };
+    await t.driver.drag(from, { x: from.x + Math.round(before.width - width), y: from.y });
+    await readPanel(true, width);
+  };
+
+  await until(() => present(t, cells), 'a photo in the library', 120000);
+  await preference(t, 'Auto-hide panels', false);
+  if (await present(t, '.filmstrip.grid')) await click(t, library);
+  const adjustRail = 'button[data-tour="adjust"]';
+  if (!await present(t, `${adjustRail}.on`)) await click(t, adjustRail);
+  const editPanel = await adjustments(true);
+  await resize(390, adjustments);
+  assert(!await present(t, pop), 'Find is absent in editing view');
+  await t.evidence('adjustments-resized');
+
+  await click(t, '.toolbar .find-button');
+  const gridPanel = await findPanel(true);
+  assert.notEqual(gridPanel.title, editPanel.title, 'Find and Adjustments have distinct tooltips');
+  assert(!await adjustmentsVisible(t), 'Adjustments is hidden in the grid');
+  await resize(500, findPanel);
+  await t.evidence('find-resized');
+
+  await click(t, find);
+  await findPanel(false);
+  await click(t, library);
+  await adjustments(true, 390);
+  await click(t, library);
+  await findPanel(false);
+  await click(t, find);
+  await findPanel(true, 500);
+
+  await click(t, library);
+  await adjustments(true, 390);
+  await click(t, adjust);
+  await adjustments(false);
+  await click(t, library);
+  await findPanel(true, 500);
+  await click(t, adjustRail);
+  await adjustments(false);
+  await click(t, adjust);
+  await adjustments(true, 390);
+  await click(t, library);
+  await findPanel(true, 500);
+  await click(t, find);
+  await findPanel(false);
+  await preference(t, 'Auto-hide panels', true);
+  await click(t, find);
+  const search = await reveal(t, `${pop} .find-text`);
+  await t.driver.move(search.x, search.y);
+  await pause(750);
+  assert(await present(t, '.right-slot.floating.revealed'), 'Find stays open while the pointer is inside');
+  await t.driver.move(550, search.y);
+  await until(async () => !await present(t, '.right-slot.revealed'), 'Find auto-hides after the pointer leaves');
+  const rail = await rectOf(t, '.rail');
+  await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
+  await reveal(t, `${pop} .find-text`);
+  await preference(t, 'Auto-hide panels', false);
+  t.measure({ name: 'find-panel-memory', adjustmentsWidth: 390, findWidth: 500 });
 }
 
 // Save filter… and its name line, "changed" and Update, Alt+1 on a cleared

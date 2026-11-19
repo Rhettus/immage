@@ -3,7 +3,7 @@
 import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
-import { Layout } from "./layoutPrefs";
+import { Layout, PanelKey } from "./layoutPrefs";
 import { ChevronDown } from "lucide-react";
 import { invert } from "./probe";
 import { keys } from "./keys";
@@ -96,7 +96,7 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
 export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
@@ -105,11 +105,12 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   immichAvailable: boolean;
   onFind: (next: FindState, now?: boolean) => void;
   findOpen: boolean;
-  onToggleFind: () => void;                 // the Find button opens and closes the popup; in the grid it shows the column
+  onToggleFind: () => void;                 // opens Grid, shows Find and focuses the search box
   onFindMenu?: (e: React.MouseEvent) => void; // right-click on Find while search results show
   savedMenu: (button: React.ReactNode) => React.ReactNode;   // the Saved menu, with its button drawn here
   layout: Layout; zoomBar: React.ReactNode;
-  onLayout: (k: "left" | "strip" | "right") => void;
+  rightPanel: "right" | "find";
+  onLayout: (k: PanelKey) => void;
 }) {
   const f = find.filter;
   // an Immich-only search has no reject flag or labels, and the stars set the server's
@@ -208,8 +209,11 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
         <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")}
                 onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
-        <button className={`tool${layout.right ? " on" : ""}`} title={t("library.toolbar.adjustmentsPanel")}
-                onClick={() => onLayout("right")}><PanelIcon side="right" /></button>
+        <button className={`tool${layout[rightPanel] ? " on" : ""}`} data-panel-toggle={rightPanel}
+                title={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
+                aria-pressed={layout[rightPanel]} onClick={() => onLayout(rightPanel)}>
+          <PanelIcon side="right" />
+        </button>
         {/* the filmstrip's pin, after the panel switches rather than among them */}
         {pin}
       </div>

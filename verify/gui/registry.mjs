@@ -69,7 +69,7 @@ import { dngThumbnail } from './specs/dng-thumbnail.mjs';
 import { libraryWorkers } from './specs/library-workers.mjs';
 import { localSearch } from './specs/local-search.mjs';
 import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
-import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
+import { findLive, findNoClip, findPanelMemory, findSizes, findSaved } from './specs/find.mjs';
 import { wheelUndo } from './specs/wheel-undo.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
@@ -91,6 +91,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-live': findLive,
   'find-no-clip': findNoClip,
   'find-sizes': findSizes,
+  'find-panel-memory': findPanelMemory,
   'find-saved': findSaved,
   'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
