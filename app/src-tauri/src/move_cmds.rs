@@ -313,9 +313,15 @@ struct Sums {
     sha1: String,
 }
 
+fn transfer_io_error(operation: &str, path: &Path, error: std::io::Error) -> String {
+    let detail = format!("{}: {error}", path.display());
+    let _ = writeln!(std::io::stderr(), "immage transfer: {operation}: {detail}");
+    detail
+}
+
 // a file's checksums, read in chunks so a cancel stops it
 fn sums(path: &Path, ctx: Option<&Ctx>) -> Result<Sums, String> {
-    let mut f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut f = File::open(path).map_err(|e| transfer_io_error("open for checksum", path, e))?;
     let (mut a, mut b) = (Sha256::new(), <sha1::Sha1 as sha1::Digest>::new());
     let mut buf = vec![0u8; CHUNK];
     loop {
@@ -325,7 +331,7 @@ fn sums(path: &Path, ctx: Option<&Ctx>) -> Result<Sums, String> {
             }
             c.activity.fetch_add(1, Ordering::SeqCst);
         }
-        let n = f.read(&mut buf).map_err(|e| format!("{}: {e}", path.display()))?;
+        let n = f.read(&mut buf).map_err(|e| transfer_io_error("read for checksum", path, e))?;
         if n == 0 {
             break;
         }
@@ -705,7 +711,7 @@ fn sync_dir(dir: &Path) {
 #[cfg(not(unix))]
 fn sync_dir(_dir: &Path) {}
 
-fn sync_transfer_file(file: &File) -> std::io::Result<()> {
+fn sync_transfer_file(file: &File, path: &Path) -> Result<(), String> {
     let result = file.sync_all();
     #[cfg(target_os = "macos")]
     if result.as_ref().is_err_and(|e| {
@@ -720,11 +726,11 @@ fn sync_transfer_file(file: &File) -> std::io::Result<()> {
             }
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::Interrupted {
-                return Err(error);
+                return Err(transfer_io_error("fsync fallback", path, error));
             }
         }
     }
-    result
+    result.map_err(|error| transfer_io_error("sync_all", path, error))
 }
 
 // `from` into `target` through a part file: written and flushed, read back
@@ -757,7 +763,7 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
         e
     };
     let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(&part)
-        .map_err(|e| format!("{}: {e}", part.display()))?;
+        .map_err(|e| transfer_io_error("create temporary file", &part, e))?;
     let (mut a, mut b) = (Sha256::new(), <sha1::Sha1 as sha1::Digest>::new());
     let mut buf = vec![0u8; CHUNK];
     loop {
@@ -770,7 +776,7 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => {
                 drop(out);
-                return Err(fail(format!("reading: {e}")));
+                return Err(fail(transfer_io_error("read source while copying to destination", target, e)));
             }
         };
         if n == 0 {
@@ -780,14 +786,14 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
         sha1::Digest::update(&mut b, &buf[..n]);
         if let Err(e) = out.write_all(&buf[..n]) {
             drop(out);
-            return Err(fail(format!("{}: {e}", target.display())));
+            return Err(fail(transfer_io_error("write temporary file", &part, e)));
         }
         ctx.bytes.fetch_add(n as u64, Ordering::SeqCst);
         ctx.activity.fetch_add(1, Ordering::SeqCst);
     }
-    if let Err(e) = sync_transfer_file(&out) {
+    if let Err(e) = sync_transfer_file(&out, &part) {
         drop(out);
-        return Err(fail(format!("{}: {e}", target.display())));
+        return Err(fail(e));
     }
     if let Some(t) = mtime {
         let _ = out.set_modified(t);
@@ -809,7 +815,8 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
     before_publish(target).map_err(fail)?;
     if ctx.cancelled() { return Err(fail(CANCELLED.into())); }
     let publish = if replace { std::fs::rename(&part, target) } else { rename_no_replace(&part, target) };
-    publish.map_err(|e| fail(format!("{}: {e}", target.display())))?;
+    let operation = if replace { "rename temporary file" } else { "rename temporary file without replacement" };
+    publish.map_err(|e| fail(transfer_io_error(operation, target, e)))?;
     sync_dir(target.parent().unwrap_or(Path::new(".")));
     Ok(read)
 }
@@ -849,7 +856,7 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
             }
             let target = dest.join(r);
             if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+                std::fs::create_dir_all(parent).map_err(|e| transfer_io_error("create destination directory", parent, e))?;
             }
             if target.symlink_metadata().is_ok() {
                 return Err(format!("{} appeared at the destination", target.display()));
@@ -863,12 +870,12 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
                         continue;
                     }
                     // another drive after all (a bind mount): copied below
-                    let mut src = File::open(from).map_err(|e| format!("{}: {e}", from.display()))?;
+                    let mut src = File::open(from).map_err(|e| transfer_io_error("open source", from, e))?;
                     let mtime = src.metadata().and_then(|m| m.modified()).ok();
                     copy_verified(&mut src, &target, None, mtime, ctx)?;
                 }
                 Some(from) => {
-                    let mut src = File::open(from).map_err(|e| format!("{}: {e}", from.display()))?;
+                    let mut src = File::open(from).map_err(|e| transfer_io_error("open source", from, e))?;
                     let mtime = src.metadata().and_then(|m| m.modified()).ok();
                     copy_verified(&mut src, &target, None, mtime, ctx)?;
                 }
@@ -912,8 +919,13 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
         }
         match std::fs::remove_file(from) {
             Ok(()) => gone |= i == 0,
-            Err(e) if i == 0 => return Ok((false, Some(format!("{} was copied, but not removed: {e}", from.display())))),
-            Err(e) => warning = Some(format!("{} was left behind: {e}", from.display())),
+            Err(e) => {
+                let _ = writeln!(std::io::stderr(), "immage transfer: remove source: {}: {e}", from.display());
+                if i == 0 {
+                    return Ok((false, Some(format!("{} was copied, but not removed: {e}", from.display()))));
+                }
+                warning = Some(format!("{} was left behind: {e}", from.display()));
+            }
         }
     }
     Ok((gone, warning))

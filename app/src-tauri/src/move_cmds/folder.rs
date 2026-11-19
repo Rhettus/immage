@@ -56,15 +56,15 @@ struct Tree {
     _reservation: Option<DestinationReservation>,
 }
 
-fn io_at<T>(path: &Path, result: io::Result<T>) -> Result<T, String> {
-    result.map_err(|e| format!("{}: {e}", path.display()))
+fn io_at<T>(operation: &str, path: &Path, result: io::Result<T>) -> Result<T, String> {
+    result.map_err(|e| transfer_io_error(operation, path, e))
 }
 
 fn metadata(path: &Path) -> Result<Option<Metadata>, String> {
     match fs::symlink_metadata(path) {
         Ok(m) => Ok(Some(m)),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-        Err(e) => io_at(path, Err(e)),
+        Err(e) => io_at("read metadata", path, Err(e)),
     }
 }
 
@@ -104,9 +104,9 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
     if !metadata(original)?.is_some_and(|m| m.is_dir()) {
         return Err("The source must be a folder, rather than a link".into());
     }
-    let source = io_at(original, fs::canonicalize(original))?;
+    let source = io_at("resolve source path", original, fs::canonicalize(original))?;
     let display_target = dest.join(name);
-    let dest = io_at(dest, fs::canonicalize(dest))?;
+    let dest = io_at("resolve destination path", dest, fs::canonicalize(dest))?;
     let target = dest.join(name);
     if dest.starts_with(&source)
         || source.starts_with(&target)
@@ -131,7 +131,7 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
     let dest_mount = volumes::mount_identity(&dest);
     let merge = directory_at(&target, &dest_mount)?;
     if merge {
-        let resolved = io_at(&target, fs::canonicalize(&target))?;
+        let resolved = io_at("resolve target path", &target, fs::canonicalize(&target))?;
         if resolved.starts_with(&source) || source.starts_with(&resolved) {
             return Err("Choose another destination folder".into());
         }
@@ -159,19 +159,19 @@ fn walk(req: FolderMoveRequest, reserve: bool, ctx: &Ctx) -> Result<Tree, String
         if !directory_at(&dir, &mount)? {
             return Err(format!("{} disappeared", dir.display()));
         }
-        let entries = io_at(&dir, fs::read_dir(&dir))?;
+        let entries = io_at("open source directory", &dir, fs::read_dir(&dir))?;
         for entry in entries {
             tick(ctx)?;
             seen += 1;
             if seen > 500_000 {
                 return Err("The folder contains more than 500,000 entries".into());
             }
-            let entry = io_at(&dir, entry)?;
+            let entry = io_at("read directory entry", &dir, entry)?;
             let path = entry.path();
             if mounts.contains(&path) {
                 return Err(format!("{} is on another mount", path.display()));
             }
-            let kind = io_at(&path, entry.file_type())?;
+            let kind = io_at("read entry type", &path, entry.file_type())?;
             let rel = relative.join(entry.file_name());
             if kind.is_dir() {
                 directory_at(&tree.target.join(&rel), &dest_mount)?;
@@ -231,6 +231,7 @@ fn check_aliases(source: &Path, dest: &Path, target: &Path, ctx: &Ctx) -> Result
     );
     let marker = source.join(&name);
     io_at(
+        "create alias probe",
         &marker,
         fs::OpenOptions::new()
             .write(true)
@@ -246,7 +247,7 @@ fn check_aliases(source: &Path, dest: &Path, target: &Path, ctx: &Ctx) -> Result
         }
         Ok(())
     })();
-    io_at(&marker, fs::remove_file(&marker))?;
+    io_at("remove alias probe", &marker, fs::remove_file(&marker))?;
     result
 }
 
@@ -445,7 +446,7 @@ fn transfer(
                 return Ok(result);
             }
             Err(e) if fallback_rename(&e) || e.kind() == ErrorKind::AlreadyExists => {}
-            Err(e) => return io_at(&tree.target, Err(e)),
+            Err(e) => return io_at("rename folder without replacement", &tree.target, Err(e)),
         }
     }
     if !copy {
@@ -458,7 +459,7 @@ fn transfer(
         tick(ctx)?;
         let path = tree.target.join(rel);
         if !directory_at(&path, &mount)? {
-            io_at(&path, fs::create_dir(&path))?;
+            io_at("create destination directory", &path, fs::create_dir(&path))?;
             created.0.push(path);
         }
     }
@@ -516,7 +517,7 @@ fn transfer(
                 if expected.sha256 == *old {
                     ctx.bytes.fetch_add(m.len(), Ordering::SeqCst);
                 } else if approved.get(&unit.key) == Some(old) {
-                    let mut file = io_at(source, File::open(source))?;
+                    let mut file = io_at("open source", source, File::open(source))?;
                     copy_verified_into(
                         &mut file,
                         &target,
@@ -530,7 +531,7 @@ fn transfer(
                     return Ok(None);
                 }
             } else {
-                let mut file = io_at(source, File::open(source))?;
+                let mut file = io_at("open source", source, File::open(source))?;
                 copy_verified_into(&mut file, &target, None, m.modified().ok(), ctx, None)?;
             }
             if !copy || thumbnail_file(&file.rel) {
@@ -601,7 +602,7 @@ fn transfer(
             let source = tree.source.join(rel);
             validate_file(&source, original)?;
             validate_file(&tree.target.join(rel), verified)?;
-            io_at(&source, fs::remove_file(&source))?;
+            io_at("remove source file", &source, fs::remove_file(&source))?;
             progress(i + 1, placed.len(), 0, 0, "removing");
         }
         for (rel, original) in &tree.system_files {
@@ -609,7 +610,7 @@ fn transfer(
             let path = tree.source.join(rel);
             if metadata(&path)?.is_some() {
                 validate_file(&path, original)?;
-                io_at(&path, fs::remove_file(&path))?;
+                io_at("remove source metadata file", &path, fs::remove_file(&path))?;
             }
         }
         for rel in tree.dirs.iter().rev() {
@@ -618,7 +619,7 @@ fn transfer(
             match fs::remove_dir(&path) {
                 Ok(()) => {}
                 Err(e) if e.kind() == ErrorKind::DirectoryNotEmpty => {}
-                Err(e) => return io_at(&path, Err(e)),
+                Err(e) => return io_at("remove source directory", &path, Err(e)),
             }
         }
         result.source_removed = metadata(&tree.source)?.is_none();
@@ -645,7 +646,7 @@ fn transfer(
 
 fn validate_parent(source: &Path) -> Result<(), String> {
     let parent = source.parent().unwrap();
-    if io_at(parent, fs::canonicalize(parent))? != parent {
+    if io_at("resolve parent path", parent, fs::canonicalize(parent))? != parent {
         return Err(format!("{} changed during transfer", parent.display()));
     }
     Ok(())

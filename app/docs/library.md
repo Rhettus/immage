@@ -261,6 +261,21 @@ A transfer that stops answering for 30 seconds ends the job and stops new
 transfers. Activity on another photo does not hide a stalled transfer.
 Blocked transfers continue to count against the worker cap until they return.
 
+### Troubleshooting macOS SMB transfers
+
+If a photo or folder transfer fails, quit Immage and launch it from Terminal
+to capture the filesystem operation, path, and OS error. If you installed
+Immage outside Applications, adjust the path in this command.
+
+```sh
+/Applications/Immage.app/Contents/MacOS/immage 2>&1 | tee "$TMPDIR/immage-transfer.log"
+```
+
+Reproduce the failure with a disposable photo or folder on the same share.
+Look for an `immage transfer:` line and include it when reporting the failure,
+along with whether you moved or copied photos or a whole folder. You can redact
+personal parts of paths.
+
 ## Moving and copying folders
 
 Press and hold the name of a folder in **Folders**, then drag it onto the
