@@ -10,6 +10,7 @@ import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 import { CheckerViewer } from "./ModuleChecker";
 import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
 import { advancedEdits } from "./advancedEdits";
+import { fieldText } from "./fieldText";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -144,7 +145,7 @@ import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
+import { commands, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
 import { formatNumber, t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
@@ -4500,18 +4501,25 @@ export default function App() {
   // the History panel follows the stack, which is kept outside React
   const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
-  // Simple: per group, the Advanced edits its sliders cannot show, read
-  // again after each history change (a photo opened, undo, a paste)
-  const [advancedEditCounts, setAdvancedEditCounts] = useState<Map<string, number>>(new Map());
+  // Both the header and Simple's group badges follow the effective module edits.
+  const [advancedSummary, setAdvancedSummary] = useState<{
+    session: Session; photo: Opened; edits: ReturnType<typeof advancedEdits<Instance>>;
+  } | null>(null);
   useEffect(() => {
     const s = session.current;
-    if (editMode !== "simple" || !s) { setAdvancedEditCounts(new Map()); return; }
+    if (!s || !current || current.imgid !== s.imgid) return;
     let live = true;
-    void s.settled().then(() => commands.instances())
-      .then((list) => { if (live && session.current === s) setAdvancedEditCounts(advancedEdits(list)); })
-      .catch(() => { /* the photo closed meanwhile */ });
+    const active = () => live && session.current === s && currentRef.current === current;
+    void s.settled().then(async () => {
+      if (!active()) return;
+      const list = await commands.instances();
+      if (active()) setAdvancedSummary({ session: s, photo: current, edits: advancedEdits(list) });
+    }).catch(() => { if (active()) setAdvancedSummary(null); });
     return () => { live = false; };
-  }, [editMode, historyRev]);
+  }, [current, historyRev]);
+  const photoAdvancedEdits = advancedSummary?.photo === current && advancedSummary.session === session.current
+    ? advancedSummary.edits : null;
+  const modeLabel = t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced");
   const record = (ids: string[], label?: string, gesture?: number) => {
     const s = session.current;
     if (!s || holdRecord.current) return;
@@ -7025,8 +7033,23 @@ export default function App() {
             <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
                       data-tour="advanced-mode"
-                      title={t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced")}>
-                <ModulesIcon /></button>
+                      aria-label={modeLabel}
+                      aria-describedby={photoAdvancedEdits?.modules.length ? "photo-advanced-edits" : undefined}
+                      title={photoAdvancedEdits?.modules.length ? undefined : modeLabel}>
+                <ModulesIcon />
+                {!!photoAdvancedEdits?.modules.length && <>
+                  <span className="advanced-dot" aria-hidden="true" />
+                  <span className="edit-mode-tooltip" id="photo-advanced-edits" role="tooltip">
+                    <span aria-hidden="true">{modeLabel}</span>
+                    <strong>{t("app.mode.adjustedModules")}</strong>
+                    {photoAdvancedEdits.modules.map(({ instance, title }) => (
+                      <span key={`${instance.op}#${instance.priority}`}>
+                        {fieldText(title)}{instance.label ? ` ${instance.label}` : ""}
+                      </span>
+                    ))}
+                  </span>
+                </>}
+            </button>
             <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
@@ -7361,7 +7384,7 @@ export default function App() {
                             applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}

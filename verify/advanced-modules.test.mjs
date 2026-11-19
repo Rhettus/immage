@@ -305,7 +305,9 @@ test('Simple counts the Advanced edits its sliders cannot show', { skip: skip ||
   if (raw) { photos.push(join(work, 'photos', 'raw' + raw.slice(raw.lastIndexOf('.')))); copyFileSync(raw, photos[1]); }
   const e = new Engine(work);
   t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
-  const counts = async () => Object.fromEntries(advancedEdits((await e.call({ cmd: 'instances' })).instances));
+  const summary = async () => advancedEdits((await e.call({ cmd: 'instances' })).instances);
+  const counts = async () => Object.fromEntries((await summary()).counts);
+  const names = async () => (await summary()).modules.map(({ title }) => title).sort();
   for (const photo of photos.slice(1)) {
     await e.call({ cmd: 'open', path: photo });
     assert.deepEqual(await counts(), {}, `${photo} at open`);
@@ -323,10 +325,12 @@ test('Simple counts the Advanced edits its sliders cannot show', { skip: skip ||
   assert.deepEqual(await counts(), {}, 'Simple\'s own instances');
   const p1 = (await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: 0 })).priority;
   await e.call({ cmd: 'set', op: 'exposure', priority: p1, params: { exposure: -0.25 } });
-  await e.call({ cmd: 'set', op: 'velvia', priority: 0, params: { strength: 40 }, enabled: true });
+  await e.call({ cmd: 'set', op: 'velvia', priority: 0, enabled: true });
   assert.deepEqual(await counts(), { basic: 1, hsl: 1 });
+  assert.deepEqual(await names(), ['Exposure', 'Velvia']);
   await e.call({ cmd: 'set', op: 'velvia', priority: 0, enabled: false });
   assert.deepEqual(await counts(), { basic: 1 }, 'a module switched off');
+  assert.deepEqual(await names(), ['Exposure']);
 });
 
 // Advanced mode phase 4: the instance menu's actions on exposure. A second

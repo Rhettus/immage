@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The Advanced mode button shows a green dot for active module edits that
+  Simple cannot show. Hover over the button to see the module names.
 - Drag whole folders onto another folder, including a NAS destination. Immage
   verifies the entire copy phase before removing originals and uses your Library
   worker setting to transfer files in parallel. Cached thumbnails and virtual
@@ -18,12 +20,9 @@ Improvements
   edited in this version should not be reopened in Immage 0.46 or earlier: those
   versions drop the white balance, input color and demosaic steps saved by this
   one.
-- The Advanced white balance card has darktable's new Prepare data for color
-  calibration checkbox, which replaces the As shot to reference setting.
-- The Advanced white balance and color calibration cards show darktable's
-  warnings when the two modules work against each other.
-- The Advanced white balance card can pick its coefficients from an area of the
-  photo, with the From image area setting or its eyedropper.
+- Advanced white balance replaces As shot to reference with Prepare data for
+  color calibration and adds From image area with an eyedropper. The white
+  balance and color calibration cards warn when their settings conflict.
 - Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced
   Color calibration. Align the chart overlay, review the measured color error,
   and apply the computed illuminant and channel matrix.

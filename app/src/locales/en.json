@@ -4367,6 +4367,7 @@
   "app.beforeAfter.mode.hsplit": "split top / bottom",
   "app.beforeAfter.mode.overlay": "hold for before",
   "app.mode.advancedOn": "Advanced mode is on: click for Simple’s sliders",
+  "app.mode.adjustedModules": "Adjusted modules unavailable in Simple",
   "app.mode.switchAdvanced": "switch to Advanced mode: darktable’s modules",
   "app.panels.collapseAll": "collapse all panels (⌥-click a panel to open it alone)",
   "app.panels.expandAll": "expand all panels",

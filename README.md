@@ -20,6 +20,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 
 - Edit with familiar tone, color, detail and lens correction tools.
 - Switch to [Advanced mode](app/docs/advanced-mode.md) to work with darktable's own modules.
+  When the mode button has a green dot, hover over it to see which active
+  module edits require Advanced mode.
 - Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced mode.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Grade colors with live wheel previews and one undo step per drag.

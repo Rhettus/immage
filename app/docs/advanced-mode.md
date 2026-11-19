@@ -9,7 +9,9 @@ its edits.
 
 Edits made in Advanced that Simple's sliders cannot show, such as a second
 instance of a module or a module Simple has no sliders for, keep rendering in
-Simple. At the end of each Adjustments group that holds such edits, Simple shows
+Simple. The stacked-cards button shows a green dot when the photo has active
+Advanced module edits that Simple cannot show. Hover over the button or focus
+it with the keyboard to see the module names in either editing mode. At the end of each Adjustments group that holds such edits, Simple shows
 **N advanced edits here keep rendering**. Click it to open Editing mode in
 Preferences. Modules that darktable turns on by itself and that you have not
 changed are not counted.

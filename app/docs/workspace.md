@@ -40,6 +40,8 @@ a photo open.
 Every rail panel keeps the same header icons in the same order: pin,
 Simple/Advanced mode, expand/collapse all, and Reset all. The stacked-cards
 button switches the shared editing mode, including the controls in Masks.
+A green dot marks active photo adjustments that require Advanced mode. Hover
+over the button or focus it with the keyboard to see the module names.
 Expand/collapse all folds the groups in Adjustments, Presets and Masks;
 it stays visible but disabled in tools without this group-folding control.
 

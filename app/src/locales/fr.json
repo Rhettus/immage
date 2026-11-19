@@ -4367,6 +4367,7 @@
   "app.beforeAfter.mode.hsplit": "séparation haut/bas",
   "app.beforeAfter.mode.overlay": "maintenir pour voir l’avant",
   "app.mode.advancedOn": "Le mode avancé est actif : cliquer pour afficher les curseurs simples",
+  "app.mode.adjustedModules": "Modules modifiés indisponibles en mode simple",
   "app.mode.switchAdvanced": "passer au mode avancé : modules de darktable",
   "app.panels.collapseAll": "réduire tous les panneaux (⌥-cliquer sur un panneau pour l’ouvrir seul)",
   "app.panels.expandAll": "développer tous les panneaux",

@@ -671,6 +671,27 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .tool .icon { width: 17px; height: 17px; }
 .tool:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .tool.on { color: var(--text); }
+.tool.edit-mode { position: relative; }
+.tool.edit-mode .advanced-dot { inset: auto; inset-block-start: 3px; inset-inline-end: 3px; }
+.edit-mode-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  width: max-content;
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel, #1c1c1e);
+  color: var(--text);
+  text-align: start;
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+.tool.edit-mode:hover .edit-mode-tooltip,
+.tool.edit-mode:focus-visible .edit-mode-tooltip { display: grid; gap: 4px; }
 .panel-head .tool.edit-mode.on { color: var(--accent); }
 .tool.reject.on { color: #ff6b6b; }
 .tool:disabled { color: var(--text-3); cursor: default; }
