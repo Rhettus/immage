@@ -165,9 +165,10 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
 }
 
+// Keep the existing Tauri command payload.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
-#[allow(clippy::too_many_arguments)] // Keep the existing Tauri command payload.
 pub(crate) async fn checker_analyze(
     state: State<'_, AppState>, chart: Number, priority: Number, optimization: Number,
     scale: Number, box_points: Option<Vec<Number>>, validate: bool, imgid: Option<i64>,

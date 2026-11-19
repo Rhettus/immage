@@ -691,9 +691,10 @@ pub(crate) async fn folder_move_plan(
     bounded(cancel, true, move |ctx| plan(walk(req, false, ctx)?, ctx)).await
 }
 
+// Keep the existing Tauri command payload.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
-#[allow(clippy::too_many_arguments)] // Keep the existing Tauri command payload.
 pub(crate) async fn folder_move(
     app: AppHandle,
     state: State<'_, AppState>,
