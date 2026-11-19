@@ -109,7 +109,7 @@ impl DiskCache {
         std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         let part = self.dir.join(format!(".{name}.part"));
         std::fs::write(&part, bytes).map_err(|e| e.to_string())?;
-        std::fs::rename(&part, &path).map_err(|e| {
+        std::fs::rename(&part, path).map_err(|e| {
             let _ = std::fs::remove_file(&part);
             e.to_string()
         })?;

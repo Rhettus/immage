@@ -388,6 +388,7 @@ fn fallback_rename(e: &io::Error) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // The transfer receives separate progress and bookkeeping callbacks.
 fn transfer(
     tree: Tree,
     copy: bool,
@@ -692,6 +693,7 @@ pub(crate) async fn folder_move_plan(
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)] // Keep the existing Tauri command payload.
 pub(crate) async fn folder_move(
     app: AppHandle,
     state: State<'_, AppState>,
