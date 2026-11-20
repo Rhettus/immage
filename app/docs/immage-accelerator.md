@@ -160,7 +160,8 @@ change to the current view.
 
 ## Browse and search
 
-The folder tree shows folders that contain indexed photos or lead to them.
+Immage requests subfolders from morfPhoto as you expand the folder tree.
+The tree shows folders that contain indexed photos or lead to them.
 Empty and unindexed folders stay out of the tree. Library filters and Find
 prefer the metadata from the current server index for mapped network shares.
 Photos, edits, and file moves can take until the next morfPhoto index update

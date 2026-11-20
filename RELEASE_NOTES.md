@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## 0.48.0
+## 0.47.1
 
 Bug fixes
 
@@ -13,6 +13,8 @@ Bug fixes
   a verified copy before removing the originals.
 - The Windows installer includes the certificates needed to download Film
   Simulation data from GitHub.
+- Browsing mapped shares through morfPhoto loads the folder tree without
+  paging through the entire photo catalog.
 
 ## 0.47.0
 
