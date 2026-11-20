@@ -4,7 +4,9 @@ Immage Accelerator is for browsing large photo libraries and getting to the
 photo you want to edit faster when the originals live on a network share or
 slower disks. It can make a substantial difference on a low-powered NAS such
 as a Raspberry Pi, where repeatedly opening originals over the network to read
-metadata or generate grid thumbnails adds up. Expect a smaller gain when your
+metadata or generate grid thumbnails adds up. Reusing that work can make
+browsing and editing over Wi‑Fi comfortably usable. Opening an original still
+depends on the speed of your connection. Expect a smaller gain when your
 photos already live on fast local NVMe storage.
 
 Run morfPhoto once on the NAS and connect as many Immage clients as you need to
@@ -32,6 +34,39 @@ file-based workflow.
 
 morfPhoto was created by Frédéric Biron (morfredus) and is licensed GPL-3.0-only.
 The Docker image and Compose files below come from the Rhettus morfPhoto fork.
+
+## How much NAS storage to reserve
+
+The figures below are planning estimates in GiB. They cover Accelerator data
+only. Your original photos and XMP sidecars stay on the photo share.
+
+| Photos | Metadata catalog (`/data`) | Optional thumbnail cache | Optional CLIP model and index |
+| ---: | ---: | ---: | ---: |
+| 10,000 | 0.08–0.31 GiB | 0.2–0.6 GiB | About 0.6 GiB |
+| 100,000 | 0.8–3.1 GiB | 1.9–5.7 GiB | About 1 GiB |
+| 500,000 | 3.8–15.3 GiB | Up to about 8 GiB | About 2.5 GiB |
+
+- **Metadata catalog:** The estimate assumes 8–32 KiB per photo for SQLite
+  records and indexes. Large EXIF records, lots of keywords, and virtual
+  copies can increase that. The supplied Compose file puts the catalog in the
+  Docker volume `morfphoto-data`, so check free space on the disk that holds
+  Docker's volumes. Leave room for SQLite's temporary growth during indexing.
+- **Thumbnails:** The examples assume cached JPEGs average 20–60 KiB. Camera
+  previews vary in size, and some photos have no eligible embedded preview.
+  The cache has an approximately 8 GiB JPEG budget across its shards. A
+  500,000-photo library at the example sizes would need about 10–29 GiB for
+  every preview, so expect partial coverage at that scale. Filesystem
+  overhead adds to actual disk usage. The cache skips new writes when its
+  filesystem has less than 512 MiB free.
+- **CLIP:** The model is a one-time download of about 608 MB per server.
+  Each photo adds a 2 KiB embedding before SQLite overhead. The table
+  allows for storage on roughly one 4 KiB database page per indexed photo.
+  Keep extra space for database writes and model updates.
+
+For a starting budget with both options enabled, reserve roughly **5 GB**
+for 10,000 photos, **20 GB** for 100,000, or **50 GB** for 500,000, spread
+across the catalog and cache volumes. Measure your actual usage after
+indexing a representative folder before sizing a larger deployment.
 
 ## Install on the NAS
 
