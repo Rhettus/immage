@@ -356,7 +356,7 @@ pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &Analysis
                     Ok(_) if mapped == path => return,
                     Ok(_) => hidden.push(mapped),
                     Err(_) if job.cancelled() => return,
-                    Err(_) => { let _ = app.emit("morfphoto-fallback", mapped.to_string_lossy()); }
+                    Err(reason) => { eprintln!("morfPhoto catalog request failed: {reason}"); let _ = app.emit("morfphoto-fallback", mapped.to_string_lossy()); }
                 }
             }
             let volume = crate::volumes::volume(&root);

@@ -184,6 +184,46 @@ impl Config {
         self.list_with_api(path, recursive, cancelled, self.client(None)?)
     }
 
+    pub(crate) fn subfolders(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, String> {
+        #[derive(Deserialize)]
+        struct Folder {
+            path: String,
+            has_children: bool,
+        }
+        #[derive(Deserialize)]
+        struct Reply {
+            items: Vec<Folder>,
+        }
+        let api = self.client(None)?;
+        let mut url = api.endpoint.clone();
+        url.path_segments_mut().map_err(|_| "Invalid morfPhoto endpoint")?.push("subfolders");
+        url.query_pairs_mut().append_pair("folder_path", &self.server_folder(path)?);
+        let query = url.query().unwrap_or_default().replace('+', "%20");
+        url.set_query(Some(&query));
+        let response = api.client.get(url)
+            .header(reqwest::header::AUTHORIZATION, api.auth)
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .map_err(|error| if error.is_timeout() { "Request timed out" } else { "Request failed" })?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status().as_u16()));
+        }
+        let mut body = Vec::new();
+        response.take(MAX_PAGE_BYTES + 1).read_to_end(&mut body)
+            .map_err(|_| "Could not read subfolder response")?;
+        if body.len() as u64 > MAX_PAGE_BYTES {
+            return Err("Subfolder response exceeded its size limit".into());
+        }
+        let reply: Reply = serde_json::from_slice(&body).map_err(|_| "Invalid subfolder response")?;
+        reply.items.into_iter().map(|folder| {
+            let mapped = self.local_file(&folder.path)?;
+            if mapped.parent() != Some(path) {
+                return Err("morfPhoto returned a folder outside the requested parent".into());
+            }
+            Ok((mapped, folder.has_children))
+        }).collect()
+    }
+
     pub(crate) fn metrics(&self) -> Result<Value, String> {
         let api = self.client(None)?;
         let mut url = api.endpoint.clone();
@@ -276,11 +316,16 @@ impl Config {
     ) -> Result<Vec<LibraryImage>, String> {
         let server_folder = self.server_folder(path)?;
         let folder = (server_folder != "/" || !recursive).then_some(server_folder.as_str());
-        let deadline = Instant::now() + LIST_TIMEOUT;
+        let started = Instant::now();
+        let deadline = started + LIST_TIMEOUT;
         let mut images = Vec::new();
         let mut seen = HashSet::new();
         let mut total = None;
         for page in 1..=1_000_000 {
+            let failure = |reason: String| {
+                format!("morfPhoto catalog page {page} after {} ms (recursive={recursive}): {reason}",
+                    started.elapsed().as_millis())
+            };
             if cancelled() {
                 return Err("cancelled".into());
             }
@@ -288,29 +333,29 @@ impl Config {
                 .saturating_duration_since(Instant::now())
                 .min(REQUEST_TIMEOUT);
             if timeout.is_zero() {
-                return Err("morfPhoto listing timed out".into());
+                return Err(failure("morfPhoto listing timed out".into()));
             }
-            let reply = api.page(folder, recursive, page, PAGE_SIZE, timeout)?;
+            let reply = api.page(folder, recursive, page, PAGE_SIZE, timeout).map_err(failure)?;
             if total.get_or_insert(reply.total) != &reply.total
                 || reply.items.len() != reply.total.saturating_sub(seen.len()).min(PAGE_SIZE)
             {
-                return Err("morfPhoto listing changed during pagination".into());
+                return Err(failure("morfPhoto listing changed during pagination".into()));
             }
             for item in reply.items {
                 if !seen.insert(item.path.clone()) {
-                    return Err("Duplicate morfPhoto path in listing".into());
+                    return Err(failure("Duplicate morfPhoto path in listing".into()));
                 }
-                let mapped = self.local_file(&item.path)?;
+                let mapped = self.local_file(&item.path).map_err(failure)?;
                 if !mapped.starts_with(path) || (!recursive && mapped.parent() != Some(path)) {
                     if folder.is_none() {
                         continue;
                     }
-                    return Err("morfPhoto returned a path outside the requested folder".into());
+                    return Err(failure("morfPhoto returned a path outside the requested folder".into()));
                 }
                 if !crate::library_cmds::photo_candidate(&mapped) {
                     continue;
                 }
-                images.extend(item.images(&mapped)?);
+                images.extend(item.images(&mapped).map_err(failure)?);
             }
             if seen.len() == reply.total {
                 return Ok(images);
@@ -407,7 +452,11 @@ impl Api {
             .header(reqwest::header::AUTHORIZATION, self.auth.clone())
             .timeout(timeout)
             .send()
-            .map_err(|_| "morfPhoto request failed")?;
+            .map_err(|error| if error.is_timeout() {
+                "morfPhoto catalog request timed out"
+            } else {
+                "morfPhoto catalog request failed"
+            })?;
         if !response.status().is_success() {
             return Err(format!(
                 "morfPhoto returned HTTP {}",
