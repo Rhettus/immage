@@ -287,6 +287,11 @@ export default function App() {
     setStatusStamp((n) => n + 1);
   }, []);
   const [morfPhotoFallback, setMorfPhotoFallback] = useState<{ path: string } | null>(null);
+  const [morfPhotoCoverage, setMorfPhotoCoverage] = useState<{ indexed: number; eligible: number } | null>(null);
+  useEffect(() => {
+    const off = listen<{ indexed: number; eligible: number }>("morfphoto-coverage", ({ payload }) => setMorfPhotoCoverage(payload));
+    return () => { void off.then(unlisten => unlisten()); };
+  }, []);
   useEffect(() => {
     const off = listen<string>("morfphoto-fallback", ({ payload }) => setMorfPhotoFallback({ path: payload }));
     return () => { void off.then(unlisten => unlisten()); };
@@ -6917,6 +6922,14 @@ export default function App() {
             onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</Notice>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
+          {morfPhotoCoverage && (
+            <Notice className="activity waiting" stamp={morfPhotoCoverage} onDone={() => setMorfPhotoCoverage(null)} role="status">
+              <span>{t("morfphoto.coverage", {
+                indexed: formatNumber(morfPhotoCoverage.indexed),
+                eligible: formatNumber(morfPhotoCoverage.eligible),
+              })}</span>
+            </Notice>
+          )}
           {morfPhotoFallback && (
             <Notice className="activity waiting" stamp={morfPhotoFallback} onDone={() => setMorfPhotoFallback(null)} role="status">
               <span>{t("morfphoto.fallback", morfPhotoFallback)}</span>

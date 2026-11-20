@@ -357,6 +357,7 @@
   "morfphoto.saved": "Réglages de morfPhoto enregistrés.",
   "morfphoto.save": "Enregistrer",
   "morfphoto.saving": "Enregistrement…",
+  "morfphoto.coverage": "La recherche intelligente du NAS a indexé {indexed} originaux sur {eligible} correspondant aux filtres",
   "morfphoto.fallback": "morfPhoto est indisponible pour {path}. Immage utilise son mode de lecture à partir des fichiers.",
   "immich.store.mac": "le trousseau macOS",
   "immich.store.windows": "le Gestionnaire d’identifiants Windows",

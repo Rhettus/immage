@@ -184,6 +184,76 @@ impl Config {
         self.list_with_api(path, recursive, cancelled, self.client(None)?)
     }
 
+    pub(crate) fn semantic(
+        &self,
+        folder: &Path,
+        args: &crate::local_search::LocalSearchArgs,
+    ) -> Result<(crate::local_search::LocalPage, usize, usize), String> {
+        use crate::local_search::{LocalHit, LocalPage};
+        #[derive(Deserialize)]
+        struct Hit {
+            score: f64,
+            photo: Photo,
+        }
+        #[derive(Deserialize)]
+        struct Reply {
+            items: Vec<Hit>,
+            next: Option<String>,
+            revision: String,
+            indexed: usize,
+            eligible: usize,
+        }
+        let api = self.client(None)?;
+        let mut url = api.endpoint.clone();
+        url.path_segments_mut().map_err(|_| "Invalid morfPhoto endpoint")?
+            .pop().extend(["search", "semantic"]);
+        let f = &args.filters;
+        let next = args.next.as_deref().map(|cursor| {
+            cursor.strip_prefix("morfphoto:").ok_or("Local search cursor")
+        }).transpose()?;
+        let response = api.client.post(url)
+            .header(reqwest::header::AUTHORIZATION, api.auth)
+            .timeout(Duration::from_secs(9))
+            .json(&json!({
+                "text": args.text, "folder_path": self.server_folder(folder)?,
+                "recursive": args.recursive, "size": args.size, "next": next,
+                "filters": {
+                    "min_rating": f.min_rating, "labels": f.labels,
+                    "rejected": f.rejected, "unlabeled": if f.unlabeled {"true"} else {"false"},
+                    "kind": f.kinds, "camera": f.cameras, "body": f.bodies,
+                    "lens": f.lenses, "keyword": f.keywords, "iso": f.iso,
+                    "aperture": f.aperture, "focal": f.focal, "shutter": f.shutter,
+                    "taken_from": f.taken_from, "taken_to": f.taken_to,
+                }
+            }))
+            .send().and_then(|response| response.error_for_status())
+            .map_err(|_| "morfPhoto semantic search unavailable")?;
+        let mut body = Vec::new();
+        response.take(MAX_PAGE_BYTES + 1).read_to_end(&mut body).map_err(|e| e.to_string())?;
+        if body.len() as u64 > MAX_PAGE_BYTES {
+            return Err("morfPhoto semantic reply too large".into());
+        }
+        let reply: Reply = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
+        let mut items = Vec::new();
+        for hit in reply.items {
+            let mapped = self.local_file(&hit.photo.path)?;
+            if !mapped.starts_with(folder) || (!args.recursive && mapped.parent() != Some(folder)) {
+                return Err("morfPhoto semantic result outside scope".into());
+            }
+            if !crate::library_cmds::photo_candidate(&mapped) {
+                continue;
+            }
+            if let Some(image) = hit.photo.images(&mapped)?.into_iter().find(|i| i.version == 0) {
+                items.push(LocalHit {
+                    asset_id: None, variant_id: None, subject: "original".into(),
+                    score: hit.score, image,
+                });
+            }
+        }
+        Ok((LocalPage { items, next: reply.next.map(|cursor| format!("morfphoto:{cursor}")),
+            revision: reply.revision }, reply.indexed, reply.eligible))
+    }
+
     fn list_with_api(
         &self,
         path: &Path,

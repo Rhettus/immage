@@ -148,6 +148,43 @@ pub async fn local_search(
                 };
                 let roots = paths("folders");
                 let hidden = paths("hidden");
+                let config = crate::morf_photo::load(&runtime);
+                let remote = &args.remote;
+                let supports_remote = remote.taken_from.is_none() && remote.taken_to.is_none()
+                    && remote.min_rating.is_none() && !remote.favorites && !remote.raw_only
+                    && remote.make.is_none() && remote.model.is_none() && remote.lens.is_none()
+                    && remote.country.is_none() && remote.city.is_none()
+                    && remote.person_ids.is_empty() && remote.tag_ids.is_empty() && remote.album_ids.is_empty();
+                if args.mode == "smart" && args.scope == "folder" && args.image_variant.is_none()
+                    && args.filters.edited != "edited" && !args.text.trim().is_empty()
+                    && supports_remote
+                {
+                    if let Some(folder) = args.folder.as_deref().map(std::path::Path::new) {
+                        if config.covers(folder) && roots.iter().any(|root| folder.starts_with(root))
+                            && !hidden.iter().any(|root| folder.starts_with(root)
+                                || (args.recursive && root.starts_with(folder)))
+                        {
+                            match config.semantic(folder, &args) {
+                                Ok((mut page, indexed, eligible)) if !cancelled() => {
+                                    if indexed < eligible {
+                                        let _ = app.emit("morfphoto-coverage",
+                                            serde_json::json!({ "indexed": indexed, "eligible": eligible }));
+                                    }
+                                    for hit in &mut page.items {
+                                        hit.image.imgid = engine.cached_photo(&hit.image.path, 0);
+                                    }
+                                    return Ok(page);
+                                }
+                                _ if cancelled() => return Err("Search cancelled".into()),
+                                _ if args.next.as_deref().is_some_and(|c| c.starts_with("morfphoto:")) =>
+                                    return Err("morfPhoto semantic search unavailable".into()),
+                                _ => {
+                                    let _ = app.emit("morfphoto-fallback", folder.to_string_lossy().as_ref());
+                                }
+                            }
+                        }
+                    }
+                }
                 let vector = if args.mode == "smart" && !args.text.trim().is_empty() {
                     Some(crate::clip_infer::text(
                         &models, &engine, &runtime, &args.text,
@@ -158,7 +195,6 @@ pub async fn local_search(
                 if cancelled() {
                     return Err("Search cancelled".into());
                 }
-                let config = crate::morf_photo::load(&runtime);
                 let mut provider = ProviderMetadata::default();
                 if let Some(mapped) = config.mapped_root() {
                     for (scope, recursive) in provider_scopes(&args, &roots, &hidden, &mapped) {

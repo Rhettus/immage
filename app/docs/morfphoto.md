@@ -46,3 +46,21 @@ first and then can use an embedded camera preview from a morfPhoto server
 with its optional thumbnail cache enabled. If the preview is unavailable, Immage renders the
 thumbnail from the mounted file. Edited photos and virtual copies use
 Immage's rendered thumbnails.
+
+## Smart Search on the NAS
+
+Enable the CLIP Compose override on the morfPhoto server and install its pinned
+model on NAS storage. In Immage, open a mapped folder and choose **Smart** and
+the current folder scope in Find. Enter a description such as “a dog on a beach”.
+morfPhoto ranks indexed, unedited originals, including photos Immage has never
+opened. The desktop CLIP model is optional for these searches.
+
+While the NAS builds its index, Immage shows how many matching originals are
+indexed. On the NAS, inspect the `clip` section of the authenticated index
+status to see progress and preview failures. The worker can reuse thumbnails
+already cached by morfPhoto.
+
+Library-wide searches, image queries, and searches that require edits or copies
+use the existing desktop index. If the server cannot handle the search or an
+active filter, Immage falls back to desktop search, which uses its own CLIP
+model and can only rank photos it has analyzed.

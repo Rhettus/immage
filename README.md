@@ -49,7 +49,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
 - Browse indexed photos on mapped network shares with experimental
   [morfPhoto](app/docs/morfphoto.md) support, including embedded previews for
-  unedited originals.
+  unedited originals and optional NAS Smart Search.
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a
   PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the
