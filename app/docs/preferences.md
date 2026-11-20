@@ -64,11 +64,17 @@ starts with default settings. To start with defaults on purpose, see
   Translations include menus, Preferences, editing fields, library tools,
   status messages, dialogs, export and print settings. Remaining untranslated text falls back to English. Advanced
   module terminology comes from the pinned darktable translation catalog.
-- **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
-  `darktable-elegant-grey` palette) or **Light** with the swatches.
+- **Theme**: choose a built-in theme from the swatches, ordered by window
+  background from darkest to lightest. The order is **Dark** (the default),
+  **Graphite**, **Slate**, **Warm Ash**,
+  **Darktable Grey** (the `darktable-elegant-grey` palette),
+  **Classic Grey Balanced**, **Soft Grey** and **Light**. Imported themes
+  appear after the built-in themes.
   The selected name and **Import theme…** action appear below the swatches;
   **Remove theme** appears beside Import for custom themes. The
-  interface changes immediately and remembers your choice. **Import theme…**
+  interface changes immediately, including the cards around Texture, Clarity
+  and Advanced modules, and remembers your choice. Editor dropdowns such as
+  Profile and White Balance use the theme’s inset color. **Import theme…**
   loads a JSON theme and selects it after it is saved. An imported theme with
   the same name as an existing one is given a numbered name. **Remove theme**
   appears for the selected imported theme; removing it returns the interface

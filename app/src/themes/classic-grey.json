@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Classic Grey Balanced",
+  "colorScheme": "dark",
+  "colors": {
+    "window": "#707070",
+    "panel": "#808080",
+    "card": "#898989",
+    "inset": "#707070",
+    "hover": "#929292",
+    "text": "#f4f4f4",
+    "text-2": "#dedede",
+    "text-3": "#bcbcbc",
+    "track": "#626262",
+    "thumb": "#eeeeee",
+    "accent": "#f5f5f5",
+    "border": "#777777",
+    "on-accent": "#303030",
+    "focus": "#eeeeee",
+    "error": "#ef7777",
+    "success": "#78bb87",
+    "graph-bg": "#555555",
+    "graph-grid": "#737373"
+  }
+}

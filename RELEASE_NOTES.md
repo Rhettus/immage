@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Choose from five new built-in themes in Preferences, with all built-in
+  themes ordered from darkest to lightest.
 - **Darktable 5.8 rendering:** Immage now uses darktable's code from the 5.8
   feature freeze. Keep photos edited in this release in Immage 0.47 or later.
   Earlier versions drop the saved white balance, input color and demosaic
@@ -69,6 +71,9 @@ Performance
 
 Bug fixes
 
+- Profile, White Balance and other editor dropdowns use the selected theme’s
+  inset color.
+- Texture, Clarity and Advanced module cards follow the selected theme.
 - NAS activity keeps counts and status text aligned as values change.
 - Library filters stay active when you switch folders.
 - The Keywords dialog opens in front of the culling preview and uses the

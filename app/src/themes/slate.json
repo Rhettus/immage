@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Slate",
+  "colorScheme": "dark",
+  "colors": {
+    "window": "#171b20",
+    "panel": "#22282e",
+    "card": "#2d343b",
+    "inset": "#394149",
+    "hover": "#424b54",
+    "text": "#edf0f2",
+    "text-2": "#b7c0c7",
+    "text-3": "#83909a",
+    "track": "#47515a",
+    "thumb": "#f2f5f7",
+    "accent": "#dce3e8",
+    "border": "#4b555e",
+    "on-accent": "#171b20",
+    "focus": "#b9c5ce",
+    "error": "#ef7777",
+    "success": "#78bb87",
+    "graph-bg": "#1c2228",
+    "graph-grid": "#343e47"
+  }
+}

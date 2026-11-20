@@ -35,7 +35,9 @@ delete valid.id;
 const json = value => JSON.stringify(value);
 
 test('built-in themes and strict palette schema validate', () => {
-  assert.deepEqual(BUILTIN_THEMES.map(t => t.id), ['dark', 'grey', 'light']);
+  assert.deepEqual(BUILTIN_THEMES.map(t => t.id), [
+    'dark', 'graphite', 'slate', 'warm-ash', 'grey', 'classic-grey', 'soft-grey', 'light',
+  ]);
   for (const { id, ...palette } of BUILTIN_THEMES) assert.deepEqual(validateTheme(palette), palette);
   assert.equal(THEME_TOKENS.length, 18);
   const normalized = parseTheme(json({ ...valid, name: '  Example  ', colors: { ...valid.colors, text: '#ABCDEF' } }));
@@ -121,5 +123,5 @@ test('failed persistence leaves selection and imported themes unchanged; corrupt
   ] }));
   loadThemes();
   assert.equal(selectedTheme().id, 'dark');
-  assert.deepEqual(themeEntries().map(t => t.id), ['dark', 'grey', 'light', 'custom-duplicate']);
+  assert.deepEqual(themeEntries().map(t => t.id), [...BUILTIN_THEMES.map(t => t.id), 'custom-duplicate']);
 });

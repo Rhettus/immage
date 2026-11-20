@@ -32,8 +32,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Use Immage in English or French.
-- Choose the Dark, Darktable Grey or Light interface theme, or import a custom
-  color theme.
+- Choose from eight built-in interface themes ordered from darkest to lightest,
+  or import a custom color theme.
 - Back up your settings, presets, looks, Edit In plugins and keywords to one
   file, and restore the parts you choose from it.
 - Add optional Geoapify place-name search to the location map; map tiles and

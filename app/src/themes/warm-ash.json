@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Warm Ash",
+  "colorScheme": "dark",
+  "colors": {
+    "window": "#1c1b1a",
+    "panel": "#282624",
+    "card": "#34312e",
+    "inset": "#403c38",
+    "hover": "#4b4641",
+    "text": "#f3f0eb",
+    "text-2": "#c5beb5",
+    "text-3": "#928b83",
+    "track": "#504b46",
+    "thumb": "#f7f2eb",
+    "accent": "#e9e2d8",
+    "border": "#554f49",
+    "on-accent": "#1c1b1a",
+    "focus": "#c8bfb5",
+    "error": "#ed8880",
+    "success": "#88bd91",
+    "graph-bg": "#24221f",
+    "graph-grid": "#3c3834"
+  }
+}
