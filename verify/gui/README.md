@@ -74,31 +74,52 @@ acceptance are provided.
 
 ## Local search and Find cases
 
-`--case local-search` (or `--suite search`) checks filename search without an
-Immich server or CLIP model, through the Find popup: Search in offers This
-folder and All folders only, Filename mode, the words typed and Enter pressed
-(there is no Search button). Use the bundled sample JPEG as the configured
-fixture; the runner copies it into isolated app state. The case waits for a
-cached local result and thumbnail, closes the popup with Show, rates only that
-disposable copy, retains a rating filter, and returns to its folder. It passed
-live through Find on 2026-11-16 (run `2026-11-16T11-10-07.333Z_565a37b_8773884c`). Local per-run GUI approval rules still apply.
+Find exists only in the grid, as the right-hand column (`.find-pop` in `aside.right`,
+`role="search"`). The toolbar's Find button enters the grid from any view, shows the
+column, and focuses its box; pressing it again in the grid keeps Find open. Leaving the
+grid (the rail's Library button) removes the column and brings the Adjustments panel
+back, and filters stay on. There is no popup, no Show N, no grip, and no Escape or
+click-away close. Find's rows are `.fr-row` (`.on` when active, `aria-expanded` when
+open), with `.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`.
 
-`--case find-no-clip` (the `find` suite also runs it) checks the grid's locked Find
-column in the isolated profile, which has no CLIP model: no Smart/Filename
-switch, the file-name placeholder, narrowing by a file-name fragment, the CLIP tip
-(its Set up button opens Preferences > General at the local photo cache card;
-dismissing hides it, also after re-entering the grid), the head row's controls on
-one centre line, and no Show more like this in the photo menu. `find-live` also
-covers the rail Library button and the toolbar magnifier. Neither has run live yet.
+`--case local-search` (or `--suite search`) checks filename search without an Immich
+server or CLIP model: Search in offers This folder and All folders only, Filename mode,
+the words typed and Enter pressed (there is no Search button). It waits for a cached
+local result and thumbnail, rates only the disposable copy, retains a rating filter,
+and returns to its folder.
 
-`--suite find` runs `find-live` (a filter narrows the grid as it is set, chips,
-the locked right-hand column Find becomes in the grid: no Show N, grip or close,
-Escape only leaves its box), `find-sizes` (in the filmstrip view, where Find is
-the popup: Minimize, Dock and Fill, dragging the grip,
-remembered places, double-click reset) and `find-saved` (Save filter…, changed
-and Update, Alt+1, Manage). `find-live` has the runner copy the fixture to
-`find-01` to `find-03`. All three, and the `filters` and `camera-body` cases that now
-open Find (Dock size), passed live on 2026-11-16.
+`--case find-no-clip` (the `find` suite also runs it) checks the grid's Find column in
+the isolated profile, which has no CLIP model: the Smart/Filename switch shown with
+Smart unavailable (tooltip, no effect on click), the dimmed analysis indicator, the
+file-name placeholder, narrowing by a file-name fragment, the CLIP tip (its Set up
+button opens Preferences > General at the local photo cache card; dismissing hides it,
+also after re-entering the grid), the head row's controls on one centre line, and no
+Show more like this in the photo menu.
+
+`--suite find` runs `find-live` (a filter narrows the grid as it is set; a filter row
+turns on and its x turns it off; one editor is open at a time under its row; the Filters
+title bar's reset icon (Clear search and filters) clears every filter and the search words, keeping Search in and the mode; the column is titled Find and, with auto-hide,
+its pin ends the title row; the Library button enters and leaves the grid; the magnifier
+opens the culling preview), `find-sizes` (Find only in the grid: no column in the
+filmstrip view; the toolbar button enters the grid, shows Find in `aside.right` and
+focuses the box; Adjustments hides while Find shows; Find is not a floating popup and has
+no grip or Show N; from the Print panel the same button brings Find back; leaving the
+grid removes Find and restores Adjustments), `find-saved` (Save filter…, changed and
+Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera-body`
+cases open Find's rows and their inline editors. Whether each case has passed live is
+recorded in `suites.mjs` (`liveValidated`) and its verification note.
+
+`--case find-panel-memory` exercises the bottom toolbar's view-specific toggles,
+drags both panel splitters to different widths, and checks that switching views
+preserves each panel's width and open or closed state. With auto-hide on, it
+opens Find from the toolbar, moves into the panel, then checks that the panel
+hides when the pointer leaves and returns when the pointer rests over the rail.
+
+## Color calibration chart
+
+Run `--case advanced-checker --fixture checker` to check the chart overlay and
+corner dragging, then compute, apply, validate and undo the profile on a
+synthetic 24-patch target.
 
 ## Positive hot-pixel fixture
 
@@ -319,6 +340,9 @@ on manifest panels and range widgets. They never bypass UI interactions.
 The range walker visits mounted sliders in available panels, records disabled
 controls as blocked, and captures changes and reset frames. It does not reach
 hidden tabs/sections/module branches or establish every slider's image effect.
+Use `--failure-screenshots-only` for long control batches on a space-constrained
+machine. Assertions, measurements, and action logs still run, and failed cases
+retain their screenshots. Use the default capture mode for screenshot workflows.
 Module-options exercises preference selection, not every engine implementation.
 Diagnostic screenshots require review and are not approved visual baselines.
 
@@ -471,6 +495,14 @@ following:
 confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
+
+## Renaming photos in the Library grid
+
+`--case rename-photos` uses three disposable copies of the launch fixture. It
+checks that an existing filename blocks confirmation, then renames one photo
+and checks its bytes and XMP rating. It selects two photos, checks the photo
+count and one filename example, checks that selection follows the new
+names, and finds one renamed photo by its new filename.
 
 ## Recent library and culling workflows
 

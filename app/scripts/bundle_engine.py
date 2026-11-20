@@ -318,8 +318,9 @@ else:
     counted = len(kegs)
 
 # libraries that come from elsewhere: those darktable compiles in from
-# src/external, and ONNX Runtime, from the archive darktable's build
-# downloaded (cmake/modules/FindONNXRuntime.cmake keeps only its libraries)
+# src/external, and ONNX Runtime, from the archive scripts/fetch_onnxruntime.py
+# or darktable's build left (cmake/modules/FindONNXRuntime.cmake keeps only its
+# libraries)
 EXTERNAL_LIBS = [  # (folder in src/external, license, source)
     ("rawspeed", "LGPL-2.1-or-later", "https://github.com/darktable-org/rawspeed"),
     ("LibRaw", "LGPL-2.1-only OR CDDL-1.0", "https://github.com/LibRaw/LibRaw"),

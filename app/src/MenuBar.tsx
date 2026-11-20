@@ -11,7 +11,8 @@ import type { ActionId, Menu, MenuItem } from "./menu";
 // submenu is open when a deeper entry follows it
 type Path = number[];
 
-const usable = (it: MenuItem) => it.kind === "item" || it.kind === "submenu";
+const usable = (it: MenuItem, disabled: ReadonlySet<ActionId>) =>
+  it.kind === "submenu" || (it.kind === "item" && !disabled.has(it.id));
 const shown = (items: MenuItem[]) => items.filter((i) => i.kind !== "role");
 
 function itemsAt(root: MenuItem[], path: Path): MenuItem[] {
@@ -24,7 +25,8 @@ function itemsAt(root: MenuItem[], path: Path): MenuItem[] {
   return items;
 }
 
-function Dropdown({ items, path, depth, setPath, run }: {
+function Dropdown({ items, path, depth, setPath, run, disabled }: {
+  disabled: ReadonlySet<ActionId>;
   items: MenuItem[]; path: Path; depth: number; setPath: (p: Path) => void; run: (id: ActionId) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -52,12 +54,12 @@ function Dropdown({ items, path, depth, setPath, run }: {
                 onClick={() => setPath([...here, i, -1])}>
                 <span>{it.label}</span><span className="menubar-arrow" aria-hidden="true">▸</span>
               </button>
-              {open && <Dropdown items={shown(it.items)} path={path} depth={depth + 1} setPath={setPath} run={run} />}
+              {open && <Dropdown items={shown(it.items)} path={path} depth={depth + 1} setPath={setPath} run={run} disabled={disabled} />}
             </div>
           );
         }
         return (
-          <button key={i} type="button" role="menuitem" className={on ? "on" : ""} data-menu-item={it.id}
+          <button key={i} type="button" role="menuitem" className={on ? "on" : ""} data-menu-item={it.id} disabled={disabled.has(it.id)}
             onPointerEnter={() => setPath([...here, i])} onClick={() => run(it.id)}>
             <span>{it.label}</span>
             {it.shortcut && <span className="menubar-keys">{keys(it.shortcut)}</span>}
@@ -68,12 +70,14 @@ function Dropdown({ items, path, depth, setPath, run }: {
   );
 }
 
-export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: ActionId) => void }) {
+export function MenuBar({ menus, disabled, onAction }: {
+  menus: Menu[]; disabled: ReadonlySet<ActionId>; onAction: (id: ActionId) => void;
+}) {
   const [top, setTop] = useState<number | null>(null);
   const [path, setPath] = useState<Path>([]);
   const nav = useRef<HTMLElement>(null);
-  const st = useRef({ top, path, menus });
-  st.current = { top, path, menus };
+  const st = useRef({ top, path, menus, disabled });
+  st.current = { top, path, menus, disabled };
 
   const close = () => { setTop(null); setPath([]); };
   const run = (id: ActionId) => {
@@ -89,7 +93,7 @@ export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: Act
       if (!nav.current?.contains(e.target as Node)) close();
     };
     const key = (e: KeyboardEvent) => {
-      const { top: t, path: p, menus: ms } = st.current;
+      const { top: t, path: p, menus: ms, disabled } = st.current;
       if (t === null) return;
       const root = shown(ms[t].items);
       const level = Math.max(p.length - 1, 0);
@@ -99,7 +103,7 @@ export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: Act
         const n = items.length;
         for (let k = 1; k <= n; k++) {
           const j = cur < 0 ? (dir > 0 ? k - 1 : n - k) : (cur + dir * k + n * k) % n;
-          if (usable(items[j])) return j;
+          if (usable(items[j], disabled)) return j;
         }
         return -1;
       };
@@ -113,7 +117,7 @@ export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: Act
           const it = items[cur];
           if (it?.kind === "submenu") {
             const sub = shown(it.items);
-            setPath([...p.slice(0, level), cur, Math.max(sub.findIndex(usable), 0)]);
+            setPath([...p.slice(0, level), cur, sub.findIndex((item) => usable(item, disabled))]);
           } else move((t + 1) % ms.length);
           break;
         }
@@ -127,10 +131,10 @@ export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: Act
         case "Enter":
         case " ": {
           const it = items[cur];
-          if (it?.kind === "item") runRef.current(it.id);
+          if (it?.kind === "item" && usable(it, disabled)) runRef.current(it.id);
           else if (it?.kind === "submenu") {
             const sub = shown(it.items);
-            setPath([...p.slice(0, level), cur, Math.max(sub.findIndex(usable), 0)]);
+            setPath([...p.slice(0, level), cur, sub.findIndex((item) => usable(item, disabled))]);
           }
           break;
         }
@@ -160,7 +164,7 @@ export function MenuBar({ menus, onAction }: { menus: Menu[]; onAction: (id: Act
             onPointerEnter={() => { if (top !== null && top !== i) { setTop(i); setPath([]); } }}>
             {m.label}
           </button>
-          {top === i && <Dropdown items={shown(m.items)} path={path} depth={0} setPath={setPath} run={run} />}
+          {top === i && <Dropdown items={shown(m.items)} path={path} depth={0} setPath={setPath} run={run} disabled={disabled} />}
         </div>
       ))}
     </nav>

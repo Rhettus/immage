@@ -31,12 +31,12 @@ export class Recorder {
       for (let i = 0; i < clicks; i++) rec.click();
     };
     d.move = async function (x, y) { rec.point(x, y, MOVE_MS); return original.move.call(this, x, y); };
-    d.drag = async function (from, to) {
+    d.drag = async function (from, to, moveDuration = STEP_MS) {
       rec.point(from.x, from.y, MOVE_MS);
       const started = rec.now() + MOVE_MS;
       for (let i = 1; i <= 8; i++)
-        rec.cursor.push({ t: started + i * STEP_MS, x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8, ms: STEP_MS, down: true });
-      return original.drag.call(this, from, to);
+        rec.cursor.push({ t: started + i * moveDuration, x: from.x + (to.x - from.x) * i / 8, y: from.y + (to.y - from.y) * i / 8, ms: moveDuration, down: true });
+      return original.drag.call(this, from, to, moveDuration);
     };
     d.wheel = async function (x, y, ...rest) { rec.point(x, y, MOVE_MS); return original.wheel.call(this, x, y, ...rest); };
     this.unwrap = () => Object.assign(d, original);

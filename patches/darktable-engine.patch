@@ -1,8 +1,21 @@
+diff --git a/cmake/modules/FindONNXRuntime.cmake b/cmake/modules/FindONNXRuntime.cmake
+index 6827133a6d..2cd7c9f630 100644
+--- a/cmake/modules/FindONNXRuntime.cmake
++++ b/cmake/modules/FindONNXRuntime.cmake
+@@ -152,7 +152,7 @@ if(NOT _ORT_HEADER OR NOT _ORT_LIBRARY)
+   endif()
+ 
+   if(_ORT_NUGET)
+-    set(_ORT_URL "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${_ORT_VER}")
++    set(_ORT_URL "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${_ORT_VER}/${_ORT_PACKAGE}")
+   else()
+     set(_ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v${_ORT_VER}/${_ORT_PACKAGE}")
+   endif()
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 726992c267..01d00907fa 100644
+index 277ad84d46..63106dc4dd 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -1266,6 +1266,12 @@ if(USE_MCP)
+@@ -1345,6 +1345,12 @@ if(USE_MCP)
    add_subdirectory(mcp)
  endif()
  
@@ -16,7 +29,7 @@ index 726992c267..01d00907fa 100644
  add_subdirectory(generate-cache)
  
 diff --git a/src/common/database.c b/src/common/database.c
-index 48a99cda71..99394cf925 100644
+index 30f0812a73..9839c70e3f 100644
 --- a/src/common/database.c
 +++ b/src/common/database.c
 @@ -3944,7 +3944,10 @@ static gboolean pid_is_alive(int pid)
@@ -32,7 +45,7 @@ index 48a99cda71..99394cf925 100644
      g_free(filename);
      CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index 8c82a5efd1..e87c9a097c 100644
+index af5673480a..ecf86d1bb1 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
 @@ -30,6 +30,9 @@
@@ -267,7 +280,7 @@ index 8c82a5efd1..e87c9a097c 100644
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
  
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -1769,7 +1987,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+@@ -2117,7 +2335,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
  
    try
    {
@@ -277,7 +290,7 @@ index 8c82a5efd1..e87c9a097c 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -2921,19 +3140,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+@@ -3273,19 +3492,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
    }
  }
  
@@ -440,7 +453,7 @@ index 8c82a5efd1..e87c9a097c 100644
  
      // Get a list of preview images available in the image. The list is sorted
      // by the preview image pixel size, starting with the smallest preview.
-@@ -2946,10 +3300,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3298,10 +3652,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
        return TRUE;
      }
  
@@ -458,7 +471,7 @@ index 8c82a5efd1..e87c9a097c 100644
  
      // Get the selected preview image
      Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
-@@ -2980,6 +3338,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3332,6 +3690,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
    }
  }
  
@@ -470,7 +483,7 @@ index 8c82a5efd1..e87c9a097c 100644
  /* Read the metadata of an image.
   * XMP data trumps IPTC data trumps EXIF data.
   */
-@@ -3002,9 +3365,28 @@ gboolean dt_exif_read(dt_image_t *img,
+@@ -3354,9 +3717,28 @@ gboolean dt_exif_read(dt_image_t *img,
  
    try
    {
@@ -502,7 +515,7 @@ index 8c82a5efd1..e87c9a097c 100644
      bool res = true;
  
      // EXIF metadata
-@@ -3067,9 +3449,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+@@ -3419,9 +3801,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
@@ -514,7 +527,7 @@ index 8c82a5efd1..e87c9a097c 100644
      const int w = (int)image->pixelWidth();
      const int h = (int)image->pixelHeight();
      if(w <= 0 || h <= 0) return FALSE;
-@@ -3094,7 +3476,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+@@ -3446,7 +3828,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      if(!image.get()) return FALSE;
@@ -522,7 +535,7 @@ index 8c82a5efd1..e87c9a097c 100644
      image->xmpData()["Xmp.darktable.neural_restore"] = task;
      write_metadata_threadsafe(image);
      return TRUE;
-@@ -3117,7 +3498,6 @@ int dt_exif_write_blob(uint8_t *blob,
+@@ -3469,7 +3850,6 @@ int dt_exif_write_blob(uint8_t *blob,
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      assert(image.get() != 0);
@@ -530,7 +543,7 @@ index 8c82a5efd1..e87c9a097c 100644
      Exiv2::ExifData &imgExifData = image->exifData();
      Exiv2::ExifData blobExifData;
      Exiv2::ExifParser::decode(blobExifData, blob, size);
-@@ -3198,7 +3578,8 @@ int dt_exif_read_blob(uint8_t **buf,
+@@ -3550,7 +3930,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -540,7 +553,7 @@ index 8c82a5efd1..e87c9a097c 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6297,8 +6678,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6649,8 +7030,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -551,7 +564,7 @@ index 8c82a5efd1..e87c9a097c 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
-@@ -6765,6 +7147,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+@@ -7117,6 +7499,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
  static void _exif_log_handler(const int log_level,
                                const char *message)
  {
@@ -574,7 +587,7 @@ index b7617404e6..3d3f88361d 100644
 @@ -80,6 +80,18 @@ void dt_exif_sanitize_datetime(char *datetime);
   * struct. returns TRUE if no success. */
  gboolean dt_exif_read(dt_image_t *img, const char *path);
-
+ 
 +/** Experimental ORF preparation, without image/cache/database mutations.
 + * prepare() owns its file bytes and parsed metadata and may run on a worker.
 + * After that worker completes, set() borrows the result on the importing
@@ -600,10 +613,10 @@ index b7617404e6..3d3f88361d 100644
  /** thread safe init and cleanup. */
  void dt_exif_init();
 diff --git a/src/common/mipmap_cache.c b/src/common/mipmap_cache.c
-index 2afb4f5ba8..65a307692b 100644
+index 7dd8953a57..2a95a43e2b 100644
 --- a/src/common/mipmap_cache.c
 +++ b/src/common/mipmap_cache.c
-@@ -1596,8 +1596,8 @@ static void _init_8(uint8_t *buf,
+@@ -1588,8 +1588,8 @@ static void _init_8(uint8_t *buf,
      {
        uint8_t *tmp = 0;
        int32_t thumb_width, thumb_height;
@@ -615,7 +628,7 @@ index 2afb4f5ba8..65a307692b 100644
        {
          // use embedded JPEG if it is large enough or conf requests
 diff --git a/src/develop/pixelpipe_cache.c b/src/develop/pixelpipe_cache.c
-index 9fa7278863..a61abcde4d 100644
+index 53672781d1..aaa39d15bf 100644
 --- a/src/develop/pixelpipe_cache.c
 +++ b/src/develop/pixelpipe_cache.c
 @@ -23,6 +23,18 @@
@@ -645,7 +658,7 @@ index 9fa7278863..a61abcde4d 100644
  
    const size_t csize = sizeof(void *) + sizeof(size_t) + sizeof(dt_iop_buffer_dsc_t) + 2*sizeof(int32_t) + sizeof(uint64_t);
    cache->data = (void **) calloc(entries, csize);
-@@ -207,6 +220,12 @@ static int _get_oldest_cacheline(dt_dev_pixelpipe_cache_t *cache,
+@@ -214,6 +227,12 @@ static int _get_oldest_cacheline(dt_dev_pixelpipe_cache_t *cache,
    for(int k = DT_PIPECACHE_MIN; k < cache->entries; k++)
    {
      gboolean older = (cache->used[k] > age) && (k != cache->lastline);
@@ -658,7 +671,7 @@ index 9fa7278863..a61abcde4d 100644
      if(older)
      {
        if(mode == DT_CACHETEST_USED)         older = cache->data[k] != NULL;
-@@ -325,6 +344,11 @@ gboolean dt_dev_pixelpipe_cache_get(dt_dev_pixelpipe_t *pipe,
+@@ -332,6 +351,11 @@ gboolean dt_dev_pixelpipe_cache_get(dt_dev_pixelpipe_t *pipe,
    // Check both for free and non-matching (and grow or shrink buffer).
    const int cline = _get_cacheline(pipe);
  
@@ -670,7 +683,7 @@ index 9fa7278863..a61abcde4d 100644
    if(((cache->entries == DT_PIPECACHE_MIN) && (cache->size[cline] < size))
       || ((cache->entries > DT_PIPECACHE_MIN) && (cache->size[cline] != size)))
    {
-@@ -379,6 +403,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(dt_dev_pixelpipe_t *pipe,
+@@ -386,6 +410,9 @@ void dt_dev_pixelpipe_cache_invalidate_later(dt_dev_pixelpipe_t *pipe,
    {
      if((cache->ioporder[k] >= order) && (cache->hash[k] != DT_INVALID_HASH))
      {
@@ -680,7 +693,7 @@ index 9fa7278863..a61abcde4d 100644
        cache->hash[k] = DT_INVALID_HASH;
        invalidated++;
      }
-@@ -413,6 +440,24 @@ void dt_dev_pixelpipe_important_cacheline(const dt_dev_pixelpipe_t *pipe,
+@@ -420,6 +447,24 @@ void dt_dev_pixelpipe_important_cacheline(const dt_dev_pixelpipe_t *pipe,
    }
  }
  
@@ -705,7 +718,7 @@ index 9fa7278863..a61abcde4d 100644
  void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
                                             const void *data,
                                             const char *info)
-@@ -422,6 +467,9 @@ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
+@@ -429,6 +474,9 @@ void dt_dev_pixelpipe_invalidate_cacheline(const dt_dev_pixelpipe_t *pipe,
    {
      if(cache->data[k] == data && cache->hash[k] != DT_INVALID_HASH)
      {
@@ -715,7 +728,7 @@ index 9fa7278863..a61abcde4d 100644
        cache->hash[k] = DT_INVALID_HASH;
        if(info)
          dt_print_pipe(DT_DEBUG_PIPE, "invalidate cacheline", pipe, NULL, pipe->devid, NULL, NULL,
-@@ -452,6 +500,9 @@ void dt_dev_pixelpipe_clear_cacheline(dt_dev_pixelpipe_t *pipe,
+@@ -459,6 +507,9 @@ void dt_dev_pixelpipe_clear_cacheline(dt_dev_pixelpipe_t *pipe,
    {
      if(cache->data[k] == data)
      {
@@ -725,7 +738,7 @@ index 9fa7278863..a61abcde4d 100644
        _free_cacheline(cache, k);
        if(info)
          dt_print_pipe(DT_DEBUG_PIPE | DT_DEBUG_VERBOSE,
-@@ -515,6 +566,10 @@ void dt_dev_pixelpipe_cache_checkmem(dt_dev_pixelpipe_t *pipe, const gboolean tr
+@@ -522,6 +573,10 @@ void dt_dev_pixelpipe_cache_checkmem(dt_dev_pixelpipe_t *pipe, const gboolean tr
      const int k = _get_oldest_cacheline(cache, DT_CACHETEST_USED);
      if(k == 0) break;
  
@@ -770,19 +783,19 @@ index 20358e4796..8ca2e03b66 100644
  void dt_dev_pixelpipe_invalidate_cacheline(const struct dt_dev_pixelpipe_t *pipe, const void *data, const char *info);
  
 diff --git a/src/develop/pixelpipe_hb.c b/src/develop/pixelpipe_hb.c
-index 3383d8da6e..12ce3eea55 100644
+index ee2e1eab84..0f32258646 100644
 --- a/src/develop/pixelpipe_hb.c
 +++ b/src/develop/pixelpipe_hb.c
-@@ -289,6 +289,8 @@ static gboolean _dev_pixelpipe_init_cached(dt_dev_pixelpipe_t *pipe,
-   pipe->backbuf_size = size;
+@@ -290,6 +290,8 @@ static gboolean _dev_pixelpipe_init_cached(dt_dev_pixelpipe_t *pipe,
    pipe->cache_obsolete_order = INT_MAX;
    pipe->backbuf = NULL;
+   pipe->frame = NULL;
 +  pipe->output_sink = NULL;
 +  pipe->output_sink_user = NULL;
-   pipe->backbuf_scale = 0.0f;
-   memset(pipe->backbuf_zoom_pos, 0, sizeof(dt_dev_zoom_pos_t));
    pipe->output_imgid = NO_IMGID;
-@@ -2284,6 +2286,19 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+ 
+   memset(&pipe->scharr, 0, sizeof(dt_dev_detail_mask_t));
+@@ -2392,6 +2394,19 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
        && !pipe->nocache
        && dt_dev_pixelpipe_cache_available(pipe, hash, bufsize);
  
@@ -802,7 +815,7 @@ index 3383d8da6e..12ce3eea55 100644
    if(cache_available)
    {
      dt_dev_pixelpipe_cache_get(pipe, hash, bufsize,
-@@ -2613,14 +2628,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -2721,14 +2736,25 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
  
    */
    const gboolean has_focus = module == dt_dev_gui_module() && module->enabled;
@@ -831,7 +844,7 @@ index 3383d8da6e..12ce3eea55 100644
  
  #ifdef HAVE_OPENCL
  
-@@ -3333,12 +3359,15 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
+@@ -3483,12 +3509,15 @@ static gboolean _dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe,
    if(important_input && input)
    {
      dt_print_pipe(DT_DEBUG_PIPE,
@@ -849,29 +862,43 @@ index 3383d8da6e..12ce3eea55 100644
    }
  
    if(dt_pipe_mask_display(pipe))
-@@ -3751,8 +3780,20 @@ restart:
-   dt_pthread_mutex_lock(&pipe->backbuf_mutex);
-   pipe->backbuf_hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, pos);
- 
+@@ -3946,7 +3975,15 @@ restart:
+   // terminate. a screen pipe publishes a frame, a copy: the cache line it
+   // comes from is not pinned and changes with the next run
+   dt_frame_t *frame = NULL;
+-  if(dt_pipe_is_screen(pipe))
 +  // Consume cache pixels synchronously before cache reporting can reclaim them.
-+  // Never leave an older owned backbuf looking like this completed frame.
++  // The sink shows them as they are, so a soft proof's or a working RGB's
++  // output is published as a frame, for the reader to convert as a window does.
 +  const gboolean use_sink = pipe->output_sink && dt_pipe_is_screen(pipe)
-+    && !(pipe->type & DT_DEV_PIXELPIPE_IMAGE_FLOAT);
++    && dt_color_encoding_same_content(&pipe->output_encoding, &pipe->output.device);
 +  gboolean sink_ok = TRUE;
 +  if(use_sink)
-+  {
-+    g_free(pipe->backbuf);
-+    pipe->backbuf = NULL;
-+    pipe->backbuf_size = 0;
 +    sink_ok = pipe->output_sink(pipe->output_sink_user, buf, width, height);
-+  }
-   //FIXME lock/release cache line instead of copying
--  if(dt_pipe_is_screen(pipe))
 +  else if(dt_pipe_is_screen(pipe))
    {
-     // dt_dev_image(want_float) keeps gamma terminal but lets it pass the
-     // 4-channel linear float working RGB through unpacked. In that case the
-@@ -3784,6 +3825,8 @@ restart:
+     dt_frame_geometry_t geometry = { .width = width, .height = height, .scale = scale };
+     for(int i = 0; i < 6; i++) geometry.zoom_pos[i] = pts[i] * pipe->iscale;
+@@ -3964,14 +4001,16 @@ restart:
+ 
+   dt_pthread_mutex_lock(&pipe->backbuf_mutex);
+   pipe->backbuf_hash = dt_dev_pixelpipe_cache_hash(&roi, pipe, pos);
+-  if(frame)
++  // Always replaced: after a sink run or a failed allocation, an older frame
++  // must not look like this run's output.
++  if(dt_pipe_is_screen(pipe))
+   {
+     dt_frame_t *old = pipe->frame;
+     pipe->frame = frame;
+     frame = old;
+     pipe->output_imgid = pipe->image.id;
+   }
+-  else if(!dt_pipe_is_screen(pipe))
++  else
+     pipe->backbuf = buf;
+   pipe->backbuf_width = width;
+   pipe->backbuf_height = height;
+@@ -3982,6 +4021,8 @@ restart:
    if(!claimed)
      dt_dev_pixelpipe_cache_report(pipe);
  
@@ -881,21 +908,23 @@ index 3383d8da6e..12ce3eea55 100644
                  pipe, NULL, old_devid, &roi, NULL, "'%s' ID=%i",
                  pipe->image.filename, pipe->image.id);
 diff --git a/src/develop/pixelpipe_hb.h b/src/develop/pixelpipe_hb.h
-index b1e5c2d148..0b33e6982e 100644
+index 2fa67a9d97..bcc666e134 100644
 --- a/src/develop/pixelpipe_hb.h
 +++ b/src/develop/pixelpipe_hb.h
-@@ -249,6 +249,9 @@ typedef struct dt_dev_pixelpipe_t
+@@ -269,6 +269,11 @@ typedef struct dt_dev_pixelpipe_t
    dt_dev_pixelpipe_status_t status;
    gboolean loading;
    gboolean input_changed;
-+  // Optional synchronous byte-output consumer. Source is valid only during the call.
-+  gboolean (*output_sink)(void *user, const uint8_t *pixels, int width, int height);
++  // Optional synchronous consumer of a screen pipe's float RGBA output, used
++  // in place of a frame when the pixels are in the device's encoding. Source
++  // is valid only during the call.
++  gboolean (*output_sink)(void *user, const float *pixels, int width, int height);
 +  void *output_sink_user;
-   // backbuffer (output)
-   uint8_t *backbuf;
-   size_t backbuf_size;
+   // output: the last frame a screen pipe published, under backbuf_mutex
+   // (dt_dev_pixelpipe_frame()), which holds its geometry; the last
+   // module's output for the others. the size describes either
 diff --git a/src/imageio/imageio.c b/src/imageio/imageio.c
-index d7b5a79ef4..1edd5ca300 100644
+index 1cfc959931..39dd6ea753 100644
 --- a/src/imageio/imageio.c
 +++ b/src/imageio/imageio.c
 @@ -88,6 +88,7 @@
@@ -904,12 +933,12 @@ index d7b5a79ef4..1edd5ca300 100644
  #include <string.h>
 +#include <tiffio.h>
  #include <strings.h>
-
+ 
  #ifdef USE_LUA
-@@ -650,12 +651,98 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
+@@ -672,12 +673,98 @@ dt_image_flags_t dt_imageio_get_type_from_extension(const char *extension)
    return 0;
  }
-
+ 
 -// load a full-res thumbnail:
 -gboolean dt_imageio_large_thumbnail(const char *filename,
 +// Exiv2 wraps DNG's JPEG-compressed TIFF strips in a TIFF preview. Decode
@@ -1007,22 +1036,22 @@ index d7b5a79ef4..1edd5ca300 100644
 +                                    const int target)
  {
    int res = TRUE;
-
-@@ -663,8 +750,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+ 
+@@ -685,8 +772,8 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
    char *mime_type = NULL;
    size_t bufsize;
-
+ 
 -  // get the biggest thumb from exif
 -  if(dt_exif_get_thumbnail(filename, &buf, &bufsize, &mime_type))
 +  // get a preview large enough for the requested thumbnail
 +  if(dt_exif_get_thumbnail_sized(filename, &buf, &bufsize, &mime_type, target))
      goto error;
-
+ 
    if(strcmp(mime_type, "image/jpeg") == 0)
-@@ -674,8 +761,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+@@ -696,8 +783,25 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
      if(dt_imageio_jpeg_decompress_header(buf, bufsize, &jpg))
        goto error;
-
+ 
 +    if(target > 0)
 +    {
 +      for(unsigned int denom = 8; denom >= 2; denom /= 2)
@@ -1043,11 +1072,11 @@ index d7b5a79ef4..1edd5ca300 100644
 +      jpeg_destroy_decompress(&jpg.dinfo);
 +      goto error;
 +    }
-
+ 
      *width = jpg.width;
      *height = jpg.height;
-@@ -691,6 +795,12 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
-
+@@ -713,6 +817,12 @@ gboolean dt_imageio_large_thumbnail(const char *filename,
+ 
      res = FALSE;
    }
 +  else if(strcmp(mime_type, "image/tiff") == 0
@@ -1059,10 +1088,10 @@ index d7b5a79ef4..1edd5ca300 100644
    else
    {
  #ifdef HAVE_GRAPHICSMAGICK
-@@ -820,6 +930,13 @@ error:
+@@ -842,6 +952,13 @@ error:
    return res;
  }
-
+ 
 +gboolean dt_imageio_large_thumbnail(const char *filename, uint8_t **buffer,
 +                                    int32_t *width, int32_t *height,
 +                                    dt_colorspaces_color_profile_type_t *color_space)
@@ -1176,16 +1205,19 @@ index b92768d02c..20c006236a 100644
  #endif
  
    if(tiff == NULL) return 0;
-diff --git a/cmake/modules/FindONNXRuntime.cmake b/cmake/modules/FindONNXRuntime.cmake
-index 6827133a6d..2cd7c9f630 100644
---- a/cmake/modules/FindONNXRuntime.cmake
-+++ b/cmake/modules/FindONNXRuntime.cmake
-@@ -152,7 +152,7 @@ if(NOT _ORT_HEADER OR NOT _ORT_LIBRARY)
-   endif()
+diff --git a/src/iop/colorout.c b/src/iop/colorout.c
+index 9547076132..321c1ba6a1 100644
+--- a/src/iop/colorout.c
++++ b/src/iop/colorout.c
+@@ -39,6 +39,11 @@
+ #include <stdlib.h>
+ #include <string.h>
  
-   if(_ORT_NUGET)
--    set(_ORT_URL "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/${_ORT_VER}")
-+    set(_ORT_URL "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${_ORT_VER}/${_ORT_PACKAGE}")
-   else()
-     set(_ORT_URL "https://github.com/microsoft/onnxruntime/releases/download/v${_ORT_VER}/${_ORT_PACKAGE}")
-   endif()
++// Ubuntu 22.04 ARM64 has littlecms 2.12, from before this name
++#if LCMS_VERSION < 2140
++#define cmsChannelsOfColorSpace cmsChannelsOf
++#endif
++
+ // max iccprofile file name length
+ // must be in synch with dt_colorspaces_color_profile_t
+ #define DT_IOP_COLOR_ICC_LEN 512

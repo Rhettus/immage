@@ -3,8 +3,8 @@
 // Run after building the engine: IMMAGE_RAW=<raw with white balance presets> node --test verify/wb-in-module.test.mjs
 //
 // Session.wbInModule, the note for a photo whose white balance is set in the
-// white balance module with color calibration off: temperature on, a setting
-// other than camera reference and as shot to reference, channelmixerrgb off.
+// white balance module with color calibration off: temperature on, neither
+// camera reference nor prepared for color calibration, channelmixerrgb off.
 // it is checked on open and again once edits pause (Session.changed)
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -68,13 +68,13 @@ test("Session.wbInModule", { timeout: 300000 }, async (t) => {
     await s.close();
     if (!raw) { t.diagnostic("IMMAGE_RAW not set: the raw cases are skipped"); return; }
     s = await open(raw);
-    assert.equal(s.wbInModule, false, "a raw starts as shot to reference with color calibration on");
+    assert.equal(s.wbInModule, false, "a raw starts prepared for color calibration, which is on");
     let notified = 0;
     s.onModules = () => notified++;
     // the cards are loaded as the Advanced panel loads them
-    await s.loadAdvanced("temperature", 0, ["wb_setting"]);
+    await s.loadAdvanced("temperature", 0, ["wb_setting", "late_correction"]);
     await s.loadAdvanced("channelmixerrgb", 0, ["illuminant"]);
-    s.setFields("temperature", 0, { wb_setting: 0 });
+    s.setFields("temperature", 0, { wb_setting: 0, late_correction: 0 });
     s.setAdvancedEnabled("channelmixerrgb", 0, false);
     await s.settled();
     // the edits schedule the check themselves

@@ -10,14 +10,16 @@
      "applicable": true,
      "builtin": true,
      "description": "",
-     "name": "_builtin_magic lantern defaults"
+     "name": "_builtin_magic lantern defaults",
+     "version": 7
     },
     {
      "active": false,
      "applicable": true,
      "builtin": true,
      "description": "",
-     "name": "_builtin_scene-referred default"
+     "name": "_builtin_scene-referred default",
+     "version": 7
     }
    ]
   }

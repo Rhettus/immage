@@ -23,6 +23,17 @@ pub struct Asset {
     pub original_fingerprint: String,
 }
 
+/// The FROM and WHERE of a pending analysis, shared by `pending_analyses` and
+/// `pending_analysis_paths` so the count and the work never disagree.
+macro_rules! pending_analysis_from {
+    () => {
+        "FROM variants v JOIN assets a ON a.id=v.asset_id
+          LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
+          LEFT JOIN render_failures fe ON fe.subject='edited' AND fe.owner_id=v.id AND fe.fingerprint=v.edited_fingerprint AND fe.analysis_version=?3 AND fe.model_version=?4 AND fe.app_version=?5 AND fe.failed_at>unixepoch()-?6
+          WHERE v.id>?1 AND (v.metadata_json IS NULL OR (e.embedding IS NULL AND fe.owner_id IS NULL))"
+    };
+}
+
 #[derive(Clone)]
 pub struct PendingAnalysis {
     pub variant_id: i64,
@@ -665,7 +676,6 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
-    #[cfg(test)]
     pub fn metadata(&self, variant_id: i64) -> Result<Option<String>, String> {
         self.db
             .lock()
@@ -799,16 +809,22 @@ impl SearchCache {
         // a subject the engine could not decode for this very fingerprint, app
         // version and analysis is not pending until RENDER_FAILURE_RETRY passes
         // (render_failures)
-        let mut query = db.prepare("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,e.embedding IS NULL AND fe.owner_id IS NULL,v.metadata_json IS NULL
-          FROM variants v JOIN assets a ON a.id=v.asset_id
-          LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
-          LEFT JOIN render_failures fe ON fe.subject='edited' AND fe.owner_id=v.id AND fe.fingerprint=v.edited_fingerprint AND fe.analysis_version=?3 AND fe.model_version=?4 AND fe.app_version=?5 AND fe.failed_at>unixepoch()-?6
-          WHERE v.id>?1 AND (v.metadata_json IS NULL OR (e.embedding IS NULL AND fe.owner_id IS NULL))
-          ORDER BY v.id LIMIT ?2").map_err(|e| e.to_string())?;
+        let mut query = db.prepare(concat!("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,e.embedding IS NULL AND fe.owner_id IS NULL,v.metadata_json IS NULL ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2")).map_err(|e| e.to_string())?;
         let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok(PendingAnalysis {
           variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_edited:r.get(6)?,needs_metadata:r.get(7)?,
         })).map_err(|e|e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
+    /// The ids and paths of the next pending photos after `after`, by the same
+    /// conditions as `pending_analyses`; for counting the backlog.
+    pub fn pending_analysis_paths(&self, after: i64, limit: u32) -> Result<Vec<(i64, String)>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let mut query = db.prepare(concat!("SELECT v.id,a.path ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2"))
+            .map_err(|e| e.to_string())?;
+        let rows = query.query_map(params![after,limit,crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
     }
 
     pub fn counts(&self) -> Result<Counts, String> {
@@ -818,12 +834,14 @@ impl SearchCache {
     /// Clear disposable rows while retaining root identity and AUTOINCREMENT
     /// sequences. Late work cannot accidentally target a newly reused ID.
     pub fn clear(&self) -> Result<(), String> {
-        self.db
+        let mut db = self.db
             .lock()
-            .map_err(|_| "search cache lock poisoned")?
-            .execute_batch("DELETE FROM assets; DELETE FROM render_failures;")
+            .map_err(|_| "search cache lock poisoned")?;
+        let tx = db.transaction().map_err(|e| e.to_string())?;
+        // Delete analyses once so foreign-key cascades do not repeatedly scan them.
+        tx.execute_batch("DELETE FROM analyses; DELETE FROM assets; DELETE FROM render_failures;")
             .map_err(|e| e.to_string())?;
-        Ok(())
+        tx.commit().map_err(|e| e.to_string())
     }
     pub fn assets(&self) -> Result<Vec<Asset>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
@@ -895,6 +913,19 @@ impl SearchCache {
             )
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    pub(crate) fn folder_assets(&self, folder: &Path) -> Result<Vec<Asset>, String> {
+        let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
+        let prefix = folder.to_string_lossy();
+        let mut query = db.prepare(
+            "SELECT id,path,original_fingerprint FROM assets WHERE substr(path,1,length(?1))=?1"
+        ).map_err(|e| e.to_string())?;
+        let rows = query.query_map([prefix.as_ref()], |r| Ok(Asset {
+            id: r.get(0)?, path: r.get(1)?, original_fingerprint: r.get(2)?,
+        })).map_err(|e| e.to_string())?;
+        let assets: Vec<Asset> = rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?;
+        Ok(assets.into_iter().filter(|asset| Path::new(&asset.path).starts_with(folder)).collect())
     }
 
     pub fn path_variants(&self, path: &str) -> Result<Vec<Variant>, String> {

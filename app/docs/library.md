@@ -108,6 +108,10 @@ download and CPU model check, and warns that background analysis uses the CPU
 and slows Immage. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
+For mapped network shares, [Immage Accelerator (Experimental)](immage-accelerator.md) can
+provide folder listings, metadata for Library filters and Find, and embedded
+previews for visible unedited originals when Immage has no cached thumbnail.
+
 [Find](#find) searches this cache without an Immich connection. Choose
 **This folder** (respecting Include subfolders) or **All folders** under
 **Search in**. Smart search matches each photo as edited, using its saved edits.
@@ -152,6 +156,9 @@ background work is paused. Active grid filters update immediately
 when metadata changes. Unknown local edit, reject, label, keyword and
 camera-body fields exclude remote results when those filters are selected.
 
+A photo with only numbered darktable XMP sidecars is indexed under those saved
+versions. Keeping the numbered sidecar preserves its edits and metadata.
+
 Local search includes cached originals and saved virtual copies, using only
 current metadata and model-versioned analysis. Temporary previews are not saved
 copy versions. If the photo index changes while a search runs (during
@@ -166,8 +173,7 @@ In the grid, right-click a local photo and choose **Show more like this**
 (offered once the optional model is downloaded).
 The clicked photo supplies the image query, independently of the open editor.
 The query covers all local library folders, retains selected filters and uses
-the photo as edited. An **Image query** indicator names the seed;
-**Clear image query** returns to a metadata listing. Missing or stale seed
+the photo as edited. Missing or stale seed
 analysis produces an error rather than substituting another photo. Background
 embeddings require the optional model and cached metadata; a photo without
 current analysis cannot supply a similarity query.
@@ -243,6 +249,13 @@ can help with a NAS or fast disk, but fewer may be quicker on a busy drive.
   takes its name. A move removes the original only once every file of
   that photo has been verified. A photo whose copy fails or doesn't match
   stays where it was, with nothing left behind in the destination.
+  On macOS, Immage uses the standard file flush if an SMB share rejects
+  the macOS full flush. This also applies to folder transfers.
+  When a share rejects the no-overwrite rename during a folder transfer,
+  Immage creates each new destination file exclusively, then flushes and
+  verifies it before removing any originals. The final filename can be
+  visible while it is being written. If this step fails, Immage attempts
+  to remove the incomplete file.
 - **On the same drive.** A move renames the files, which is instant.
 
 The work runs in the background, under the photo, with a progress bar and
@@ -256,6 +269,56 @@ If any stay behind, the folder is read again to show them. When it's done,
 A transfer that stops answering for 30 seconds ends the job and stops new
 transfers. Activity on another photo does not hide a stalled transfer.
 Blocked transfers continue to count against the worker cap until they return.
+
+### Troubleshooting macOS SMB transfers
+
+If a photo or folder transfer fails, quit Immage and launch it from Terminal
+to capture the filesystem operation, path, and OS error. If you installed
+Immage outside Applications, adjust the path in this command.
+
+```sh
+/Applications/Immage.app/Contents/MacOS/immage 2>&1 | tee "$TMPDIR/immage-transfer.log"
+```
+
+Reproduce the failure with a disposable photo or folder on the same share.
+Look for an `immage transfer:` line and include it when reporting the failure,
+along with whether you moved or copied photos or a whole folder. You can redact
+personal parts of paths.
+
+## Moving and copying folders
+
+Press and hold the name of a folder in **Folders**, then drag it onto the
+folder that should contain it. Rest on a closed destination to open it, or
+press Esc to cancel the drag. The source, its current parent, its descendants
+and offline folders cannot take the drop. Hold Alt when you drop, or select
+**Keep the originals** in the confirmation, to copy the folder.
+
+The confirmation shows the full destination path, item counts and any conflicts.
+If a folder with the same name already exists there, Immage merges the folders.
+Identical files are reused. For different files with the same name, **Skip**
+keeps both files where they are. Skipping a photo or one of its sidecars also
+keeps that photo’s file set together at the source. Select **Overwrite** to
+replace the destination file after the incoming copy verifies.
+
+The transfer includes photos and their sidecars, other regular files including
+hidden files, and empty subfolders. Symbolic links stay at the source. A move
+keeps the source folder if it still contains links or skipped files.
+
+A move on the same drive can rename the whole folder, including Finder’s
+`.DS_Store` and Windows Explorer’s `Thumbs.db` files. For a copy, a move across
+drives, or a merge, Immage skips those files at every level, including uppercase
+and mixed-case spellings of `Thumbs.db`. It copies the other files in parallel using
+**Preferences > Performance > Memory > Library workers** and reads back each
+copy to verify its checksum. A move starts removing originals only after the
+copy phase succeeds. If copying fails or stops, the originals stay, verified
+copies can be reused when you retry, and Immage removes the empty destination
+folders it created when the drive is reachable. If you stop during removal,
+some originals may still be present. Use **Retry** or drag the folder again
+to continue. After a completed move, the Folders panel follows the new path.
+Cached Library thumbnails follow verified photos, including their virtual
+copies. Each virtual copy keeps its own sidecar and can be opened for editing
+at the destination.
+
 
 ## The filmstrip and the grid
 
@@ -346,32 +409,53 @@ Searching the library and narrowing a folder both happen here.
   the photo (it needs the optional model described above for photos on this
   computer, and Immich's own machine learning for Immich); **Filename**
   searches file names. Until the model is downloaded and Immich is not
-  connected, Smart cannot run: Find then shows no Smart/Filename switch, its box
-  says it searches file names, and it matches file names only. Your choice is
+  connected, Smart cannot run: Find then shows Filename as the active choice and Smart
+  dimmed (hover it to see why; clicking does nothing), its box says it searches
+  file names, and it matches file names only. Your choice is
   kept, so Smart returns by itself once the model is on this computer or Immich
   is connected, even for a saved filter that asks for it. While the model is not
   downloaded, a small tip under the search row says so, with **Set up in
   Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
   and a close button that dismisses the tip for good. The tip also goes away by
   itself once the model is installed.
-- **Analysis icon**: once the model is downloaded, an icon at the end of the
-  search box shows Smart search's background analysis of your photos. A
-  spinning arc with a number means photos are being analysed and shows how many
-  are waiting (up to 99+); a pause symbol means analysis is paused; a check means
-  every photo is analysed. Hover it for the details. Click it to pause or
-  resume, the same pause as **Pause / Resume** in Preferences > General >
-  Background work. The icon is not shown before the model is downloaded.
+- **Analysis icon**: the icon at the end of the search box shows Smart
+  search's background analysis of your photos, with the number of photos still
+  waiting beside it (the exact number is in its tooltip; from 10,000 it is
+  shortened, for example 12K). A spinning arc means photos are being analysed.
+  A still arc means photos are waiting but nothing is running just now, for
+  example while waiting for a quiet spell on a network drive or between batches.
+  Find checks photo availability in batches, including while analysis is paused.
+  The count excludes photos as they are found missing or offline and includes
+  them again when they return. A pause symbol means analysis is paused, and a
+  green check means no photo is waiting. While the
+  count is being worked out the tooltip says so. Click it to pause or resume,
+  the same pause as **Pause / Resume** in Preferences > General > Background
+  work. Before the model is downloaded the icon is dimmed and does nothing; its
+  tooltip says the model is not installed.
+  Browsing photos keeps their existing analysis. Saving edits queues fresh
+  analysis for the edited photo or virtual copy.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.
 - **Immich library**: a picker that appears when Immich is in the search.
   See [Immich](immich.md).
 
-Filters that are on appear as chips under the search row; click a chip's
-**✕** to remove that filter. In a **Both** search, a chip warns when it can
-match only one source: Immich-only fields such as **People** hide the photos on
-this computer, and fields that exist only on this computer, such as keywords,
-flags or **Camera body**, hide Immich results.
+Under the search words, a **Filters** header shows how many filters are on
+(rating with Hide rejected counts as one). The reset icon at the end of Find's
+title bar, in the same place as the Adjustments panel's, clears your search words
+and turns every filter off, keeping where it searches and Smart or Filename. It
+is dimmed when there is nothing to clear.
+
+Below it is one list, in groups, with every filter folded when Find opens. Each
+filter is a row showing what it is set to (**Any** when off). Click a row and its options open directly beneath it; click it
+again, or press Esc, to fold it. Only one filter is open at a time, and setting
+values does not depend on which is open. A filter that is on is brighter, with an
+**✕** at its end that turns just that filter off. In a **Both** search, a row
+warns when it can match only one source: Immich-only fields such as **People**
+hide the photos on this computer, and fields that exist only on this computer,
+such as keywords, flags or **Camera body**, hide Immich results. Rows that exist
+only in Immich carry an **Immich** tag in that search. Long lists (keywords,
+cameras, dates and so on) are limited in height and scroll inside the editor.
 
 The filters are grouped:
 
@@ -385,12 +469,15 @@ The filters are grouped:
 in the search. In an Immich-only search, **Camera**, **Lens** and **Keywords**
 list the server's values.
 
-- **Rating & flags**: a minimum star rating and color labels side by side on
-  one row, then **Rejected** (**All photos**, **Hide rejected** or **Rejected**,
-  with photo counts).
+- **Rating & flags**: **Minimum rating** (click a star; click the chosen star or
+  **Any** to clear it), **Color label** (pick any number of colors, each marked
+  with a check when chosen, or **No label**), then **Rejected** (**All photos**,
+  **Hide rejected** or **Only rejected**, with photo counts). The row reads, for
+  example, **3+ stars · Hide rejected**. Color labels and Rejected apply to
+  photos on this computer.
 - **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
   computer. A photo counts as edited once it has been changed in the editor,
-  beyond the automatic starting edits. It has its own chip and summary.
+  beyond the automatic starting edits.
 - **File type**: lists each extension the search holds (DNG, ORF, CR3, JPG,
   TIFF and so on) with how many photos of each. **All RAW** comes first and
   stands for every raw format; the raw extensions are indented below it, so
@@ -413,50 +500,40 @@ list the server's values.
   span (**Last 30 days**, **This month**, **Last year** and others), a year,
   or a month of the year. A photo with no capture time goes by its file's date
   here too.
-- **Exposure**: ISO, aperture, focal length and shutter speed. Tick any
-  values, for example ISO 100 and 200.
+- **Exposure**: tabs for ISO, aperture, focal length and shutter speed; a dot
+  marks a tab with values chosen. Tick any values, for example ISO 100 and 200.
 
 Each list counts only the photos your other choices leave: tick a camera, and
 **Lens** lists just the lenses used on it.
 
 Everything applies live. A tick works at once; typed words apply when you
-press Enter or after a short pause. At the bottom, the footer shows how many
-photos match, **Clear all** (every filter and the search words),
-**Save filter…**, and, in the popup, **Show N**,
-which closes Find and shows the matches in the grid. In the popup, Esc or a
-click away closes Find; the filters stay on. The toolbar's stars, **Reject**, **Edited** and color label
+press Enter or after a short pause. The footer is always visible below the list:
+it shows how many photos match, **Load** (saved filters) and **Save filter…**. Esc
+folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
-Opening another folder clears the filters, sets Search in back to This folder
-and clears the search words, so a folder left on Rejected only never looks
-empty and the stars and ticks filter the folder you open.
+Opening another folder sets **Search in** to **This folder** and clears the
+search words. Your filters apply to each folder you open. A folder can look
+empty if none of its photos match. Use Find’s reset button to clear all filters
+or the **✕** on a filter row to clear that filter. Immich-specific filters resume
+when you switch back to a search that uses them.
 
-### Find in the grid
+### Where Find appears
 
 ![The Find column in the grid, with a rating and a file type filter on](images/library-find.png)
 
-In the grid, Find is not a popup. It fills the right-hand panel, titled
-**Find** like the other panels (with auto-hide on, the pin is at the end of
-the title row), with the **Dock** layout (search, every filter, chips and the
-footer's saved filters), locked in place: it has no size buttons, cannot be dragged and has no close button, and
-Esc does not close it. Esc in its search box leaves the box; Esc again leaves
-the grid, as it does anywhere else. The toolbar's **Find** button shows the
-panel if it was hidden (or slid away by auto-hide) and puts the cursor in the
-search box. Leaving the grid brings back the editing panel, and the popup
-below is used again. In the grid's Print panel, the **Find** button opens the
-popup.
+Find is part of the grid. It fills the right-hand panel, titled **Find** like
+the other panels (with auto-hide on, the pin is at the end of the title row). It
+cannot be moved or undocked and has no close button, and Esc does not close it.
+Esc in its search box leaves the box; Esc again leaves the grid, as it does
+anywhere else.
 
-### Sizes
-
-Outside the grid, Find is a popup with three sizes, chosen with the buttons at
-its top:
-
-- **Minimize**: a strip with just the search row and chips.
-- **Dock**: beside the grid, full height, with the categories in a list.
-- **Fill**: covers the grid and shows every category at once, in columns.
-
-Drag the grip to move Find in **Minimize** or **Dock**. Each size remembers
-its own place, and the last size you used is remembered. Double-click the
-grip to put the current size back in its default place.
+The toolbar's **Find** button goes to the grid from any view, shows the panel if
+it was hidden (or slid away by auto-hide) and puts the cursor in the search box.
+From the Print panel it returns the column to Find. Use the **Find panel**
+icon beside the filmstrip button to show or hide Find, and drag the panel's
+inner edge to resize it. Find remembers its width and whether it was open
+independently of the editing panel, even when you relaunch Immage. The
+filters stay on when you hide Find or leave the grid.
 
 ### Saved filters
 
@@ -464,7 +541,7 @@ grip to put the current size back in its default place.
 searches and every filter. A saved filter that says **This folder** follows
 whatever folder is open, so one filter can serve any folder.
 
-Open a saved filter from **Load filter** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
+Open a saved filter from **Load** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
 **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
 nine in the list. While a saved filter is open, Find shows its name, with
 **changed** beside it after you edit, and **Update** (overwrite it) and
@@ -703,6 +780,8 @@ to another selection.
 Click the magnifier in the toolbar under the grid (shown in the grid only), the
 small icon at the right of a thumbnail's hover footer, or choose
 **View > Culling Preview**, to open the same preview without the keyboard.
+The menu command is available when the grid shows a local photo.
+**View > Full Screen Preview** is available for an open photo in the editor.
 The toolbar magnifier and the menu use the photo under the pointer, else the
 selected photo, else the first photo in the grid; the thumbnail icon opens
 that thumbnail's photo.
@@ -713,27 +792,53 @@ editor. The frame and toolbar stay in place as you browse, zoom, and wait for
 more preview detail. Click the dimmed area to close it. Otherwise the first
 selected visible photo is used. Subtle triangle buttons outside the preview and the left and right
 arrow keys browse the filtered grid; F or Escape returns. Number keys 0–5 set a
-rating, X toggles rejection, 6–9 toggle color labels, and K keywords the displayed photo.
+rating, X toggles rejection, and 6–9 toggle color labels. The top bar keeps
+the filename and position together beside the preview controls. Press **K** or
+click **Keywords** to open keywording over the lightbox for the displayed photo.
+Click **×** to close the dialog and return to the preview.
 The grid selection is preserved. The lightbox bottom bar has the same star icons
 and color swatches as the main grid bar. Click a star to rate (click the same
 star again to clear), or click a swatch to toggle that color label. Rating
 clears rejection, as it does elsewhere in the app. Purple is available by click.
 
-Unedited RAW previews use the embedded camera preview; edited photos use the
-processed thumbnail pipeline. An uncached edited preview can take time to
-render. Scroll over the photo to zoom smoothly toward **4:1**, anchored under
-the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
+Fit uses the largest compatible embedded camera preview for unedited RAWs.
+It scales it down to fit the lightbox and can use it even if it is smaller
+than the viewport. For unedited JPEGs, Fit decodes the main image at a size
+suitable for the lightbox and applies its orientation. If the camera preview
+is unavailable or a JPEG needs color management, Fit uses the render path.
+Edited photos show previews made with their edits by default. An uncached
+render can take time. Scroll over the photo to zoom smoothly toward **4:1**,
+anchored under the pointer; Ctrl-scroll or a trackpad pinch zooms faster. Wheel zoom stops at
 **100%** when crossing it and returns to Fit when zoomed out. Single-click the
-photo or press **Z** to toggle Fit and **100%** detail; the button does the same.
+photo or press **Z** to toggle Fit and **100%** detail. The centered bottom zoom slider
+works like the editor’s. Fit is in the middle, with smaller sizes to the left
+and up to **400%** to the right. Double-click the zoom control to toggle Fit
+and **100%**.
 Hold **Space** and drag to pan while zoomed; releasing a Space-drag does not
 toggle zoom. Embedded detail is limited to the camera preview's native
 resolution. Double-click opens the displayed photo in the editor.
+
+The tag icon opens **Keywords** (also available with **K**), and the sliders
+icon opens the photo in the editor.
+
+Turn on **Camera previews** with the camera icon in the lightbox toolbar. The
+icon is highlighted when the option is on. This uses embedded camera
+previews for edited RAWs in Fit, including during read-ahead. The toggle
+starts off when you open the Library grid. If a camera preview is unavailable,
+Fit shows the edited render. **100%** still shows the edited image. Your saved
+edits and ratings are unaffected.
+
 The existing grid thumbnail appears immediately at Fit size while a larger preview loads,
 so sharper pixels do not make the photo grow. Nearby screen previews stay in memory
 while the lightbox is open and appear immediately when revisited.
-After navigation settles briefly, screen-sized previews are prepared one at a time
-in the background using
+Screen-sized previews are prepared one at a time in the background using
 Preferences’ **Read ahead** count, in the last arrow-navigation direction.
+If the next photo in that direction is edited, read-ahead starts as soon as
+the current Fit preview is ready. Otherwise it waits briefly for navigation
+to settle.
+Moving to a photo while its matching Fit preview is loading uses the same
+request. A photo with an active editor session can load separately so culling
+can prepare its current edits.
 Enable **Read ahead both ways** to prepare the same count in the opposite direction.
 Setting Read ahead to zero disables both directions;
 native detail loads only when requested. Cached previews are reused until the
@@ -745,3 +850,25 @@ inside the same frame. Keywording is also available from the grid photo's
 context menu. With a multi-selection, right-clicking a selected photo keeps the
 selection as the keyword target; right-clicking an unselected photo targets only
 that photo and leaves the selection intact.
+
+## Rename photos
+
+In the Library grid or local Find results, right-click a photo and choose
+**Rename…**. Right-click inside a selection to rename the selected photos
+together. Immage keeps stacked RAW and JPEG partners on the same base name and
+renames a file only once when its virtual copies are selected as well.
+
+Type a new name or build one using the same photo info as the
+[Export filename pattern](export.md#file-name). For example, `{caption}-{seq}`
+combines the caption with a number in grid order, starting at `001`.
+`{originalname}` and `{filename}` both give the existing name before the
+extension. For a selection, the dialog shows how many photos are targeted.
+The example shows the new filename for the first photo, and Immage checks
+every proposed name before you confirm.
+
+Files stay in their folders and keep their extensions. Immage renames their XMP
+and edit-data sidecars too. If another file or sidecar already uses a proposed
+name, change the pattern before confirming. Immage verifies the new photo and
+sidecar paths before reporting success. If a rename fails partway through a
+batch, the dialog shows which files were renamed and where it stopped. Find
+results and thumbnails update to use the new paths.

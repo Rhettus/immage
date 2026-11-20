@@ -459,7 +459,7 @@ pub(crate) struct NativeMenu {
 #[derive(Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub(crate) enum NativeItem {
-    Item { id: String, label: String, #[serde(default)] accel: Option<String> },
+    Item { id: String, label: String, #[serde(default)] accel: Option<String>, #[serde(default)] disabled: bool },
     Separator,
     Submenu { label: String, items: Vec<NativeItem> },
     Predefined { role: NativeRole },
@@ -478,8 +478,8 @@ fn native_items(app: &AppHandle, items: &[NativeItem]) -> tauri::Result<Vec<Box<
     let mut out: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
     for it in items {
         out.push(match it {
-            NativeItem::Item { id, label, accel } => {
-                let mut b = MenuItemBuilder::with_id(id.as_str(), label);
+            NativeItem::Item { id, label, accel, disabled } => {
+                let mut b = MenuItemBuilder::with_id(id.as_str(), label).enabled(!disabled);
                 if let Some(a) = accel { b = b.accelerator(a); }
                 Box::new(b.build(app)?)
             }

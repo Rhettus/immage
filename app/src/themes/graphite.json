@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "name": "Graphite",
+  "colorScheme": "dark",
+  "colors": {
+    "window": "#171819",
+    "panel": "#222426",
+    "card": "#2c2e30",
+    "inset": "#36393b",
+    "hover": "#404345",
+    "text": "#f0f0ef",
+    "text-2": "#b9bbbc",
+    "text-3": "#85898b",
+    "track": "#45484a",
+    "thumb": "#f2f2f0",
+    "accent": "#e2e2df",
+    "border": "#494d50",
+    "on-accent": "#171819",
+    "focus": "#bfc2c4",
+    "error": "#ef7777",
+    "success": "#78bb87",
+    "graph-bg": "#1b1d1f",
+    "graph-grid": "#343739"
+  }
+}

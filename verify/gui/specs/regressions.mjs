@@ -28,10 +28,16 @@ export async function previewAlignment(t){
   const c=document.querySelector('canvas.layer.sharp'),draft=document.querySelector('canvas.layer.draft');
   const b=e=>{if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{sharp:b(c),draft:b(draft)};
  };
- const before=await t.driver.observe(bounds),s=await reveal(t,selector);
- await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});await settledPhoto(t);
- const after=await t.driver.observe(bounds);for(const k of ['x','y','width','height'])assert(Math.abs(after.sharp[k]-before.sharp[k])<1,`scaled preview ${k} aligned`);
- t.measure({name:'630672c',before,after,scale:env.scale});await t.evidence('scaled-preview-final');
+ const s=await reveal(t,selector);
+ const baseline=await settledPhoto(t);
+ const before=await t.driver.observe(bounds);
+ await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});
+ await settledPhoto(t, photo => photo.hash !== baseline.hash);
+ const after=await t.driver.observe(bounds);
+ t.measure({name:'630672c',before,after,scale:env.scale});
+ for(const k of ['x','y','width','height'])
+  assert(Math.abs(after.sharp[k]-before.sharp[k])<1,`scaled preview ${k} aligned (${before.sharp[k]} → ${after.sharp[k]})`);
+ await t.evidence('scaled-preview-final');
 }
 export async function loupeGrid(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
@@ -119,9 +125,8 @@ export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');
  await click(t,'.find-button');
  await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
- // the category list is in the Dock size
- if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
- const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body category');
+ // the filter rows are in the Find column; Camera body opens its editor beneath its row
+ const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body row');
  await t.driver.point(category.x,category.y);
  const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.find-pop .filter-ticks .name')].map(e=>e.textContent)),'body options');
  assert(names.some(s=>s.includes('BODY-A'))&&names.some(s=>s.includes('BODY-B')),'same model serials independently listed');

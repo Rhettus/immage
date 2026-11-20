@@ -26,14 +26,16 @@ export function saveLibrary(change: Partial<Library>) {
 
 // which panels show, and how big; remembered between launches. storage can
 // be unavailable, so it is only ever a convenience
-export type PanelKey = "left" | "strip" | "right";
-export type Layout = { left: boolean; strip: boolean; right: boolean;
-                leftWidth: number; rightWidth: number; stripHeight: number };
-export const DEFAULT_LAYOUT: Layout = { left: true, strip: true, right: true,
-                                 leftWidth: 300, rightWidth: 360, stripHeight: 150 };
+export type PanelKey = "left" | "strip" | "right" | "find";
+export type Layout = { left: boolean; strip: boolean; right: boolean; find: boolean;
+                leftWidth: number; rightWidth: number; findWidth: number; stripHeight: number };
+export const DEFAULT_LAYOUT: Layout = { left: true, strip: true, right: true, find: true,
+                                 leftWidth: 300, rightWidth: 360, findWidth: 360, stripHeight: 150 };
 export function loadLayout(): Layout {
   try {
-    return { ...DEFAULT_LAYOUT, ...JSON.parse(settings.get("immage.layout") ?? "{}") };
+    const saved = JSON.parse(settings.get("immage.layout") ?? "{}");
+    const layout = { ...DEFAULT_LAYOUT, ...saved };
+    return { ...layout, find: saved?.find ?? layout.right, findWidth: saved?.findWidth ?? layout.rightWidth };
   } catch {
     return DEFAULT_LAYOUT;
   }

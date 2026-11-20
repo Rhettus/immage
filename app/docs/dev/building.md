@@ -117,6 +117,20 @@ was on keeps `BUILD_PRINT=OFF` in its cache: configure it again with
 `cmake -S darktable -B build -DBUILD_PRINT=ON`. Without print support the
 engine still soft proofs, and the panel says it can't print.
 
+## ONNX Runtime
+
+darktable's build downloads ONNX Runtime for Linux and macOS from
+`github.com/microsoft/onnxruntime`, which currently answers 404. Until darktable
+settles on another source, `scripts/build.sh` runs
+`scripts/fetch_onnxruntime.py` first. It takes Microsoft's NuGet package of the
+same version, checks it against a pinned SHA-512, and unpacks it into
+`build/_deps/onnxruntime`, where darktable finds it and downloads nothing. If you
+configure with `cmake` directly on a clean `build/`, run that script first.
+
+The build stops if a darktable update asks for another ONNX Runtime version:
+update `VERSION` and `NUPKG_SHA512` in the script. Once darktable's module stops
+downloading from that repository the script does nothing and can be removed.
+
 ## AI models
 
 AI masks need their ONNX models in `build/ai-models/` (for development)

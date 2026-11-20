@@ -159,5 +159,6 @@ edit: the bottom left of the photo shows how far it has got, and **Stop**
 ends it after the photo it is on. Your editing comes first, so the export
 slows down while you work on a photo and picks up again when you stop. Each photo is exported as it was when
 you clicked Export, even if you edit it meanwhile. When the export is
-done, the same place says what happened. That goes away by itself if
-nothing went wrong; otherwise **OK** dismisses it.
+done, the same place says what happened. Like other messages in the
+corners of the photo, it fades after 15 seconds, also when something went
+wrong, unless the pointer is over it. Click it or **OK** to dismiss it at once.

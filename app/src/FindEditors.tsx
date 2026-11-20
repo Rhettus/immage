@@ -1,0 +1,382 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
+// the editors Find's accordion opens under a filter's row: one per category
+// (stars and labels, file types, keywords, Exposure, capture dates, the Immich
+// pickers, ...). Each writes through findModel.ts's functions, as the Filters
+// popup's bodies did; the facets they list are computed when one is open.
+// FindFilters.tsx draws the rows, FindPanel.tsx the panel
+import { useEffect, useState } from "react";
+import { commands, type Named } from "./commands";
+import { bodyLabel, EXPOSURE, facetsWithin, rejectedOptions, type ExposureKey, type Facets, type Filter } from "./filter";
+import { pickKinds, setKinds, setRawOnly, setStars, setTaken, type CategoryKey, type FindState } from "./findModel";
+import { StarIcon } from "./icons";
+import { fileKind, LABEL_COLORS, type ImageEntry } from "./library";
+import type { ImmichSearch } from "./immich";
+import { formatDate, formatNumber, t } from "./i18n";
+
+// values to tick, any of them, with how many photos have each; a long list
+// scrolls in its own box (CSS) and gets a box to find one in
+export function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts = true, indent }: {
+  items: [string, number][]; chosen: string[]; onChange: (v: string[]) => void;
+  show?: (v: string) => string; empty: string;
+  find?: string;                           // the find box's placeholder
+  counts?: boolean;
+  indent?: (v: string) => boolean;         // rows set in under the one before
+}) {
+  const [words, setWords] = useState("");
+  const w = words.trim().toLowerCase();
+  // a chosen value the shown photos no longer have stays to untick
+  const all: [string, number][] = [...chosen.filter((c) => !items.some(([v]) => v === c)).map((c) => [c, 0] as [string, number]),
+                                    ...items].filter(([v]) => !w || show(v).toLowerCase().includes(w));
+  return (
+    <>
+      {find && items.length > 8 && (
+        <input className="field find" type="search" spellCheck={false} placeholder={find} aria-label={find} value={words}
+               onChange={(e) => setWords(e.target.value)} />
+      )}
+      <div className="filter-ticks">
+        {all.map(([v, n]) => (
+          <button key={v} role="checkbox" aria-checked={chosen.includes(v)} className={`${chosen.includes(v) ? "on" : ""}${indent?.(v) ? " indent" : ""}`}
+                  onClick={() => onChange(chosen.includes(v) ? chosen.filter((x) => x !== v) : [...chosen, v])}>
+            <span className="tick" aria-hidden="true">{chosen.includes(v) ? "✓" : ""}</span><span className="name" title={show(v)}>{show(v)}</span>
+            {counts && <span className="count">{formatNumber(n)}</span>}</button>
+        ))}
+        {!all.length && <div className="empty">{w ? t("library.filters.noMatch") : empty}</div>}
+      </div>
+    </>
+  );
+}
+
+export const EXPOSURE_LABEL: Record<ExposureKey, string> = { iso: "ISO", aperture: t("library.filters.aperture"),
+                                                            focal: t("library.filters.focalLength"), shutter: t("library.filters.shutterSpeed") };
+
+// a list's summary: its one value, or how many
+export const chosen = (v: string[], name: (x: string) => string = (x) => x) =>
+  v.length === 1 ? name(v[0]) : v.length ? t("library.filters.chosen", { count: v.length }) : "";
+export const keyword = (k: string) => k.split("|").join(" › ");
+
+// the exposure settings as tabs, and the values of the one chosen under them
+function Exposure({ v, set, within }: {
+  v: Filter; set: (p: Partial<Filter>) => void; within: (clear: Partial<Filter>) => Facets;
+}) {
+  const [shown, setShown] = useState<ExposureKey>("iso");
+  return (
+    <>
+      <div className="segmented small fe-tabs" role="group" aria-label={t("library.filters.exposure")}>
+        {EXPOSURE.map((k) => (
+          <button key={k} className={shown === k ? "active" : ""} aria-pressed={shown === k}
+                  aria-label={v[k].length ? t("library.find.tabSet", { name: EXPOSURE_LABEL[k] }) : undefined}
+                  onClick={() => setShown(k)}>
+            {EXPOSURE_LABEL[k]}{v[k].length > 0 && <span className="fe-mark" aria-hidden="true" />}
+          </button>
+        ))}
+      </div>
+      <Ticks key={shown} items={within({ [shown]: [] })[shown]} chosen={v[shown]} onChange={(x) => set({ [shown]: x })}
+             empty={t("library.filters.noneRecorded")} />
+    </>
+  );
+}
+
+// a span of capture dates, YYYY-MM-DD, "" for open
+type Span = { label: string; from: string; to: string };
+const pad = (n: number) => String(n).padStart(2, "0");
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const yearSpan = (y: string): Span => ({ label: y, from: `${y}-01-01`, to: `${y}-12-31` });
+// "YYYY-MM"
+const monthSpan = (ym: string): Span => {
+  const [y, m] = ym.split("-").map(Number);
+  return { label: formatDate(new Date(y, m - 1, 1), { month: "long", year: "numeric" }), from: `${ym}-01`, to: ymd(new Date(y, m, 0)) };
+};
+// counted back from today, which they include; open at the end, so a
+// photo taken since still shows
+function recent(): Span[] {
+  const today = new Date(), y = today.getFullYear(), m = today.getMonth();
+  const ago = (days: number) => ymd(new Date(y, m, today.getDate() - days));
+  return [
+    { label: t("library.filters.today"), from: ymd(today), to: "" },
+    { label: t("library.filters.lastDays", { count: 7 }), from: ago(6), to: "" },
+    { label: t("library.filters.lastDays", { count: 30 }), from: ago(29), to: "" },
+    { label: t("library.filters.lastDays", { count: 90 }), from: ago(89), to: "" },
+    { label: t("library.filters.thisMonth"), from: ymd(new Date(y, m, 1)), to: "" },
+    { label: t("library.filters.lastMonth"), from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) },
+    { label: t("library.filters.thisYear"), from: `${y}-01-01`, to: "" },
+    { label: t("library.filters.lastYear"), from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
+  ];
+}
+const same = (s: Span, from: string, to: string) => s.from === from && s.to === to;
+// a span by its name where it has one
+export const dates = (from: string, to: string) => {
+  if (!from && !to) return "";
+  const named = recent().find((s) => same(s, from, to))
+    ?? (/^\d{4}-01-01$/.test(from) && same(yearSpan(from.slice(0, 4)), from, to) ? yearSpan(from.slice(0, 4)) : undefined)
+    ?? (/-01$/.test(from) && same(monthSpan(from.slice(0, 7)), from, to) ? monthSpan(from.slice(0, 7)) : undefined);
+  return named ? named.label : from && to ? `${from} – ${to}` : from ? t("library.filters.fromDate", { date: from }) : t("library.filters.toDate", { date: to });
+};
+
+// the capture dates: typed, or picked from recent spans, years and the
+// months of the year picked. `months` are those the photos hold, with
+// counts; without them (Immich), the last ten years and every month
+function Captured({ from, to, months, onChange }: {
+  from: string; to: string; months: [string, number][] | null; onChange: (from: string, to: string) => void;
+}) {
+  const now = new Date().getFullYear();
+  const years: [string, number | null][] = months
+    ? [...months.reduce((m, [ym, n]) => m.set(ym.slice(0, 4), (m.get(ym.slice(0, 4)) ?? 0) + n), new Map<string, number>())]
+    : Array.from({ length: 10 }, (_, k) => [String(now - k), null]);
+  // the year whose months show: the one the span lies in
+  const year = from && from.slice(0, 4) === to.slice(0, 4) ? from.slice(0, 4) : null;
+  const inYear: [string, number | null][] = !year ? []
+    : months ? months.filter(([ym]) => ym.startsWith(year))
+    : Array.from({ length: 12 }, (_, k) => [`${year}-${pad(k + 1)}`, null]);
+  const row = (s: Span, n: number | null, indent = false) => (
+    <button key={s.label} role="checkbox" aria-checked={same(s, from, to)} className={`${same(s, from, to) ? "on" : ""}${indent ? " indent" : ""}`}
+            onClick={() => (same(s, from, to) ? onChange("", "") : onChange(s.from, s.to))}>
+      <span className="tick" aria-hidden="true">{same(s, from, to) ? "✓" : ""}</span><span className="name">{s.label}</span>
+      {n !== null && <span className="count">{formatNumber(n)}</span>}</button>
+  );
+  return (
+    <>
+      <div className="filter-range">
+        <input className="field" type="date" aria-label={t("library.filters.from")} value={from} onChange={(e) => onChange(e.target.value, to)} />
+        <span>{t("library.filters.to")}</span>
+        <input className="field" type="date" aria-label={t("library.filters.through")} value={to} onChange={(e) => onChange(from, e.target.value)} />
+      </div>
+      <div className="filter-ticks">
+        <div className="filter-group">{t("library.filters.recent")}</div>
+        {recent().map((s) => row(s, null))}
+        <div className="filter-group">{t("library.filters.years")}</div>
+        {years.map(([y, n]) => [row(yearSpan(y), n),
+                                ...(y === year ? inYear.map(([ym, c]) => row(monthSpan(ym), c, true)) : [])])}
+        {!years.length && <div className="empty">{t("library.filters.noDates")}</div>}
+      </div>
+    </>
+  );
+}
+
+type Kind = "camera-make" | "camera-model" | "camera-lens-model" | "country" | "city";
+
+// the server's values for a field, each narrowed by the fields before it
+function useSuggestions(kind: Kind, within: Record<string, string>) {
+  const [values, setValues] = useState<string[] | undefined>();
+  const key = JSON.stringify(within);
+  useEffect(() => {
+    commands.immichSuggestions(kind, within).then(setValues).catch(() => {});
+  }, [kind, key]);
+  return values;
+}
+
+function Pick({ label, value, options, onChange }: {
+  label: string; value: string; options: string[] | undefined; onChange: (v: string) => void;
+}) {
+  return (
+    <>
+      <span className="k">{label}</span>
+      <select className="field" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{t("library.filters.any")}</option>
+        {/* a stored value the server no longer lists stays choosable */}
+        {value && !options?.includes(value) && <option value={value}>{value}</option>}
+        {options?.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </>
+  );
+}
+
+function Camera({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) => void }) {
+  const makes = useSuggestions("camera-make", {});
+  const models = useSuggestions("camera-model", { make: v.make });
+  const lenses = useSuggestions("camera-lens-model", { make: v.make, model: v.model });
+  return (
+    <div className="meta-grid filter-immich">
+      <Pick label={t("library.filters.make")} value={v.make} options={makes} onChange={(make) => set({ make, model: "", lens: "" })} />
+      <Pick label={t("library.filters.model")} value={v.model} options={models} onChange={(model) => set({ model, lens: "" })} />
+      <Pick label={t("library.filters.lens")} value={v.lens} options={lenses} onChange={(lens) => set({ lens })} />
+    </div>
+  );
+}
+
+function Place({ v, set }: { v: ImmichSearch; set: (p: Partial<ImmichSearch>) => void }) {
+  const countries = useSuggestions("country", {});
+  const cities = useSuggestions("city", { country: v.country });
+  return (
+    <div className="meta-grid filter-immich">
+      <Pick label={t("library.filters.country")} value={v.country} options={countries} onChange={(country) => set({ country, city: "" })} />
+      <Pick label={t("library.filters.city")} value={v.city} options={cities} onChange={(city) => set({ city })} />
+    </div>
+  );
+}
+
+// the server's named things to tick, as the folder's keywords are
+const ids = (all: Named[], picked: string[], onChange: (ids: string[]) => void, empty: string) => (
+  <Ticks items={all.map((x) => [x.id, 0] as [string, number])} chosen={picked} onChange={onChange} empty={empty}
+         show={(id) => all.find((x) => x.id === id)?.name ?? "…"} find={t("library.filters.find")} counts={false} />
+);
+
+const LABEL_NAMES = ["red", "yellow", "green", "blue", "purple"] as const;
+
+// Rejected: three exclusive choices, as radios (arrows move between them)
+function RejectedRadios({ images, f, patch }: { images: ImageEntry[]; f: Filter; patch: (p: Partial<Filter>) => void }) {
+  const names = { all: t("library.search.allPhotos"), hide: t("library.filters.hideRejected"), only: t("library.filters.onlyRejected") };
+  const opts = rejectedOptions(images, f);
+  const move = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const at = opts.findIndex((o) => o.value === f.rejected);
+    const next = opts[(at + d + opts.length) % opts.length];
+    patch({ rejected: next.value });
+    (e.currentTarget.querySelectorAll<HTMLElement>("[role=radio]")[opts.indexOf(next)])?.focus();
+  };
+  return (
+    <div className="fe-radios" role="radiogroup" aria-label={t("library.filters.rejected")} onKeyDown={move}>
+      {opts.map(({ value, count: n }) => (
+        <button key={value} role="radio" aria-checked={f.rejected === value} tabIndex={f.rejected === value ? 0 : -1}
+                className={f.rejected === value ? "on" : ""} onClick={() => patch({ rejected: value })}>
+          <span className="fe-dot" aria-hidden="true" /><span className="name">{names[value]}</span>
+          <span className="count">{formatNumber(n)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Rating({ state, send, images, local }: {
+  state: FindState; send: (n: FindState) => void; images: ImageEntry[]; local: boolean;
+}) {
+  const f = state.filter;
+  const stars = f.minRating || state.search.minRating;
+  const patch = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
+  return (
+    <>
+      <div className="fe-sec">
+        <div className="fe-label">
+          <span>{t("library.find.minRating")}</span>
+          <button className="fe-link" aria-pressed={stars === 0} onClick={() => send(setStars(state, 0))}>{t("library.filters.any")}</button>
+        </div>
+        <div className="fe-stars" role="group" aria-label={t("library.find.minRating")}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} className={stars >= n ? "on" : ""} aria-label={t("library.toolbar.starsAndUp", { count: n })}
+                    title={t("library.toolbar.starsAndUp", { count: n })} aria-pressed={stars === n}
+                    onClick={() => send(setStars(state, stars === n ? 0 : n))}>
+              <StarIcon filled={stars >= n} />
+            </button>
+          ))}
+        </div>
+      </div>
+      {local && <>
+        <div className="fe-sec">
+          <div className="fe-label"><span>{t("library.find.colorLabel")}</span></div>
+          <div className="fe-swatches" role="group" aria-label={t("library.find.colorLabel")}>
+            {LABEL_COLORS.map((c, k) => {
+              const on = !!(f.labels & (1 << k)), name = t(`library.menu.label-${LABEL_NAMES[k]}`);
+              return (
+                <button key={c} className={on ? "on" : ""} aria-label={name} title={name} aria-pressed={on}
+                        onClick={() => patch({ labels: f.labels ^ (1 << k) })}>
+                  <i style={{ background: c }}>{on && <span aria-hidden="true">✓</span>}</i>
+                </button>
+              );
+            })}
+            <button className={f.unlabeled ? "on" : ""} aria-label={t("library.find.noLabel")} title={t("library.find.noLabel")}
+                    aria-pressed={f.unlabeled} onClick={() => patch({ unlabeled: !f.unlabeled })}>
+              <i className="none">{f.unlabeled && <span aria-hidden="true">✓</span>}</i>
+            </button>
+          </div>
+        </div>
+        <div className="fe-sec">
+          <div className="fe-label"><span>{t("library.filters.rejected")}</span></div>
+          <RejectedRadios images={images} f={f} patch={patch} />
+        </div>
+      </>}
+    </>
+  );
+}
+
+export type EditorProps = {
+  cat: CategoryKey;
+  state: FindState;
+  send: (next: FindState) => void;
+  images: ImageEntry[];
+  local: boolean;        // this computer's photos are searched
+  server: boolean;       // the server's pickers stand in for the folder's lists
+  people: Named[]; tags: Named[]; albums: Named[];
+};
+
+// the editor of one category; the facets it lists are worked out here, so
+// only the one open is
+export function FilterEditor({ cat, state, send, images, local, server, people, tags, albums }: EditorProps) {
+  const { search: s, filter: f } = state;
+  const patchSearch = (p: Partial<ImmichSearch>) => send({ ...state, search: { ...s, ...p } });
+  const patchFilter = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
+  const within = (clear: Partial<Filter>) => facetsWithin(images, f, clear);
+  switch (cat) {
+    case "rating":
+      return <Rating state={state} send={send} images={images} local={local} />;
+    case "edits":
+      return (
+        <>
+          <p className="fe-hint">{t("library.find.editStatusHint")}</p>
+          <div className="segmented small" role="group" aria-label={t("library.find.editStatus")}>
+            {(["all", "edited", "unedited"] as const).map((v) => (
+              <button key={v} className={f.edited === v ? "active" : ""} aria-pressed={f.edited === v} onClick={() => patchFilter({ edited: v })}>
+                {v === "all" ? t("library.filters.any") : v === "edited" ? t("library.find.editedOnly") : t("library.find.uneditedOnly")}
+              </button>
+            ))}
+          </div>
+        </>
+      );
+    case "kinds":
+      return server
+        ? <div className="meta-grid filter-immich">
+            <span className="k">{t("library.find.rawOnly")}</span>
+            <input type="checkbox" className="switch" aria-label={t("library.find.rawOnly")} checked={s.rawOnly}
+                   onChange={(e) => send(setRawOnly(state, e.target.checked))} />
+          </div>
+        : <Ticks items={within({ kinds: [] }).kinds} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, pickKinds(f.kinds, kinds)))}
+                 show={(v) => v === "RAW" ? t("library.find.allRaw") : v} indent={(v) => v !== "RAW" && fileKind(`.${v}`) === "RAW"}
+                 empty={t("library.filters.noPhotos")} />;
+    case "keywords":
+      return server
+        ? ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"))
+        // every one ticked, and a keyword covers those under it
+        : <Ticks items={within({ keywords: [] }).keywords} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
+                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} />;
+    case "cameras":
+      return server
+        ? <Camera v={s} set={patchSearch} />
+        : <Ticks items={within({ cameras: [] }).cameras} chosen={f.cameras} onChange={(cameras) => patchFilter({ cameras })}
+                 empty={t("library.filters.noneRecorded")} />;
+    case "bodies":
+      return (
+        <div className="filter-bodies">
+          <Ticks items={within({ bodies: [] }).bodies} chosen={f.bodies} onChange={(bodies) => patchFilter({ bodies })}
+                 show={bodyLabel} empty={t("library.filters.noPhotos")} find={t("library.filters.findModelSerial")} />
+          <p className="fe-hint after">{t("library.filters.bodyHint")}</p>
+        </div>
+      );
+    case "lenses":
+      return server
+        ? <Camera v={s} set={patchSearch} />
+        : <Ticks items={within({ lenses: [] }).lenses} chosen={f.lenses} onChange={(lenses) => patchFilter({ lenses })}
+                 empty={t("library.filters.noneRecorded")} />;
+    case "exposure":
+      return <Exposure v={f} set={patchFilter} within={within} />;
+    case "taken":
+      return <Captured from={f.takenFrom || s.takenFrom} to={f.takenTo || s.takenTo}
+                       months={local ? within({ takenFrom: "", takenTo: "" }).months : null}
+                       onChange={(from, to) => send(setTaken(state, from, to))} />;
+    case "place":
+      return <Place v={s} set={patchSearch} />;
+    case "people":
+      return ids(people, s.personIds, (personIds) => patchSearch({ personIds }), t("library.filters.noPeople"));
+    case "albums":
+      return ids(albums, s.albumIds, (albumIds) => patchSearch({ albumIds }), t("library.filters.noAlbums"));
+    case "favorites":
+      return (
+        <div className="meta-grid filter-immich">
+          <span className="k">{t("library.filters.favorites")}</span>
+          <input type="checkbox" className="switch" aria-label={t("library.filters.favorites")} checked={s.favorites}
+                 onChange={(e) => patchSearch({ favorites: e.target.checked })} />
+        </div>
+      );
+  }
+}

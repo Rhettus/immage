@@ -63,6 +63,8 @@ jobs:
         run: python3 -I scripts/test_sync_darktable_locales.py
       - name: upstream copy checks
         run: python3 -I scripts/test_check_upstream_copies.py
+      - name: ONNX Runtime fetch checks
+        run: python3 -I scripts/test_fetch_onnxruntime.py
       - name: gitleaks
         run: |
           v=8.30.1
@@ -116,7 +118,6 @@ jobs:
             verify/export-format.test.mjs \
             verify/filter-rejected.test.mjs \
             verify/find-model.test.mjs \
-            verify/find-layout.test.mjs \
             verify/saved-filters.test.mjs \
             verify/folder-edits.test.mjs \
             verify/fit-preview.test.mjs \
@@ -342,11 +343,24 @@ jobs:
           persist-credentials: false
       - name: system packages and WebKitGTK build dependencies
         run: |
-          sudo add-apt-repository -y ppa:savoury1/graphics
-          sudo add-apt-repository -y ppa:savoury1/ffmpeg4
-          sudo add-apt-repository -y ppa:savoury1/display
-          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
-          sudo apt-get update
+          # Launchpad's PPAs can answer 503 for long stretches. apt keeps the
+          # packages it has fetched, so each new attempt asks only for the rest.
+          retry() {
+            attempt=1
+            until "$@"; do
+              [ "$attempt" -lt 20 ] || return 1
+              echo "attempt $attempt failed, trying again in 60 seconds: $*"
+              attempt=$((attempt + 1))
+              sleep 60
+            done
+          }
+          retry sudo add-apt-repository -y -n ppa:savoury1/graphics
+          retry sudo add-apt-repository -y -n ppa:savoury1/ffmpeg4
+          retry sudo add-apt-repository -y -n ppa:savoury1/display
+          retry sudo add-apt-repository -y -n ppa:ubuntu-toolchain-r/test
+          # Without --error-on=any a PPA index that failed is only a warning,
+          # and the install then picks the wrong package versions.
+          retry sudo apt-get update --error-on=any
           packages=$(grep -v '^#' .github/ubuntu-packages.txt)
           # Jammy ARM64 lacks these PPA libraries; build_linux_deps supplies
           # them before WebKit is configured (including its JPEG XL dependency).
@@ -356,7 +370,9 @@ jobs:
           # The runner can have LLVM's conflicting libunwind development files.
           # Keep libunwind's runtime and headers on the same Ubuntu version.
           printf '%s\n' 'Package: libunwind8 libunwind-dev' 'Pin: release o=Ubuntu' 'Pin-Priority: 1001' | sudo tee /etc/apt/preferences.d/immage-libunwind
-          sudo apt-get install -y --allow-downgrades $packages libunwind-dev libunwind-14-dev-
+          # apt's own delayed retries flooded the log with hundreds of thousands
+          # of warnings during an outage; the loop above does the retrying here.
+          retry sudo apt-get install -y --allow-downgrades -o Acquire::Retries=0 $packages libunwind-dev libunwind-14-dev-
       - run: sh app/scripts/build_linux_deps.sh
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: webkit-cache

@@ -49,6 +49,60 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                                                     "known": known }));
     }
     let dir = PathBuf::from(&path);
+    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
+    let supplied = {
+        let (handle, dir, skip) = (app.clone(), dir.clone(), skip.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = handle.state::<AppState>();
+            let config = crate::morf_photo::load(&state.runtime);
+            let mapped = mapped_folder_scope(&config, &dir, recursive, &skip)?;
+            let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
+            match config.list(&mapped, recursive, cancelled) {
+                Ok(mut images) => {
+                    images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                    if let Some(index) = state.search_cache.as_deref() {
+                        supplement_morf_folder_metadata(index, &mut images, cancelled);
+                    }
+                    Some((mapped, images))
+                }
+                Err(_) => {
+                    if !cancelled() {
+                        let _ = handle.emit("morfphoto-fallback", mapped.to_string_lossy());
+                    }
+                    None
+                }
+            }
+        }).await.map_err(|e| e.to_string())?
+    };
+    if state.folder_token.load(Ordering::SeqCst) != token {
+        return Err("superseded".into());
+    }
+    let mut supplied_images = Vec::new();
+    let mut supplied_files = Vec::new();
+    let mut skip = skip;
+    let local_listing = supplied.is_none();
+    if let Some((mapped, images)) = supplied {
+        let complete = mapped == dir;
+        skip.insert(mapped);
+        for mut image in images {
+            image.imgid = state.tagged.cached_photo(&image.path, i64::from(image.version));
+            supplied_files.push(image.path.clone());
+            supplied_images.push(serde_json::to_value(image).map_err(|e| e.to_string())?);
+        }
+        supplied_files.sort();
+        supplied_files.dedup();
+        if complete {
+            publish_listing(&app.state::<Caches>().listed, cache::Listed::default(),
+                || state.folder_token.load(Ordering::SeqCst) == token);
+            let count = supplied_files.len();
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": count, "total": count,
+                "images": supplied_images, "files": supplied_files }));
+            return serde_json::from_value(json!({ "images": supplied_images }))
+                .map_err(|e| format!("open_folder: unexpected reply: {e}"));
+        }
+        let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0,
+            "images": supplied_images }));
+    }
     let there = {
         let dir = dir.clone();
         tauri::async_runtime::spawn_blocking(move || volumes::answering(&dir).then(|| dir.is_dir()))
@@ -67,7 +121,6 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let _ = index.root_state(&observed, Some(&volume.mount), "online", None);
         }).await.map_err(|e| e.to_string())?;
     }
-    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let top = dir.clone();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
         let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
@@ -87,9 +140,10 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
-    let list: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": total, "images": [],
-                                                "files": list }));
+    let supplied_count = supplied_files.len();
+    supplied_files.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
+    let _ = app.emit("folder-progress", json!({ "token": token, "done": supplied_count, "total": total + supplied_count, "images": [],
+                                                "files": supplied_files }));
     // stamps the listing could not give (Linux) are read side by side, for
     // a few seconds at most, before the cached rows are checked against
     // them: a file that has not answered by then keeps its cached row
@@ -110,7 +164,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             publish_listing(&shared, now, || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) == token);
         }).await.map_err(|e| e.to_string())?;
     }
-    let mut images = Vec::new();
+    let mut images = supplied_images;
     let mut unanswered: Vec<Value> = Vec::new();
     let mut done = 0;
     let mut size = IMPORT_BATCH.0;
@@ -200,11 +254,15 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         }
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
-            let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": done + supplied_count, "total": total + supplied_count, "images": got }));
         }
     }
-    let kept = images.clone();
-    tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
+    // Keep the last filesystem snapshot for fallback. A mixed listing can
+    // omit local files from a whole mapped subtree.
+    if local_listing {
+        let kept = images.clone();
+        tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
+    }
     serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
 }
@@ -225,6 +283,47 @@ fn publish_listing(shared: &Mutex<cache::Listed>, listing: cache::Listed, curren
     if !current() { return false; }
     *slot = listing;
     true
+}
+
+// The NAS library response omits these fields. Leave metadata it does
+// expose intact, including empty EXIF/XMP values and zero ratings.
+pub(crate) fn supplement_morf_metadata(image: &mut LibraryImage, cached: &LibraryImage) {
+    if image.path != cached.path || image.version != cached.version || image.filename != cached.filename {
+        return;
+    }
+    (image.width, image.height) = (cached.width, cached.height);
+    let (target, source) = (&mut image.exif, &cached.exif);
+    target.focus_distance = source.focus_distance.clone();
+    target.crop_factor = source.crop_factor.clone();
+    target.white_balance.clone_from(&source.white_balance);
+    target.flash.clone_from(&source.flash);
+    target.exposure_program.clone_from(&source.exposure_program);
+    target.metering_mode.clone_from(&source.metering_mode);
+    (target.file_width, target.file_height) = (source.file_width, source.file_height);
+    (target.sensor_width, target.sensor_height) = (source.sensor_width, source.sensor_height);
+}
+
+// API results place all versions of a photo together. Reuse their cache
+// lookup while they are consecutive, with no filesystem reads.
+fn supplement_morf_folder_metadata(index: &crate::search_cache::SearchCache,
+                                   images: &mut [LibraryImage], cancelled: impl Fn() -> bool) {
+    let mut current = String::new();
+    let mut rows = Vec::new();
+    for image in images {
+        if cancelled() { return; }
+        if current != image.path {
+            current.clone_from(&image.path);
+            rows = index.path_metadata(&current).unwrap_or_default();
+        }
+        let version = if image.version == 0 { String::new() } else { format!("version:{}", image.version) };
+        let Some((_, _, _, raw)) = rows.iter().find(|(v, _, _, _)| *v == version) else { continue };
+        let Ok(mut value) = serde_json::from_str::<Value>(raw) else { continue };
+        let Some(object) = value.as_object_mut() else { continue };
+        object.insert("imgid".into(), json!(0));
+        if let Ok(cached) = serde_json::from_value::<LibraryImage>(value) {
+            supplement_morf_metadata(image, &cached);
+        }
+    }
 }
 
 // A complete, validated group only: one unknown/new/deleted sidecar forces
@@ -262,7 +361,7 @@ fn cached_folder_metadata(
 // Keep the already-extracted EXIF/library metadata in the disposable local
 // index. The engine's imgid is deliberately omitted: it exists only for this
 // process and must never become the persistent search identity.
-fn index_imported_metadata(
+pub(crate) fn index_imported_metadata(
     index: Option<&crate::search_cache::SearchCache>,
     listed: &std::sync::Mutex<cache::Listed>,
     images: &[Value],
@@ -795,21 +894,71 @@ fn subdirs(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+fn mapped_folder_scope(config: &crate::morf_photo::Config, dir: &Path, recursive: bool,
+                       skip: &HashSet<PathBuf>) -> Option<PathBuf> {
+    if config.covers(dir) { return Some(dir.to_path_buf()); }
+    let root = config.mapped_root()?;
+    (recursive && root.starts_with(dir) && visible_morf_path(&root, dir, skip)).then_some(root)
+}
+
+fn visible_morf_path(path: &Path, root: &Path, skip: &HashSet<PathBuf>) -> bool {
+    path.strip_prefix(root).is_ok_and(|relative| {
+        !skip.iter().any(|p| path.starts_with(p))
+            && relative.components().all(|c| !c.as_os_str().to_string_lossy().starts_with('.'))
+    })
+}
+
+fn indexed_subfolders<'a>(root: &Path, paths: impl IntoIterator<Item = &'a Path>) -> Vec<SubFolder> {
+    let mut children = std::collections::BTreeMap::<PathBuf, bool>::new();
+    let skip = HashSet::new();
+    for photo in paths {
+        if !visible_morf_path(photo, root, &skip) { continue; }
+        let Some(parent) = photo.parent() else { continue; };
+        let Ok(relative) = parent.strip_prefix(root) else { continue; };
+        let mut components = relative.components();
+        if let Some(first) = components.next() {
+            let child = root.join(first.as_os_str());
+            *children.entry(child).or_default() |= components.next().is_some();
+        }
+    }
+    children.into_iter().map(|(p, has_children)| subfolder(&p, has_children)).collect()
+}
+
+fn subfolder(path: &Path, has_children: bool) -> SubFolder {
+    SubFolder {
+        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        path: path.to_string_lossy().into_owned(),
+        has_children,
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn list_subfolders(path: String) -> Vec<SubFolder> {
+pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFolder> {
     tauri::async_runtime::spawn_blocking(move || {
-        if !volumes::answering(Path::new(&path)) {
-            return Vec::new();
-        }
-        let mut list: Vec<SubFolder> = subdirs(Path::new(&path))
-            .into_iter()
-            .map(|p| SubFolder {
-                name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                has_children: !subdirs(&p).is_empty(),
-                path: p.to_string_lossy().into_owned(),
-            })
-            .collect();
+        let config = crate::morf_photo::load(&app.state::<AppState>().runtime);
+        let path = Path::new(&path);
+        let indexed = |dir: &Path| {
+            if !config.covers(dir) { return None; }
+            match config.list(dir, true, || false) {
+                Ok(images) => Some(indexed_subfolders(dir, images.iter().map(|i| Path::new(&i.path)))),
+                Err(_) => {
+                    let _ = app.emit("morfphoto-fallback", dir.to_string_lossy());
+                    None
+                }
+            }
+        };
+        let mut list = if let Some(list) = indexed(path) {
+            list
+        } else if volumes::answering(path) {
+            subdirs(path).into_iter().map(|p| {
+                let has_children = indexed(&p).map_or_else(|| !subdirs(&p).is_empty(),
+                    |children| !children.is_empty());
+                subfolder(&p, has_children)
+            }).collect()
+        } else {
+            Vec::new()
+        };
         list.sort_by_key(|f| f.name.to_lowercase());
         list
     })
@@ -892,21 +1041,24 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>, proof: Option<bool>,
-               foreground: Option<bool>) -> Result<bindings::Frame, String> {
+               foreground: Option<bool>, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
     let proof = proof.unwrap_or(false);
+    let prefer_source = size > 0 && !proof && prefer_source.unwrap_or(false);
+    let camera_preview = size > 0 && !proof && camera_preview.unwrap_or(false);
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+    let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "out": out }))
+        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out }))
             .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);
@@ -937,7 +1089,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                if thumbs.write(&name, &jpeg).is_ok() && size > 0 {
+                if thumbs.write(&name, &jpeg).is_ok() && size > 0 && !prefer_source && !camera_preview {
                     thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
                 }
             }
@@ -946,22 +1098,36 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     Ok(bindings::Frame(Response::new(out)))
 }
 
+// Keep source-based Fit previews distinct from ordinary rendered thumbnails.
+fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool) -> String {
+    if camera_preview {
+        format!("camera-{name}")
+    } else if prefer_source {
+        format!("fit-{name}")
+    } else {
+        name
+    }
+}
+
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
 // for the photo as it is now: as the open folder's listing found it, else
 // as a stat finds it. the engine is not asked
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
-                                 size: u32) -> Result<bindings::Frame, String> {
+                                 size: u32, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
+    let prefer_source = size > 0 && prefer_source.unwrap_or(false);
+    let camera_preview = size > 0 && camera_preview.unwrap_or(false);
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let photo = Path::new(&path);
         let name = cache::listed_thumb_name(&listed, photo, version, size)?;
+        let name = preview_cache_name(name, prefer_source, camera_preview);
         let bytes = thumbs.read(&name)?;
         // a cache from before known thumbnails learns them as it is read
-        if size > 0 { thumbs.set_known(photo, version, size, &name); }
+        if size > 0 && !prefer_source && !camera_preview { thumbs.set_known(photo, version, size, &name); }
         Some(bytes)
     }).await.map_err(|e| e.to_string())?;
     Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))
@@ -1177,6 +1343,47 @@ mod tests {
     }
 
     #[test]
+    fn cached_extras_fill_only_fields_morfphoto_omits() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let source = fixture.as_array().unwrap().iter().find_map(|row| row["reply"]["images"].get(0)).unwrap();
+        let mut image: LibraryImage = serde_json::from_value(source.clone()).unwrap();
+        let mut cached = image.clone();
+        image.rating = 0;
+        cached.rating = 5;
+        image.keywords.clear();
+        cached.keywords = vec!["old".into()];
+        image.exif.lens.clear();
+        cached.exif.lens = "old lens".into();
+        cached.width = 123;
+        cached.exif.white_balance = "daylight".into();
+        supplement_morf_metadata(&mut image, &cached);
+        assert_eq!(image.rating, 0);
+        assert!(image.keywords.is_empty());
+        assert!(image.exif.lens.is_empty());
+        assert_eq!(image.width, 123);
+        assert_eq!(image.exif.white_balance, "daylight");
+        cached.version += 1;
+        cached.width = 456;
+        supplement_morf_metadata(&mut image, &cached);
+        assert_eq!(image.width, 123);
+    }
+
+    #[test]
+    fn indexed_tree_uses_photo_ancestors_and_ignores_hidden_and_unrelated_paths() {
+        let root = PathBuf::from("share");
+        let photos = ["direct.jpg", "leaf/one.raw", "nested/2026/a.raw", "nested/b.jpg", ".hidden/a.raw"]
+            .map(|name| root.join(name));
+        let unrelated = Path::new("share-other/other/photo.raw");
+        let paths = photos.iter().map(PathBuf::as_path).chain(std::iter::once(unrelated));
+        let children = indexed_subfolders(&root, paths);
+        assert_eq!(children.iter().map(|item| (item.name.as_str(), item.has_children))
+            .collect::<Vec<_>>(), vec![("leaf", false), ("nested", true)]);
+        assert!(indexed_subfolders(&root, []).is_empty());
+        assert!(!visible_morf_path(&root.join("nested/2026/a.raw"), &root,
+            &HashSet::from([root.join("nested")])));
+    }
+
+    #[test]
     fn photo_candidates_include_raw_and_optional_formats() {
         for name in ["photo.ORF", "photo.cr3", "photo.JpEg", "photo.gpr", "photo.HEIC",
                      "photo.avif", "photo.jxl", "photo.exr", "photo.pfm", "photo.jp2"] {
@@ -1236,6 +1443,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let photo = temp.path().join("a.tif");
         std::fs::write(&photo, b"pixels").unwrap();
+        std::fs::write(temp.path().join("a.tif.xmp"), b"original edit").unwrap();
         let index = crate::search_cache::SearchCache::open(&temp.path().join("cache.sqlite")).unwrap();
         let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
         let mut original = fixture[2]["reply"]["images"][0].clone();
@@ -1432,7 +1640,7 @@ mod tests {
         image["keywords"] = json!(["Places|Updated"]);
         let current_snapshot = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
         assert_ne!(metadata_refresh_key(&stale_same_photo), metadata_refresh_key(&current_snapshot),
-            "each save/open invalidation generation must get a distinct queue key");
+            "each invalidation generation must get a distinct queue key");
         // A concurrent metadata change in another photo must not drop this
         // photo's independent, fingerprint-guarded refresh.
         index.invalidate_edited(other.to_str().unwrap(), "").unwrap();

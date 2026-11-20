@@ -101,6 +101,14 @@ test("Advanced mask Session lifecycle", { timeout: 300000 }, async (t) => {
     assert.ok(Math.abs((await params("Sky", "colorbalancergb", ["contrast"])).params.contrast-.1234567)<1e-7,
       "another Simple control on the same module preserves untouched Advanced fields");
 
+    s.setLocalMany("Sky", [["l_cg_global_hue", 135], ["l_cg_global_sat", 42]]);
+    await settle();
+    const graded = (await params("Sky", "colorbalancergb", ["global_H", "global_C", "contrast"])).params;
+    assert.equal(graded.global_H, 135);
+    assert.ok(Math.abs(graded.global_C - .084) < 1e-7);
+    assert.ok(Math.abs(graded.contrast - .1234567) < 1e-7,
+      "the wheel batch preserves other edits on the same module");
+
     const snapshot = structuredClone(s.masks);
     for (const hide of [true,false]) {
       s.setHidden("Sky", hide); await settle();
@@ -205,8 +213,26 @@ test("Advanced mask Session lifecycle", { timeout: 300000 }, async (t) => {
     assert.equal((await own("Neutral", "exposure")).enabled, true,
       "Add module enables a Simple-mapped module even before its first adjustment");
     i = await own("Neutral", "exposure");
-    await s.loadAdvanced(i.op, i.priority, ["exposure", "black"]);
+    await s.loadAdvanced(i.op, i.priority, ["exposure", "black", "mode"]);
     assert.equal(s.advanced.get(`${i.op}#${i.priority}`).enabled, true);
+    const preset = "_builtin_magic lantern defaults";
+    assert.ok((await s.loadPresets(i.op, i.priority)).some((p) => p.name === preset && p.applicable));
+    s.setHidden("Neutral", true); await settle();
+    s.applyPreset(i.op, i.priority, preset); await settle();
+    assert.equal(s.advanced.get(`${i.op}#${i.priority}`).params.mode, 1);
+    assert.ok(s.masks.find((m) => m.name === "Neutral").extra?.includes("exposure"));
+    assert.equal((await own("Neutral", "exposure")).enabled, false, "presets preserve hidden masks");
+    s.setHidden("Neutral", false); await settle();
+    assert.equal((await own("Neutral", "exposure")).enabled, true, "the card is still enabled after unhiding");
+    assert.equal((await params("Neutral", "exposure", ["mode"])).params.mode, 1);
+    const name = "Mask Exposure";
+    const saved = (await s.loadPresets(i.op, i.priority, { action: "save", name })).find(p => p.name === name);
+    assert.ok(saved?.active);
+    s.applyPreset(i.op, i.priority, name); await settle();
+    assert.equal((await own("Neutral", "exposure")).name, i.name);
+    assert.equal((await own("Neutral", "exposure")).enabled, true);
+    const remaining = await s.loadPresets(i.op, i.priority, { action: "delete", name, version: saved.version });
+    assert.ok(!remaining.some(p => p.name === name));
     await s.close();
   } finally {
     await stopEngine();

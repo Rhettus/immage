@@ -93,13 +93,13 @@ export class AppDriver {
       ] });
     } finally { await this.command('DELETE', '/actions'); }
   }
-  async drag(from, to) {
+  async drag(from, to, moveDuration = 80) {
     await this.guard();
-    this.log({ action: 'drag', from, to });
+    this.log({ action: 'drag', from, to, moveDuration });
     const actions = [
       { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(from.x), y: Math.round(from.y) },
       { type: 'pointerDown', button: 0 },
-      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: 80, origin: 'viewport',
+      ...Array.from({ length: 8 }, (_, i) => ({ type: 'pointerMove', duration: moveDuration, origin: 'viewport',
         x: Math.round(from.x + (to.x - from.x) * (i + 1) / 8), y: Math.round(from.y + (to.y - from.y) * (i + 1) / 8) })),
       { type: 'pointerUp', button: 0 },
     ];
@@ -177,6 +177,13 @@ export class AppDriver {
   async screenshot(path) {
     await this.guard();
     const png = await this.command('GET', '/screenshot');
+    await writeFile(path, Buffer.from(png, 'base64'));
+  }
+  async screenshotElement(path, selector) {
+    await this.guard();
+    const element = await this.command('POST', '/element', { using: 'css selector', value: selector });
+    const id = element['element-6066-11e4-a52e-4f735466cecf'];
+    const png = await this.command('GET', `/element/${id}/screenshot`);
     await writeFile(path, Buffer.from(png, 'base64'));
   }
   async keys(...keys) {

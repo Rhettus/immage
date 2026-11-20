@@ -24,7 +24,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::local_search_cmds::local_search_cancel,
         crate::local_search_cmds::local_search_seed,
         crate::search_cmds::search_pause,
-        crate::search_cmds::search_queue,
+        crate::search_cmds::search_analysis_status,
         crate::search_cmds::search_cache_clear,
         crate::clip_models::search_model_status,
         crate::clip_infer::search_model_probe,
@@ -90,6 +90,10 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::move_cmds::move_plan,
         crate::move_cmds::move_files,
         crate::move_cmds::move_cancel,
+        crate::move_cmds::folder::folder_move_plan,
+        crate::move_cmds::folder::folder_move,
+        crate::move_cmds::rename_preview,
+        crate::move_cmds::rename_files,
         crate::export_cmds::export_existing,
         crate::export_cmds::export_preview,
         crate::export_cmds::export_presets_load,
@@ -148,6 +152,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::lenses,
         crate::edit_cmds::wb_presets,
         crate::edit_cmds::lut_files,
+        crate::edit_cmds::checker_analyze,
         crate::edit_cmds::colormapping_acquire,
         crate::edit_cmds::lut_folder,
         crate::export_cmds::pick_folder,
@@ -155,6 +160,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::module_schema,
         crate::edit_cmds::instances,
         crate::edit_cmds::presets,
+        crate::edit_cmds::module_preset_import,
         crate::edit_cmds::instance,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,
@@ -192,6 +198,12 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::immich_cmds::immich_tags,
         crate::immich_cmds::immich_thumb,
         crate::immich_cmds::immich_resolve,
+        crate::morf_photo_cmds::morf_photo_status,
+        crate::morf_photo_cmds::morf_photo_metrics,
+        crate::morf_photo_cmds::morf_photo_thumbnail,
+        crate::morf_photo_cmds::morf_photo_save,
+        crate::morf_photo_cmds::morf_photo_test,
+        crate::morf_photo_cmds::morf_photo_forget,
         // Edit In plugins, backups and the support bundle
         crate::plugins::plugin_find_apps,
         crate::plugins::plugin_config,
@@ -280,7 +292,7 @@ pub struct MetaImage {
     pub metadata: MetaText,
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct Location {
     pub latitude: Number,
     pub longitude: Number,
@@ -292,7 +304,7 @@ fn zero() -> Number {
     Number::from(0)
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct MetaExif {
     pub maker: String,
     pub model: String,
@@ -445,6 +457,7 @@ mod tests {
         ("lenses", reads::<LensMenu>),
         ("wb_presets", reads::<WbPresets>),
         ("lut_files", reads::<LutFiles>),
+        ("checker_analyze", reads::<CheckerReply>),
         ("colormapping_acquire", reads::<ColormappingClusters>),
         ("watermarks", reads::<Watermarks>),
         ("module_schema", reads::<ModuleSchema>),

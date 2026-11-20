@@ -126,7 +126,7 @@ export const TOOL_ICONS: Record<MaskTool, React.ReactNode> = {
 export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, target, brush, overlay, disabled, raw, image, thumbMaps,
                              renderSlider, onTool, onSelect, onShape, onShapeMode, onShapeDelete,
                              onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek,
-                             onBrush, onOverlay, onLocal, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
+                             onBrush, onOverlay, onLocal, onLocalMany, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
                              onHslShown, presenceLoupe, advancedMode = false, session, sessionRevision = 0, onAdvancedEdit, onAdvancedEdits, photos }: {
   fold?: { open: boolean; n: number };
@@ -157,6 +157,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
   onBrush: (b: BrushSettings) => void;
   onOverlay: (on: boolean) => void;
   onLocal: (id: string, v: number) => void;
+  onLocalMany: (entries: [string, number][], gesture: number) => void;
   onRange: (k: number, patch: Partial<Range>) => void;
   onDepth: (k: number, depth: [number, number], feather: number) => void;
   onFeather: (k: number, patch: Partial<Shape>) => void;   // the selected component's soft edge, or its fit to the background
@@ -359,7 +360,10 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
     if (title === "Color Grading")
       return <>
         <GradingWheels prefix="l_cg" mode={wheels} onMode={setWheels} values={m!.values} disabled={disabled}
-                       onChange={(es) => es.forEach(([id, v]) => local(id, v))} lum={slider} />
+                       onChange={(entries, gesture) => {
+                         onLocalMany(entries, gesture);
+                         if (focusMode) foldSettings.current = true;
+                       }} lum={slider} />
         {wheels === "sliders" && RANGES.map(([r, label]) => (
           <div className="subcard" key={r}>
             <div className="subcard-head">{label}</div>

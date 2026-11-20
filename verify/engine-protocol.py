@@ -55,7 +55,7 @@ ROOT = background.ROOT
 COMMANDS = sorted('''
 agx_auto agx_presets ai_accel ai_denoise ai_denoise_preview ai_depth ai_mask
 ai_object analysis_preview baseline_end before cancel_base capture_times clip_embed close color_profiles
-colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget get
+checker_analyze colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget forget_folder get
 hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
 open opencl pano_merge pano_preview parity paste_batch points prefetch preview
@@ -204,6 +204,9 @@ def photo_edits(img):
     """Requests on the open photo's edit: every one answers `no image open`
     with none."""
     return [
+        R('checker_analyze', chart=0, layout=True, label='checker_analyze chart layout'),
+        R('checker_analyze', box=[0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9], scale=0.9,
+          label='checker_analyze profile estimate'),
         R('history'), R('history', saved=True, label='history saved'),
         R('get', label='get none'),
         R('get', modules={'exposure': ['exposure']}, label='get exposure'),
@@ -287,6 +290,8 @@ def photo_edits(img):
           label='spot_source circle'),
         R('sample', label='sample default'),
         R('sample', x=0.25, y=0.75, box=[0.2, 0.2, 0.4, 0.4], label='sample box'),
+        R('checker_analyze', chart=6, layout=True, label='checker_analyze unknown chart'),
+        R('checker_analyze', box=[0.5] * 8, label='checker_analyze invalid box'),
         R('colormapping_acquire', which='source', n=3, label='colormapping_acquire source'),
         R('colormapping_acquire', which='target', n=5, label='colormapping_acquire target'),
         R('colormapping_acquire', which='bogus', n=3, label='colormapping_acquire unknown side'),
@@ -610,6 +615,7 @@ class Run:
             key += ' again'
         self.results[key] = record
         self.counts[state] += 1
+        return replies
 
     def state(self, name, reqs):
         for req in reqs:
@@ -662,6 +668,44 @@ class Run:
         c = self.results['5 dated / import dated']['replies'][0]['images'][0]['imgid']
         self.state('5 dated', [R('capture_times', entries=[{'imgid': c, 'before': DATED, 'after': '2026:10:31 23:59:59.625'}],
                                  label='capture_times dated')])
+        # A nested row goes, a sibling whose name begins with the same
+        # string remains, and the engine leaves both directories on disk.
+        nested = a.parent / 'nested' / 'child.tif'
+        sibling = a.parent.with_name(a.parent.name + '-extra') / 'sibling.tif'
+        for file in [nested, sibling]:
+            file.parent.mkdir()
+            shutil.copyfile(a, file)
+        ids = {}
+        for file, label in [(nested, 'nested'), (sibling, 'sibling')]:
+            self.state('6 forget folder', [R('import', files=[str(file)], label=label)])
+            ids[label] = self.results[f'6 forget folder / {label}']['replies'][0]['images'][0]['imgid']
+        for n in range(1, 6):
+            label = f'create version {n}'
+            self.state('6 forget folder', [R('copy', imgid=ids['nested'], label=label)])
+            reply = self.results[f'6 forget folder / {label}']['replies'][0]
+            assert reply['ok'], reply
+        self.state('6 forget folder', [
+            R('forget_folder', path=str(a.parent), label='forget photos folder'),
+            R('meta', imgid=ids['nested'], label='forgot nested photo'),
+            R('meta', imgid=ids['sibling'], label='kept sibling photo'),
+        ])
+        assert self.results['6 forget folder / forget photos folder']['replies'][0]['ok']
+        assert not self.results['6 forget folder / forgot nested photo']['replies'][0]['ok']
+        assert self.results['6 forget folder / kept sibling photo']['replies'][0]['ok']
+        assert nested.is_file() and sibling.is_file()
+        archived = a.parent.with_name('archived')
+        a.parent.rename(archived)
+        moved = archived / nested.relative_to(a.parent)
+        reply = self.run_one('6 forget folder', R('import', files=[str(moved)], label='import moved versions'))[0]
+        images = reply['images']
+        actual_versions = sorted(image['version'] for image in images)
+        assert actual_versions == list(range(6)), actual_versions
+        for image in images:
+            version = image['version']
+            label = f'open moved version {version}'
+            self.state('6 forget folder', [R('open', path=str(moved), imgid=image['imgid'], label=label)])
+            assert self.results[f'6 forget folder / {label}']['replies'][0]['ok']
+        self.state('6 forget folder', [R('close', label='close moved photo')])
         self.state('5 dated', [R('quit')])
 
 

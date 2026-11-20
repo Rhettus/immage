@@ -7,6 +7,7 @@ import { ModuleCard } from "./ModuleCard";
 import type { InstanceChoice } from "./InstanceMenu";
 import type { Session } from "./session";
 import type { Turn } from "./manifest";
+import { checkerBoxPaths } from "./ModuleChecker";
 import { patchPaths } from "./colorchecker";
 import { clusterPaths } from "./colormapping";
 import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
@@ -20,6 +21,7 @@ import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 import type { ImageEntry } from "./library";
 import { t } from "./i18n";
 import { fieldText } from "./fieldText";
+import { presetLabel } from "./presetName";
 
 // Advanced mode's Adjustments: the same fold-out groups as Simple, each
 // holding darktable's modules as cards
@@ -92,7 +94,7 @@ const schemaOf = (op: string) => {
   return s;
 };
 
-export type AdvancedEdit = (ids: string[], label?: string) => void;
+export type AdvancedEdit = (ids: string[], label?: string, gesture?: number) => void;
 
 // modules that do one job and share a card: the photo shows the one that is
 // on (or, with none on, the ones it has used), and the card's switch moves
@@ -114,7 +116,7 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
   const levels = layout.levels ? [0, 1, 2].flatMap((c) => [0, 1, 2].map((k) => `levels[${c}][${k}]`)) : [];
   const b = layout.bands;
   const bands = b ? Array.from({ length: b.channels }, (_, c) => Array.from({ length: b.count }, (__, k) => [`x[${c}][${k}]`, `y[${c}][${k}]`]).flat()).flat() : [];
-  return [...layout.fields.flatMap(layoutPaths), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.clusters ? clusterPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
+  return [...layout.fields.flatMap(layoutPaths), ...(layout.op === "channelmixerrgb" ? ["x", "y", ...checkerBoxPaths] : []), ...levels, ...bands, ...(layout.patches ? patchPaths() : []), ...(layout.clusters ? clusterPaths() : []), ...(layout.lensPick ? ["lens_pick"] : []), ...curve,
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
@@ -250,15 +252,19 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
-                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
+                photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} wbLocked={session?.wbLocked} trouble={i.op === "temperature" ? session?.wbTrouble : i.op === "channelmixerrgb" ? session?.catTrouble.get(i.priority) : 0} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
                 onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
                   session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
-                onFields={(edit, coalesce, id) => { record?.([`adv:${key}:${id}`], layout.title); const c = session!.context;
+                onFields={(edit, coalesce, id, gesture) => {
+                  const c = session!.context;
                   const size = { width: c.sensorWidth, height: c.sensorHeight };
                   const all = Object.entries(edit).reduce((acc, [path, v]) => ({ ...acc, ...editOf(layout, path, v, { ...state.params, ...acc }, size) }), {});
+                  if (gesture !== undefined && !session!.changesFields(i.op, i.priority, all)) return;
+                  record?.([`adv:${key}:${id}`], layout.title, gesture);
                   session!.setFields(i.op, i.priority, all, coalesce); }}
                 onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
-                loadPresets={() => session!.loadPresets(i.op, i.priority)}
+                loadPresets={(change) => session!.loadPresets(i.op, i.priority, change)}
+                importPreset={(xml) => session!.importModulePreset(i.op, i.priority, xml)}
                 onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />
             );
@@ -337,15 +343,18 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
         instance={i} layout={layout} schema={schema} state={state} siblings={siblings.length} index={siblingIndex}
         photo={s} photos={photos} onSettled={() => void s.reloadAdvanced(i.op, i.priority)} settle={() => s.settled()}
         wbInModule={s.wbInModule}
+        wbLocked={s.wbLocked}
+        trouble={i.op === "channelmixerrgb" ? s.catTrouble.get(i.priority) : 0}
         onField={(path, value, coalesce) => {
           record?.([`mask:${mask}:${key}:${path}`], layout.title);
           const c = s.context;
           s.setFields(i.op, i.priority, editOf(layout, path, value, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce);
         }}
-        onFields={(edit, coalesce, editId) => {
-          record?.([`mask:${mask}:${key}:${editId}`], layout.title);
+        onFields={(edit, coalesce, editId, gesture) => {
           const c = s.context, size = { width: c.sensorWidth, height: c.sensorHeight };
           const all = Object.entries(edit).reduce((acc, [path, value]) => ({ ...acc, ...editOf(layout, path, value, { ...state.params, ...acc }, size) }), {} as Record<string, number>);
+          if (gesture !== undefined && !s.changesFields(i.op, i.priority, all)) return;
+          record?.([`mask:${mask}:${key}:${editId}`], layout.title, gesture);
           s.setFields(i.op, i.priority, all, coalesce);
         }}
         onEnabled={(on) => { record?.([`mask:${mask}:${key}:enabled`], layout.title); s.setAdvancedEnabled(i.op, i.priority, on); }}
@@ -357,7 +366,12 @@ export function AdvancedMaskCards({ mask, session, revision = 0, record, photos 
             s.removeMaskModule(mask, i.op, i.priority);
           }
         }}
-        loadPresets={() => s.loadPresets(i.op, i.priority)} onPreset={() => {}}
+        loadPresets={(change) => s.loadPresets(i.op, i.priority, change)}
+        importPreset={(xml) => s.importModulePreset(i.op, i.priority, xml)}
+        onPreset={(name) => {
+          record?.([`mask:${mask}:${key}:preset:${performance.now()}`], presetLabel(name));
+          s.applyPreset(i.op, i.priority, name);
+        }}
       />;
     })}
     {session && ready && choices.length > 0 && <AddModuleMenu group={`mask ${mask}`} choices={choices} onAdd={add} />}

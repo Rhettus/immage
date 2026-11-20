@@ -183,22 +183,40 @@ export function nativeAccel(shortcut: string): string | undefined {
 
 export type { NativeItem, NativeMenu };
 
-const native = (m: MenuItem): NativeItem => {
+export function disabledViewActions(grid: boolean, hasPhoto: boolean, hasCullingPhotos: boolean, cropping: boolean, preview: boolean): ReadonlySet<ActionId> {
+  const disabled = new Set<ActionId>();
+  if (!grid || !hasCullingPhotos) disabled.add("culling-preview");
+  if (!preview && (grid || !hasPhoto)) disabled.add("fullscreen-preview");
+  if (grid || !hasPhoto) {
+    for (const id of ["zoom-toggle", "before-after", "clipping", "next-scope", "info-overlay", "canvas", "soft-proof"] as const) {
+      disabled.add(id);
+    }
+  }
+  if (cropping) {
+    for (const id of ["grid", "before-after", "compare"] as const) disabled.add(id);
+  }
+  if (!grid && (!hasPhoto || cropping)) {
+    disabled.add("zoom-in");
+    disabled.add("zoom-out");
+  }
+  return disabled;
+}
+
+const native = (m: MenuItem, disabled: ReadonlySet<ActionId>): NativeItem => {
   switch (m.kind) {
     case "separator": return { type: "separator" };
     case "role": return { type: "predefined", role: m.role };
-    case "submenu": return { type: "submenu", label: m.label, items: m.items.map(native) };
+    case "submenu": return { type: "submenu", label: m.label, items: m.items.map((it) => native(it, disabled)) };
     case "item": {
-      if (!m.shortcut) return { type: "item", id: m.id, label: m.label };
+      const entry = { type: "item" as const, id: m.id, label: m.label, disabled: disabled.has(m.id) };
+      if (!m.shortcut) return entry;
       const accel = nativeAccel(m.shortcut);
-      return accel
-        ? { type: "item", id: m.id, label: m.label, accel }
-        : { type: "item", id: m.id, label: `${m.label} (${m.shortcut})` };
+      return accel ? { ...entry, accel } : { ...entry, label: `${m.label} (${m.shortcut})` };
     }
   }
 };
 
 // the macOS menu bar as plain data for the Rust side
-export function nativeSpec(menus: Menu[]): NativeMenu[] {
-  return forPlatform(menus, true).map((m) => ({ label: m.label, items: m.items.map(native) }));
+export function nativeSpec(menus: Menu[], disabled: ReadonlySet<ActionId> = new Set()): NativeMenu[] {
+  return forPlatform(menus, true).map((m) => ({ label: m.label, items: m.items.map((it) => native(it, disabled)) }));
 }

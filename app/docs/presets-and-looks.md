@@ -9,7 +9,8 @@ photo.
 elsewhere, with an Amount slider. Looks are closer to creative profiles:
 one at a time, with their own amount.
 
-Open them with **Presets** on the rail.
+Open them with **Presets** on the rail. To save settings from an individual
+Advanced module, use its [Module presets](advanced-mode.md#module-presets) menu.
 
 ![The Presets panel with the Basics tiles previewing the photo, and the Film groups below](images/presets-panel.png)
 <!-- screenshot: Presets mode, Basics expanded, live previews of the photo, the Film groups listed -->

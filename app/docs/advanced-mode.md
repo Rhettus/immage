@@ -9,7 +9,9 @@ its edits.
 
 Edits made in Advanced that Simple's sliders cannot show, such as a second
 instance of a module or a module Simple has no sliders for, keep rendering in
-Simple. At the end of each Adjustments group that holds such edits, Simple shows
+Simple. The stacked-cards button shows a green dot when the photo has active
+Advanced module edits that Simple cannot show. Hover over the button or focus
+it with the keyboard to see the module names in either editing mode. At the end of each Adjustments group that holds such edits, Simple shows
 **N advanced edits here keep rendering**. Click it to open Editing mode in
 Preferences. Modules that darktable turns on by itself and that you have not
 changed are not counted.
@@ -86,8 +88,8 @@ The Basic group has darktable's **exposure** module. Its card has:
 
 - An on/off switch and the module's name. If the module has a name of its own,
   such as a second exposure instance, the name follows it.
-- A **darktable presets** button (three lines) beside the reset button; see
-  [darktable presets](#darktable-presets).
+- A **Module presets** button (three lines) beside the reset button. See
+  [module presets](#module-presets).
 - An instances menu (**...**) beside the reset button; see
   [Instances](#instances).
 - A reset button that returns the module to darktable's defaults for this
@@ -109,9 +111,15 @@ on one side shows on the other.
 
 Besides exposure, the Basic group has these darktable modules:
 
-- **White balance**: darktable's **Settings** list (as shot, user modified,
-  camera reference, as shot to reference, and the white balance presets
-  darktable has for your camera, such as Daylight or Cloudy), a **Finetune**
+- **White balance** and **Color calibration** show darktable's warnings when the
+  two modules disagree, with the reason in the warning's tooltip.
+- **White balance**: darktable's **Prepare data for color calibration**
+  checkbox, hidden in camera reference, its **Settings** list (as shot, from image area,
+  which picks a neutral area you drag over the photo, as the eyedropper button
+  does, user modified, camera reference, and the white balance presets darktable has for
+  your camera, such as Daylight or Cloudy; while color calibration adapts from
+  its own illuminant, darktable locks the camera presets, Finetune and the
+  sliders below, as they no longer decide the colors), a **Finetune**
   slider for a camera preset that has a range, its **Temperature** and **Tint**
   sliders, and the channel coefficients, **Red**, **Green** and **Blue**, and **Emerald** on
   cameras with a fourth color channel. Temperature and tint are computed from
@@ -136,9 +144,27 @@ Besides exposure, the Basic group has these darktable modules:
   input channels into each output channel; **Colorfulness**, **Brightness** and
   **Gray** set the input weights of each, all with **Normalize channels**. Not
   yet on the card: the hue and chroma of a custom illuminant, the color
-  picker, area color mapping and color checker calibration. Simple's Black &
+  picker and area color mapping. Simple's Black &
   White conversion uses an instance of its own, which shows in the B&W group
   rather than here.
+
+  To profile a photographed chart, enable **Color calibration** and open
+  **Calibrate with a color checker**. Select your Xrite, Calibrite, or Datacolor
+  chart and drag the four overlay handles to its outer corners, starting at
+  the top left and going clockwise. Fit the photo to see all four handles
+  when the box first appears.
+  Select **Optimize for** to prioritize specific colors or minimize color error.
+  Adjust **Patch scale** so the outlined sampling areas stay within the patches
+  and clear shadows or reflections. **Recompute** measures the chart at the
+  module's input and shows the estimated illuminant, channel matrix, and average
+  and maximum ΔE (color error) before and after correction. **Accept** applies
+  the profile as one undoable edit. **Validate** measures the chart at the
+  module's output so you can check the calibration after applying it. Immage
+  saves the chart corners with the photo's Color calibration settings after a
+  successful measurement, so you can return to the same alignment later.
+  If a measurement is invalid, Immage stops the fit and leaves the current
+  calibration in place.
+
 - **Highlight reconstruction**: **Method** and **Clipping threshold**, then
   the settings of the method chosen: segmentation's combine, candidating and
   rebuild (with strength and noise level), or guided laplacians' noise level,
@@ -319,7 +345,7 @@ The Color Grading group has these darktable modules:
 - **Color balance rgb**: the same instance as the Basic group's card, with
   **4 ways** first, since Simple's Color Grading wheels set its shadows lift,
   highlights gain, power and global offset. A change on one card shows on the
-  other.
+  other. One Undo restores the values from before a wheel drag.
 - **Color balance**: the **Mode** (lift, gamma, gain or slope, offset, power
   in ProPhoto RGB, or lift, gamma, gain in sRGB), then **Master**, with input
   and output saturation, the contrast fulcrum and contrast (not in the sRGB
@@ -550,8 +576,8 @@ they do in darktable, and open there.
 
 Mask-owned modules appear on their mask in the **Masks** panel, rather than in
 global Adjustments. Select a mask to edit its cards or choose **Add module**.
-Its cards offer Reset and Remove from mask, with one instance per module and
-no darktable presets menu. See [Advanced masking](masks.md#advanced-mode).
+Its cards offer the module presets menu, Reset and Remove from mask, with
+one instance per module. See [Advanced masking](masks.md#advanced-mode).
 Modules managed by looks do not get cards. Groups whose modules are not
 available yet show "No darktable modules yet".
 
@@ -559,28 +585,35 @@ Heal, Zones, Film Simulation, Negative, Crop and Presets work as they do in
 Simple. Switching modes preserves all edits, including a mask's module
 settings; Simple shows a badge for mask edits its local sliders cannot show.
 
-## darktable presets
+## Module presets
 
-The **darktable presets** button on a card opens a menu headed **darktable
-presets**. It lists darktable's presets for that module: built-in presets
-first, then your own presets from Immage's darktable library, with a line
-between the two, in darktable's order. A preset in a submenu shows as
-"a › b".
+Open **Module presets** on a card to see the built-in darktable presets and
+your saved presets for that module. A check mark identifies a matching preset.
+A preset from an incompatible module version is greyed out. Camera, lens,
+and file-format filters can limit which built-in presets appear.
 
-- A check mark marks the preset that matches the instance now.
-- Presets that do not apply to this photo, such as one for another version of
-  the module or for another camera, lens or file format, are greyed out.
-- An empty list shows **No presets**.
+- Click a preset to apply it to the current instance. On a global card this
+  restores the adjustment and blend settings and the module’s on/off state.
+  Applying a preset is one undo step. The instance may take the preset’s name
+  unless you renamed the instance yourself.
+- Choose **Save new preset…** and enter an unused name to save the current
+  module’s settings. The preset is available on other photos and module
+  instances. A global card with a drawn or raster mask must have that mask
+  removed before its settings can be saved as a preset.
+- Choose **Import darktable preset…** and select a `.dtpreset` exported
+  from darktable for this module. The imported preset appears in the menu.
+  Click it to apply it manually. The file needs a compatible version of the
+  module settings and an unused name. Drawn and raster masks cannot be
+  imported. Darktable’s auto-apply rules and camera filters are skipped.
+- Click the trash icon beside a saved preset and confirm to delete it.
+  Built-in presets are protected. Deleting a preset leaves edits already
+  applied to photos intact.
 
-Choosing a preset replaces the instance's settings and blend settings with the
-preset's, switches the module on or off as the preset says, and opens the card.
-It is one undo step, named "Preset: <module>". darktable may rename the
-instance after the preset, unless you renamed it yourself.
+Saving from a card in the Masks panel captures the module adjustments for
+reuse. Applying a preset inside a mask updates the adjustments and keeps the
+mask, blend settings, instance name and on/off state. Global cards carrying a
+drawn mask refuse preset application, as do global applications of presets
+that carry drawn or raster masks.
 
-A preset cannot be applied to an instance that has a drawn mask, and a preset
-that carries a mask cannot be applied at all. Immage shows an error in both
-cases.
-
-Not yet available: importing .dtpreset or .dtstyle files, saving the current
-settings as a preset, and reading presets from a separate darktable
-installation.
+Saved presets live in Immage’s darktable data and are included in backups
+that include that data.

@@ -78,20 +78,21 @@ export async function exportOptions(t) {
   // Settings and preview only: never native destination chooser or external editor.
   await textButton(t,'.export .modal-foot','Cancel');
 }
-// Find's category rows and their panes. The popup opens at its stored size,
-// Dock by default (one column, the list above the pane); a size other than
-// Dock has no list, so the case chooses Dock first.
+// Find's filter rows and the editor each opens beneath it (an accordion: one
+// editor open at a time, in one scroll region).
 export async function filters(t) {
   await click(t,'.find-button');
   await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
-  if(await t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size)!=='dock')await click(t,'.find-size-dock');
-  await until(()=>t.driver.observe(()=>document.querySelector('.find-pop')?.dataset.size==='dock'),'Dock size');
-  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-cat .name')].map(e=>e.textContent));
+  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row .fr-title')].map(e=>e.textContent));
   assert(categories.length>0);
   for(const name of categories){
-    const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-cat')].find(e=>e.querySelector('.name')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter category');
-    await t.driver.point(point.x,point.y);
-    const shown=await t.driver.observe(()=>document.querySelector('.find-pane h3')?.textContent);assert.equal(shown,name);
+    // observe() sends only each callback's source, so every callback finds its row itself
+    if(!await t.driver.observe(name=>[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name)?.getAttribute('aria-expanded')==='true',name)){
+      const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter row');
+      await t.driver.point(point.x,point.y);
+    }
+    const open=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row[aria-expanded="true"] .fr-title')].map(e=>e.textContent));assert.deepEqual(open,[name]);
+    assert(await t.driver.observe(()=>!!document.querySelector('.find-pop .fr-editor')),'the editor is under its row');
     await t.evidence(`filter-${categories.indexOf(name)}`);
   }
   await t.driver.keys('\uE00C');

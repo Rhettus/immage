@@ -47,10 +47,13 @@ static GBytes *preview(const char *style)
   CHECK(session_preview(req, &w, &h, &err));
   CHECK(w > 0 && h > 0);
   const size_t length = (size_t)w * h * 4;
+  session_pixels_t frame;
+  CHECK(session_pixels_get(&_s.ppipe, &frame));
   uint8_t *copy = g_malloc(length);
-  memcpy(copy, _s.ppipe.backbuf, length);
-  // gamma writes only BGR; the unused fourth byte is uninitialized padding.
-  // Match the engine RGBA output contract rather than comparing allocator data.
+  memcpy(copy, frame.bgra, length);
+  session_pixels_release(&frame);
+  // The fourth byte carries no picture. Match the engine RGBA output contract
+  // rather than comparing whatever it holds.
   for(size_t i = 3; i < length; i += 4) copy[i] = 255;
   GBytes *pixels = g_bytes_new_take(copy, length);
   json_object_unref(req);

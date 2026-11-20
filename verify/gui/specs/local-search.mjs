@@ -57,13 +57,9 @@ export async function localSearch(t) {
   `indexed local result and cached thumbnail for ${filename}`, 60000);
   assert.equal(found.stars, 5, 'the local result exposes editable rating controls');
   await t.evidence('local-search-result');
-  // Show closes the popup and shows the grid, where Find is the locked right-hand
-  // column; the search and its words stay. Already in the grid, the locked
-  // column has no Show button.
-  if (await t.driver.observe(s => !!document.querySelector(s), `${pop}:not(.locked) .find-show`)) {
-    await click(t, `${pop} .find-show`);
-    await until(() => t.driver.observe(s => !document.querySelector(s), `${pop}:not(.locked)`), 'Find popup closes with Show');
-  }
+  // Find is the grid's right-hand column: the result is in the grid, with the search and
+  // its words kept. The column has no Show button; it stays while the grid is shown.
+  assert(!await t.driver.observe(s => !!document.querySelector(s), `${pop} .find-show`), 'Find has no Show button');
 
   // Set a rating on the copied fixture, then filter the search through the
   // real toolbar. The local result should survive because its saved rating is
@@ -86,27 +82,26 @@ export async function localSearch(t) {
     const input = document.querySelector(value);
     return result && input?.value === name
       ? { rating: result.querySelectorAll('.thumb-stars button.on').length, mode: document.querySelector(`${modeSel}.active`)?.textContent.trim(),
-          chips: [...document.querySelectorAll('.find-chip .find-chip-cat')].map(e => e.textContent.trim()) }
+          on: [...document.querySelectorAll('.find-pop .fr-row.on .fr-title')].map(e => e.textContent.trim()) }
       : null;
   }, cell, searchBox, filename, mode), 'filename search retains its rating filter and result');
   assert.equal(filtered.rating, 3);
   if (switchable) assert.equal(filtered.mode, 'Filename');
   else assert.equal(filtered.mode ?? null, null, 'no mode switch without the CLIP model');
-  assert(filtered.chips.includes('Rating & flags'), `the rating filter is a chip in Find (${filtered.chips})`);
+  assert(filtered.on.includes('Rating & flags'), `the rating filter is on in Find (${filtered.on})`);
   await t.evidence('local-search-filter');
 
-  // Opening the fixture's folder leaves search mode and returns to its normal
-  // library listing. It is the run's copied folder, never the configured source.
+  // Opening the copied folder returns to browsing and keeps the rating filter.
   if (!await t.driver.observe(() => document.querySelector('.folders-panel > .panel-title')?.classList.contains('open')))
     await click(t, '.folders-panel > .panel-title');
   await until(() => t.driver.observe(s => !!document.querySelector(s), folderRow(t.fixtureDir)), 'the disposable fixture folder row');
   await click(t, folderRow(t.fixtureDir));
-  await until(() => t.driver.observe((s, value) => {
-    const title = document.querySelector(s)?.title;
-    return title === value && document.querySelector('.toolbar .filter button[title="no filters on"]')
-      // the count is in Find's footer in the grid, the status line elsewhere
-      && ['.find-count', '.status'].some(q => /\d+ photos?\b/.test(document.querySelector(q)?.textContent ?? ''));
-  }, `.filmstrip .thumb[data-imgid][title=${JSON.stringify(filename)}]`, filename), 'folder navigation leaves local search');
+  await until(() => t.driver.observe((result, query, scope) => {
+    const rating = [...document.querySelectorAll('.find-pop .fr-row.on .fr-title')]
+      .some(row => row.textContent.trim() === 'Rating & flags');
+    return !!document.querySelector(result) && document.querySelector(query)?.value === ''
+      && document.querySelector(scope)?.value === 'folder' && rating;
+  }, cell, searchBox, searchIn), 'folder navigation clears the filename query and preserves the rating filter');
   await t.evidence('local-search-folder');
   t.measure({ name: 'local-search', filename, result: found, filtered, returnedToFolder: true });
 }

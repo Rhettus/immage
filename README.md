@@ -20,14 +20,20 @@ and Linux. **All builds are alpha; bugs are expected.**
 
 - Edit with familiar tone, color, detail and lens correction tools.
 - Switch to [Advanced mode](app/docs/advanced-mode.md) to work with darktable's own modules.
+  When the mode button has a green dot, hover over it to see which active
+  module edits require Advanced mode.
+- Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced mode.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
+- Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  In Advanced mode, apply built-in presets, import darktable `.dtpreset`
+  files, and save or delete your own module presets, including within masks.
   Copied AI masks are recalculated for each destination photo.
 - Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Use Immage in English or French.
-- Choose the Dark, Darktable Grey or Light interface theme, or import a custom
-  color theme.
+- Choose from eight built-in interface themes ordered from darkest to lightest,
+  or import a custom color theme.
 - Back up your settings, presets, looks, Edit In plugins and keywords to one
   file, and restore the parts you choose from it.
 - Add optional Geoapify place-name search to the location map; map tiles and
@@ -35,9 +41,16 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Browse folders directly, import from a card with the built-in Immporter,
   and optionally search and export to an [Immich](app/docs/immich.md) library.
 - Find photos with filters, or describe them with optional Smart search, which
-  runs on your computer.
-- Cull in the grid with a quick preview, ratings, color labels and keywords.
-- Drag photos onto a folder to move or copy them along with their sidecars.
+  runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
+  keeps filters active across folder changes and remembers its own width and
+  visibility separately from the editing panel.
+- Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
+- Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
+- Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
+- Browse indexed photos on mapped network shares with experimental
+  [Immage Accelerator](app/docs/immage-accelerator.md) support, including camera thumbnails up
+  to 400 × 400 pixels for unedited originals, optional NAS Smart Search, and NAS progress in
+  Preferences → Immage Accelerator (Experimental).
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a
   PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the
@@ -84,6 +97,7 @@ For Linux launch options, see [Linux setup and troubleshooting](app/docs/prefere
 - [User guide](app/docs/README.md): getting started, editing tools and settings.
 - [darktable compatibility and module reference](app/docs/darktable.md).
 - [Troubleshooting and reporting issues](app/docs/troubleshooting.md): diagnostics, the support bundle and the bug report form.
+- [Library culling](app/docs/library.md): review photos with keyboard navigation, a bottom zoom slider, read-ahead, and optional camera previews for edited RAWs.
 - [Developer docs](app/docs/dev/README.md): building, architecture and contributing to the code.
 - [Credits and licenses](app/docs/credits.md): projects, AI models and map attribution.
 

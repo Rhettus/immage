@@ -6,6 +6,15 @@ export type UndoStack<T> = { past: T[]; future: T[]; key: string; at: number };
 
 export const UNDO_LIMIT = 200;
 
+export function editGroup(ids: string[], gesture?: number): string {
+  const key = [...ids].sort().join(",");
+  return gesture === undefined ? key : `gesture:${gesture}:${key}`;
+}
+
+export function startsEditStep(u: Pick<UndoStack<unknown>, "key" | "at">, key: string, now: number, gesture?: number): boolean {
+  return key !== u.key || (gesture === undefined && now - u.at > 1000);
+}
+
 // darktable's truncate (ctrl+click compress): the steps above the current one
 // (redo) go, those below stay undoable
 export function truncateRedo<T>(u: UndoStack<T>): T[] {

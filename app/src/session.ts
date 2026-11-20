@@ -29,6 +29,8 @@ export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" |
 export type InstanceEntry = { op: string; priority: number; name: string; mask?: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
+export type ModulePresetChange = { action: "save"; name: string } | { action: "delete"; name: string; version: number };
+
 const traced = <T>(command: string, call: () => Promise<T>) => perf.traced<T>(command, call);
 
 export const wbPresets = () => traced("wb_presets", () => commands.wbPresets());
@@ -283,23 +285,44 @@ export class Session {
   onShapes: (() => void) | null = null;
 
   // the photo's white balance is set in the white balance module with color
-  // calibration off: temperature on, its setting neither camera reference nor
-  // as shot to reference (wb.c's wb_setting 3 and 4), channelmixerrgb off.
+  // calibration off: temperature on, neither camera reference (wb.c's
+  // wb_setting 3) nor prepared for color calibration, channelmixerrgb off.
   // the panels note it; refreshWb keeps it current (see changed)
   wbInModule = false;
+  // color calibration adapts from its own illuminant, so darktable locks the
+  // white balance controls that no longer decide the colors
+  wbLocked = false;
+  // darktable's warnings on the white balance card and, by instance, on color
+  // calibration's (wb.c, wb_trouble_read); 0 is none
+  wbTrouble = 0;
+  catTrouble = new Map<number, number>();
+  // the white balance card asks the viewer to pick an area of the photo
+  onWbAreaPick: (() => void) | null = null;
   private wbTimer: ReturnType<typeof setTimeout> | undefined;
   async refreshWb() {
     clearTimeout(this.wbTimer);
     // a batch's background session shows no panels
     if (this.dead || this.background) return;
-    let now = false;
+    let now = false, locked = false, trouble = 0;
+    const cats = new Map<number, number>();
     try {
-      const r = await traced("get_params", () => commands.getParams({ temperature: ["wb_setting"], channelmixerrgb: ["illuminant"] }));
+      const priorities = this.instances.filter((i) => i.op === "channelmixerrgb").map((i) => i.priority);
+      const r = await traced("get_params", () => commands.getParams({
+        temperature: ["wb_setting", "late_correction", "wb_locked", "wb_trouble"], channelmixerrgb: ["illuminant"],
+        ...Object.fromEntries(priorities.map((p) => [`channelmixerrgb@${p}`, ["wb_trouble"]])) }));
+      for (const p of priorities) cats.set(p, r.modules[`channelmixerrgb@${p}`]?.params.wb_trouble ?? 0);
       const t = r.modules.temperature, c = r.modules.channelmixerrgb;
-      now = !!t?.enabled && ![3, 4].includes(t.params.wb_setting) && !c?.enabled;
+      now = !!t?.enabled && t.params.wb_setting !== 3 && !t.params.late_correction && !c?.enabled;
+      locked = !!t?.params.wb_locked;
+      trouble = t?.params.wb_trouble ?? 0;
     } catch { return; }
-    if (now === this.wbInModule || this.dead) return;
+    const same = now === this.wbInModule && locked === this.wbLocked && trouble === this.wbTrouble
+      && JSON.stringify([...cats]) === JSON.stringify([...this.catTrouble]);
+    if (same || this.dead) return;
     this.wbInModule = now;
+    this.wbLocked = locked;
+    this.wbTrouble = trouble;
+    this.catTrouble = cats;
     this.onModules?.();
   }
 
@@ -692,14 +715,29 @@ export class Session {
   // every map of the control: Highlights and Shadows have one per module the
   // photo's tool can be on, and pump() sends only the chosen one
   setLocal(name: string, id: string, v: number) {
-    this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
+    this.setLocalMany(name, [[id, v]]);
+  }
+
+  setLocalMany(name: string, entries: [string, number][]) {
+    const [id] = entries[0] ?? [];
+    this.activeDetailControl = id && entries.length === 1 && this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
-    const ops = localMaps.filter((m) => m.controls.includes(id) || m.choice?.control === id
-      || ((id === "mod_contrast" || id === "mod_saturation") && m.op === "colorbalancergb")).map((m) => m.op);
-    if (!ops.length) return;
     const mask = this.mask(name);
-    if (!mask || mask.values[id] === v) return;
-    const values = { ...mask.values, [id]: v };
+    if (!mask) return;
+    const updates: Values = {};
+    const ops = new Set<string>();
+    for (const [id, value] of entries) {
+      if (mask.values[id] === value) continue;
+      for (const map of localMaps) {
+        if (map.controls.includes(id) || map.choice?.control === id
+          || ((id === "mod_contrast" || id === "mod_saturation") && map.op === "colorbalancergb")) {
+          ops.add(map.op);
+          updates[id] = value;
+        }
+      }
+    }
+    if (!ops.size) return;
+    const values = { ...mask.values, ...updates };
     const changed = this.dirtySimple.get(name) ?? new Map<string, Params>();
     const moduleEdits = { ...mask.moduleEdits };
     for (const op of ops) {
@@ -711,7 +749,7 @@ export class Session {
     }
     this.masks = this.masks.map((m) => m.name === name ? { ...m, values, moduleEdits } : m);
     this.dirtySimple.set(name, changed);
-    this.markLocal(name, ops);
+    this.markLocal(name, [...ops]);
   }
 
   setInvert(name: string, invert: boolean) {
@@ -1237,6 +1275,11 @@ export class Session {
 
   // darktable fields of an instance, as one card edit sets them (editOf in
   // advancedLayout.ts); an edit switches the module on, as in darktable
+  changesFields(op: string, priority: number, params: Params) {
+    const card = this.advanced.get(`${op}#${priority}`);
+    return !card?.enabled || Object.entries(params).some(([path, value]) => card.params[path] !== value);
+  }
+
   setFields(op: string, priority: number, params: Params, coalesce = false) {
     this.setAdvanced(op, priority, params, true, coalesce);
   }
@@ -1303,14 +1346,27 @@ export class Session {
     this.setModuleState({ op, priority }, { reset: true, enabled: true });
   }
 
-  // darktable's presets of a card's instance, in darktable's menu order
-  loadPresets(op: string, priority: number) {
-    return traced("presets", () => commands.presets(op, priority)).then((r) => r.presets);
+  async loadPresets(op: string, priority: number, change?: ModulePresetChange) {
+    // Capture the actual module bytes after any queued slider or instance edits.
+    if (change?.action === "save") {
+      this.flushEdits();
+      await this.settled();
+    }
+    const r = await traced("presets", () => commands.presets(
+      op, priority, change?.action ?? null, change?.name ?? null,
+      change?.action === "delete" ? change.version : null, this.imgid));
+    return r.presets;
+  }
+
+  async importModulePreset(op: string, priority: number, xml: string) {
+    const r = await traced("module_preset_import", () =>
+      commands.modulePresetImport(op, priority, this.imgid, xml));
+    return r.presets;
   }
 
   // apply a preset by its raw darktable name: module_state, so undo restores
-  // the instance as it was. the engine refuses it on an instance with a drawn
-  // mask or one a mask, look or shared tool owns; that reaches onError
+  // the instance as it was. For mask-owned cards the preset updates only
+  // the module parameters.
   applyPreset(op: string, priority: number, name: string) {
     this.setModuleState({ op, priority }, { preset: name });
   }
@@ -2052,6 +2108,12 @@ export class Session {
             this.instances = await commands.instances();
             this.maskCardsStale = true;
           }
+          if (maskInstance?.mask && (req.preset !== undefined || restore)) {
+            const refresh = this.maskCardRefresh.get(maskInstance.mask) ?? new Set<string>();
+            refresh.add(maskOpKey(maskInstance));
+            this.maskCardRefresh.set(maskInstance.mask, refresh);
+            this.maskCardsStale = true;
+          }
           this.changed();
           if (!this.modulesOpened.has(key)) this.modulesOpened.set(key, r.was);
           this.moduleStates.set(key, r.now);
@@ -2112,6 +2174,9 @@ export class Session {
             // white balance's temperature and tint set the coefficients, and
             // an edit of the coefficients moves them
             if (op === "temperature") this.advancedStale.add(key);
+            // and color calibration can take its illuminant from them, which
+            // Temp and Tint show
+            if (op === "temperature") await this.reread("channelmixerrgb");
             if (inst?.owner === "mask") this.maskCardsStale = true;
           }
           this.changed();
@@ -2332,16 +2397,17 @@ export class Session {
     this.onSaved?.(r.edited);
   }
 
-  async close() {
+  async close(confirmSave = false) {
     if (this.dead) return;
     this.requestRender();
     window.clearTimeout(this.saveTimer);
     if (this.before) this.showBefore(null);
     this.peek(null);
     await this.settled();
-    if (!this.unsaved) return;
-    this.unsaved = false;
+    // Rename needs a save acknowledgment even if the autosave already started.
+    if (!this.unsaved && !confirmSave) return;
     const r = await traced("save", () => commands.save());
+    this.unsaved = false;
     this.onSaved?.(r.edited);
   }
 }

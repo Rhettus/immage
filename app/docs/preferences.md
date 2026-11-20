@@ -64,11 +64,17 @@ starts with default settings. To start with defaults on purpose, see
   Translations include menus, Preferences, editing fields, library tools,
   status messages, dialogs, export and print settings. Remaining untranslated text falls back to English. Advanced
   module terminology comes from the pinned darktable translation catalog.
-- **Theme**: choose **Dark** (the default), **Darktable Grey** (the bundled
-  `darktable-elegant-grey` palette) or **Light** with the swatches.
+- **Theme**: choose a built-in theme from the swatches, ordered by window
+  background from darkest to lightest. The order is **Dark** (the default),
+  **Graphite**, **Slate**, **Warm Ash**,
+  **Darktable Grey** (the `darktable-elegant-grey` palette),
+  **Classic Grey Balanced**, **Soft Grey** and **Light**. Imported themes
+  appear after the built-in themes.
   The selected name and **Import theme…** action appear below the swatches;
   **Remove theme** appears beside Import for custom themes. The
-  interface changes immediately and remembers your choice. **Import theme…**
+  interface changes immediately, including the cards around Texture, Clarity
+  and Advanced modules, and remembers your choice. Editor dropdowns such as
+  Profile and White Balance use the theme’s inset color. **Import theme…**
   loads a JSON theme and selects it after it is saved. An imported theme with
   the same name as an existing one is given a numbered name. **Remove theme**
   appears for the selected imported theme; removing it returns the interface
@@ -197,12 +203,13 @@ parts that exist are offered:
 - **Edit presets** and **Export presets**: your Develop and export presets.
 - **Looks**: the looks in your looks folder, counted with their size.
 - **Edit In plugins**: your plugin list.
-- **Keywords & darktable data**: the keywords and darktable's library data.
+- **Keywords & darktable data**: keywords, saved Advanced module presets,
+  and other darktable library data.
 
 The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
 XMP sidecars are never included: they are your files, so back them up with your
-photos. API keys for Immich and map search stay in the system keychain and are
-not in a backup, so enter them again on another computer.
+photos. API keys for Immich, morfPhoto, and map search stay in the system
+keychain and are not in a backup, so enter them again on another computer.
 
 **Restore…** opens a backup. It shows the date and the version of Immage that
 made it, and lists only the parts the backup holds. Choose the parts to
@@ -464,7 +471,8 @@ that follows the optional CLIP model (see Smart search (CLIP) in General).
 
 - **Metadata** shows cached photos, versions, metadata records and analyses.
   **Clear** removes these disposable records; browsing and later startup checks
-  refill the cache. **Rebuild** also queues a fresh check of your saved folders.
+  refill the cache. **Rebuild** clears these records together, then queues a
+  fresh check of your saved folders. The counts refill as background work runs.
   Neither action changes your photos or sidecars. Model files are retained.
 - **Pause / Resume** controls new background file checks and analysis. Active
   work finishes, and browsing remains available. The pause setting is remembered
@@ -651,6 +659,11 @@ as well as photos opened later. **Reset all** puts every tool back on the
 module chosen here. See [Adjustments](adjustments.md#contrast-equalizer)
 for the equalizer graph. Defringe, global and in masks, always uses
 chromatic aberrations: darktable deprecates its older defringe module.
+
+## Immage Accelerator (Experimental)
+
+Set the server URL, key, and path mapping for indexed photos on a network
+share. See [Immage Accelerator](immage-accelerator.md) for setup and fallback behavior.
 
 ## Immich
 

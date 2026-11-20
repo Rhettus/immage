@@ -8,8 +8,8 @@ import { reveal, rangeSelector } from '../support/controls.mjs';
 import { settledPhoto } from './smoke.mjs';
 
 // the save error notice as shown: its text, and whether it is on screen and
-// uncovered. the activity notices take no pointer events, so the point under
-// one hits the photo beneath: covered means a panel or dialog is hit instead
+// uncovered. the point under it hits the notice itself, inside the viewer:
+// covered means a panel or dialog is hit instead
 const notice = t => t.driver.observe(() => {
   const el = document.querySelector('[data-save-error]');
   if (!el) return null;

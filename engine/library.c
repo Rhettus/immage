@@ -22,6 +22,7 @@
 #include "engine.h"
 #include "common/exif.h"
 #include "develop/imageop_math.h"
+#include "imageio/imageio_jpeg.h"
 
 // photos likely opened next, their raws decoded ahead on threads of their
 // own, a few at once: a raw's decode mostly keeps to one core. darktable's
@@ -29,9 +30,9 @@
 // darktable starts none (control.c, dt_control_init). a new list replaces
 // the photos still waiting, not those being decoded. `open` of one of them
 // then finds the decoded raw in the mipmap cache, or waits on the decode
-// under way. the cache keeps 2 * dt_worker_threads() full raws, at least 8
-// (mipmap_cache.c, dt_mipmap_cache_init), so a list longer than 7 pushes
-// out the open photo's neighbors it decoded first
+// under way. the cache keeps dt_worker_threads() + 1 full raws, 5 or 8
+// (mipmap_cache.c, dt_mipmap_cache_init), so a longer list would push out
+// the open photo's neighbors it decoded first: main.c cuts it to fit
 //
 // a decode starts only while memory is not short and no export, merge or
 // print runs: the task is dropped otherwise, with the list, since the page
@@ -725,6 +726,66 @@ gboolean library_forget(const dt_imgid_t imgid, char **err)
   }
   g_list_free(ids);
   return TRUE;
+}
+
+// Drop imported IDs under a moved folder. No filesystem calls are needed.
+gboolean library_forget_folder(const char *path, char **err)
+{
+  if(!path || !*path)
+  {
+    *err = g_strdup("missing folder path");
+    return FALSE;
+  }
+  sqlite3 *db = dt_database_get(darktable.db);
+  sqlite3_stmt *stmt = NULL;
+#ifdef G_OS_WIN32
+#define FOLDER_MATCH "replace(folder, char(92), '/') = replace(?1, char(92), '/') OR " \
+                     "substr(replace(folder, char(92), '/'), 1, length(?1) + 1) = replace(?1, char(92), '/') || '/'"
+#else
+#define FOLDER_MATCH "folder = ?1 OR substr(folder, 1, length(?1) + 1) = ?1 || '/'"
+#endif
+  if(sqlite3_prepare_v2(db, "SELECT id FROM main.images WHERE film_id IN "
+                       "(SELECT id FROM main.film_rolls WHERE " FOLDER_MATCH ")", -1, &stmt, NULL) != SQLITE_OK)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    return FALSE;
+  }
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+  GArray *ids = g_array_new(FALSE, FALSE, sizeof(dt_imgid_t));
+  int step;
+  while((step = sqlite3_step(stmt)) == SQLITE_ROW)
+  {
+    dt_imgid_t id = sqlite3_column_int(stmt, 0);
+    g_array_append_val(ids, id);
+  }
+  sqlite3_finalize(stmt);
+  if(step != SQLITE_DONE)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    g_array_free(ids, TRUE);
+    return FALSE;
+  }
+  for(guint i = 0; i < ids->len; i++)
+  {
+    const dt_imgid_t id = g_array_index(ids, dt_imgid_t, i);
+    if(_s.open && _s.imgid == id) session_close_session();
+    dt_image_remove(id);
+  }
+  g_array_free(ids, TRUE);
+  if(sqlite3_prepare_v2(db, "DELETE FROM main.film_rolls WHERE (" FOLDER_MATCH ") AND "
+                      "NOT EXISTS (SELECT 1 FROM main.images WHERE film_id = main.film_rolls.id)",
+                      -1, &stmt, NULL) != SQLITE_OK)
+  {
+    *err = g_strdup(sqlite3_errmsg(db));
+    return FALSE;
+  }
+  sqlite3_bind_text(stmt, 1, path, -1, SQLITE_TRANSIENT);
+  step = sqlite3_step(stmt);
+  sqlite3_finalize(stmt);
+#undef FOLDER_MATCH
+  if(step == SQLITE_DONE) return TRUE;
+  *err = g_strdup(sqlite3_errmsg(db));
+  return FALSE;
 }
 
 // every sidecar of the file `imgid` belongs to, all versions' and any left
@@ -1445,49 +1506,143 @@ gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, c
   return ok;
 }
 
-// the lighttable's thumbnail for an image: the embedded preview of an
-// unedited raw, a processed render of an edited one. the buffer is 8-bit
-// RGBA (views/view.c swaps it to BGRA for cairo); its color space is
-// reported, as it is not always sRGB
-gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof, const char *out,
+// Decode the primary image. Images with an ICC profile or a non-sRGB EXIF
+// color space use the existing color-managed render path.
+static uint8_t *_decode_fit_jpeg(const char *path, const int size, int32_t *width, int32_t *height)
+{
+  dt_imageio_jpeg_t jpg;
+  if(dt_imageio_jpeg_read_header(path, &jpg)) return NULL;
+
+  const dt_colorspaces_color_profile_type_t space = dt_imageio_jpeg_read_color_space(&jpg);
+  gboolean supported = (space == DT_COLORSPACE_SRGB || space == DT_COLORSPACE_DISPLAY)
+                       && (jpg.dinfo.jpeg_color_space == JCS_RGB || jpg.dinfo.jpeg_color_space == JCS_YCbCr);
+  for(jpeg_saved_marker_ptr marker = jpg.dinfo.marker_list; supported && marker; marker = marker->next)
+    if(marker->marker == JPEG_APP0 + 2 && marker->data_length >= sizeof("ICC_PROFILE")
+       && !memcmp(marker->data, "ICC_PROFILE", sizeof("ICC_PROFILE")))
+      supported = FALSE;
+
+  if(supported)
+  {
+    for(unsigned int denom = 8; denom >= 2; denom /= 2)
+      if((MAX(jpg.width, jpg.height) + denom - 1) / denom >= (unsigned int)size)
+      {
+        jpg.dinfo.scale_num = 1;
+        jpg.dinfo.scale_denom = denom;
+        break;
+      }
+    jpg.width = (jpg.width + jpg.dinfo.scale_denom - 1) / jpg.dinfo.scale_denom;
+    jpg.height = (jpg.height + jpg.dinfo.scale_denom - 1) / jpg.dinfo.scale_denom;
+    uint8_t *pixels = dt_alloc_align_uint8((size_t)4 * jpg.width * jpg.height);
+    if(pixels)
+    {
+      if(dt_imageio_jpeg_read(&jpg, pixels))
+      {
+        dt_free_align(pixels);
+        return NULL;
+      }
+      *width = jpg.width;
+      *height = jpg.height;
+      return pixels;
+    }
+  }
+  jpeg_destroy_decompress(&jpg.dinfo);
+  fclose(jpg.f);
+  return NULL;
+}
+
+// Keep native detail when the source is already smaller than Fit.
+static gboolean _source_preview(const dt_imgid_t imgid, const int size, const gboolean camera_preview,
+                                const char *out,
+                                JsonBuilder *b, char **err)
+{
+  const dt_image_t *image = dt_image_cache_get(imgid, 'r');
+  const gboolean raw = image && dt_image_is_raw(image);
+  if(image) dt_image_cache_read_release(image);
+  if(!raw && (size == 0 || camera_preview)) return FALSE;
+  if(!camera_preview && dt_image_altered(imgid)) return FALSE;
+
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = TRUE;
+  dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+  if(!*path) return FALSE;
+
+  uint8_t *pixels = NULL;
+  int32_t width = 0, height = 0;
+  if(raw)
+  {
+    dt_colorspaces_color_profile_type_t space;
+    if(dt_imageio_large_thumbnail(path, &pixels, &width, &height, &space) || space != DT_COLORSPACE_SRGB)
+    {
+      dt_free_align(pixels);
+      return FALSE;
+    }
+  }
+  else
+  {
+    const char *ext = strrchr(path, '.');
+    if(!ext || (g_ascii_strcasecmp(ext, ".jpg") && g_ascii_strcasecmp(ext, ".jpeg")
+                && g_ascii_strcasecmp(ext, ".jpe")))
+      return FALSE;
+    pixels = _decode_fit_jpeg(path, size, &width, &height);
+  }
+  if(!pixels || width <= 0 || height <= 0)
+  {
+    dt_free_align(pixels);
+    return FALSE;
+  }
+
+  const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
+  int32_t max_width = orientation & ORIENTATION_SWAP_XY ? height : width;
+  int32_t max_height = orientation & ORIENTATION_SWAP_XY ? width : height;
+  if(size > 0)
+  {
+    max_width = MIN(max_width, size);
+    max_height = MIN(max_height, size);
+  }
+  uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * max_width * max_height);
+  if(!oriented)
+  {
+    dt_free_align(pixels);
+    *err = g_strdup("preview allocation failed");
+    return FALSE;
+  }
+  uint32_t w, h;
+  dt_iop_flip_and_zoom_8(pixels, width, height, oriented, max_width, max_height, orientation, &w, &h);
+  dt_free_align(pixels);
+  if(!w || !h)
+  {
+    dt_free_align(oriented);
+    return FALSE;
+  }
+  const gboolean ok = engine_transient_write(out, oriented, (size_t)4 * w * h, NULL, 0);
+  dt_free_align(oriented);
+  if(!ok)
+  {
+    *err = g_strdup("could not write preview");
+    return FALSE;
+  }
+  json_builder_set_member_name(b, "width"); json_builder_add_int_value(b, w);
+  json_builder_set_member_name(b, "height"); json_builder_add_int_value(b, h);
+  json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, raw ? "embedded" : "jpeg");
+  return TRUE;
+}
+
+// The thumbnail buffer is 8-bit RGBA; report its color space.
+gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean proof,
+                       const gboolean prefer_source, const gboolean camera_preview, const char *out,
                        JsonBuilder *b, char **err)
 {
-  // Size zero requests native-resolution inspection independently of the
-  // editor session. Never substitute camera pixels for an edited image.
-  if(size == 0)
+  if(size == 0 || (size > 0 && (prefer_source || camera_preview) && !proof))
   {
     if(!dt_is_valid_imgid(imgid) || !dt_image_exists(imgid))
     { *err = g_strdup("no such image"); return FALSE; }
-    const dt_image_t *image = dt_image_cache_get(imgid, 'r');
-    const gboolean raw = image && dt_image_is_raw(image);
-    if(image) dt_image_cache_read_release(image);
-    uint8_t *pixels = NULL;
-    int32_t width = 0, height = 0;
-    dt_colorspaces_color_profile_type_t space;
-    char path[PATH_MAX] = { 0 };
-    gboolean from_cache = TRUE;
-    dt_image_full_path(imgid, path, sizeof(path), &from_cache);
-    if(raw && !dt_image_altered(imgid)
-       && !dt_imageio_large_thumbnail(path, &pixels, &width, &height, &space)
-       && space == DT_COLORSPACE_SRGB)
-    {
-      const dt_image_orientation_t orientation = dt_image_get_orientation(imgid);
-      uint8_t *oriented = dt_alloc_align_uint8((size_t)4 * width * height);
-      if(!oriented) { dt_free_align(pixels); *err = g_strdup("preview allocation failed"); return FALSE; }
-      uint32_t w, h;
-      dt_iop_flip_and_zoom_8(pixels, width, height, oriented,
-        orientation & ORIENTATION_SWAP_XY ? height : width,
-        orientation & ORIENTATION_SWAP_XY ? width : height, orientation, &w, &h);
-      const gboolean ok = engine_transient_write(out, oriented, (size_t)4 * w * h, NULL, 0);
-      dt_free_align(pixels);
-      dt_free_align(oriented);
-      json_builder_set_member_name(b, "width"); json_builder_add_int_value(b, w);
-      json_builder_set_member_name(b, "height"); json_builder_add_int_value(b, h);
-      json_builder_set_member_name(b, "source"); json_builder_add_string_value(b, "embedded");
-      if(!ok) *err = g_strdup("could not write preview");
-      return ok;
-    }
-    dt_free_align(pixels);
+    if(_source_preview(imgid, size, size > 0 && camera_preview, out, b, err)) return TRUE;
+    if(*err) return FALSE;
+  }
+
+  // Size zero requests native-resolution inspection independently of the editor.
+  if(size == 0)
+  {
     JsonObject *req = json_object_new();
     json_object_set_string_member(req, "out", out);
     json_object_set_string_member(req, "format", "jpeg");
@@ -1613,7 +1768,9 @@ void library_thumb_run(gpointer data, gpointer user_data)
     ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
   else if(dest)
     ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
-                       json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, &err);
+                       json_object_get_boolean_member_with_default(req, "proof", FALSE),
+                       json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
+                       json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, &err);
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)

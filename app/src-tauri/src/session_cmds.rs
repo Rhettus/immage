@@ -28,14 +28,8 @@ fn queue_refresh_off_thread(app: AppHandle, photo: crate::library_ids::Photo) {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn open_image(app: AppHandle, state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
-    // Engine::Link invalidates the previous active photo as part of open.
-    // Keep its identity now and refresh it asynchronously after that succeeds.
-    let previous = state.tagged.active_photo();
+pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
     let reply = state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
-    if let Some(photo) = previous {
-        queue_refresh_off_thread(app, photo);
-    }
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 

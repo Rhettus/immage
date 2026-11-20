@@ -64,10 +64,12 @@ export async function advancedTonemapper(t) {
     await until(() => t.driver.observe(() => !document.querySelector('.context-menu')), 'menu closed');
     const switched = await until(async () => { const l = await cards(t); return l.length === 1 && l[0].op === target && l; }, `only the ${target} card remains`);
     assert.equal(switched[0].on, true, `the ${target} switch is on`);
-    const changed = await settledPhoto(t, p => meanError(p, before) > 1);
+    // how far the two tone mappers' defaults differ depends on the photo and
+    // its edits: 0.45 to 1.7 levels of 255 on the raw fixtures
+    const changed = await settledPhoto(t, p => meanError(p, before) > .25);
     const changeError = meanError(changed, before);
     t.measure({ name: 'switched', op: target, title: switched[0].title, meanAbsoluteError: changeError });
-    assert(changeError > 1, `switching tone mapper: photo mean pixel error ${changeError} is not above 1/255`);
+    assert(changeError > .25, `switching tone mapper: photo mean pixel error ${changeError} is not above 0.25/255`);
     await t.evidence('tonemapper-switched');
 
     // 3. undo: the original card and frame return
@@ -82,7 +84,7 @@ export async function advancedTonemapper(t) {
     // 4. redo switches again; undo once more leaves the photo as it started
     await undoRedo(t, 'redo');
     await until(async () => { const l = await cards(t); return l.length === 1 && l[0].op === target && l; }, `redo returns the ${target} card`);
-    await settledPhoto(t, p => meanError(p, before) > 1);
+    await settledPhoto(t, p => meanError(p, before) > .25);
     await undoRedo(t, 'undo');
     await until(async () => { const l = await cards(t); return l.length === 1 && l[0].op === first.op && l; }, `second undo returns the ${first.op} card`);
     const restored = await settledPhoto(t, p => meanError(p, before) < 1);

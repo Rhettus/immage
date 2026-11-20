@@ -7,9 +7,12 @@
 // takes HTML drags on WebKitGTK and Windows. a folder row takes a drop by
 // its data-folder-path; one marked data-folder-refuse does not
 import { useEffect, useState } from "react";
+import { formatNumber } from "./i18n";
+import { parentDir, within } from "./paths";
 
 export type PhotoDrag = {
   count: number;
+  folder: string | null;
   over: string | null;      // the folder under the pointer, when it takes the drop
   rest: string | null;      // the folder under the pointer, taking the drop or not
   copy: boolean;
@@ -38,6 +41,7 @@ export function usePhotoDrag(): PhotoDrag | null {
 const SLOP = 6;
 
 export type DragStart = {
+  folder?: { path: string; name: string };
   count: () => number;          // asked when the drag begins: the photos it takes
   from: () => string[];
   drop: (folder: string, copy: boolean) => void;
@@ -55,15 +59,20 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-folder-path]") ?? null;
   const target = (x: number, y: number) => {
     const row = rowAt(x, y);
-    return row && !row.dataset.folderRefuse ? row.dataset.folderPath! : null;
+    const path = row?.dataset.folderPath;
+    if (!row || !path || row.dataset.folderRefuse) return null;
+    const from = start.folder?.path;
+    if (from && (within(path, from) || parentDir(from) === path)) return null;
+    return path;
   };
   const begin = () => {
     const count = start.count();
     if (!count) return false;
     ghost = document.createElement("div");
     ghost.className = "photo-drag";
-    const src = cell.querySelector("canvas");
-    if (src && src.width && src.height) {
+    const src = start.folder ? cell.querySelector("svg:not(.twisty svg)") : cell.querySelector("canvas");
+    if (start.folder && src) ghost.appendChild(src.cloneNode(true));
+    if (src instanceof HTMLCanvasElement && src.width && src.height) {
       const k = Math.min(1, 96 / Math.max(src.width, src.height));
       const c = document.createElement("canvas");
       c.width = Math.round(src.width * k);
@@ -73,11 +82,11 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     }
     const badge = document.createElement("span");
     badge.className = "count";
-    badge.textContent = String(count);
+    badge.textContent = start.folder?.name ?? formatNumber(count);
     ghost.appendChild(badge);
     document.body.appendChild(ghost);
     document.body.classList.add("dragging-photos");
-    set({ count, over: null, rest: null, copy, from: start.from() });
+    set({ count, folder: start.folder?.path ?? null, over: null, rest: null, copy, from: start.from() });
     return true;
   };
   const place = (ev: PointerEvent) => {
@@ -85,7 +94,7 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     ghost!.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 12}px)`;
     ghost!.classList.toggle("copy", copy);
     const over = target(ev.clientX, ev.clientY);
-    const rest = rowAt(ev.clientX, ev.clientY)?.dataset.folderPath ?? null;
+    const rest = start.folder ? over : rowAt(ev.clientX, ev.clientY)?.dataset.folderPath ?? null;
     if (drag && (drag.over !== over || drag.rest !== rest || drag.copy !== copy)) set({ ...drag, over, rest, copy });
   };
   const end = () => {
@@ -93,6 +102,8 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     window.removeEventListener("pointerup", up, true);
     window.removeEventListener("pointercancel", cancel, true);
     window.removeEventListener("keydown", key, true);
+    window.removeEventListener("keyup", key, true);
+    window.removeEventListener("blur", cancel);
     ghost?.remove();
     document.body.classList.remove("dragging-photos");
     if (ghost) {
@@ -104,6 +115,7 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     set(null);
   };
   const move = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
     if (!ghost) {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < SLOP) return;
       if (!begin()) { end(); return; }
@@ -111,6 +123,7 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
     place(ev);
   };
   const up = (ev: PointerEvent) => {
+    if (ev.pointerId !== e.pointerId) return;
     const over = ghost ? target(ev.clientX, ev.clientY) : null;
     const alt = ev.altKey;
     end();
@@ -118,11 +131,16 @@ export function pressPhoto(e: React.PointerEvent<HTMLElement>, start: DragStart)
   };
   const cancel = () => end();
   const key = (ev: KeyboardEvent) => {
-    if (ev.key === "Escape" && ghost) { ev.stopPropagation(); ev.preventDefault(); end(); }
-    else if (ev.key === "Alt" && ghost && drag) set({ ...drag, copy: true });
+    if (ev.key === "Escape" && ev.type === "keydown" && ghost) { ev.stopPropagation(); ev.preventDefault(); end(); }
+    else if (ev.key === "Alt" && ghost && drag) {
+      ghost.classList.toggle("copy", ev.altKey);
+      set({ ...drag, copy: ev.altKey });
+    }
   };
   window.addEventListener("pointermove", move, true);
   window.addEventListener("pointerup", up, true);
   window.addEventListener("pointercancel", cancel, true);
   window.addEventListener("keydown", key, true);
+  window.addEventListener("keyup", key, true);
+  window.addEventListener("blur", cancel);
 }

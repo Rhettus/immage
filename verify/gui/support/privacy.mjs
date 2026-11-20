@@ -5,8 +5,10 @@
 // withheld rather than saved.
 import { pause } from './webdriver.mjs';
 
-export const visiblePath = () => {
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+export const visiblePath = (selector = null) => {
+  const root = selector ? document.querySelector(selector) : document.body;
+  if (!root) throw Error("Screenshot region is missing");
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!/(^|\s)(\/home\/|\/tmp\/|\/Users\/|[A-Z]:\\)/.test(n.textContent)) continue;
     const r = n.parentElement?.getBoundingClientRect();

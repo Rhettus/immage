@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { until, pause } from '../support/webdriver.mjs';
+import { click } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 
 const preview = '.modal-backdrop[aria-label="Culling preview"]';
@@ -50,6 +51,18 @@ export async function gridCulling(t) {
   assert(state.bounds.width <= viewport.width * .8 + 2 && state.bounds.height <= viewport.height * .8 + 2,
     `preview frame stays within 80% of the window (${JSON.stringify(state.bounds)})`);
   await t.evidence('culling-fit');
+  await t.driver.keys('k');
+  const keywordDialog = '[data-grid-keywords-dialog]';
+  await until(() => t.driver.observe(selector => {
+    const input = document.querySelector(`${selector} input.field`);
+    const rect = input?.getBoundingClientRect();
+    return !!rect && document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === input;
+  }, keywordDialog), 'the keyword input is reachable above the preview');
+  await click(t, `${keywordDialog} button[aria-label="Close (F / Esc)"]`);
+  await until(() => t.driver.observe(selector => !document.querySelector(selector), keywordDialog),
+    'the keyword dialog closes');
+  assert(await t.driver.observe(hasPreview), 'closing keywords returns to the lightbox');
+
   const next = await t.driver.observe(() => {
     const b = document.querySelector('.modal-backdrop[aria-label="Culling preview"] button[aria-label="Next photo (right arrow key)"]');
     const r = b?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: b.disabled };
@@ -84,10 +97,10 @@ export async function gridCulling(t) {
   const zoomState = (x, y) => {
     const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
     const canvas = root?.querySelector('canvas'); const viewport = root?.querySelector('.culling-lightbox > div[style*="overflow"]');
-    const button = [...(root?.querySelectorAll('button') ?? [])].find(e => ['Fit', '100%'].includes(e.textContent.trim()));
-    if (!canvas?.width || !viewport || !button) return null;
+    const label = root?.querySelector('.culling-bottom-bar .zoom-label');
+    if (!canvas?.width || !viewport || !label) return null;
     const image = canvas.getBoundingClientRect(), box = viewport.getBoundingClientRect(), dpr = window.devicePixelRatio;
-    return { button: button.textContent.trim(), scale: image.width / (canvas.width / dpr), pixels: [canvas.width, canvas.height],
+    return { label: label.textContent.trim(), scale: image.width / (canvas.width / dpr), pixels: [canvas.width, canvas.height],
       image: { x: image.x, y: image.y, width: image.width, height: image.height },
       viewport: { x: box.x, y: box.y, width: viewport.clientWidth, height: viewport.clientHeight,
         scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop },
@@ -102,25 +115,41 @@ export async function gridCulling(t) {
   await t.driver.keys('z');
   const z100 = await until(async () => {
     const s = await t.driver.observe(zoomState, 0, 0);
-    return s?.button === 'Fit' && Math.abs(s.scale - 1) < .02 ? s : null;
+    return s?.label === '100%' && Math.abs(s.scale - 1) < .02 ? s : null;
   }, 'Z selects and renders 100%');
-  assert.equal(z100.button, 'Fit', 'button offers Fit at 100%');
+  assert.equal(z100.label, '100%', 'slider label shows 100% at native resolution');
   assert(Math.abs(z100.scale - 1) < .02, `Z renders at 100% (${z100.scale})`);
   await t.driver.keys('z');
   const zFit = await until(async () => {
     const s = await t.driver.observe(zoomState, 0, 0);
-    return s?.button === '100%' && s.image.width <= s.viewport.width + 2 && s.image.height <= s.viewport.height + 2 ? s : null;
+    return s?.label === 'Fit' && s.image.width <= s.viewport.width + 2 && s.image.height <= s.viewport.height + 2 ? s : null;
   }, 'Z returns to the fitted preview');
-  assert.equal(zFit.button, '100%', 'button offers 100% in Fit');
+  assert.equal(zFit.label, 'Fit', 'slider label shows Fit');
 
-  const zoomButton = await t.driver.observe(() => {
-    const b = [...document.querySelectorAll('.modal-backdrop[aria-label="Culling preview"] button')].find(e => e.textContent.trim() === '100%');
-    const r = b?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  const slider = await t.driver.observe(() => {
+    const range = document.querySelector('.culling-bottom-bar .zoom-bar input[type="range"]');
+    const label = document.querySelector('.culling-bottom-bar .zoom-label');
+    if (!range || !label) return null;
+    const r = range.getBoundingClientRect(), l = label.getBoundingClientRect();
+    const bar = range.closest('.culling-bottom-bar').getBoundingClientRect();
+    const zoom = range.closest('.zoom-bar').getBoundingClientRect();
+    return { x: r.x + r.width * .85, y: r.y + r.height / 2,
+      labelX: l.x + l.width / 2, labelY: l.y + l.height / 2,
+      centerOffset: zoom.x + zoom.width / 2 - (bar.x + bar.width / 2) };
   });
-  assert(zoomButton, '100% button is available');
-  await t.driver.point(zoomButton.x, zoomButton.y);
-  await until(() => t.driver.observe(() => [...document.querySelectorAll('.modal-backdrop[aria-label="Culling preview"] button')]
-    .some(e => e.textContent.trim() === 'Fit')), '100% preview is ready');
+  assert(slider, 'the zoom slider is available in the bottom bar');
+  assert(Math.abs(slider.centerOffset) < 1, 'the zoom control is centered in the bottom bar');
+  await t.driver.point(slider.x, slider.y);
+  await until(async () => {
+    const s = await t.driver.observe(zoomState, 0, 0);
+    return s && s.label !== 'Fit';
+  }, 'clicking the slider adjusts zoom');
+  await t.driver.point(slider.labelX, slider.labelY, 2);
+  await until(async () => (await t.driver.observe(zoomState, 0, 0))?.label === 'Fit',
+    'double-clicking the zoom bar returns to Fit');
+  await t.driver.point(slider.labelX, slider.labelY, 2);
+  await until(async () => (await t.driver.observe(zoomState, 0, 0))?.label === '100%',
+    'double-clicking the zoom bar from Fit selects 100%');
   const zoomed = await until(() => t.driver.observe(s => {
     const root = document.querySelector(s); if (!root) return null;
     const box = root.querySelector('.culling-lightbox'), canvas = root.querySelector('canvas');
@@ -147,9 +176,9 @@ export async function gridCulling(t) {
     pan = { exercised: true, before: zoomed.viewport, after: afterPan.scroll };
   }
   t.measure({ name: 'culling-pan', ...pan });
-  await textButton(t, preview, 'Fit');
-  await until(() => t.driver.observe(() => [...document.querySelectorAll('.modal-backdrop[aria-label="Culling preview"] button')]
-    .some(e => e.textContent.trim() === '100%')), 'Fit returns to the fitted preview');
+  await t.driver.point(slider.labelX, slider.labelY, 2);
+  await until(async () => (await t.driver.observe(zoomState, 0, 0))?.label === 'Fit',
+    'double-clicking at 100% returns to Fit');
 
   // Wheel input changes zoom around the pointer. After reaching an overflowing
   // scale, a down-wheel gesture must keep its image point pinned; this also
@@ -157,9 +186,13 @@ export async function gridCulling(t) {
   const fitBeforeWheel = await t.driver.observe(inspect);
   const wheelPoint = { x: fitBeforeWheel.scroll.x + fitBeforeWheel.scroll.width * .5,
     y: fitBeforeWheel.scroll.y + fitBeforeWheel.scroll.height * .5 };
-  const wheelStart = await until(() => t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y),
-    'settled Fit before wheel zoom');
-  assert.equal(wheelStart.button, '100%', 'wheel starts in Fit');
+  const fittedState = s => s?.label === 'Fit' && !s.loading
+    && s.image.width <= s.viewport.width + 2 && s.image.height <= s.viewport.height + 2;
+  const wheelStart = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return fittedState(s) ? s : null;
+  }, 'settled Fit before wheel zoom');
+  assert.equal(wheelStart.label, 'Fit', 'wheel starts in Fit');
   assert(wheelStart.scale > 0 && wheelStart.scale < 4, `Fit scale allows wheel zoom (${wheelStart.scale})`);
   // The first zoom requests full detail. Wait for that replacement bitmap
   // before reading a scale or sending more wheel input.
@@ -173,7 +206,7 @@ export async function gridCulling(t) {
   for (let i = 0; i < maxWheelSteps; i++) {
     await t.driver.wheel(wheelPoint.x, wheelPoint.y, -50);
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    steps.push({ i, scale: s?.scale, loading: s?.loading, button: s?.button });
+    steps.push({ i, scale: s?.scale, loading: s?.loading, label: s?.label });
     if (s?.scale >= 3.95 && !s.loading) break;
   }
   t.measure({ name: 'wheel-steps', start: wheelDetail.scale, steps });
@@ -215,16 +248,18 @@ export async function gridCulling(t) {
   assert(Math.abs(wheelAfter.viewport.scrollLeft - expectedScroll.left) < 3
     && Math.abs(wheelAfter.viewport.scrollTop - expectedScroll.top) < 3,
   `viewport scroll preserves the pointer anchor without native wheel scrolling (${JSON.stringify(expectedScroll)} vs ${wheelAfter.viewport.scrollLeft},${wheelAfter.viewport.scrollTop})`);
-  const returnSteps = Math.min(180, Math.ceil(Math.log(wheelAfter.scale / wheelStart.scale) / .04) + 5);
-  let wheelFit = null;
+  // Fit and detail can use different bitmaps. Compute the return budget in
+  // the current detail bitmap's coordinates, then check the fitted geometry.
+  const detailFitScale = wheelAfter.scale * Math.min(wheelAfter.viewport.width / wheelAfter.image.width,
+    wheelAfter.viewport.height / wheelAfter.image.height);
+  const returnSteps = Math.min(180, Math.ceil(Math.log(wheelAfter.scale / detailFitScale) / .04) + 5);
   for (let i = 0; i < returnSteps; i++) {
     await t.driver.wheel(wheelPoint.x, wheelPoint.y, 50);
-    wheelFit = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    if (wheelFit?.button === '100%' && Math.abs(wheelFit.scale - wheelStart.scale) < .03) break;
+    if ((await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y))?.label === 'Fit') break;
   }
-  wheelFit = await until(async () => {
+  const wheelFit = await until(async () => {
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    return s?.button === '100%' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
+    return fittedState(s) ? s : null;
   }, 'wheel down returns to Fit', 15000);
   t.measure({ name: 'culling-wheel-zoom', start: wheelStart, detail: wheelDetail, max: wheelAtMax,
     anchor: { point: anchorPoint, before: anchorBefore, after: wheelAfter }, fit: wheelFit,
@@ -233,13 +268,13 @@ export async function gridCulling(t) {
   await t.driver.keys('z');
   const finalZ100 = await until(async () => {
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    return s?.button === 'Fit' && Math.abs(s.scale - 1) < .02 ? s : null;
+    return s?.label === '100%' && Math.abs(s.scale - 1) < .02 ? s : null;
   }, 'Z toggles Fit back to 100% after wheel zoom');
   assert(Math.abs(finalZ100.scale - 1) < .02, `Z returns to 100% (${finalZ100.scale})`);
   await t.driver.keys('z');
   await until(async () => {
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    return s?.button === '100%' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
+    return s?.label === 'Fit' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
   }, 'Z returns to Fit after wheel zoom');
 
   await t.driver.keys('3');
@@ -289,7 +324,7 @@ export async function gridCulling(t) {
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'keyword is added to the selected photo');
   await t.evidence('culling-keywords');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
+  await click(t, '[aria-label="Grid keywords"] button[aria-label="Close (F / Esc)"]');
   await until(() => t.driver.observe(() => !document.querySelector('[aria-label="Grid keywords"]')), 'keyword dialog closes');
   await t.driver.move(cells[2].x, cells[2].y);
   await t.driver.keys('k');
@@ -297,7 +332,7 @@ export async function gridCulling(t) {
     'K reopens the selected-photo keyword dialog');
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'shared keyword is visible on both selected photos');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
+  await click(t, '[aria-label="Grid keywords"] button[aria-label="Close (F / Esc)"]');
   // A context click on an unselected photo acts on that photo alone, even
   // while another multi-selection remains selected.
   const beforeUnselectedContext = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb.selected')].map(e => e.title));
@@ -378,7 +413,7 @@ export async function gridCulling(t) {
   await textButton(t, '[aria-label="Grid keywords"] .kw-recent', 'Grid Culling');
   await until(() => t.driver.observe((title) => [...document.querySelectorAll('[aria-label="Grid keywords"] .kw-chip')]
     .some(e => e.title === title), 'GUI Test > Grid Culling'), 'recent keyword can be applied');
-  await textButton(t, '[aria-label="Grid keywords"] .modal', 'Close (F / Esc)');
+  await click(t, '[aria-label="Grid keywords"] button[aria-label="Close (F / Esc)"]');
   await until(() => t.driver.observe(() => !document.querySelector('[aria-label="Grid keywords"]')), 'keyword dialog closes');
   // With no photo under the pointer, F falls back to the first selected photo.
   await t.driver.move(10, 10);
@@ -423,6 +458,34 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(hasPreview), 'toolbar button opens the culling preview');
   const opened = await t.driver.observe(lightboxName);
   assert(opened && opened.startsWith(cells[1].title), `opened on the selected photo (${opened} vs ${cells[1].title})`);
+  const actions = '.culling-actions';
+  const camera = `${actions} button[aria-label="Camera previews"]`;
+  const keywords = `${actions} button[aria-label="Keywords (K)"]`;
+  const edit = `${actions} button[aria-label="Edit"]`;
+  const icons = await t.driver.observe(selectors => selectors.map(selector => {
+    const button = document.querySelector(selector);
+    return !!button?.querySelector('svg') && !button.textContent.trim() && !!button.title;
+  }), [camera, keywords, edit]);
+  assert(icons.every(Boolean), 'camera, keywords and edit are icon buttons with tooltips');
+  const cameraState = selector => {
+    const button = document.querySelector(selector);
+    return { pressed: button.getAttribute('aria-pressed'), color: getComputedStyle(button).color };
+  };
+  const off = await t.driver.observe(cameraState, camera);
+  assert.equal(off.pressed, 'false', 'camera previews start off');
+  await click(t, camera);
+  await t.driver.move(button.x, button.y);
+  const on = await t.driver.observe(cameraState, camera);
+  assert.equal(on.pressed, 'true', 'camera button enables camera previews');
+  assert.notEqual(on.color, off.color, 'active camera icon is highlighted');
+  await t.evidence('culling-camera-preview-active');
+  await click(t, camera);
+  assert.equal((await t.driver.observe(cameraState, camera)).pressed, 'false', 'camera button disables camera previews');
+  await click(t, keywords);
+  const dialog = '[data-grid-keywords-dialog]';
+  await until(() => t.driver.observe(selector => !!document.querySelector(selector), dialog), 'tag icon opens Keywords');
+  await click(t, `${dialog} button[aria-label="Close (F / Esc)"]`);
+  await until(() => t.driver.observe(selector => !document.querySelector(selector), dialog), 'Keywords closes');
   await t.evidence('culling-toolbar-button');
   await t.driver.keys('\uE00C');
   await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
@@ -436,8 +499,8 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(hasPreview), 'thumbnail icon opens the culling preview');
   const second = await t.driver.observe(lightboxName);
   assert(second && second.startsWith(cells[2].title), `opened on the clicked photo (${second} vs ${cells[2].title})`);
-  await t.driver.keys('\uE00C');
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes again');
+  await click(t, edit);
+  await until(() => t.driver.observe(() => !document.querySelector('.culling-lightbox, .filmstrip.grid')), 'sliders icon opens the editor');
   t.measure({ name: 'grid-culling-controls', toolbar: opened, thumbnail: second });
 }
 
@@ -507,4 +570,54 @@ export async function gridCullingPriority(t) {
   await timeDrawn('next photo again', () => t.driver.keys(''), null);
   await t.driver.keys('');
   t.measure({ name: 'grid-culling-priority', limitMs: PRIORITY_LIMIT_MS, timings });
+}
+
+// Keyword a virtual copy through the Library context menu, then read the
+// keywords through the lightbox. Preview the original separately as a control.
+export async function virtualCopyKeywords(t) {
+  if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
+  const thumbSelector = '.filmstrip.grid .thumb[data-imgid]';
+  const original = await until(() => t.driver.observe(selector => {
+    const thumb = document.querySelector(selector);
+    const r = thumb?.getBoundingClientRect();
+    return r && { id: thumb.dataset.imgid, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, thumbSelector), 'original thumbnail is visible');
+  await t.driver.rightClick(original.x, original.y);
+  await textButton(t, '.context-menu', 'Create Virtual Copy');
+  const duplicate = await until(() => t.driver.observe(selector => {
+    const thumb = [...document.querySelectorAll(selector)].find(e => e.querySelector('.thumb-type')?.textContent.includes('Copy 1'));
+    const r = thumb?.getBoundingClientRect();
+    return r && { id: thumb.dataset.imgid, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, thumbSelector), 'virtual copy thumbnail is visible');
+  assert.notEqual(duplicate.id, original.id);
+
+  const dialog = '[data-grid-keywords-dialog]';
+  const input = `${dialog} input.field`;
+  const keyword = 'virtual copy preview check';
+  const close = () => click(t, `${dialog} button[aria-label="Close (F / Esc)"]`);
+  const hasKeyword = () => t.driver.observe((selector, name) =>
+    [...document.querySelectorAll(`${selector} .kw-chip`)].some(chip => chip.title === name), dialog, keyword);
+  await t.driver.rightClick(duplicate.x, duplicate.y);
+  await textButton(t, '.context-menu', 'Keywords…');
+  await click(t, input);
+  await t.driver.keys(...keyword);
+  await t.driver.keys('\uE007');
+  await until(hasKeyword, 'keyword is applied to the virtual copy in the grid');
+  await close();
+
+  for (const [photo, expected] of [[duplicate, true], [original, false]]) {
+    const thumbnail = `${thumbSelector}[data-imgid="${photo.id}"]`;
+    await t.driver.move(photo.x, photo.y);
+    await click(t, `${thumbnail} .thumb-cull`);
+    await until(() => t.driver.observe(hasPreview), 'thumbnail opens the lightbox');
+    await t.driver.keys('k');
+    await until(() => t.driver.observe(selector => !!document.querySelector(selector), input), 'lightbox keywords load');
+    assert.equal(await hasKeyword(), expected, expected
+      ? 'the lightbox shows the keyword assigned to the virtual copy'
+      : 'the original does not have the copy’s keyword');
+    if (expected) await t.evidence('virtual-copy-lightbox-keyword');
+    await close();
+    await t.driver.keys('\uE00C');
+    await until(async () => !await t.driver.observe(hasPreview), 'lightbox closes');
+  }
 }

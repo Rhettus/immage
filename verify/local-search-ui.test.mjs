@@ -18,7 +18,7 @@ const mocks={
  // FindPanel's hooks run as plain calls: state is its initial value, effects are collected for the test to run
  react:'export const useState=v=>[typeof v==="function"?v():v,()=>{}];export const useEffect=f=>globalThis.__searchUI.effects.push(f);export const useLayoutEffect=useEffect;export const useRef=v=>({current:v});export const useMemo=f=>f();export const useCallback=f=>f;export const useId=()=>"id";',
  'react-dom':'export const createPortal=c=>c;',
- './icons':'export const StarIcon="star";',
+ './icons':'export const StarIcon="star";export const ResetIcon="reset";',
  './AnalysisStatus':'export const AnalysisStatus=()=>null;',
  './library':'export const LABEL_COLORS=["#f00","#ff0","#0f0","#00f","#a0f"];export const fileKind=()=>"";export const fileExt=()=>"";export const kindsInclude=()=>true;export const takenAt=()=>0;',
  './exportTokens':'export const shutter=v=>String(v);',
@@ -60,16 +60,22 @@ test('Find without the CLIP model or Immich offers file names only',()=>{
  const tree=FindPanel({state:NO_FIND,onChange(){},images:[],immichAvailable:false,smart:false,count:0,busy:false,notes:[],
   onShow(){},onClose(){},anchor:()=>undefined,bounds:()=>({left:0,right:1200,top:0,bottom:700})});
  const all=nodes(tree);
- assert.ok(!all.some(n=>n.type==='button'&&['Smart','Filename'].includes(n.props?.children)),'no Smart/Filename switch');
+ const smartButton=all.find(n=>n.type==='button'&&n.props['aria-disabled']==='true');
+ assert.ok(smartButton,'Smart stays, aria-disabled');
+ assert.ok(!smartButton.props.disabled,'Smart is not the disabled attribute, so its tooltip works');
+ const filenameButton=all.find(n=>n.type==='button'&&n.props.className==='active'&&n.props['aria-pressed']===true);
+ assert.ok(filenameButton,'Filename shows as active');
  const box=all.find(n=>n.type==='input'&&String(n.props.className).includes('find-text'));
  assert.ok(box&&box.props.placeholder!=='sunset on a beach','the box says it searches file names');
 });
 test('local adapter carries filters, scope and cache identities',async()=>{
- const calls=[];globalThis.__searchUI={commands:{async localSearch(...args){calls.push(args);return{items:[{asset_id:'12',variant_id:'23',subject:'original',image:{imgid:42,path:'/photos/a.jpg'}}],next:'more'};}}};
+ const calls=[];globalThis.__searchUI={commands:{async localSearch(...args){calls.push(args);return{items:[{asset_id:'12',variant_id:'23',subject:'original',image:{imgid:42,path:'/photos/a.jpg'}},{asset_id:null,variant_id:null,subject:'original',image:{imgid:43,path:'/photos/b.jpg'}}],next:'more'};}}};
  const signal=new AbortController().signal;
  const result=await localSearch({...NO_SEARCH,scope:'folder'}, {minRating:3},'/photos',true,null,signal);
  assert.equal(calls[0][0].folder,'/photos');assert.equal(calls[0][0].recursive,true);assert.deepEqual(calls[0][0].filters,{minRating:3});
  assert.deepEqual(result.items[0].localIndex,{assetId:'12',variantId:'23',subject:'original'});
+ assert.equal(result.items[1].localIndex,undefined);
+ assert.equal(result.items[1].path,'/photos/b.jpg');
  assert.equal(result.next,'more');
 });
 test('abort invokes native cancellation and rejects late local replies',async()=>{

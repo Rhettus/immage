@@ -9,6 +9,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { commands, type ExportReply } from "./commands";
+import { formatNumber, t } from "./i18n";
 import { engineText } from "./engineState";
 
 export type Action = { label: string; run: () => void };
@@ -29,9 +30,6 @@ export type Job = {
 // what a job did, and whether all went well
 export type Outcome = { text: string; ok: boolean; action?: Action };
 
-// how long a clean job's summary stays up
-const SUMMARY_MS = 30000;
-
 let jobs: Job[] = [];
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -44,8 +42,10 @@ const update = (id: number, change: Partial<Job>) => {
 // export still runs in Rust
 let next = Date.now();
 
+export const nextJobId = () => next++;
+
 const start = (what: string, total: number, cancel: Job["cancel"]) => {
-  const id = next++;
+  const id = nextJobId();
   jobs = [...jobs, { id, what, done: 0, total, stage: null, cancel, stopping: false, summary: null, failed: false,
                      action: null }];
   emit();
@@ -63,13 +63,11 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
       return r;
     }
     update(id, { summary: s.text, failed: !s.ok, action: s.action ?? null });
-    if (s.ok) window.setTimeout(() => dismissJob(id), SUMMARY_MS);
     return r;
   } catch (e) {
     // a merge stopped from its Stop answers so (main.c, _merge_step)
     if (String(e) === "stopped") {
       update(id, { summary: `${jobs.find((j) => j.id === id)?.what ?? "the job"}: stopped`, failed: false });
-      window.setTimeout(() => dismissJob(id), SUMMARY_MS);
       return null;
     }
     // an engine that exited meanwhile is restarted; the rest of the job is not resumed
@@ -125,16 +123,20 @@ export const bytesText = (n: number) => {
 // (move_cmds.rs, "move-progress")
 export async function runMove<R>(what: string, total: number, run: (job: number) => Promise<R>,
                                  summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
-  moving ??= listen<{ job: number; done: number; total: number; bytes: number; bytesTotal: number }>("move-progress",
-    (e) => {
-      const { job, done, total, bytes, bytesTotal } = e.payload;
-      const size = bytesTotal ? ` · ${bytesText(bytes)} of ${bytesText(bytesTotal)}` : "";
-      update(job, { done: bytesTotal ? bytes : done, total: bytesTotal || total,
-                    stage: `${Math.min(done + 1, total).toLocaleString()} of ${total.toLocaleString()}${size}` });
-    });
-  await moving;
   const id = start(what, total, "move");
-  return track(id, () => run(id), summarize, failed);
+  moving ??= listen<{ job: number; done: number; total: number; bytes: number; bytesTotal: number; phase?: string }>("move-progress",
+    (e) => {
+      const { job, done, total, bytes, bytesTotal, phase } = e.payload;
+      const count = t("dialogs.folderMove.progress", {
+        current: formatNumber(Math.min(done, total)), total: formatNumber(total),
+      });
+      const size = bytesTotal ? t("dialogs.folderMove.progress", { current: bytesText(bytes), total: bytesText(bytesTotal) }) : "";
+      const label = phase === "removing" ? t("dialogs.folderMove.removingPhase")
+        : phase === "copying" ? t("dialogs.folderMove.copyingPhase") : "";
+      update(job, { done: bytesTotal ? bytes : done, total: bytesTotal || total,
+                    stage: [label, count, size].filter(Boolean).join(" · ") });
+    });
+  return track(id, async () => { await moving; return run(id); }, summarize, failed);
 }
 
 // `run` as job `what`, which cannot be stopped; `failed` heads its error

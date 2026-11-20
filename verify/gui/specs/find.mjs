@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Find popup (FindPanel.tsx, findLayout.ts, SavedFilterMenus.tsx): filters
-// that apply as they change, the Minimize / Dock / Fill sizes with a draggable
-// strip and dock, and saved filters (Alt+1 to Alt+9). Everything is driven by
-// WebDriver pointer and key actions inside the test webview. The popup opens
-// at its stored size, Dock by default, so each case sets the size it needs.
-// In the grid view Find is not a popup but the right-hand column, locked in
-// place (`.find-pop.locked`: Dock's body, no size buttons, grip or closing), so
-// the helpers below accept both and the popup-only cases leave the grid first.
+// Find (FindPanel.tsx, SavedFilterMenus.tsx): filters that apply as they change, and
+// saved filters (Alt+1 to Alt+9). Find lives only in the grid's right-hand column
+// (`.find-pop` inside `aside.right`): the toolbar's Find button enters the grid and
+// focuses the box, and leaving the grid (the Library button) hides it. Everything is
+// driven by WebDriver pointer and key actions inside the test webview.
 import assert from 'node:assert/strict';
-import { click } from '../support/controls.mjs';
+import { click, reveal } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 
@@ -23,8 +20,9 @@ const rectOf = (t, selector) => t.driver.observe(s => {
   const r = e.getBoundingClientRect();
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }, selector);
-const chips = t => t.driver.observe(() => [...document.querySelectorAll('.find-chip')].map(c => ({
-  category: c.querySelector('.find-chip-cat')?.textContent.trim(), text: c.querySelector('.find-chip-text')?.textContent.trim() ?? '' })));
+// the filters that are on: their rows (the accordion has no chips), with their summaries
+const filtersOn = t => t.driver.observe(() => [...document.querySelectorAll('.find-pop .fr-row.on')].map(r => ({
+  category: r.querySelector('.fr-title')?.textContent.trim(), text: r.querySelector('.fr-sum')?.textContent.trim() ?? '' })));
 const findClass = (t, name) => t.driver.observe(n => document.querySelector('.find-button')?.classList.contains(n), name);
 
 // flip a General preference switch by its row (PrefRow's data-pref-label)
@@ -43,26 +41,21 @@ async function preference(t, label, on) {
   await until(async () => !await present(t, '.prefs'), 'Preferences closes');
 }
 
+// the toolbar's Find button enters the grid and shows the column (it stays open there)
 async function openFind(t) {
   if (!await present(t, pop)) await click(t, '.find-button');
-  await until(() => present(t, pop), 'Find popup');
+  await until(() => present(t, pop), 'Find column');
 }
-const isLocked = t => present(t, `${pop}.locked`);
+// Find lives in the grid only: leaving the grid (the Library button) hides it
 async function closeFind(t) {
-  if (await isLocked(t)) return;   // the column cannot be closed
-  if (await present(t, pop)) await t.driver.keys(ESC);
-  await until(async () => !await present(t, pop), 'Find popup closes');
+  if (await present(t, '.filmstrip.grid')) await click(t, '.rail .library-toggle');
+  await until(async () => !await present(t, pop), 'Find leaves with the grid');
 }
-async function setSize(t, size) {
-  if (await isLocked(t)) {
-    assert.equal(size, 'dock', 'the locked column is only ever the Dock body');
-    assert(!await present(t, `${pop} .find-size`), 'the locked column has no size buttons');
-    return settle(t);
-  }
-  await click(t, `${pop} .find-size-${size}`);
-  await until(() => t.driver.observe(s => document.querySelector('.find-pop')?.dataset.size === s, size), `${size} size`);
-  return settle(t);
-}
+// the Adjustments panel is in the page while the grid shows Find in its place
+const adjustmentsVisible = t => t.driver.observe(() => {
+  const p = document.querySelector('aside.right .panels');
+  return !!p && p.getBoundingClientRect().height > 0;
+});
 // the popup's rectangle once it has stopped moving
 async function settle(t) {
   let last = await rectOf(t, pop);
@@ -78,29 +71,26 @@ const near = (a, b, label, tolerance = 1.5) => {
   for (const k of ['left', 'top', 'width', 'height'])
     assert(Math.abs(a[k] - b[k]) <= tolerance, `${label}: ${k} ${a[k]} vs ${b[k]}`);
 };
+// open a filter's editor under its row (a no-op when it is open already)
+// observe() sends only the callback's source to the page, so each callback finds its row itself
 async function category(t, name) {
+  if (await t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
+    .find(c => c.querySelector('.fr-title')?.textContent === n)?.getAttribute('aria-expanded') === 'true', name)) return;
   const point = await until(() => t.driver.observe(n => {
-    const e = [...document.querySelectorAll('.find-cat')].find(c => c.querySelector('.name')?.textContent === n);
+    const e = [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === n);
     if (!e) return null;
     e.scrollIntoView({ block: 'nearest' });
     const r = e.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, name), `${name} row`);
   await t.driver.point(point.x, point.y);
-  await until(() => t.driver.observe(n => document.querySelector('.find-pane h3')?.textContent === n, name), `${name} pane`);
+  await until(() => t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
+    .find(c => c.querySelector('.fr-title')?.textContent === n)?.getAttribute('aria-expanded') === 'true', name), `${name} editor`);
 }
-async function center(t, selector) {
-  return until(() => t.driver.observe(s => {
-    const e = document.querySelector(s);
-    if (!e) return null;
-    const r = e.getBoundingClientRect();
-    return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
-  }, selector), `${selector} on screen`);
-}
-const stars = n => `${pop} .find-stars button[title="${n} stars and up"]`;
+const stars = n => `${pop} .fe-stars button[aria-label="${n} stars and up"]`;
 
-// Ticking a value adds a chip and narrows the grid with nothing pressed; the
-// chip's x removes it; in the grid Find is the locked right-hand column, which
+// Setting a value turns its filter row on and narrows the grid with nothing pressed; the
+// row's x removes it; in the grid Find is the locked right-hand column, which
 // has no Show N, grip, size buttons or close, and Escape in its box only leaves
 // the box. Needs three or more photos (find-NN copies), one of which the case rates
 export async function findLive(t) {
@@ -125,36 +115,39 @@ export async function findLive(t) {
     'one photo rated three stars');
 
   await openFind(t);
-  await setSize(t, 'dock');
-  assert.equal((await chips(t)).length, 0, 'no filter chips before anything is set');
+  await settle(t);
+  assert.equal((await filtersOn(t)).length, 0, 'no filter is on before anything is set');
+  assert(!await present(t, `${pop} .find-chip`), 'there are no chips');
   assert(!await findClass(t, 'on'), 'the toolbar Find button is not on without filters');
 
-  // 1. a rating, from the Rating & flags pane (the first shown)
+  // 1. a rating, from the Rating & flags editor (open first)
+  await category(t, 'Rating & flags');
   await click(t, stars(3));
-  await until(async () => (await chips(t)).some(c => c.category === 'Rating & flags'), 'a Rating & flags chip appears');
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags' && c.text === '3+ stars'), 'the Rating & flags row shows 3+ stars');
   await until(async () => await count(t, cells) < all, 'the grid narrows without pressing Show');
   assert.equal(await count(t, cells), 1, 'only the rated photo remains');
   assert(await findClass(t, 'on'), 'the toolbar Find button is on');
   await t.evidence('find-live-rating');
 
-  // the chip's x removes it and the grid is whole again
-  await click(t, `${pop} .find-chip button[aria-label="Remove Rating & flags"]`);
-  await until(async () => (await chips(t)).length === 0, 'the chip is removed');
+  // the row's x removes it and the grid is whole again
+  await click(t, `${pop} .fr-x[aria-label="Remove Rating & flags"]`);
+  await until(async () => (await filtersOn(t)).length === 0, 'the filter is removed');
   await until(async () => await count(t, cells) === all, 'the grid is restored');
 
-  // 2. a File type value: a chip, the same photos (the copies are one type)
+  // 2. a File type value: its row on, the same photos (the copies are one type)
   await category(t, 'File type');
-  await click(t, `${pop} .find-pane .filter-ticks button`);
-  await until(async () => (await chips(t)).some(c => c.category === 'File type'), 'a File type chip appears');
+  assert(!await present(t, `${pop} #find-ed-rating`), 'opening File type closes the Rating & flags editor');
+  await click(t, `${pop} .fr-editor .filter-ticks button`);
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'File type'), 'the File type row shows a value');
   assert.equal(await count(t, cells), all, 'the copies all match their own file type');
-  await click(t, `${pop} .find-chip button[aria-label="Remove File type"]`);
-  await until(async () => (await chips(t)).length === 0, 'the File type chip is removed');
+  await click(t, `${pop} .fr-x[aria-label="Remove File type"]`);
+  await until(async () => (await filtersOn(t)).length === 0, 'the File type filter is removed');
 
   // 3. the column is locked: no Show N, grip or close, and the grid still shows beside it
   await category(t, 'Rating & flags');
   await click(t, stars(3));
   await until(async () => await count(t, cells) === 1, 'rating filter on again');
-  assert(await isLocked(t), 'in the grid Find is the locked column');
+  assert(await present(t, pop), 'in the grid Find is the locked column');
   assert(!await present(t, `${pop} .find-show`), 'no Show N in the column');
   assert(!await present(t, `${pop} .find-grip`), 'no grip in the column');
   const col = await rectOf(t, pop), strip = await rectOf(t, '.filmstrip.grid');
@@ -165,22 +158,53 @@ export async function findLive(t) {
   // 4. Escape in the search box leaves the box; the column and the filter stay
   await click(t, `${pop} .find-text`);
   await t.driver.keys(ESC);
-  assert(await isLocked(t) && await present(t, '.filmstrip.grid'), 'Escape in the box keeps the column and the grid');
+  assert(await present(t, pop) && await present(t, '.filmstrip.grid'), 'Escape in the box keeps the column and the grid');
   assert(await findClass(t, 'on'), 'the Find button stays on');
   assert.equal(await count(t, cells), 1, 'Escape keeps the filter');
   await click(t, '.toolbar .clear-filters');
   await until(async () => await count(t, cells) === all, 'clearing the filters restores the grid');
 
-  // 5. Clear all clears the search words as well as the filters
+  // 5. the title bar's reset icon clears the search words and every filter; it is disabled
+  // only with no filter on and the box empty, so words alone enable it. Search in and the
+  // Smart/Filename mode stay as they were
+  const clearButton = () => t.driver.observe(() => {
+    const b = document.querySelector('.find-pop .find-clear');
+    return { inTitle: !!b?.closest('.panel-head'), disabled: !!b?.disabled, label: b?.getAttribute('aria-label'), title: b?.title,
+      inFilters: !!document.querySelector('.find-pop .find-filters-head .find-clear') };
+  });
+  const before = await clearButton();
+  assert(before.disabled, 'Clear is disabled with no filter on and no words');
+  assert(before.inTitle, 'Clear is in the panel title bar');
+  assert.equal(before.label, 'Clear search and filters', 'Clear has its label');
+  assert.equal(before.title, 'Clear search and filters', 'Clear has its title');
+  assert(!before.inFilters, 'the Filters header has no Clear');
   await click(t, `${pop} .find-text`);
   await t.driver.keys(...'zzznomatch', ENTER);
   await until(async () => await count(t, cells) === 0, 'words that match nothing empty the grid');
-  assert(!await t.driver.observe(s => document.querySelector(s).disabled, `${pop} .find-clear-all`), 'Clear all is enabled by the words alone');
-  await click(t, `${pop} .find-clear-all`);
-  await until(() => t.driver.observe(s => document.querySelector(s).value === '', `${pop} .find-text`), 'Clear all empties the search box');
-  await until(async () => await count(t, cells) === all, 'Clear all restores the grid');
+  assert(!(await clearButton()).disabled, 'Clear is enabled with search words alone');
+  await category(t, 'Rating & flags');
+  await click(t, stars(3));
+  await until(async () => (await filtersOn(t)).length === 1, 'a filter is on');
+  assert.equal(await t.driver.observe(s => document.querySelector(s).textContent, `${pop} .find-active`), '1 active', 'the header counts one active filter');
+  const kept = () => t.driver.observe(() => ({
+    searchIn: document.querySelector('.find-pop .find-where')?.textContent.trim(),
+    mode: document.querySelector('.find-pop .find-modewhere .segmented button.active')?.textContent.trim() }));
+  const scope = await kept();
+  await click(t, `${pop} .find-clear`);
+  await until(async () => (await filtersOn(t)).length === 0, 'Clear turns the filters off');
+  await until(async () => await t.driver.observe(s => document.querySelector(s).value, `${pop} .find-text`) === '', 'Clear empties the search words');
+  await until(async () => await count(t, cells) === all, 'Clear shows every photo again');
+  assert.deepEqual(await kept(), scope, 'Clear keeps Search in and the mode');
+  assert((await clearButton()).disabled, 'Clear is disabled again once the filters and words are empty');
+  await t.evidence('find-clear-all');
+  // the words, typed and cleared, leave the grid whole
+  await click(t, `${pop} .find-text`);
+  await t.driver.keys(...'zzznomatch', ENTER);
+  await until(async () => await count(t, cells) === 0, 'words that match nothing empty the grid again');
+  await click(t, `${pop} .find-clear`);
+  await until(async () => await count(t, cells) === all, 'clearing the words restores the grid');
 
-  // 6. the column has a Find title like the other panels; with auto-hide its pin ends that row
+  // With auto-hide, the Find pin sits beside Reset in the title row.
   assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-head h1`)?.textContent, pop), 'Find', 'the column is titled Find');
   await preference(t, 'Auto-hide panels', true);
   try {
@@ -188,18 +212,23 @@ export async function findLive(t) {
     const g = await t.driver.observe(s => {
       const box = q => document.querySelector(`${s} ${q}`).getBoundingClientRect();
       const head = document.querySelector(`${s} .panel-head`), cs = getComputedStyle(head);
-      const pin = box('.panel-head .pin'), title = box('.panel-head h1');
+      const pin = box('.panel-head .pin'), title = box('.panel-head h1'), reset = box('.panel-head .find-clear');
       return { pinMid: pin.top + pin.height / 2, titleMid: title.top + title.height / 2, pinRight: pin.right,
+               resetLeft: reset.left, resetRight: reset.right,
                end: head.getBoundingClientRect().right - parseFloat(cs.paddingRight), inRow: !document.querySelector(`${s} .find-head .pin`) };
     }, pop);
     assert(g.inRow, 'the pin is not in the search row');
     assert(Math.abs(g.pinMid - g.titleMid) <= 2, `the pin is centered on the title (${g.pinMid} vs ${g.titleMid})`);
-    assert(Math.abs(g.pinRight - g.end) <= 1, `the pin ends the title row (${g.pinRight} vs ${g.end})`);
+    assert(g.pinRight <= g.resetLeft && Math.abs(g.resetRight - g.end) <= 1, 'the pin precedes Reset at the end of the title row');
     // pinned, the column stays shown for the picture: rest on the rail to bring it in first
+    // the reveal is a hover, so the pointer rests on the rail until the column is in view
+    // (one move can land before the rail has its hover, and nothing else would re-send it)
     const rail = await rectOf(t, '.rail');
-    await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
-    await until(() => t.driver.observe(s => document.querySelector(s).getBoundingClientRect().right <= innerWidth,
-      `${pop} .panel-head .pin`), 'the column comes in from the rail', 5000);
+    const restOnRail = async () => {
+      await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
+      return t.driver.observe(s => document.querySelector(s).getBoundingClientRect().right <= innerWidth, `${pop} .panel-head .pin`);
+    };
+    await until(restOnRail, 'the column comes in from the rail', 8000);
     await click(t, `${pop} .panel-head .pin`);
     await until(() => present(t, `${pop} .panel-head .pin.on`), 'the right column pinned');
     await pause(400);
@@ -213,7 +242,7 @@ export async function findLive(t) {
   // the toolbar's Find button focuses the box of the column that is already there
   await click(t, '.toolbar .find-button');
   await until(() => t.driver.observe(() => document.activeElement?.classList.contains('find-text')), 'the Find button focuses the search box');
-  assert(await isLocked(t), 'no popup opens in the grid');
+  assert(await present(t, pop), 'no popup opens in the grid');
 
   // the magnifier: only in the grid, and it opens the culling lightbox
   const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
@@ -230,13 +259,13 @@ export async function findLive(t) {
   }, `.filmstrip.grid .thumb[data-imgid]`);
   await t.driver.point(first.x, first.y, 2);
   await until(async () => !await present(t, '.filmstrip.grid'), 'a double-click opens the photo and leaves the grid');
-  assert(!await present(t, `${pop}.locked`), 'the locked Find column is gone outside the grid');
+  assert(!await present(t, pop), 'Find is gone outside the grid');
   assert(await present(t, 'aside.right .panels'), 'the normal right panel is back');
   assert(!await present(t, 'button.culling-open'), 'no magnifier outside the grid');
   assert(!await t.driver.observe(s => document.querySelector(s).disabled, library), 'the Library button is enabled with a photo open');
   await click(t, library);
   await until(() => present(t, '.filmstrip.grid'), 'the Library button returns to the grid');
-  await until(() => isLocked(t), 'Find is the column again');
+  await until(() => present(t, pop), 'Find is the column again');
   // and back out with the same button
   await click(t, library);
   await until(async () => !await present(t, '.filmstrip.grid'), 'the Library button leaves the grid');
@@ -244,74 +273,138 @@ export async function findLive(t) {
   t.measure({ name: 'find-live', photos: all });
 }
 
-// Minimize, Dock and Fill by their buttons; the strip and the dock follow the
-// grip and keep their own places; a reopened popup is where it was; a double
-// click on the grip puts it back
+// Find is only the grid's right-hand column, entered and left with the grid (see findSizes)
+// Find is only the grid's right-hand column: outside the grid there is no column, and the
+// toolbar's Find button enters the grid, shows it in aside.right and focuses its box. From
+// the Print panel the same button brings Find back in place of Print. Leaving the grid
+// removes the column and brings the Adjustments panel back
 export async function findSizes(t) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
-  // the popup is the filmstrip view's: the grid has the locked column instead
-  if (await present(t, '.filmstrip.grid')) await t.driver.keys('g');
+  // start in the filmstrip view, the editing view
+  if (await present(t, '.filmstrip.grid')) await click(t, '.rail .library-toggle');
   await until(async () => !await present(t, '.filmstrip.grid'), 'filmstrip view');
-  await openFind(t);
-  assert(!await isLocked(t), 'outside the grid Find is the floating popup');
+  assert(!await present(t, pop), 'there is no Find column in the filmstrip view');
+  assert(await adjustmentsVisible(t), 'the Adjustments panel shows in the filmstrip view');
 
-  const rects = {};
-  for (const size of ['minimize', 'dock', 'fill']) {
-    rects[size] = await setSize(t, size);
-    assert.equal(await t.driver.observe(s => document.querySelector(`.find-size-${s}`)?.getAttribute('aria-pressed'), size), 'true',
-      `${size} button is pressed`);
-    await t.evidence(`find-size-${size}`);
-  }
-  assert(rects.minimize.height < rects.dock.height, 'the strip is shorter than the dock');
-  assert(rects.minimize.width > rects.dock.width, 'the strip is wider than the dock');
-  assert(rects.fill.width > rects.dock.width && rects.fill.height >= rects.dock.height, 'Fill covers more than the dock');
-  assert(!await present(t, '.find-pop .find-cat'), 'Fill lists every pane rather than a category list');
+  // the toolbar's Find button enters the grid and shows Find in the right column
+  await click(t, '.find-button');
+  await until(() => present(t, pop), 'Find column');
+  assert(await t.driver.observe(() => !!document.querySelector('aside.right .find-pop')), 'Find is in the right-hand column');
+  await until(() => t.driver.observe(() => document.activeElement?.classList.contains('find-text')), 'the Find button focuses the search box');
+  assert(await present(t, '.filmstrip.grid'), 'the grid is shown');
+  assert(!await adjustmentsVisible(t), 'the Adjustments panel is not visible while Find is');
+  const shape = await t.driver.observe(() => {
+    const e = document.querySelector('.find-pop');
+    return { position: getComputedStyle(e).position, grip: !!e.querySelector('.find-grip'), show: !!e.querySelector('.find-show') };
+  });
+  assert.notEqual(shape.position, 'fixed', 'Find is not a floating popup');
+  assert(!shape.grip, 'Find has no grip');
+  assert(!shape.show, 'Find has no Show N');
+  await t.evidence('find-column');
 
-  // Fill never moves
-  let grip = await center(t, `${pop} .find-grip`);
-  await t.driver.drag(grip, { x: grip.x - 120, y: grip.y + 40 });
-  near(await settle(t), rects.fill, 'Fill after a drag');
+  // from the Print panel, the same button brings Find back in place of Print
+  await click(t, 'button[data-tour="print"]');
+  await until(async () => !await present(t, pop), 'Print replaces Find in the column');
+  await click(t, '.find-button');
+  await until(() => present(t, pop), 'Find comes back from Print');
+  assert(!await adjustmentsVisible(t), 'Find is shown, not Print or Adjustments, after Print');
 
-  // the strip: dragged up and to the left
-  await setSize(t, 'minimize');
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.drag(grip, { x: grip.x - 120, y: grip.y - 100 });
-  const movedStrip = await settle(t);
-  assert(movedStrip.left < rects.minimize.left - 40, `the strip moved left (${movedStrip.left} from ${rects.minimize.left})`);
-  assert(movedStrip.top < rects.minimize.top - 40, `the strip moved up (${movedStrip.top} from ${rects.minimize.top})`);
-  await t.evidence('find-strip-dragged');
+  // pressing the button again in the grid keeps Find open
+  await click(t, '.find-button');
+  assert(await present(t, pop), 'the Find button keeps Find open in the grid');
 
-  // the dock: it fills the height, so only across
-  await setSize(t, 'dock');
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.drag(grip, { x: grip.x - 150, y: grip.y + 60 });
-  const movedDock = await settle(t);
-  assert(movedDock.left < rects.dock.left - 40, `the dock moved left (${movedDock.left} from ${rects.dock.left})`);
-  await t.evidence('find-dock-dragged');
-
-  // each size keeps its own place
-  near(await setSize(t, 'minimize'), movedStrip, 'the strip keeps its place');
-  near(await setSize(t, 'dock'), movedDock, 'the dock keeps its place');
-
-  // closed and opened again: the same size and place
+  // leaving the grid removes the column and brings the Adjustments panel back
   await closeFind(t);
-  await openFind(t);
-  assert.equal(await t.driver.observe(() => document.querySelector('.find-pop').dataset.size), 'dock', 'reopened at the last size');
-  near(await settle(t), movedDock, 'reopened at the same place');
+  assert(await adjustmentsVisible(t), 'the Adjustments panel is back outside the grid');
+  t.measure({ name: 'find-sizes' });
+}
 
-  // a double click on the grip puts the size back
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.point(grip.x, grip.y, 2);
-  near(await settle(t), rects.dock, 'the dock after a double click on the grip');
-  await setSize(t, 'minimize');
-  grip = await center(t, `${pop} .find-grip`);
-  await t.driver.point(grip.x, grip.y, 2);
-  near(await settle(t), rects.minimize, 'the strip after a double click on the grip');
+export async function findPanelMemory(t) {
+  const toggle = kind => `.view-tools button[data-panel-toggle="${kind}"]`;
+  const adjust = toggle('right');
+  const find = toggle('find');
+  const library = '.rail .library-toggle';
+  const waitForPanel = async (active, inactive, content, grid, open, expectedWidth) => {
+    const state = await until(() => t.driver.observe((a, other, panel, inGrid, isOpen, width) => {
+      const button = document.querySelector(a);
+      const slot = document.querySelector('.right-slot');
+      const aside = slot?.querySelector('aside.right');
+      if (!button || document.querySelector(other) || !aside || !!document.querySelector('.filmstrip.grid') !== inGrid) return null;
+      const visible = !slot.classList.contains('closed') && !!aside.querySelector(panel)?.getBoundingClientRect().height;
+      const panelWidth = aside.getBoundingClientRect().width;
+      const slotWidth = slot.getBoundingClientRect().width;
+      return visible === isOpen && button.getAttribute('aria-pressed') === String(isOpen)
+        && Math.abs(slotWidth - (isOpen ? panelWidth : 0)) <= 1
+        && (!isOpen || width === null || Math.abs(panelWidth - width) <= 1)
+        ? { width: panelWidth, title: button.title } : null;
+    }, active, inactive, content, grid, open, expectedWidth ?? null),
+    `${grid ? 'Find' : 'Adjustments'} ${open ? 'open' : 'closed'}${expectedWidth === undefined ? '' : ` at ${expectedWidth}px`}`);
+    assert(state.title.trim(), 'panel toggle has a tooltip');
+    return state;
+  };
+  const adjustments = (open, width) => waitForPanel(adjust, find, '.panels', false, open, width);
+  const findPanel = (open, width) => waitForPanel(find, adjust, pop, true, open, width);
+  const resize = async (width, readPanel) => {
+    const before = await readPanel(true);
+    const handle = await reveal(t, '.splitter.x:has(+ .right-slot)');
+    const from = { x: Math.round(handle.x), y: Math.round(handle.y) };
+    await t.driver.drag(from, { x: from.x + Math.round(before.width - width), y: from.y });
+    await readPanel(true, width);
+  };
 
-  // leave the default size for later cases
-  await setSize(t, 'dock');
-  await closeFind(t);
-  t.measure({ name: 'find-sizes', rects, movedStrip, movedDock });
+  await until(() => present(t, cells), 'a photo in the library', 120000);
+  await preference(t, 'Auto-hide panels', false);
+  if (await present(t, '.filmstrip.grid')) await click(t, library);
+  const adjustRail = 'button[data-tour="adjust"]';
+  if (!await present(t, `${adjustRail}.on`)) await click(t, adjustRail);
+  const editPanel = await adjustments(true);
+  await resize(390, adjustments);
+  assert(!await present(t, pop), 'Find is absent in editing view');
+  await t.evidence('adjustments-resized');
+
+  await click(t, '.toolbar .find-button');
+  const gridPanel = await findPanel(true);
+  assert.notEqual(gridPanel.title, editPanel.title, 'Find and Adjustments have distinct tooltips');
+  assert(!await adjustmentsVisible(t), 'Adjustments is hidden in the grid');
+  await resize(500, findPanel);
+  await t.evidence('find-resized');
+
+  await click(t, find);
+  await findPanel(false);
+  await click(t, library);
+  await adjustments(true, 390);
+  await click(t, library);
+  await findPanel(false);
+  await click(t, find);
+  await findPanel(true, 500);
+
+  await click(t, library);
+  await adjustments(true, 390);
+  await click(t, adjust);
+  await adjustments(false);
+  await click(t, library);
+  await findPanel(true, 500);
+  await click(t, adjustRail);
+  await adjustments(false);
+  await click(t, adjust);
+  await adjustments(true, 390);
+  await click(t, library);
+  await findPanel(true, 500);
+  await click(t, find);
+  await findPanel(false);
+  await preference(t, 'Auto-hide panels', true);
+  await click(t, find);
+  const search = await reveal(t, `${pop} .find-text`);
+  await t.driver.move(search.x, search.y);
+  await pause(750);
+  assert(await present(t, '.right-slot.floating.revealed'), 'Find stays open while the pointer is inside');
+  await t.driver.move(550, search.y);
+  await until(async () => !await present(t, '.right-slot.revealed'), 'Find auto-hides after the pointer leaves');
+  const rail = await rectOf(t, '.rail');
+  await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
+  await reveal(t, `${pop} .find-text`);
+  await preference(t, 'Auto-hide panels', false);
+  t.measure({ name: 'find-panel-memory', adjustmentsWidth: 390, findWidth: 500 });
 }
 
 // Save filter… and its name line, "changed" and Update, Alt+1 on a cleared
@@ -319,7 +412,7 @@ export async function findSizes(t) {
 export async function findSaved(t) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
   await openFind(t);
-  await setSize(t, 'dock');
+  await settle(t);
   const dialogName = async name => {
     const input = '.save-filter input[type="text"]';
     await until(() => present(t, input), 'name field');
@@ -330,8 +423,9 @@ export async function findSaved(t) {
   };
 
   // a filter to keep: three stars and up
+  await category(t, 'Rating & flags');
   await click(t, stars(3));
-  await until(async () => (await chips(t)).some(c => c.category === 'Rating & flags'), 'rating chip');
+  await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags'), 'the rating row is on');
   assert(!await present(t, `${pop} .saved-line`), 'no saved filter is in use yet');
   await click(t, `${pop} .find-save`);
   await dialogName('Find test');
@@ -343,25 +437,28 @@ export async function findSaved(t) {
 
   // change it: changed and Update, and Update takes the change in
   await category(t, 'Edit status');
-  await click(t, `${pop} .find-edited button:nth-child(2)`);
+  await click(t, `${pop} .fr-editor .segmented button:nth-child(2)`);
   await until(() => present(t, `${pop} .saved-changed`), 'the line says changed');
   await t.evidence('find-saved-changed');
   await textButton(t, `${pop} .saved-line`, 'Update');
   await until(async () => !await present(t, `${pop} .saved-changed`), 'Update takes the change in');
 
-  // clear everything, close, and Alt+1 re-applies it
-  await click(t, `${pop} .find-clear-all`);
-  await until(async () => (await chips(t)).length === 0, 'cleared');
+  // clear everything, close, and Alt+1 re-applies it. Escape folds an open editor before it
+  // closes the popup, and Edit status's editor is still open here: fold it first
+  await click(t, `${pop} .find-clear`);
+  await until(async () => (await filtersOn(t)).length === 0, 'cleared');
+  if (await t.driver.observe(() => [...document.querySelectorAll('.find-pop .fr-row')].some(r => r.getAttribute('aria-expanded') === 'true')))
+    await t.driver.keys(ESC);
   await closeFind(t);
   assert(!await findClass(t, 'on'), 'no filter is on once cleared');
   await t.driver.chord(ALT, '1');
   await until(() => findClass(t, 'on'), 'Alt+1 applies the saved filter');
   await openFind(t);
-  const back = await chips(t);
+  const back = await filtersOn(t);
   const rating = back.find(c => c.category === 'Rating & flags');
-  assert(rating, 'the rating chip is back');
+  assert(rating, 'the rating row is on again');
   const edits = back.find(c => c.category === 'Edit status');
-  assert(rating.text.includes('3 stars and up') && edits?.text.includes('Edited'),
+  assert(rating.text.includes('3+ stars') && edits?.text.includes('Edited'),
     `the updated filter was applied (${rating.text}; ${edits?.text})`);
   assert.equal(await t.driver.observe(() => document.querySelector('.find-pop .saved-line .saved-name')?.textContent), 'Find test',
     'the saved name shows');
@@ -412,12 +509,25 @@ export async function findNoClip(t) {
   const library = '.rail .library-toggle';
   if (!await present(t, '.filmstrip.grid')) await click(t, library);
   await until(() => present(t, '.filmstrip.grid'), 'grid view');
-  await until(() => isLocked(t), 'the locked Find column');
+  await until(() => present(t, pop), 'the locked Find column');
   const all = await count(t, cells);
   const head = `${pop} .find-head > .find-row:first-child`;
 
-  // file names only: no Smart/Filename switch, and the box says so
-  assert(!await present(t, `${head} .segmented`), 'no Smart/Filename switch without the model');
+  // file names only: Filename shows as active, Smart is there but unavailable, and the box says so
+  const modes = await t.driver.observe(() => [...document.querySelectorAll('.find-pop .find-modewhere .segmented button')]
+    .map(b => ({ text: b.textContent.trim(), on: b.classList.contains('active'), disabled: b.getAttribute('aria-disabled') === 'true', title: b.title })));
+  assert.equal(modes.length, 2, 'the Smart/Filename switch stays without the model');
+  assert(modes[0].disabled && !modes[0].on && /CLIP/.test(modes[0].title), `Smart is unavailable and says why (${JSON.stringify(modes[0])})`);
+  assert(modes[1].on, 'Filename shows as active');
+  await click(t, `${pop} .find-modewhere .segmented button`);
+  assert(await t.driver.observe(() => document.querySelectorAll('.find-pop .find-modewhere .segmented button')[1].classList.contains('active')), 'clicking Smart changes nothing');
+  // the mode row and the search row each stay on one line
+  const oneLine = await t.driver.observe(() => [...document.querySelectorAll('.find-pop .find-modewhere, .find-pop .find-head > .find-row:first-child')]
+    .map(r => { const tops = [...r.children].map(e => e.getBoundingClientRect()).filter(b => b.height > 0).map(b => Math.round(b.top + b.height / 2)); return Math.max(...tops) - Math.min(...tops); }));
+  assert(oneLine.every(d => d <= 2), `search row and mode row are single lines (${oneLine})`);
+  // the analysis indicator shows, dimmed, without the model
+  const indicator = await t.driver.observe(() => { const e = document.querySelector('.find-pop .analysis-status'); return e && { off: e.dataset.state === 'off', disabled: e.getAttribute('aria-disabled') === 'true', label: e.getAttribute('aria-label') }; });
+  assert(indicator && indicator.off && indicator.disabled && /CLIP/.test(indicator.label), `the analysis indicator is dimmed and says the model is missing (${JSON.stringify(indicator)})`);
   const placeholder = await t.driver.observe(s => document.querySelector(s)?.placeholder, `${pop} .find-text`);
   assert(placeholder && placeholder !== 'sunset on a beach' && /file name/i.test(placeholder), `the box says it searches file names (${placeholder})`);
 
@@ -434,7 +544,7 @@ export async function findNoClip(t) {
   // every control of the head's first row on one centre line, none outside the column
   const row = await t.driver.observe(sel => {
     const r = document.querySelector(sel);
-    const column = document.querySelector('.find-pop.locked').getBoundingClientRect();
+    const column = document.querySelector('.find-pop').getBoundingClientRect();
     const box = r.getBoundingClientRect();
     const items = [...r.children].map(e => { const b = e.getBoundingClientRect(); return { cls: e.className, left: b.left, right: b.right, top: b.top, bottom: b.bottom, cy: (b.top + b.bottom) / 2, h: b.height }; })
       .filter(i => i.h > 0 && i.right > i.left);
@@ -442,6 +552,7 @@ export async function findNoClip(t) {
   }, head);
   // saved filters live in the footer (Load filter); the pin joins this row only with auto-hide
   assert(row.items.some(i => /find-text/.test(i.cls)), 'the search box is in the row');
+  assert(row.items.some(i => /analysis-status/.test(i.cls)), 'the analysis indicator is in the row');
   // a wrapped row has one centre line per line: group by line, and each line must agree within 1px
   const lines = [];
   for (const i of row.items) {
@@ -495,7 +606,7 @@ export async function findNoClip(t) {
   await click(t, library);
   await until(async () => !await present(t, '.filmstrip.grid'), 'leave the grid');
   await click(t, library);
-  await until(() => isLocked(t), 'the grid again');
+  await until(() => present(t, pop), 'the grid again');
   await pause(2500); // the status is asked again on entering; the tip must not come back
   assert(!await present(t, `${pop} .find-tip`), 'the dismissed tip stays hidden');
 

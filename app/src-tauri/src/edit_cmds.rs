@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -145,8 +145,29 @@ pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: Str
 // open photo (the engine's session_presets); `module_state` applies one
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64) -> Result<PresetsReply, String> {
-    let reply = state.engine("presets").request(json!({ "cmd": "presets", "op": op, "priority": priority }))?;
+pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i64,
+                            action: Option<String>, name: Option<String>, version: Option<i64>, imgid: Option<i64>)
+    -> Result<PresetsReply, String> {
+    let mut req = json!({ "cmd": "presets", "op": op, "priority": priority });
+    if let Some(action) = action { req["action"] = json!(action); }
+    if let Some(name) = name { req["name"] = json!(name); }
+    if let Some(version) = version { req["version"] = json!(version); }
+    if let Some(imgid) = imgid { req["imgid"] = json!(imgid); }
+    let reply = state.engine("presets").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
+}
+
+// The webview supplies the contents of a user-selected file.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn module_preset_import(state: State<'_, AppState>, op: String, priority: i64,
+                                        imgid: i64, xml: String) -> Result<PresetsReply, String> {
+    if xml.len() > 1024 * 1024 || xml.contains('\0') {
+        return Err("invalid or oversized darktable preset".into());
+    }
+    let reply = state.engine("presets").request(json!({
+        "cmd": "presets", "op": op, "priority": priority, "imgid": imgid, "action": "import", "xml": xml,
+    }))?;
     serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
 }
 
@@ -163,6 +184,22 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     }
     let reply = state.engine("upright").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
+}
+
+// Keep the existing Tauri command payload.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn checker_analyze(
+    state: State<'_, AppState>, chart: Number, priority: Number, optimization: Number,
+    scale: Number, box_points: Option<Vec<Number>>, validate: bool, imgid: Option<i64>,
+) -> Result<CheckerReply, String> {
+    let reply = state.engine("checker_analyze").request(json!({
+        "cmd": "checker_analyze", "chart": chart, "priority": priority,
+        "optimization": optimization, "scale": scale, "layout": box_points.is_none(),
+        "box": box_points, "validate": validate, "imgid": imgid,
+    }))?;
+    serde_json::from_value(reply).map_err(|e| format!("checker_analyze: unexpected reply: {e}"))
 }
 
 // the Color mapping card's acquire as source or target (the engine's

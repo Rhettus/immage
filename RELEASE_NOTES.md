@@ -3,6 +3,119 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Bug fixes
+
+- Color calibration uses higher precision for chart fitting and rejects
+  invalid measurements before solving the calibration matrix.
+
+## 0.47.0
+
+Improvements
+
+- **Darktable 5.8 rendering:** Immage now uses darktable's code from the 5.8
+  feature freeze. Keep photos edited in this release in Immage 0.47 or later.
+  Earlier versions drop the saved white balance, input color and demosaic
+  steps.
+- Find opens in the Library grid from any view and focuses the search box.
+  Filters expand inline one at a time, show their selections and can be
+  cleared individually. The header counts active filters, and Reset clears
+  filters and search text. Exposure settings use tabs, rating and color
+  labels have clearer buttons, and long lists scroll. Saved filters and the
+  photo count are at the bottom.
+- Rename photos individually or in bulk from the Library grid. Preview the
+  batch count and an example name built from photo info and sequence numbers.
+  Edits and sidecars follow the new names.
+- Drag whole folders onto another folder, including a NAS destination.
+  Transfers run in parallel using your Library worker setting. Immage verifies
+  the full copy before removing originals, and cached thumbnails and virtual
+  copies follow the photos.
+- Save, import, apply and delete Advanced module presets, including darktable
+  `.dtpreset` files and presets on module cards inside masks.
+- The lightbox toolbar uses icons for Camera previews, Keywords and Edit.
+  The highlighted camera icon shows when Camera previews is on, letting you
+  view embedded previews for edited RAWs at Fit. Use 100% detail to inspect
+  the edited image.
+- Advanced white balance adds a From image area eyedropper and replaces As shot
+  to reference with Prepare data for color calibration. Color calibration uses
+  white balance as the default illuminant for RAWs, so Temp and Tint follow it.
+  Other illuminants lock unused white balance controls, and both cards warn
+  about conflicting settings.
+- Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced
+  Color calibration. Align the chart overlay, review the measured color error,
+  and apply the computed illuminant and channel matrix.
+- Clarity and Texture use darktable's new local contrast filter and can look a
+  little different. Existing edits retain their settings, with Base detail
+  adjusted to match the new filter.
+- **Immage Accelerator (Experimental):** Browse and filter mapped network
+  shares using the morfPhoto index and search unedited originals by description
+  with NAS Smart Search. Immage falls back to file-based browsing when the
+  server is unavailable. Expand NAS activity in Preferences to see scan
+  progress, the on-disk thumbnail count and CLIP indexing coverage.
+- The Advanced mode button shows a green dot when edits use modules that
+  Simple cannot show. Hover over the button to see their names.
+- Messages in the corners of the photo fade after 15 seconds unless hovered.
+  Click a message to dismiss it immediately.
+- Choose from five new built-in themes in Preferences, with all built-in
+  themes ordered from darkest to lightest.
+
+Performance
+
+- For visible, unedited originals on a mapped share, use morfPhoto camera
+  previews when Immage has no cached thumbnail and the server can supply one.
+  Updated morfPhoto servers generate grid thumbnails that fit within 400 × 400
+  pixels and use a larger embedded preview when more detail is available.
+- The culling lightbox uses the largest embedded camera preview for unedited
+  RAWs when available, avoiding a RAW render even if the preview is smaller
+  than the lightbox.
+- The culling lightbox decodes compatible unedited JPEGs directly from the
+  main image at Fit size for faster sharp previews.
+- Culling starts read-ahead sooner when the next photo is edited. Moving to
+  a photo whose Fit preview is already loading reuses the in-progress preview,
+  avoiding a second engine request and frame transfer.
+- Clearing or rebuilding the local photo cache is faster for large libraries.
+
+Bug fixes
+
+- Profile, White Balance and other editor dropdowns use the selected theme’s
+  inset color.
+- Texture, Clarity and Advanced module cards follow the selected theme.
+- NAS activity keeps counts and status text aligned as values change.
+- Library filters stay active when you switch folders.
+- The Keywords dialog opens in front of the culling preview and uses the
+  standard dialog layout. The preview toolbar groups the filename and photo
+  position separately from its controls and uses the editor’s zoom slider in
+  the center of the bottom bar. Both windows close with an X icon.
+- Find and Adjustments remember their widths, visibility and auto-hide pins
+  independently.
+- Photo transfers to macOS SMB shares that reject a full file flush now use
+  the standard flush. Immage still verifies the copy before removing originals.
+  When launched from Terminal, Immage logs the failed operation and path if a
+  photo transfer fails.
+- Find finishes indexing photos that have only numbered darktable XMP sidecars.
+- Browsing photos keeps their cached Smart search analysis and avoids
+  unnecessary background processing.
+- Each Color Grading wheel drag is a single undo step, including on masks
+  and in Advanced mode.
+- Module cards under Masks in Advanced mode show darktable presets. Applying
+  one keeps the mask, its blend settings and the module's on/off state.
+- View > Culling Preview is enabled only when the grid shows a local photo.
+  Full Screen Preview and other editor-only View commands are dimmed in the grid.
+- Find's analysis icon now shows how many photos are really waiting for Smart
+  search analysis, and no longer says every photo is analysed while some are
+  still pending. It stays visible, dimmed, without the CLIP model, a still arc
+  shows photos that are waiting but not being worked on, and Smart/Filename
+  and Search in always stay on one line. Find checks for missing and offline
+  photos in batches, even while analysis is paused. The count excludes those
+  photos until they return, and a green check means no photos are waiting.
+- After a similar-photo search, opening a photo no longer leaves an "Image
+  query" box in the lower left that could not be dismissed.
+- Buttons in the lower-left notices, such as Stop while searching, can now be
+  clicked.
+- Immich search no longer lists photos that are in the Immich trash; opening
+  one used to show a 404 error.
+
 ## 0.46.0
 
 Improvements

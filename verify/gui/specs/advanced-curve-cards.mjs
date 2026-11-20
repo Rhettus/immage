@@ -26,7 +26,8 @@ export async function bandsCase(t, card, op, name, minError) {
   // the middle of the curve, up to near the top
   await dragAt(t, svg, [.5, .5], [.5, .1]);
   await until(async () => !close(await knots(t, svg), flat, 2), `${name} knots moved by the drag`);
-  const edited = await settledPhoto(t);
+  // the knots move at once, the slower render of the edit lands after them
+  const edited = await settledPhoto(t, p => meanError(p, base) > minError);
   const up = await knots(t, svg);
   assert(Math.min(...up) < Math.min(...flat) - 5, `${name}: a knot rose: ${flat} to ${up}`);
   t.measure({ name: `${name}-drag`, knots: [flat, up], meanAbsoluteError: meanError(edited, base) });

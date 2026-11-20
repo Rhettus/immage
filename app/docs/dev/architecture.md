@@ -33,7 +33,7 @@ tooltips, clicks and disabled buttons as well.
 | [clip_text.rs](../../src-tauri/src/clip_text.rs) | Reference Hugging Face tokenizers 0.23.2, with HTTP features disabled, loads the verified package's serialized pipeline. Enforces CLIP special tokens, a 77-token context, right padding and truncation with EOS retained. Installation checks a known prompt for tokenizer compatibility. Headless boundary tests use an explicitly synthetic pipeline, not a substitute CLIP BPE fixture. |
 | [clip_image.rs](../../src-tauri/src/clip_image.rs) | Validates the pinned processor configuration and prepares orientation-correct sRGB RGB8 as a `[1,3,224,224]` float32 tensor: shortest-edge resize, antialiased bicubic, center crop, rescale and channel normalization. Source, intermediate and extreme-aspect dimensions are bounded. Independent pinned Pillow/NumPy hashes cover eight RGB crops and complete CHW tensors. |
 | [clip_infer.rs](../../src-tauri/src/clip_infer.rs) | Shared-queue admission and diagnostic two-tower probe. Sends little-endian tensors through unique temporary files (0600 on Unix), closes files before cleanup on Windows, and accepts only finite normalized 512-value projections. `Job::commit` guards publication after cancellation. The probe uses an already installed verified package and never downloads one. Native `engine/clip.c` starts its serial CPU worker lazily, caps queued plus active work at eight, binds inputs by name and validates every output's type/shape before execution. It does not access the editor session. `engine/clip_contract.h` isolates output-shape and normalization checks. Headless tests run tiny locally generated ONNX graphs; they do not establish pretrained CLIP semantic quality. |
-| [search_cmds.rs](../../src-tauri/src/search_cmds.rs) / [SearchPrefs.tsx](../../src/SearchPrefs.tsx) | Local cache status/counts/root history, remembered background pause, serialized clear/rebuild and opt-in model controls. Clear cancels the analysis generation before deleting disposable rows, retains root identity and ID sequences, and leaves model packages alone. Rebuild schedules fresh root jobs without releasing old active admission slots. `search_queue` is a sync command that only copies the queue's counts and pause flag (the queue's own mutex, no file or SQLite work), polled every 2 s by [AnalysisStatus.tsx](../../src/AnalysisStatus.tsx), the icon at the end of Find's search row (shown when the CLIP model is installed; a click calls `search_pause`, optimistically). Preferences poll only status on mount; model downloads and diagnostics require explicit button actions. |
+| [search_cmds.rs](../../src-tauri/src/search_cmds.rs) / [SearchPrefs.tsx](../../src/SearchPrefs.tsx) | Local cache status/counts/root history, remembered background pause, serialized clear/rebuild and opt-in model controls. Clear cancels the analysis generation before deleting disposable rows, retains root identity and ID sequences, and leaves model packages alone. Rebuild schedules fresh root jobs without releasing old active admission slots. `search_analysis_status` is a sync command over atomics (`Progress` in [search_analysis.rs](../../src-tauri/src/search_analysis.rs)) and the queue's pause flag, polled every 2 s by [AnalysisStatus.tsx](../../src/AnalysisStatus.tsx), the icon at the end of Find's search row (always shown, dimmed without the CLIP model; a click calls `search_pause`, optimistically). The analysis service thread ticks every 1 s: it submits `clip:scan` every 5 s, and, only while the page has asked within 10 s, recounts the real backlog every 5 s (`count_backlog`: `pending_analysis_paths` pages of 1024 by id, the cache lock held per page, filtered by the library selection; the queue's count is not the backlog, as a scan offers at most 32 photos). It counts on its own thread, so it works while paused; `RunGuard` around photo jobs feeds `running` and the `active` window (15 s). Preferences poll only status on mount; model downloads and diagnostics require explicit button actions. |
 | [renderer.rs](../../src-tauri/src/renderer.rs) | Linux window renderer: Automatic leaves EGL vendor selection to the system on every GPU; explicit Mesa or NVIDIA selects that EGL vendor. Stored as `native.webview-renderer` in `settings.json` (see [settings.rs](../../src-tauri/src/settings.rs)) so startup can read it before GTK. An inherited marker allows Relaunch to change the selection, while a user-supplied EGL environment override takes priority. Only the web view receives the override; benchmark display metadata records the running and next selections. |
 | [pinch.rs](../../src-tauri/src/pinch.rs) | Linux touchpad pinch. WebKitGTK scales the whole page for a pinch with its own GtkGestureZoom; a handler on the webview's GTK `event` signal takes the pinch first (GTK 3 runs that bubble-phase gesture only when `event` leaves it unhandled) and dispatches each update to the element under the fingers as a synthetic `WheelEvent` with `ctrlKey`, sized so the viewer's ctrl-wheel zoom in App.tsx scales by the pinch's change. Mac and Windows web views already send a pinch as a ctrl wheel event. |
 | [engine.rs](../../src-tauri/src/engine.rs) | The engine child. Spawns it (`--core --configdir --cachedir -d perf`, darktable's resource level from Preferences (`resource_level`), OpenCL on with export's pipe type allowed the GPU, which the base borrows, and the full pipes (edits and drags) too with Preferences' Edit on the GPU (`gpu_edits`, on by default); on Linux, ROCm's platform on and its kernels built as OpenCL C 2.0 when no RustiCL is installed, `rocm_only`), retrying while an old one holds darktable's database lock: each start sends a `version` request and goes on as soon as it is answered (after `dt_init`), or after 400 ms if the engine is still alive (`started`). `request()` writes one JSON line with a request number (`rid`, never reused) and reads replies until the one echoing it, dropping a late reply to an earlier request; an engine that never echoes `rid` (an old build) is read in order. `rid` is not `id`, which `render` uses for a base's number. Thumbnails and background exports (`Tagged`) are tagged and sent without the engine's mutex, and AI Denoise's DNG and the AI selections' outlines come as a tagged answer after the main loop's own (`expect`, `on_engine_thread` in ai_cmds.rs); a stdout thread (`read_stdout`) hands each tagged reply to its caller, a merge's progress lines to what follows them (`request_with_progress`, as `merge-progress`), and the rest to `request()`. A stderr thread writes the log and keeps darktable's `-d perf` timings apart for the performance overlay. `Engine` holds the current connection, a `Conn` (stdin, the waiting reply channel, progress, the child, a `dead` flag) numbered by an `epoch`, inside a shared `Link` (the current conn, a condvar, the tagged-reply and base-cancel tables, `quitting`, the manual restart flag, events). `Tagged` and `BaseCancel` hold the `Link`, so they follow a respawn. `respawn()` starts a new child with the same arguments, and `read_stdout` marks its conn dead when stdout closes. `request()` waits with `recv_timeout` against `soft_deadline(op, req)`; past it, it emits one `slow{op,seconds}` event, and the reply still arrives as `ready` with the same epoch. `RestartBudget(3, 60 s)` limits crash loops. |
@@ -178,7 +178,7 @@ and one undo after Done.
 | [pixelRatio.ts](../../src/pixelRatio.ts) | Linux on Wayland at a fractional scale: `draftScale()`, how much smaller drag drafts are (`draftK` and `fullDraftK` in App.tsx; the latter also sizes `exactView`, the detail sliders' whole-view draft), the screen's scale from `display_scale` over `devicePixelRatio`, as GTK 3 draws the window at the next whole scale; Preferences' "Drag drafts at the screen's scale"; `settledScale()` does the same for the settled Fit frame (`viewAt(1)` in App.tsx), behind "Fit frames at the screen's scale" (on by default). |
 | [sharedFrames.ts](../../src/sharedFrames.ts) | Windows: `renderFrame` asks `render` to post the frame in a WebView2 shared buffer tagged with an id, then matches the `sharedbufferreceived` event to the reply, copies the frame out and releases the buffer. Linux: it asks `render` to write the frame to `/dev/shm` and reads it with the web extension's `immageFrame()`. On the Mac, on WebView2 runtimes before 1.0.1661, on Linux without the extension, or with Preferences' "Shared-memory frames" off, the frame comes in `render`'s reply. |
 | [HistoryPanel.tsx](../../src/HistoryPanel.tsx) | darktable's history plus this session's undo steps; a row's switch, delete or reset (`historyChange` in App.tsx, `Session.setModuleState`, the engine's `session_module_state`). |
-| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` is the pure targeting and bounded scheduling: one active request, one replaceable foreground request and a bounded list of neighbors, kept in memory. |
+| [GridCulling.tsx](../../src/GridCulling.tsx), [culling.ts](../../src/culling.ts) | Grid culling (F in the grid): a fixed-frame preview with arrows, ratings, labels, K keywords, zoom and pan. `culling.ts` selects the neighboring photos and runs one speculative request at a time. See [Culling preview strategy](#culling-preview-strategy). |
 | [folderEdits.ts](../../src/folderEdits.ts) | `FolderEdits`: keeps only the fields changed (`patchImage`) while a folder read runs, and reapplies them to each arriving batch and the final list, so rating, label and reject changes survive the read's older snapshots. |
 | [CopySettings.tsx](../../src/CopySettings.tsx) | Copy/Paste Settings: which groups, and the clip. |
 | [batchPaste.ts](../../src/batchPaste.ts) | Exact selection targets; shared single/batch clip application; sequential background Sessions, native snapshot commit and rollback. |
@@ -231,10 +231,38 @@ and one undo after Done.
 | [filter.ts](../../src/filter.ts) | The filmstrip's `Filter` over a folder's photos (`passes`), and what the photos hold to filter by (`facets`): kinds, cameras, lenses, keywords, exposure settings. |
 | [HdrDialog.tsx](../../src/HdrDialog.tsx) | HDR Merge's dialog (Auto Align, when the engine has OpenCV: `hdr_can_align`); `runHdrMerge` in App.tsx runs it in the background. |
 | [PanoDialog.tsx](../../src/PanoDialog.tsx) | Panorama Merge's dialog (reduced-resolution preview above projection and Auto Crop; `pano_preview`, `merge_cancel`, `pano_can_merge`); `runPanoMerge` in App.tsx runs it in the background, and the DNG's first open takes a raw's new-photo defaults with Lens Corrections off (`pano` in `openFile`). |
-| [findModel.ts](../../src/findModel.ts) | The Find state, `FindState`: the folder `Filter` plus the `ImmichSearch` (words, mode, `searchIn`, library, server filters). `reach` says which sources a search covers; `needsSearch` whether it runs a search or just filters the folder; `effectiveFilter` the `Filter` actually applied (local-only fields dropped when Immich is unavailable); `CATEGORIES` and `visibleCategories` the grouped filters; `chips` the filters on, each marked when it excludes a source in a Both search; `SavedFilter`, `sameFind`, `normalizeFind`. |
-| [FindPanel.tsx](../../src/FindPanel.tsx) | The toolbar's Find popup in its three sizes (minimize, dock, fill): search row, Search in, chips, category panels and footer. In the grid view App draws it `locked` inside the right column (the dock body, filling its container, no size buttons, grip or closing; `findLocked` in App.tsx, and the toolbar's Find button focuses its box through `focusToken`) and not as the popup. Everything applies live; typed words on Enter or after a short debounce. Edits the one `FindState` App holds, which the toolbar's stars, reject, edited and label buttons also edit. |
-| [findLayout.ts](../../src/findLayout.ts) | Find's size and per-size placement (`immage.findLayout` in the settings store): default rectangles, clamping to the window, drag offsets. |
+| [findModel.ts](../../src/findModel.ts) | The Find state, `FindState`: the folder `Filter` plus the `ImmichSearch` (words, mode, `searchIn`, library, server filters). `reach` says which sources a search covers; `needsSearch` whether it runs a search or just filters the folder; `effectiveFilter` the `Filter` actually applied (local-only fields dropped when Immich is unavailable); `CATEGORIES` and `visibleCategories` the grouped filters; `chips` the filters on (the panel's active count and `excludes` warnings; there is no chip UI), each marked when it excludes a source in a Both search; `clearAll` (the title bar's reset icon: the words and every category, keeping mode, source, scope and library); `SavedFilter`, `sameFind`, `normalizeFind`. |
+| [FindPanel.tsx](../../src/FindPanel.tsx) | Find, drawn only in the grid's right-hand column (`findLocked` in App.tsx): search row, Search in, the title bar's reset icon (`clearAll`: the words and the filters), the Filters header (active count), one scroll region of filter rows each opening its editor beneath it (`expanded` is one `CategoryKey`, derived closed when its category is hidden; the clicked row is pinned in a layout effect, then the editor is scrolled into view), Escape folding an open editor first, and the footer (count, Load, Save filter). The toolbar's Find button goes to the grid and focuses the box through `focusToken`. Everything applies live; typed words on Enter or after a short debounce. Edits the one `FindState` App holds, which the toolbar's stars, reject, edited and label buttons also edit. |
+| [FindFilters.tsx](../../src/FindFilters.tsx) | Find's filter list: `FilterGroup`, `FilterRow` (a button with `aria-expanded` and `aria-controls`, its summary from `summarize`, a sibling clear button, the Immich tag and the `excludes` warning) and `categoryTitle`. |
+| [FindEditors.tsx](../../src/FindEditors.tsx) | The editors a row opens: `FilterEditor` (one per `CategoryKey`: stars, color labels, Rejected radios, Ticks lists, Exposure tabs, Captured, the Immich pickers), writing through findModel.ts's functions; facets are computed only for the open one. |
 | [savedFilters.ts](../../src/savedFilters.ts), [SavedFilterMenus.tsx](../../src/SavedFilterMenus.tsx) | Saved filters (`immage.savedFilters`, part of the Preferences & library backup): store, `savedForDigit` for Alt+1 to Alt+9, and the Saved menu, save dialog and Manage dialog. |
+
+### Culling preview strategy
+
+| File type | Fit preview | 100% detail |
+|---|---|---|
+| Unedited JPEG (`.jpg`, `.jpeg`, `.jpe`) | Decode the main JPEG with decoder downsampling when possible, apply EXIF orientation, and resize to Fit. Use the thumbnail render pipeline for unsupported JPEGs and those with an ICC profile or non-sRGB EXIF color space. | Render at native resolution. |
+| Unedited RAW (ORF, ARW, CR3, NEF, DNG, and others) | Extract the largest usable embedded camera preview, apply orientation, and shrink it if needed. A smaller camera preview retains its native dimensions and scales for display. Use the thumbnail render pipeline if extraction fails or the preview is unsuitable. | Use the embedded preview at its native resolution when usable. Otherwise render at native resolution. |
+| Edited RAW | Render with edits by default. With **Camera previews** enabled, use the same embedded preview path as unedited RAWs and fall back to the edited render. | Render at native resolution with the photo's edits. |
+| Edited JPEG | Render the Fit preview with the photo's edits. | Render at native resolution with the photo's edits. |
+| Other supported formats (TIFF, PNG, HEIF, and others) | Use the thumbnail render pipeline. | Render at native resolution. |
+
+Fit requests the longer viewport dimension in device pixels. The grid
+thumbnail can appear immediately as a placeholder. Fit checks the lightbox's
+bitmap cache and then Immage's disk cache before requesting an engine frame.
+The disk cache uses the original and sidecar stamps, virtual-copy version,
+and requested size. Source-based Fit previews have their own cache keys
+within the thumbnail cache. The edited-RAW camera mode has its own bitmap,
+in-flight, and disk cache keys. The frame reply does not wait for JPEG
+encoding or the disk write.
+
+Read-ahead uses the filtered grid order and the last arrow direction. It
+prepares Fit previews one at a time and can join a matching in-flight request
+when the user moves to that photo. If the next photo is edited, read-ahead
+is scheduled as soon as the current Fit preview is ready. Otherwise it waits
+180 ms for navigation to settle. Native detail is requested on demand.
+
+[Lightbox](../../src/GridCulling.tsx) · [Rust thumbnail commands](../../src-tauri/src/library_cmds.rs) · [Engine preview implementation](../../../engine/library.c)
 
 ### Export
 
@@ -846,12 +874,13 @@ calls `Session.switchModule`, the old instance off and the other module's
 priority 0 on. A layout's `choices` names an int field's hand-filled combobox
 (`dt_bauhaus_combobox_add`).
 
-[PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's darktable presets
+[PresetMenu.tsx](../../src/PresetMenu.tsx) is the card's module presets
 menu. It loads the engine's `presets` list when opened (darktable's order,
 shipped presets then the user's, a check on the active one) and applies a pick
 with `Session.applyPreset`, which sends `module_state` with the raw preset name;
-undo restores the instance like a reset. `presetLabel` (presetName.ts) drops
-the `_builtin_` prefix and shows `|` as `›`. The pump reloads `instances` after
+undo restores the instance like a reset. The same menu saves and deletes user
+presets in `data.presets`. Saving waits for queued edits so it captures the
+current instance. `presetLabel` formats built-in names for display. The pump reloads `instances` after
 a preset or restore, since darktable relabels the instance from its preset.
 
 [ModuleSwitch.tsx](../../src/ModuleSwitch.tsx) is the icon and fixed-position
@@ -1157,7 +1186,7 @@ the identity, or the empty string for **Serial not recorded**. `passes`,
 within the category and AND with other categories. `FindPanel.tsx` places
 Camera body below Camera, applies it live like the other filters with faceted
 counts, and wraps long serial labels. Immich server search is unchanged; Camera body is a local-only category, so a
-Both search marks its chip as hiding Immich results.
+Both search marks its row as hiding Immich results.
 
 Verify with `node --test verify/camera-body.test.mjs` after building the engine.
 The checks cover standard and DNG serial extraction, leading zeros, lens-only
@@ -1381,3 +1410,36 @@ filesystem stamps and JSON preparation happen outside `Job::commit`; only the
 SQLite compare-and-swap runs inside its publication guard. Tagged `meta` uses the
 thumbnail worker pool and background yield; untagged `meta` keeps the normal
 foreground path. Source stat runs before taking the global Exiv2/cache lock.
+
+## Library file rename
+
+The grid snapshots its local selection in display order. Each physical file
+gets one proposed stem. Stacked RAW/JPEG partners share a stem and sequence
+number. The dialog uses the Export filename expander for token patterns and
+submits the same proposed stems for validation and execution. The dialog
+displays one example, while validation checks the full batch.
+
+The typed `rename_preview` and `rename_files` commands resolve each handle
+against its expected path on a blocking worker. Both check the photo, versioned
+XMP files, edit-data sidecars, and destination names. The execution path runs
+after the frontend saves and closes any affected editor session and rediscovers
+sidecars at that point. It uses the existing Move reservations and platform
+no-replace operations. Case-only changes pass through a temporary name in the
+same folder.
+
+Execution verifies each destination's file type, size, and modification stamp
+before accepting the group. A group failure reverses completed steps in reverse
+order, reports any paths that could not be restored, and stops the rest of the
+batch. Previously completed groups remain renamed. A process interruption can
+leave an operation between steps.
+
+The reservation table mutex is released before file or database work. A
+verified search relocation preserves asset and variant IDs and CLIP analyses,
+and rewrites cached paths and filenames. If the fingerprints fail verification,
+the ordinary import path rebuilds the renamed entry. The frontend reloads the
+folder or Find query and resolves the selection and editor by path and version.
+The thumbnail cache naturally uses new keys because its keys include the path.
+
+Run the rename and transfer tests with `cargo test --locked move_cmds` from
+`app/src-tauri`. The tests cover no-overwrite behavior, rollback, sidecar
+contents, and search relocation with stored original and edited embeddings.

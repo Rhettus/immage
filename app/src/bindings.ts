@@ -12,11 +12,12 @@ export const commands = {
 	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	/**
-	 *  The analysis queue's counts and pause state, for Find's indicator to poll.
-	 *  Sync on purpose: it only copies in-memory state under the queue's own mutex
-	 *  (no file, SQLite or network work), unlike `search_status`.
+	 *  Find's indicator: the real backlog of photos waiting for analysis, whether
+	 *  analysis is running, and the pause state. Sync on purpose: atomics and the
+	 *  queue's own mutex only (no file, SQLite or network work); the service
+	 *  thread does the counting.
 	 */
-	searchQueue: () => __TAURI_INVOKE<Status>("search_queue"),
+	searchAnalysisStatus: () => __TAURI_INVOKE<AnalysisProgress>("search_analysis_status"),
 	searchCacheClear: (rebuild: boolean) => __TAURI_INVOKE<null>("search_cache_clear", { rebuild }),
 	searchModelStatus: () => __TAURI_INVOKE<ModelStatus>("search_model_status"),
 	/**  Diagnostic only. Uses an already opted-in local package, never fetches one. */
@@ -52,9 +53,9 @@ export const commands = {
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
 	createFolder: (parent: string, name: string) => __TAURI_INVOKE<string>("create_folder", { parent, name }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
-	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground }),
+	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground, preferSource, cameraPreview }),
 	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),
-	thumbCached: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size }),
+	thumbCached: (path: string, version: number, size: number, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size, preferSource, cameraPreview }),
 	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
 	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),
 	keywords: () => __TAURI_INVOKE<string[]>("keywords"),
@@ -80,6 +81,10 @@ export const commands = {
 	movePlan: (req: MoveRequest) => __TAURI_INVOKE<MovePlan>("move_plan", { req }),
 	moveFiles: (job: number, req: MoveRequest, copy: boolean, keepBoth: string[]) => __TAURI_INVOKE<MoveSummary>("move_files", { job, req, copy, keepBoth }),
 	moveCancel: (job: number) => __TAURI_INVOKE<void>("move_cancel", { job }),
+	folderMovePlan: (job: number, req: FolderMoveRequest) => __TAURI_INVOKE<FolderMovePlan>("folder_move_plan", { job, req }),
+	folderMove: (job: number, req: FolderMoveRequest, copy: boolean, overwrite: FolderConflict[]) => __TAURI_INVOKE<FolderMoveSummary>("folder_move", { job, req, copy, overwrite }),
+	renamePreview: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_preview", { items }),
+	renameFiles: (items: RenameItem[]) => __TAURI_INVOKE<RenameResult>("rename_files", { items }),
 	exportExisting: (items: ExportItem[], dir: string, subfolder: string | null, format: string) => __TAURI_INVOKE<ExistingFile[]>("export_existing", { items, dir, subfolder, format }),
 	exportPreview: (item: ExportItem, options: ExportOptions, cap: number) => __TAURI_INVOKE<ArrayBuffer>("export_preview", { item, options, cap }),
 	exportPresetsLoad: () => __TAURI_INVOKE<PresetsFile | null>("export_presets_load"),
@@ -138,13 +143,15 @@ export const commands = {
 	lenses: () => __TAURI_INVOKE<LensMenu>("lenses"),
 	wbPresets: () => __TAURI_INVOKE<WbPresets>("wb_presets"),
 	lutFiles: (priority: number, pick: boolean) => __TAURI_INVOKE<LutFiles | null>("lut_files", { priority, pick }),
+	checkerAnalyze: (chart: number, priority: number, optimization: number, scale: number, boxPoints: number[] | null, validate: boolean, imgid: number | null) => __TAURI_INVOKE<CheckerReply>("checker_analyze", { chart, priority, optimization, scale, boxPoints, validate, imgid }),
 	colormappingAcquire: (which: string, n: number) => __TAURI_INVOKE<ColormappingClusters>("colormapping_acquire", { which, n }),
 	lutFolder: (folder: string) => __TAURI_INVOKE<null>("lut_folder", { folder }),
 	pickFolder: (start: string) => __TAURI_INVOKE<string | null>("pick_folder", { start }),
 	watermarks: () => __TAURI_INVOKE<Watermarks>("watermarks"),
 	moduleSchema: (op: string) => __TAURI_INVOKE<ModuleSchema>("module_schema", { op }),
 	instances: () => __TAURI_INVOKE<Instance[]>("instances"),
-	presets: (op: string, priority: number) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority }),
+	presets: (op: string, priority: number, action: string | null, name: string | null, version: number | null, imgid: number | null) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority, action, name, version, imgid }),
+	modulePresetImport: (op: string, priority: number, imgid: number, xml: string) => __TAURI_INVOKE<PresetsReply>("module_preset_import", { op, priority, imgid, xml }),
 	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
@@ -180,6 +187,12 @@ export const commands = {
 	immichTags: () => __TAURI_INVOKE<Named[]>("immich_tags"),
 	immichThumb: (id: string) => __TAURI_INVOKE<ArrayBuffer>("immich_thumb", { id }),
 	immichResolve: (id: string, name: string, path: string, map: PathMap | null) => __TAURI_INVOKE<Resolved>("immich_resolve", { id, name, path, map }),
+	morfPhotoStatus: () => __TAURI_INVOKE<MorfPhotoStatus>("morf_photo_status"),
+	morfPhotoMetrics: () => __TAURI_INVOKE<Value | null>("morf_photo_metrics"),
+	morfPhotoThumbnail: (path: string) => __TAURI_INVOKE<ArrayBuffer>("morf_photo_thumbnail", { path }),
+	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
+	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
+	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
 	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
 	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
 	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
@@ -243,6 +256,14 @@ export type Album = {
 	id: string,
 	name: string,
 	count: number,
+};
+
+export type AnalysisProgress = {
+	installed: boolean,
+	pending: number | null,
+	running: number,
+	active: boolean,
+	paused: boolean,
 };
 
 export type Asset = {
@@ -335,6 +356,14 @@ export type ChannelStats = {
 	max: number,
 };
 
+export type CheckerReply = {
+	radius: number | null,
+	ratio: number | null,
+	centers: number[] | null,
+	report: number[] | null,
+	fields: { [key in string]: number } | null,
+};
+
 export type ChosenFile = {
 	path: string,
 	label?: string | null,
@@ -360,6 +389,13 @@ export type CombineMember = {
 	invert: boolean,
 };
 
+export type Config = {
+	enabled: boolean,
+	url: string,
+	serverPath: string,
+	localPath: string,
+};
+
 export type Counts = {
 	assets: number,
 	variants: number,
@@ -376,6 +412,7 @@ export type DepthMap = {
 
 export type DtPreset = {
 	name: string,
+	version: number,
 	description: string,
 	builtin: boolean,
 	applicable: boolean,
@@ -464,6 +501,38 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+export type FolderConflict = {
+	path: string,
+	checksum: string,
+	bytes: number,
+};
+
+export type FolderMovePlan = {
+	target: string,
+	files: number,
+	photos: number,
+	subfolders: number,
+	links: number,
+	identical: number,
+	merge: boolean,
+	instant: boolean,
+	network: boolean,
+	bytes: number,
+	free: number | null,
+	conflicts: FolderConflict[],
+};
+
+export type FolderMoveRequest = {
+	source: string,
+	dest: string,
+};
+
+export type FolderMoveSummary = {
+	target: string,
+	sourceRemoved: boolean,
+	skipped: number,
 };
 
 export type FolderReply = {
@@ -587,6 +656,7 @@ export type LibraryImage = {
 	keywords: string[],
 	version: number,
 	copy: boolean,
+	morfphotoPreview?: boolean | null,
 };
 
 export type Licenses = {
@@ -603,8 +673,8 @@ export type Limits = {
 };
 
 export type LocalHit = {
-	asset_id: string,
-	variant_id: string,
+	asset_id: string | null,
+	variant_id: string | null,
 	subject: string,
 	score: number | null,
 	image: LibraryImage,
@@ -790,6 +860,12 @@ export type ModuleStateReply = {
 	now: ModuleState,
 };
 
+export type MorfPhotoStatus = {
+	settings: Config,
+	hasKey: boolean,
+	hasStoredKey: boolean,
+};
+
 export type MoveFailure = {
 	name: string,
 	error: string,
@@ -831,7 +907,7 @@ export type Named = {
 	name: string,
 };
 
-export type NativeItem = { type: "item"; id: string; label: string; accel?: string | null } | { type: "separator" } | { type: "submenu"; label: string; items: NativeItem[] } | { type: "predefined"; role: NativeRole };
+export type NativeItem = { type: "item"; id: string; label: string; accel?: string | null; disabled?: boolean } | { type: "separator" } | { type: "submenu"; label: string; items: NativeItem[] } | { type: "predefined"; role: NativeRole };
 
 export type NativeMenu = {
 	label: string,
@@ -931,6 +1007,7 @@ export type PickerStats = {
 	min: [number, number, number],
 	mean: [number, number, number],
 	max: [number, number, number],
+	fourth?: number | null,
 };
 
 export type Place = {
@@ -1068,6 +1145,22 @@ export type Refine = {
 	blur: number,
 	detail: number,
 	contrast: number,
+};
+
+export type RenameItem = {
+	imgid: number,
+	path: string,
+	stem: string,
+};
+
+export type RenameResult = {
+	rows: RenameRow[],
+};
+
+export type RenameRow = {
+	oldPath: string,
+	newPath: string,
+	error: string | null,
 };
 
 export type RenderRequest = {

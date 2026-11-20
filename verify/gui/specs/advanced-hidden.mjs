@@ -59,8 +59,18 @@ async function hits(t, query) {
 }
 // Show all in every group, with the filter empty: one card per group, a Show all in each
 async function showEverything(t) {
-  const n = await t.driver.observe(() => document.querySelectorAll('#module-prefs-advanced section.pref-card').length);
-  for (let k = 1; k <= n; k++) await click(t, `#module-prefs-advanced section.pref-card:nth-of-type(${k}) .module-prefs-bulk button:first-child`);
+  const search = '#module-prefs-advanced .module-prefs-tools input[type=search]';
+  if (await t.driver.observe(s => document.querySelector(s)?.value, search)) {
+    await click(t, search);
+    await t.driver.chord('\uE009', 'a');
+    await t.driver.keys('\uE003');
+    await until(() => t.driver.observe(s => document.querySelector(s)?.value === '', search), 'module filter cleared');
+  }
+  const groups = await t.driver.observe(() => [...document.querySelectorAll('#module-prefs-advanced section.pref-card')]
+    .flatMap((card, index) => card.querySelector('.module-prefs-bulk') ? [index + 1] : []));
+  for (const group of groups)
+    await click(t, `#module-prefs-advanced section.pref-card:nth-of-type(${group}) .module-prefs-bulk button:first-child`);
+  await hiddenNow(t, list => list.length === 0, 'module visibility restored');
 }
 
 export async function advancedHidden(t) {
@@ -143,8 +153,10 @@ export async function advancedHidden(t) {
       // leave nothing hidden, as the profile started
       if (!await t.driver.observe(() => !!document.querySelector('.prefs'))) await openModules(t);
       await showEverything(t);
-      await closePrefs(t);
     } catch { /* the failure above is the one to report */ }
+    finally {
+      if (await t.driver.observe(() => !!document.querySelector('.prefs'))) await closePrefs(t);
+    }
     try {
       const now = await t.driver.observe(() => !!document.querySelector('.advanced-search'));
       if (now !== (original === 'Advanced')) await setMode(t, original);

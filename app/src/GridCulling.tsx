@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { Camera, SlidersHorizontal, Tag, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { easeZoom, ZOOM_EASE } from "./zoom";
 import { loadReadAhead } from "./Preferences";
 import { BanIcon, StarIcon } from "./icons";
 import { commands } from "./commands";
 import { cullingKey, fallbackPhoto, pickCullingTarget, fitLightbox, keywordTargets, previewNeighbors, PreviewQueue, wheelZoom } from "./culling";
-import { LABEL_COLORS, fetchCachedThumb, fetchThumb, type ImageEntry } from "./library";
+import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry } from "./library";
 import { KeywordingPanel, parseKeyword } from "./Keywording";
-import { t } from "./i18n";
+import { ZoomBar } from "./Toolbar";
+import { formatNumber, t } from "./i18n";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, prepare, onEdit, onMeta, onKeywords }: {
+export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
+  activeEditorId?: number;
   prepare: (id: number) => Promise<void>; onEdit: (image: ImageEntry) => void;
   onMeta: (image: ImageEntry, fields: Partial<ImageEntry>) => void;
   onKeywords: (id: number, keywords: string[]) => void;
@@ -25,6 +28,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const direction = useRef<1 | -1>(1);
   const queue = useRef(new PreviewQueue());
   const previews = useRef(new Map<string, ImageBitmap>());
+  const pendingPreviews = useRef(new Map<string, Promise<ImageBitmap | null>>());
   const previewEpoch = useRef(0);
   const [windowSize, setWindowSize] = useState({width: window.innerWidth, height: window.innerHeight});
   const animation = useRef<{ frame: number; width: number; height: number } | null>(null);
@@ -34,6 +38,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   const keywordGeneration = useRef(0);
   const [retry, setRetry] = useState(0);
   const [detail, setDetail] = useState(false);
+  const [cameraPreviews, setCameraPreviews] = useState(false);
   const [photo, setPhoto] = useState<number | null>(null);
   const [targets, setTargets] = useState<ImageEntry[]>([]);
   const [lists, setLists] = useState<string[][]>([]);
@@ -48,10 +53,23 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   zoomRef.current = zoom;
   const setZoom = (value: number | null) => { zoomRef.current = value; setZoomState(value); };
   const detailed = zoom !== null;
+  const cameraFit = cameraPreviews && !detailed;
   const current = images.find(i => i.imgid === photo);
   // The frame is fixed for the window size, independent of photo or preview
   // dimensions, so swapping photos and zooming never moves the toolbar.
   const fitted = fitLightbox(windowSize.width, windowSize.height);
+  const zoomShow = useRef<(scale: number, isFit: boolean) => void>(() => {});
+  const fitScale = () => {
+    const box = viewport.current;
+    if (!box || !current) return 1;
+    const dpr = window.devicePixelRatio || 1;
+    const width = (detail ? paintSize.width : current.width || paintSize.width) / dpr;
+    const height = (detail ? paintSize.height : current.height || paintSize.height) / dpr;
+    return Math.min(box.clientWidth / Math.max(1, width), box.clientHeight / Math.max(1, height));
+  };
+  useLayoutEffect(() => {
+    zoomShow.current(zoom ?? fitScale(), zoom === null);
+  });
   useEffect(() => {
     const resize = () => setWindowSize({width: window.innerWidth, height: window.innerHeight});
     window.addEventListener("resize", resize);
@@ -70,11 +88,8 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
         iy: Math.max(0, Math.min(1, (e.clientY - image.top) / image.height)),
         sx: e.clientX - bounds.left, sy: e.clientY - bounds.top,
       };
-      const dpr = window.devicePixelRatio || 1;
-      const width = (detail ? paintSize.width : current.width || paintSize.width) / dpr;
-      const height = (detail ? paintSize.height : current.height || paintSize.height) / dpr;
-      const fitScale = Math.min(el.clientWidth / Math.max(1, width), el.clientHeight / Math.max(1, height));
-      setZoom(wheelZoom(zoomRef.current ?? fitScale, e.deltaY, e.ctrlKey, fitScale));
+      const fit = fitScale();
+      setZoom(wheelZoom(zoomRef.current ?? fit, e.deltaY, e.ctrlKey, fit));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -118,11 +133,14 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
+      const focused = e.target as HTMLElement | null;
+      const adjustSlider = !!focused?.closest('input[type="range"]') && (k === "arrowleft" || k === "arrowright");
       const chosen = keywordTargets(allImages, selection);
       const target = pickCullingTarget(images, undefined, document.querySelector(".filmstrip.grid .thumb:hover")?.getAttribute("data-imgid"), anchor, selection);
       const { kind, action } = cullingKey(k, {
         photo, keywordsOpen: targets.length > 0, writing,
-        blocked: e.ctrlKey || e.metaKey || e.altKey || !!(e.target as HTMLElement)?.closest("input,textarea,[contenteditable=true]"),
+        blocked: e.ctrlKey || e.metaKey || e.altKey || adjustSlider
+          || !!focused?.closest('input:not([type="range"]),textarea,[contenteditable=true]'),
         modalOpen: !!document.querySelector(".modal-backdrop"),
         hasTarget: !!target || chosen.length > 0, hasCurrent: !!current,
       });
@@ -204,6 +222,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   useLayoutEffect(() => {
     if (!current) {
       ++previewEpoch.current;
+      pendingPreviews.current.clear();
       for (const bitmap of previews.current.values()) bitmap.close();
       previews.current.clear();
       return;
@@ -218,6 +237,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
     const box = viewport.current;
     const size = detailed ? 0 : Math.ceil(Math.max(box?.clientWidth ?? window.innerWidth * .86,
       box?.clientHeight ?? window.innerHeight * .86) * devicePixelRatio);
+
     const draw = (bitmap: ImageBitmap) => {
       if (!stale && canvas.current) {
         if (!detailed && viewport.current && canvas.current) {
@@ -243,27 +263,53 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       canvas.current.width = small.width; canvas.current.height = small.height;
       canvas.current.getContext("2d")?.drawImage(small, 0, 0);
     }
+    const cameraPreviewFor = (entry: ImageEntry, requested: number) =>
+      cameraFit && requested > 0 && entry.edited && fileKind(entry.filename) === "RAW";
     const key = (entry: ImageEntry, requested: number) =>
-      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested]);
+      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested, cameraPreviewFor(entry, requested)]);
     const load = async (entry: ImageEntry, requested: number, foreground = false) => {
       const id = key(entry, requested);
       const cached = previews.current.get(id);
       if (cached) return cached;
-      const bitmap = await fetchCachedThumb(entry, requested) ?? await fetchThumb(entry.imgid, requested, entry, false, foreground);
-      if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
-      if (requested === 0) return bitmap;
-      previews.current.set(id, bitmap);
-      while (previews.current.size > 8) {
-        const oldest = previews.current.keys().next().value!;
-        previews.current.get(oldest)!.close(); previews.current.delete(oldest);
+
+      // Native detail belongs to its caller. The active editor can save edits
+      // before a foreground load without changing the grid entry's version.
+      const share = requested !== 0 && entry.imgid !== activeEditorId;
+      const pending = pendingPreviews.current;
+      const existing = share ? pending.get(id) : undefined;
+      if (existing) return existing;
+
+      const request = (async () => {
+        const kind = fileKind(entry.filename);
+        const preferSource = requested > 0 && !entry.edited && (kind === "RAW" || kind === "JPEG");
+        const cameraPreview = cameraPreviewFor(entry, requested);
+        const disk = await fetchCachedThumb(entry, requested, preferSource, cameraPreview);
+        const bitmap = disk ?? await fetchThumb(entry.imgid, requested, entry, false, foreground, preferSource, cameraPreview);
+        if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
+        if (requested === 0) return bitmap;
+        // In the active editor case an independent load may already have
+        // filled this key. Retire its bitmap before taking ownership.
+        previews.current.get(id)?.close();
+        previews.current.set(id, bitmap);
+        while (previews.current.size > 8) {
+          const oldest = previews.current.keys().next().value!;
+          previews.current.get(oldest)!.close(); previews.current.delete(oldest);
+        }
+        return bitmap;
+      })();
+      if (!share) return request;
+      pending.set(id, request);
+      try {
+        return await request;
+      } finally {
+        if (pending.get(id) === request) pending.delete(id);
       }
-      return bitmap;
     };
     const show = async () => {
       const cached = previews.current.get(key(current, size));
       if (cached) draw(cached);
       else {
-        // Not behind the queue: a neighbor already reading ahead must not delay the shown photo.
+        // A foreground preview starts independently of the speculative queue.
         await prepare(current.imgid);
         if (stale) return;
         const bitmap = await load(current, size, true);
@@ -274,19 +320,23 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
       if (stale) return;
       setDetail(detailed); setBusy(false);
       if (detailed) return;
-      // Let navigation settle before starting speculative native rendering.
+      const { count, both } = loadReadAhead();
+      const neighbors = previewNeighbors(images, current.imgid, direction.current, count, both);
+      if (!neighbors.length) return;
+      const next = images[images.indexOf(current) + direction.current];
+      // Give the next edited photo the full viewing time to render, once
+      // the current Fit preview is ready. Keep the timer cancellable.
       timer = setTimeout(() => {
-        const { count, both } = loadReadAhead();
-        for (const neighbor of previewNeighbors(images, current.imgid, direction.current, count, both)) {
+        for (const neighbor of neighbors) {
           void q.enqueue(async () => { await load(neighbor, size); }).catch(() => {});
         }
-      }, 180);
+      }, next?.edited ? 0 : 180);
     };
     void show().catch(e => { if (!stale) { setError(String(e)); setBusy(false); } });
     return () => { stale = true; clearTimeout(timer); q.replace(); };
-  }, [current?.imgid, current?.version, current?.edited, detailed, retry]);
+  }, [current?.imgid, current?.path, current?.version, current?.edited, activeEditorId, detailed, cameraFit, retry]);
   useEffect(() => { setZoom(null); }, [photo]);
-  useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
+  useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; pendingPreviews.current.clear(); for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
   useEffect(() => {
     if (targets.length && lists.length === targets.length)
       document.querySelector<HTMLInputElement>("[data-grid-keywords-dialog] input")?.focus();
@@ -305,7 +355,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
   };
   const shared = lists.length === targets.length ? (lists[0] ?? []).filter(k => lists.every(l => l.includes(k))) : [];
   return <>
-    {current && <div className="modal-backdrop" style={{ zIndex: 1000, background: "rgba(0, 0, 0, .65)" }}
+    {current && <div className="modal-backdrop culling-backdrop"
       onClick={e => { if (e.target === e.currentTarget) setPhoto(null); }} role="dialog" aria-modal="true" aria-label={t("library.culling.preview")}>
       {([-1, 1] as const).map(dir => {
         const next = images[images.indexOf(current) + dir];
@@ -317,11 +367,24 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
           onClick={() => { if (next) { direction.current = dir; setPhoto(next.imgid); } }} />;
       })}
       <div className="culling-lightbox" style={fitted}>
-        <div>{current.filename} · {images.indexOf(current) + 1}/{images.length}
-          <button onClick={() => setPhoto(null)}>{t("library.culling.close")}</button><button onClick={() => void keywords([current])}>{t("library.culling.keywords")}</button>
-          <button onClick={() => { zoomAnchor.current = null; setZoom(zoomRef.current === null ? 1 : null); }}>{detailed ? t("library.toolbar.fit") : "100%"}</button>
-          <button onClick={() => onEdit(current)}>{t("library.culling.edit")}</button>
-</div>
+        <div className="culling-toolbar">
+          <div className="culling-photo-info">
+            <bdi className="culling-filename" title={current.filename}>{current.filename}</bdi>
+            <span className="culling-photo-count">{formatNumber(images.indexOf(current) + 1)}/{formatNumber(images.length)}</span>
+          </div>
+          <div className="culling-actions">
+            <button type="button" className="tool" aria-pressed={cameraPreviews}
+              aria-label={t("library.culling.cameraPreviews")}
+              title={t("library.culling.cameraPreviewsHint")}
+              onClick={() => setCameraPreviews(value => !value)}><Camera size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-label={t("library.culling.keywords")}
+              title={t("library.culling.keywords")} onClick={() => void keywords([current])}><Tag size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-label={t("library.culling.edit")}
+              title={t("library.culling.edit")} onClick={() => onEdit(current)}><SlidersHorizontal size={16} aria-hidden="true" /></button>
+            <button type="button" className="tool" aria-label={t("library.culling.close")}
+              title={t("library.culling.close")} onClick={() => setPhoto(null)}><X size={16} aria-hidden="true" /></button>
+          </div>
+        </div>
         <div ref={viewport} style={{ flex: 1, overflow: "auto", minHeight: 0,
           cursor: detailed && spaceHeld ? (panning ? "grabbing" : "grab") : detailed ? "zoom-out" : "zoom-in" }}
           onClick={e => {
@@ -353,38 +416,60 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, p
           </div>
         </div>
         <div className="culling-bottom-bar">
-          <span className="tool-group" role="group" aria-label={t("library.culling.rating")}>
-            <button className={`tool${current.rejected ? " on" : ""}`} aria-label={t("library.culling.reject")} aria-pressed={current.rejected}
-              title={t("library.culling.rejectShortcut")} onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
-            {[1, 2, 3, 4, 5].map(n => <button key={n} className="tool"
-              aria-label={t("library.culling.stars", { count: n })} aria-pressed={!current.rejected && current.rating >= n}
-              title={t("library.culling.starsClear", { count: n })}
-              onClick={() => onMeta(current, { rating: current.rating === n ? 0 : n, rejected: false })}>
-              <StarIcon filled={!current.rejected && current.rating >= n} />
-            </button>)}
-          </span>
-          <span className="tool-group" role="group" aria-label={t("library.culling.labels")}>
-            {LABEL_COLORS.map((color, n) => {
-              const name = t(["library.culling.red", "library.culling.yellow", "library.culling.green", "library.culling.blue", "library.culling.purple"][n]);
-              return <button key={color} className={`swatch${current.labels & (1 << n) ? " on" : ""}`}
-                style={{ background: color }} aria-label={t("library.culling.colorLabel", { color: name })} aria-pressed={!!(current.labels & (1 << n))}
-                title={t(n < 4 ? "library.culling.colorLabelShortcut" : "library.culling.colorLabel", { color: name, key: n + 6 })}
-                onClick={() => onMeta(current, { labels: current.labels ^ (1 << n) })} />;
-            })}
-          </span>
+          <div className="culling-rating-controls">
+            <span className="tool-group" role="group" aria-label={t("library.culling.rating")}>
+              <button className={`tool${current.rejected ? " on" : ""}`} aria-label={t("library.culling.reject")} aria-pressed={current.rejected}
+                title={t("library.culling.rejectShortcut")} onClick={() => onMeta(current, { rejected: !current.rejected })}><BanIcon /></button>
+              {[1, 2, 3, 4, 5].map(n => <button key={n} className="tool"
+                aria-label={t("library.culling.stars", { count: n })} aria-pressed={!current.rejected && current.rating >= n}
+                title={t("library.culling.starsClear", { count: n })}
+                onClick={() => onMeta(current, { rating: current.rating === n ? 0 : n, rejected: false })}>
+                <StarIcon filled={!current.rejected && current.rating >= n} />
+              </button>)}
+            </span>
+            <span className="tool-group" role="group" aria-label={t("library.culling.labels")}>
+              {LABEL_COLORS.map((color, n) => {
+                const name = t(["library.culling.red", "library.culling.yellow", "library.culling.green", "library.culling.blue", "library.culling.purple"][n]);
+                return <button key={color} className={`swatch${current.labels & (1 << n) ? " on" : ""}`}
+                  style={{ background: color }} aria-label={t("library.culling.colorLabel", { color: name })} aria-pressed={!!(current.labels & (1 << n))}
+                  title={t(n < 4 ? "library.culling.colorLabelShortcut" : "library.culling.colorLabel", { color: name, key: n + 6 })}
+                  onClick={() => onMeta(current, { labels: current.labels ^ (1 << n) })} />;
+              })}
+            </span>
+          </div>
+          <ZoomBar disabled={false} register={show => {
+            zoomShow.current = show;
+            show(zoomRef.current ?? fitScale(), zoomRef.current === null);
+          }} fit={fitScale} onZoom={value => {
+            zoomAnchor.current = null;
+            setZoom(typeof value === "number" ? value : null);
+          }} onToggle={() => {
+            zoomAnchor.current = null;
+            setZoom(zoomRef.current === null ? 1 : null);
+          }} />
           <span className="culling-status" role="status">{busy ? t("library.culling.loading") : ""}</span>
         </div>
         {error && <div role="alert">{error}<button onClick={() => setRetry(n => n + 1)}>{t("library.culling.retry")}</button></div>}
       </div>
     </div>}
-    {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog" aria-label={t("library.culling.gridKeywords")}>
-      <div className="modal"><h2>{t("library.culling.keywordPhotos", { n: targets.length })}</h2>
-        <fieldset disabled={writing} style={{ border: 0, padding: 0 }}>
-        {lists.length === targets.length && <KeywordingPanel keywords={shared} known={known} open onToggle={() => {}}
-          onAdd={names => { if (!writing) void change(names, []); }}
-          onRemove={name => { if (!writing) void change([], [name]); }} />}
-        </fieldset>
-        {error && <p role="alert">{error}</p>}<button disabled={writing} onClick={() => { ++keywordGeneration.current; setTargets([]); }}>{t("library.culling.close")}</button>
+    {!!targets.length && <div className="modal-backdrop" data-grid-keywords-dialog role="dialog"
+      aria-modal="true" aria-label={t("library.culling.gridKeywords")}>
+      <div className="modal">
+        <div className="modal-head">
+          <h2>{t("library.culling.keywordPhotos", { n: targets.length })}</h2>
+          <button type="button" className="tool" disabled={writing} aria-label={t("library.culling.close")}
+            title={t("library.culling.close")} onClick={() => { ++keywordGeneration.current; setTargets([]); }}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="modal-body">
+          <fieldset className="keyword-dialog-fields" disabled={writing}>
+            {lists.length === targets.length && <KeywordingPanel keywords={shared} known={known}
+              onAdd={names => { if (!writing) void change(names, []); }}
+              onRemove={name => { if (!writing) void change([], [name]); }} />}
+          </fieldset>
+          {error && <p role="alert">{error}</p>}
+        </div>
       </div>
     </div>}
   </>;

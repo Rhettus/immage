@@ -194,10 +194,15 @@ test("soft proof through the Session, and a PDF through print_photo", { timeout:
     assert.equal(await P.applyProof({ mode: "gamut", profile: added.file, intent: 1 }), true);
     s.redraw();
     const gamut = await shot();
-    let cyan = 0;
+    // The proof profile clips display cyan to a lighter cyan (darktable e3bdad457b).
+    const isCyan = (pixels, i) => {
+      const [r, g, b] = pixels.subarray(i, i + 3);
+      return Math.min(g, b) > 200 && Math.min(g, b) - r > 50 && Math.abs(g - b) < 10;
+    };
+    let marked = 0;
     for (let i = 0; i < gamut.pixels.length; i += 4)
-      if (gamut.pixels[i] < 40 && gamut.pixels[i + 1] > 200 && gamut.pixels[i + 2] > 200) cyan++;
-    assert.ok(cyan > 0, "the gamut warning marks the colors outside cyan");
+      if (isCyan(gamut.pixels, i) && !isCyan(proofed.pixels, i)) marked++;
+    assert.ok(marked > 0, "enabling the gamut warning adds cyan marks");
 
     assert.equal(await P.applyProof(P.NO_PROOF), true);
     s.redraw();

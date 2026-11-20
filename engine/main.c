@@ -405,7 +405,9 @@ static gboolean _cmd_thumb(JsonObject *req, JsonBuilder *b, char **err)
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   if(!dest || !library_thumb(json_object_get_int_member_with_default(req, "imgid", 0),
                       json_object_get_int_member_with_default(req, "size", 256),
-                      json_object_get_boolean_member_with_default(req, "proof", FALSE), dest, b, err))
+                      json_object_get_boolean_member_with_default(req, "proof", FALSE),
+                      json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
+                      json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, err))
     return FALSE;
   return TRUE;
 }
@@ -415,7 +417,9 @@ static gboolean _cmd_prefetch(JsonObject *req, JsonBuilder *b, char **err)
 // the reply does not wait for the decode. `imgids` in the order to
 // decode them, or one `imgid`
   JsonArray *ids = json_object_has_member(req, "imgids") ? json_object_get_array_member(req, "imgids") : NULL;
-  const guint n = ids ? MIN(json_array_get_length(ids), 16) : 1;
+  // beyond what the cache holds beside the open photo, a decode only pushes
+  // out the neighbors decoded first
+  const guint n = ids ? MIN(json_array_get_length(ids), MIN(16, dt_worker_threads())) : 1;
   dt_imgid_t list[16];
   for(guint k = 0; k < n; k++)
     list[k] = ids ? json_array_get_int_element(ids, k) : json_object_get_int_member_with_default(req, "imgid", 0);
@@ -620,6 +624,11 @@ static gboolean _cmd_forget(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_forget_folder(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return library_forget_folder(json_object_get_string_member_with_default(req, "path", NULL), err);
+}
+
 static gboolean _cmd_sidecars(JsonObject *req, JsonBuilder *b, char **err)
 {
   if(!library_sidecars(json_object_get_int_member_with_default(req, "imgid", 0), b, err)) return FALSE;
@@ -783,7 +792,12 @@ static gboolean _cmd_module_state(JsonObject *req, JsonBuilder *b, char **err)
 static gboolean _cmd_presets(JsonObject *req, JsonBuilder *b, char **err)
 {
   return session_presets(json_object_get_string_member_with_default(req, "op", NULL),
-                         json_object_get_int_member_with_default(req, "priority", 0), b, err);
+                         json_object_get_int_member_with_default(req, "priority", 0),
+                         json_object_get_string_member_with_default(req, "action", NULL),
+                         json_object_get_string_member_with_default(req, "name", NULL),
+                         json_object_get_int_member_with_default(req, "version", -1),
+                         json_object_get_int_member_with_default(req, "imgid", -1),
+                         json_object_get_string_member_with_default(req, "xml", NULL), b, err);
 }
 
 static gboolean _cmd_get(JsonObject *req, JsonBuilder *b, char **err)
@@ -927,19 +941,28 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
   }
   else
   {
-    if(ppm && !session_write_ppm(ppm, pipe->backbuf, w, h))
+    session_pixels_t pixels = { 0 };
+    if((ppm || (rgba && !sink)) && !session_pixels_get(pipe, &pixels))
     {
+      *err = g_strdup("the render left no pixels");
+      return FALSE;
+    }
+    if(ppm && !session_write_ppm(ppm, pixels.bgra, w, h))
+    {
+      session_pixels_release(&pixels);
       *err = g_strdup_printf("could not write '%s'", ppm);
       return FALSE;
     }
     const gint64 t1 = g_get_monotonic_time();
     double output_ms[4] = {0};
     if(sink) memcpy(output_ms, output.timings, sizeof(output_ms));
-    if(rgba && !sink && !session_write_rgba(rgba, pipe->backbuf, w, h, output_ms))
+    if(rgba && !sink && !session_write_rgba(rgba, pixels.bgra, w, h, output_ms))
     {
+      session_pixels_release(&pixels);
       *err = g_strdup_printf("could not write '%s'", rgba);
       return FALSE;
     }
+    session_pixels_release(&pixels);
     json_builder_set_member_name(b, "width");
     json_builder_add_int_value(b, w);
     json_builder_set_member_name(b, "height");
@@ -1038,8 +1061,9 @@ static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
               json_object_get_double_member_with_default(req, "y", 0.5),
               json_object_has_member(req, "box") && !json_object_get_null_member(req, "box")
                 ? json_object_get_array_member(req, "box") : NULL,
-              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor")
-                ? _STAGE_NEGADOCTOR : _STAGE_ANCHOR,
+              !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor") ? _STAGE_NEGADOCTOR
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "temperature") ? _STAGE_TEMPERATURE
+                : _STAGE_ANCHOR,
               b, err))
     return FALSE;
   return TRUE;
@@ -1228,7 +1252,15 @@ static gboolean _cmd_preview(JsonObject *req, JsonBuilder *b, char **err)
   int w = 0, h = 0;
   const char *rgba = json_object_get_string_member_with_default(req, "rgba", NULL);
   if(!rgba || !session_preview(req, &w, &h, err)) return FALSE;
-  if(!session_write_rgba(rgba, _s.ppipe.backbuf, w, h, NULL))
+  session_pixels_t pixels;
+  if(!session_pixels_get(&_s.ppipe, &pixels))
+  {
+    *err = g_strdup("the preview left no pixels");
+    return FALSE;
+  }
+  const gboolean written = session_write_rgba(rgba, pixels.bgra, w, h, NULL);
+  session_pixels_release(&pixels);
+  if(!written)
   {
     *err = g_strdup_printf("could not write '%s'", rgba);
     return FALSE;
@@ -1322,6 +1354,7 @@ static const eng_cmd_t _commands[] =
   { "copy", _cmd_copy, 0 },
   { "remove_copy", _cmd_remove_copy, 0 },
   { "forget", _cmd_forget, 0 },
+  { "forget_folder", _cmd_forget_folder, 0 },
   { "sidecars", _cmd_sidecars, 0 },
   { "version", _cmd_version, 0 },
   { "hdr_merge", _cmd_hdr_merge, 0 },
@@ -1337,6 +1370,7 @@ static const eng_cmd_t _commands[] =
   { "color_profiles", _cmd_color_profiles, _CMD_NEEDS_OPEN },
   { "wb_presets", _cmd_wb_presets, _CMD_NEEDS_OPEN },
   { "lut_files", _cmd_lut_files, _CMD_NEEDS_OPEN },
+  { "checker_analyze", checker_analyze, _CMD_NEEDS_OPEN },
   { "colormapping_acquire", _cmd_colormapping_acquire, _CMD_NEEDS_OPEN },
   { "lut_folder", _cmd_lut_folder, 0 },
   { "thumb_threads", _cmd_thumb_threads, 0 },

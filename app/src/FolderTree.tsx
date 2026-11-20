@@ -12,8 +12,8 @@ import { commands, type SubFolder, type Volume } from "./commands";
 import { FILE_MANAGER } from "./ExportDialog";
 import { useMenuClose } from "./FileMenu";
 import { NameEdit } from "./MasksPanel";
-import { baseName } from "./paths";
-import { usePhotoDrag } from "./photoDrag";
+import { baseName, within } from "./paths";
+import { pressPhoto, usePhotoDrag } from "./photoDrag";
 import { t } from "./i18n";
 
 // the drive a folder is on (folder_volumes, volumes.rs)
@@ -26,7 +26,7 @@ const chevron = (
 );
 
 export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
-                             onToggle, onFold, onOpen, onRemove, onRenameHost, onError }: {
+                             onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
   hostNames: Record<string, string>;   // the user's names for servers, by host
@@ -43,6 +43,8 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   onFold: (mount: string) => void;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
+  onDropFolder: (source: string, dest: string, copy: boolean) => void;
+  transfer: { source: string; target: string } | null;
   onRenameHost: (host: string, name: string) => void;  // "" goes back to the host
   onError: (message: string) => void;
 }) {
@@ -113,18 +115,24 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     const open = expanded.has(path);
     const kids = open ? children.get(path)?.filter((k) => !hidden.has(k.path)) : undefined;
     const holdsPhoto = path === photo && path !== current;
-    opens.current.set(path, hasChildren && !offline);
+    const busy = transfer && [transfer.source, transfer.target].some((root) => within(path, root));
+    opens.current.set(path, hasChildren && !offline && !busy);
     // the photos' own folder, or a drive not answering, takes no drop
-    const refuse = offline || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
+    const refuse = offline || busy || (drag !== null && drag.from.length === 1 && drag.from[0] === path);
     const target = drag !== null && drag.over === path;
     return (
       <li key={path}>
         <div className={`folder-row${path === current ? " active" : ""}${holdsPhoto ? " has-photo" : ""}${offline ? " offline" : ""}`
                         + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
              data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
-             title={offline ? t("library.folders.pathOffline", { path }) : path}
+             title={busy ? t("dialogs.folderMove.busy") : offline ? t("library.folders.pathOffline", { path }) : path}
              ref={path === photo ? reveal : undefined}
-             style={{ paddingLeft: 8 + depth * 14 }} onClick={() => onOpen(path)}
+             style={{ paddingLeft: 8 + depth * 14 }} onClick={() => { if (!busy) onOpen(path); }}
+             onPointerDown={(e) => {
+               if (offline || transfer || (e.target as Element).closest("button, input")) return;
+               pressPhoto(e, { folder: { path, name }, count: () => 1, from: () => [path],
+                 drop: (dest, copy) => onDropFolder(path, dest, copy) });
+             }}
              onContextMenu={(e) => {
                e.preventDefault();
                e.stopPropagation();
@@ -149,7 +157,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                 </div>
               </li>
             )}
-            {kids?.map((k) => row(k.path, k.name, depth + 1, k.has_children))}
+            {kids?.map((k) => row(k.path, k.name, depth + 1, k.has_children, offline))}
           </ul>
         )}
       </li>

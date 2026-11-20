@@ -51,10 +51,11 @@ engine_flags="-DCMAKE_BUILD_TYPE=Release -DUSE_AI=ON -DUSE_LUA=OFF
   -DUSE_CAMERA_SUPPORT=OFF -DUSE_COLORD=OFF -DUSE_GMIC=OFF -DUSE_GRAPHICSMAGICK=OFF
   -DUSE_ICU=OFF -DUSE_IMAGEMAGICK=OFF -DUSE_KWALLET=OFF -DUSE_LIBSECRET=OFF
   -DUSE_MAC_INTEGRATION=OFF -DUSE_MAP=OFF -DUSE_OPENCV=ON -DOpenCV_ROOT=$root/build/opencv/install
-  -DUSE_PORTMIDI=OFF -DUSE_SDL2=OFF -DBUILD_PRINT=ON"
+  -DUSE_PORTMIDI=OFF -DUSE_SDL2=OFF -DUSE_WAYLAND=OFF -DBUILD_PRINT=ON"
 
 case "$(uname -s)" in
   Darwin)
+    python3 -I scripts/fetch_onnxruntime.py
     if [ ! -f build/build.ninja ]; then
       cmake -S darktable -B build -G Ninja $engine_flags \
             -DOpenMP_ROOT="$(brew --prefix libomp)" -DIMMAGE_ROOT="$root"
@@ -62,6 +63,7 @@ case "$(uname -s)" in
     sh app/scripts/build_dmg.sh
     ;;
   Linux)
+    python3 -I scripts/fetch_onnxruntime.py
     # generic x86-64, not darktable's default -march=native: that is the
     # build machine's CPU, and the AppImage dies with an illegal instruction
     # on one without all its extensions (cmake/march-mtune.cmake)

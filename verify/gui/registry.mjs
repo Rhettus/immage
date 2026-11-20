@@ -31,7 +31,7 @@ import { themes, workspaceLayout } from './specs/themes.mjs';
 import { engineRestart } from './specs/engine-restart.mjs';
 import { saveFailure } from './specs/save-failure.mjs';
 import { supportBundle } from './specs/support-bundle.mjs';
-import { menus, menusGuards } from './specs/menus.mjs';
+import { menus, menusGuards, menusViewMode } from './specs/menus.mjs';
 import * as release0450 from './specs/release-0450.mjs';
 import { hostileText } from './specs/hostile-text.mjs';
 import { settingsStore } from './specs/settings-store.mjs';
@@ -47,6 +47,7 @@ import { advancedHidden } from './specs/advanced-hidden.mjs';
 import { advancedSync } from './specs/advanced-sync.mjs';
 import { advancedEditors } from './specs/advanced-editors.mjs';
 import { advancedColorCards } from './specs/advanced-color-cards.mjs';
+import { advancedChecker } from './specs/advanced-checker.mjs';
 import { advancedCurveCards } from './specs/advanced-curve-cards.mjs';
 import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
 import { advancedFileCards } from './specs/advanced-file-cards.mjs';
@@ -54,11 +55,14 @@ import { panelPeek } from './specs/panel-peek.mjs';
 import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
+import { moveFolders } from './specs/move-folders.mjs';
+import { renamePhotos } from './specs/rename-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
 import { libraryMenuRate } from './specs/library-menu-rate.mjs';
 import { immichPrefs } from './specs/immich-prefs.mjs';
+import { morfphotoPrefs } from './specs/morfphoto-prefs.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
-import { gridCulling, gridCullingControls, gridCullingPriority } from './specs/grid-culling.mjs';
+import { gridCulling, gridCullingControls, gridCullingPriority, virtualCopyKeywords } from './specs/grid-culling.mjs';
 import { openFailureRecovery } from './specs/open-failure.mjs';
 import { photoFilter } from './specs/photo-filter.mjs';
 import { startupRestore } from './specs/startup-restore.mjs';
@@ -66,7 +70,8 @@ import { dngThumbnail } from './specs/dng-thumbnail.mjs';
 import { libraryWorkers } from './specs/library-workers.mjs';
 import { localSearch } from './specs/local-search.mjs';
 import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
-import { findLive, findNoClip, findSizes, findSaved } from './specs/find.mjs';
+import { findLive, findNoClip, findPanelMemory, findSizes, findSaved } from './specs/find.mjs';
+import { wheelUndo } from './specs/wheel-undo.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -77,6 +82,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'grid-culling': gridCulling,
   'grid-culling-controls': gridCullingControls,
   'grid-culling-priority': gridCullingPriority,
+  'virtual-copy-keywords': virtualCopyKeywords,
   'open-failure-recovery': openFailureRecovery,
   'photo-filter': photoFilter,
   'startup-restore': startupRestore,
@@ -87,12 +93,17 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-live': findLive,
   'find-no-clip': findNoClip,
   'find-sizes': findSizes,
+  'find-panel-memory': findPanelMemory,
   'find-saved': findSaved,
+  'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
+  'move-folders': moveFolders,
+  'rename-photos': renamePhotos,
   'move-copy': moveCopy,
   'folder-menu': folderMenu,
   'library-menu-rate': libraryMenuRate,
   'immich-prefs': immichPrefs,
+  'morfphoto-prefs': morfphotoPrefs,
   'detail-group': detailGroup,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,
@@ -125,6 +136,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'save-failure': saveFailure,
   'support-bundle': supportBundle,
   'menus-guards': menusGuards,
+  'menus-view-mode': menusViewMode,
   'hostile-text': hostileText,
   'settings-store': settingsStore,
   'space-pan': release0450.spacePanTools,
@@ -143,6 +155,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-sync': advancedSync,
   'advanced-editors': advancedEditors,
   'advanced-color-cards': advancedColorCards,
+  'advanced-checker': advancedChecker,
   'advanced-curve-cards': advancedCurveCards,
   'advanced-raw-cards': advancedRawCards,
   'advanced-file-cards': advancedFileCards,

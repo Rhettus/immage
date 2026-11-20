@@ -7,8 +7,10 @@ import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
 
 
 
+import { CheckerViewer } from "./ModuleChecker";
 import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
 import { advancedEdits } from "./advancedEdits";
+import { fieldText } from "./fieldText";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
@@ -16,6 +18,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
 import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
@@ -39,14 +42,14 @@ import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_
 import { PositiveFooter } from "./PositiveFooter";
 import { filmChanges, paperChanges, presetValues as sfPresetValues, SF_PRESETS, type FetchStatus,
          type Stocks } from "./spektrafilm";
-import { Pipette } from "lucide-react";
+import { ChevronDown, Pipette } from "lucide-react";
 
 import { FrameUpdates, Snapshot } from "./uiUpdates";
 import { PixelCadence, PixelWorker } from "./pixelWorker";
 import { CanvasFrames, FrameGeneration, layerStyle, placeCanvas, resizeCanvas } from "./canvasLayers";
 import { easeZoom, ZOOM_EASE, KEY_ZOOMS, ZOOMS, type Placement, type Zoom } from "./zoom";
 import { Session, colorProfiles, framePlace, instanceKey, mapOpOf, type AdvancedState, type Frame, type InstanceEntry, type HistoryItem, type ModuleState, type View } from "./session";
-import { pushBatchStep, truncateRedo } from "./undoStack";
+import { editGroup, pushBatchStep, startsEditStep, truncateRedo } from "./undoStack";
 import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone";
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
@@ -58,10 +61,10 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { runInBackground, runMerge, runMove, useJobs } from "./background";
+import { nextJobId, runInBackground, runMerge, runMove, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
-import { anchored, neutralize, whitePatch, type WB } from "./wb";
+import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
 
 
 
@@ -75,7 +78,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { autoCheck, relaunch } from "./updates";
 
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
-import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
+import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type PanelPins, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
          type PluginReturn } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
@@ -108,7 +111,7 @@ import { SupportBundleDialog, supportValues, type SupportValues } from "./Suppor
 import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
-import { forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
+import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
@@ -134,15 +137,16 @@ import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filte
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
-import { ActivityBar, JobActivity } from "./ActivityBar";
+import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
+import { RenameDialog } from "./RenameDialog";
 import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
-import { commands, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type Value } from "./commands";
-import { t, t as translate } from "./i18n";
+import { commands, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
+import { formatNumber, t, t as translate } from "./i18n";
 
 const MAX_PREVIEW = 2560;
 
@@ -268,6 +272,8 @@ export default function App() {
     valueUpdates.current!.immediate(old => typeof update === "function" ? update(old) : update);
   useEffect(() => () => valueUpdates.current?.dispose(), []);
   const [status, setStatusRaw] = useState(t("app.status.openFolder"));
+  // changes with every status set, so the same words set again are shown again
+  const [statusStamp, setStatusStamp] = useState(0);
   // a command the engine's exit cut off reports it as an error; while the
   // engine restarts, and just after, that goes to the console: the restart
   // has its own words (engineEvent)
@@ -278,6 +284,17 @@ export default function App() {
       return;
     }
     setStatusRaw(s);
+    setStatusStamp((n) => n + 1);
+  }, []);
+  const [morfPhotoFallback, setMorfPhotoFallback] = useState<{ path: string } | null>(null);
+  const [morfPhotoCoverage, setMorfPhotoCoverage] = useState<{ indexed: number; eligible: number } | null>(null);
+  useEffect(() => {
+    const off = listen<{ indexed: number; eligible: number }>("morfphoto-coverage", ({ payload }) => setMorfPhotoCoverage(payload));
+    return () => { void off.then(unlisten => unlisten()); };
+  }, []);
+  useEffect(() => {
+    const off = listen<string>("morfphoto-fallback", ({ payload }) => setMorfPhotoFallback({ path: payload }));
+    return () => { void off.then(unlisten => unlisten()); };
   }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
@@ -299,6 +316,7 @@ export default function App() {
   };
   const toggleSide = (k: PanelKey) => {
     slide();
+    if ((k === "find" || k === "right") && !layout[k]) revealRightPanel();
     setLayout((l) => ({ ...l, [k]: !l[k] }));
   };
   // Lightroom's Tab and ⇧Tab: the panels away, and back as they were
@@ -329,7 +347,7 @@ export default function App() {
     if (leaving) setGrid(false);
     if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
-    if (!layout.right) toggleSide("right");
+    if (!layout.right && !(leaving && mode === "adjust")) toggleSide("right");
   };
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
   const [metaText, setMetaText] = useState<TextFields | null>(null);
@@ -354,7 +372,6 @@ export default function App() {
   // Preferences closes), with the server's URL for links into its web app.
   // with `immich` set, the filmstrip holds that search's results, not a folder
   const pendingSearchMetadata = useRef(new Set<Promise<unknown>>());
-  const [imageQuery, setImageQuery] = useState<string | null>(null);
   const [immichBase, setImmichBase] = useState<string | null>(null);
   // without Immich configured, a stored search that asks for it is turned to this computer's, once,
   // as the Search in choices hold no Immich then
@@ -403,8 +420,6 @@ export default function App() {
   const immichBaseRef = useRef(immichBase);
   immichBaseRef.current = immichBase;
   const find: FindState = { search: immichForm, filter };
-  const [findOpen, setFindOpen] = useState(false);
-  const findButton = useRef<HTMLButtonElement>(null);
   // the saved filter the Find state came from, and its dialogs
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveDialog, setSaveDialog] = useState(false);
@@ -428,7 +443,6 @@ export default function App() {
     window.clearTimeout(immichTimer.current);
     const leaving = !needsSearch(next, avail) && !!immichRef.current && !!folderRef.current;
     // back to the open folder, as choosing it does, with the filter on at once
-    // (showFolder starts a new folder unfiltered, so the filter is set after it)
     if (leaving) void showFolder(folderRef.current!);
     immichFormRef.current = next.search; setImmichForm(next.search);
     filterRef.current = next.filter; setFilter(next.filter);
@@ -483,9 +497,13 @@ export default function App() {
   // toolbar, below) and away a moment after the pointer leaves it, so the
   // photo keeps the whole window and never re-renders as panels come and go
   const [autoHide, setAutoHide] = useState(loadAutoHide);
-  const [pins, setPins] = useState<Pins>(loadPins);
+  const [pins, setPins] = useState<PanelPins>(loadPins);
   const [revealed, setRevealed] = useState<Pins>({ left: false, right: false, strip: false });
   const revealedRef = useRef(revealed);
+  const revealRightPanel = () => {
+    revealedRef.current = { ...revealedRef.current, right: true };
+    setRevealed(revealedRef.current);
+  };
   const leftAside = useRef<HTMLElement>(null);
   const rightAside = useRef<HTMLElement>(null);
   const rail = useRef<HTMLElement>(null);
@@ -501,7 +519,7 @@ export default function App() {
     return () => ro.disconnect();
   }, []);
   const floatingRef = useRef<Pins>({ left: false, right: false, strip: false });
-  const pinButton = (side: keyof Pins) => autoHide && (
+  const pinButton = (side: keyof PanelPins) => autoHide && (
     <button className={`tool pin${pins[side] ? " on" : ""}`}
             title={pins[side] ? t("app.pin.unpin") : t("app.pin.pin")}
             onClick={() => setPins((p) => { const n = { ...p, [side]: !p[side] }; storePins(n); return n; })}>
@@ -548,6 +566,7 @@ export default function App() {
     setStatus(message);
     return message;
   };
+  const [renameGroups, setRenameGroups] = useState<ImageEntry[][] | null>(null);
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; imgid: number | null; targets: ImageEntry[] } | null>(null);
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
@@ -573,6 +592,11 @@ export default function App() {
   // photos dropped on a folder, waiting for the confirmation (MoveDialog)
   const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
                                                  plan: MovePlan | null; error: string | null } | null>(null);
+  const [folderMoveDialog, setFolderMoveDialog] = useState<{
+    job: number; req: FolderMoveRequest; copy: boolean; plan: FolderMovePlan | null; error: string | null;
+  } | null>(null);
+  const [folderTransfer, setFolderTransfer] = useState<{ source: string; target: string } | null>(null);
+  const folderMoveBusy = useRef(false);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
   const [editMode, setEditMode] = useState(loadEditMode);
@@ -645,6 +669,12 @@ export default function App() {
   const rightOpen = layout.right && (!grid || rightMode === "print");
   // in the grid the right-hand column holds Find, locked in place, in the tools' stead
   const findLocked = grid && rightMode !== "print";
+  const rightPanel = findLocked ? "find" : "right";
+  const rightWidthKey = findLocked ? "findWidth" : "rightWidth";
+  const rightWidth = layout[rightWidthKey];
+  const rightPanelOpen = layout[rightPanel];
+  const rightPanelRef = useRef<"find" | "right">(rightPanel);
+  rightPanelRef.current = rightPanel;
   const [findFocus, setFindFocus] = useState(0);
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
@@ -2467,7 +2497,7 @@ export default function App() {
       layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
       if (!mb) continue;
       layerStyle(mb, "left", `${ox / dpr}px`);
       layerStyle(mb, "top", `${oy / dpr}px`);
@@ -2690,6 +2720,13 @@ export default function App() {
   const uprightBusyRef = useRef(false);
   const guideBox = useRef<HTMLDivElement>(null);
   const negBox = useRef<HTMLDivElement>(null);
+  const checkerBox = useRef<HTMLDivElement | null>(null);
+  const [checkerHost, setCheckerHost] = useState<HTMLDivElement | null>(null);
+  const setCheckerBox = useCallback((el: HTMLDivElement | null) => {
+    checkerBox.current = el;
+    setCheckerHost(el);
+  }, []);
+  const [checkerActive, setCheckerActive] = useState<string | null>(null);
   // the guides where they show, mapped from the input image after each frame
   const [guidesShown, setGuidesShown] = useState<Guide[]>([]);
   const baseOf = (r: UprightFit): [string, number][] =>
@@ -2832,6 +2869,12 @@ export default function App() {
   const [picking, setPickingState] = useState(false);
   const pickingRef = useRef(false);
   const setPicking = (on: boolean) => { pickingRef.current = on; setPickingState(on); };
+  // the white balance card's picker: a box dragged over the photo, or a click
+  const [wbPicking, setWbPickingState] = useState(false);
+  const wbPickingRef = useRef(false);
+  const setWbPicking = (on: boolean) => { wbPickingRef.current = on; setWbPickingState(on); };
+  const wbDrag = useRef<{ ix: number; iy: number; x: number; y: number } | null>(null);
+  const [wbBox, setWbBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const refineWB = (px: Uint8ClampedArray, width: number, height: number) => {
     const t = wbTarget.current, s = session.current;
@@ -3063,16 +3106,13 @@ export default function App() {
                             seen?: (got: ImageEntry[]) => void): Promise<ImageEntry[] | null> => {
     window.clearTimeout(immichTimer.current);
     setImmich(null);
-    setImageQuery(null);
     combined.current?.cancel();
     setFolder(dir);
     saveLibrary({ current: dir });
     if (!again) {
       shownGen.current++;
       loader.current!.clear();
-      // a new folder starts unfiltered: one left on Rejected only looked empty
-      setFilter(NO_FILTER);
-      // and the search half back to this folder, so the stars and ticks filter it live
+      // Return to browsing this folder with the current filters.
       const fs = folderSearch(immichFormRef.current);
       immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
       showSkip(false);
@@ -3164,7 +3204,6 @@ export default function App() {
       await Promise.allSettled((["local", "immich"] as const).map(source => combined.current!.loadMore(source)));
       return;
     }
-    if (!imageVariant) setImageQuery(null);
     thumbError.current = false;
     loader.current!.clear();
     setReading(null);
@@ -3184,7 +3223,6 @@ export default function App() {
       const q = similarSearch(immichFormRef.current);
       immichFormRef.current = q; setImmichForm(q); storeSearch(q);
       window.clearTimeout(immichTimer.current);
-      setImageQuery(hit.filename);
       await searchImmich(q, false, variant);
     } catch (e) { setStatus(t("app.status.similarPhotosError", { error: e })); }
   };
@@ -3357,8 +3395,9 @@ export default function App() {
 
   // the application menus: a drawn strip on Windows and Linux, the native
   // menu bar on macOS; both run the same actions as the keys
+  const disabledMenuActionsRef = useRef<ReadonlySet<ActionId>>(new Set());
   const runMenuAction = useCallback((id: ActionId) => {
-    if (pastingRef.current) return;
+    if (pastingRef.current || disabledMenuActionsRef.current.has(id)) return;
     const el = document.activeElement as HTMLInputElement | null;
     if (fieldKeeps(el, "a")) {
       const editing = ["undo", "redo", "select-all", "cut", "copy", "paste"];
@@ -3378,7 +3417,6 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!IS_MAC) return;
-    void commands.menuSet(nativeSpec(MENUS)).catch(() => {});
     const off = listen<string>("menu", (e) => runMenuAction(e.payload as ActionId));
     return () => { void off.then((f) => f()); };
   }, [runMenuAction]);
@@ -3391,9 +3429,12 @@ export default function App() {
   const [engineNotice, setEngineNotice] = useState<EngineNotice>(null);
   // the last background save's failure, until a save works
   const [saveError, setSaveError] = useState<string | null>(null);
+  // the "keeps stopping" message faded away; shown again by the next failure
+  const [failedHidden, setFailedHidden] = useState(false);
+  useEffect(() => { if (engineNotice?.kind !== "failed") setFailedHidden(false); }, [engineNotice?.kind]);
   // what the page had open when the engine went down, until a restore is done
   const lost = useRef<{ path: string | null; copy: number | null; before: boolean; proof: Proof;
-                        folder: string | null; search: ImmichSearch | null; filter: Filter } | null>(null);
+                        folder: string | null; search: ImmichSearch | null } | null>(null);
   const restoreGen = useRef(0);
   const engineEventRef = useRef<(e: EngineEvent) => void>(() => {});
   engineEventRef.current = (e) => {
@@ -3404,7 +3445,7 @@ export default function App() {
       lost.current ??= {
         path: cur?.path ?? null,
         copy: cur && imagesRef.current.find((i) => isOpen(i, cur))?.copy ? imagesRef.current.find((i) => isOpen(i, cur))?.version ?? null : null,
-        before: beforeRef.current, proof: proofRef.current, folder: folderRef.current, search: immichRef.current?.search ?? null, filter,
+        before: beforeRef.current, proof: proofRef.current, folder: folderRef.current, search: immichRef.current?.search ?? null,
       };
       // nothing more goes to an engine that is gone
       session.current?.abandon();
@@ -3434,8 +3475,6 @@ export default function App() {
       }
       else if (l.folder) {
         await showFolder(l.folder);
-        // a new folder starts unfiltered; this is the same one, read again
-        setFilter(l.filter);
       }
       if (stale()) return;
       if (l.proof.mode !== "off") {
@@ -3650,7 +3689,7 @@ export default function App() {
   // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
   // what moving them there would do, for the confirmation
   const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
-    if (!list.length || moveDialog) return;
+    if (!list.length || moveDialog || folderMoveDialog) return;
     const req: MoveRequest = {
       sources: list.map((i) => (isRemote(i) && i.remote
         ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
@@ -3713,6 +3752,186 @@ export default function App() {
     const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
     const arrived = now === dest || (includeSubRef.current && within(dest, now));
     if (stayed || arrived) await showFolder(now, true);
+  };
+  const askFolderMove = (source: string, dest: string, copy: boolean) => {
+    if (folderMoveBusy.current) return;
+    folderMoveBusy.current = true;
+    const req = { source, dest };
+    const job = nextJobId();
+    setFolderMoveDialog({ job, req, copy, plan: null, error: null });
+    void commands.folderMovePlan(job, req).then(
+      (plan) => setFolderMoveDialog((d) => d?.job === job ? { ...d, plan } : d),
+      (error) => setFolderMoveDialog((d) => d?.job === job ? { ...d, error: String(error) } : d),
+    );
+  };
+  const closeFolderMove = () => {
+    if (folderMoveDialog && !folderMoveDialog.plan) void commands.moveCancel(folderMoveDialog.job);
+    folderMoveBusy.current = false;
+    setFolderMoveDialog(null);
+  };
+  const confirmFolderMove = async (copy: boolean, overwrite: FolderConflict[]) => {
+    const d = folderMoveDialog;
+    if (!d?.plan || folderTransfer) return;
+    const { req, plan } = d;
+    const gone = (i: ImageEntry) => !isRemote(i) && within(i.path, req.source);
+    setFolderMoveDialog(null);
+    setFolderTransfer({ source: req.source, target: plan.target });
+    if (!copy) {
+      const current = currentRef.current;
+      pendingDeletes.current.add(gone);
+      updateImages(imagesRef.current);
+      try {
+        if (current && within(current.path, req.source)) await leavePhoto(gone);
+      } catch (error) {
+        pendingDeletes.current.delete(gone);
+        folderMoveBusy.current = false;
+        setFolderTransfer(null);
+        if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
+        setStatus(t("app.status.moveError", { error }));
+        return;
+      }
+    }
+    const named = { name: baseName(req.source) };
+    const retry = { label: t("dialogs.common.retry"), run: () => askFolderMove(req.source, req.dest, copy) };
+    const outcome = await runMove(
+      t(copy ? "dialogs.folderMove.copying" : "dialogs.folderMove.moving", named), plan.files,
+      async (job) => {
+        try {
+          return { result: await commands.folderMove(job, req, copy, overwrite), error: null };
+        } catch (error) {
+          return { result: null, error: String(error) };
+        }
+      },
+      ({ result, error }) => {
+        if (!result) return {
+          text: error === "cancelled" ? t("dialogs.folderMove.stopped", named)
+            : t("dialogs.folderMove.failed", { ...named, error }),
+          ok: false, action: retry,
+        };
+        if (result.skipped || (!copy && !result.sourceRemoved)) return {
+          text: result.skipped ? t("dialogs.folderMove.partial", {
+            ...named, n: result.skipped, number: formatNumber(result.skipped),
+          }) : t("dialogs.folderMove.sourceRemains", named),
+          ok: false, action: retry,
+        };
+        return { text: t(copy ? "dialogs.folderMove.copied" : "dialogs.folderMove.moved", named), ok: true,
+          action: { label: t("dialogs.folderMove.show"), run: () => { void showFolder(result.target); setGrid(true); } } };
+      }, t("app.status.moveError", { error: named.name }),
+    );
+    pendingDeletes.current.delete(gone);
+    folderMoveBusy.current = false;
+    setFolderTransfer(null);
+    const result = outcome?.result;
+    const now = folderRef.current;
+    if (result?.sourceRemoved) {
+      const target = result.target;
+      const rebase = (path: string) => within(path, req.source) ? target + path.slice(req.source.length) : path;
+      const mapped = [...new Set(foldersRef.current.map(rebase))];
+      const roots = mapped.filter((path) => !within(path, target)
+        || !mapped.some((other) => path !== other && within(path, other)));
+      foldersRef.current = roots;
+      setFolders(roots);
+      const last = loadLibrary().image;
+      saveLibrary({ folders: roots, ...(last ? { image: rebase(last) } : {}) });
+      const open = new Set([...expandedRef.current].map(rebase));
+      expandedRef.current = open;
+      setExpandedTo(open);
+      const concealed = new Set([...hiddenRef.current].map(rebase));
+      hiddenRef.current = concealed;
+      setHidden(concealed);
+      saveLibrary({ hidden: [...concealed] });
+      addPathToLibrary(target);
+      if (now && !immichRef.current && within(now, req.source)) {
+        await showFolder(rebase(now));
+        return;
+      }
+    } else setFolderRefresh((n) => n + 1);
+    if (now && !immichRef.current && (within(now, req.source) || within(now, plan.target)
+      || (includeSubRef.current && (within(req.source, now) || within(plan.target, now))))) {
+      await showFolder(now, true);
+    }
+  };
+  const startRename = (targets: ImageEntry[]) => {
+    const stacks = new Map<string, ImageEntry[]>();
+    const byId = new Map(imagesRef.current.map((photo) => [photo.imgid, photo]));
+    for (const [id, companions] of partnersRef.current) {
+      const raw = byId.get(id);
+      if (!raw || isRemote(raw)) continue;
+      const group = [raw, ...companions.filter((i) => !isRemote(i))];
+      for (const photo of group) stacks.set(photo.path, group);
+    }
+    const order = new Map(shownRef.current.map((photo, n) => [photo.imgid, n]));
+    const sorted = [...targets].sort((a, b) => (order.get(a.imgid) ?? Infinity) - (order.get(b.imgid) ?? Infinity));
+    const seen = new Set<string>();
+    const groups: ImageEntry[][] = [];
+    for (const photo of sorted) {
+      if (seen.has(photo.path)) continue;
+      const stack = stacks.get(photo.path);
+      const group = stack?.map((member) => member.path === photo.path ? photo : member) ?? [photo];
+      groups.push(group);
+      for (const member of group) seen.add(member.path);
+    }
+    if (groups.length) setRenameGroups(groups);
+  };
+
+  const applyRename = async (items: RenameItem[]) => {
+    const folder = folderRef.current;
+    const search = combined.current?.getState();
+    const query = search?.query as SearchQuery | null | undefined;
+    const selected = imagesRef.current.filter((photo) => selectionRef.current.has(photo.imgid));
+    const anchor = imagesRef.current.find((photo) => photo.imgid === pickAnchor.current);
+    await openChain.current;
+    const active = imagesRef.current.find((photo) => isOpen(photo))
+      ?? (openCell && isOpen(openCell) ? openCell : null);
+    const leaving = !!active && items.some((item) => item.path === active.path);
+    if (leaving) {
+      if (croppingRef.current) leaveCrop(true);
+      await closePhoto(true);
+    }
+
+    const result = await commands.renameFiles(items).catch(async (error) => {
+      if (leaving) await openFile(active.path, active.imgid);
+      throw error;
+    });
+
+    const moved = new Map(result.rows
+      .filter((row) => !row.error && row.oldPath !== row.newPath)
+      .map((row) => [row.oldPath, row.newPath]));
+    const refresh = moved.size > 0 || result.rows.some((row) => row.error);
+    if (refresh) {
+      loader.current!.clear();
+      updateImages(imagesRef.current.filter((photo) => !moved.has(photo.path)));
+      if (search && query && search.generation === combined.current?.getState().generation) {
+        const enabled = (["local", "immich"] as const).filter(source => search.sources[source].status !== "idle");
+        await combined.current!.search(query, enabled);
+      } else if (folder && folder === folderRef.current && !immichRef.current) {
+        await showFolder(folder, true);
+      }
+    }
+
+    const identity = (path: string, version?: number) => JSON.stringify([path, version ?? 0]);
+    const refreshed = new Map(imagesRef.current.map((photo) => [identity(photo.path, photo.version), photo]));
+    const matching = (photo: ImageEntry) => refreshed.get(identity(moved.get(photo.path) ?? photo.path, photo.version));
+    if (leaving) {
+      const path = moved.get(active.path) ?? active.path;
+      let restored = matching(active);
+      if (!restored && active.copy) {
+        // A name-based Find query may no longer include the renamed copy.
+        const photos = await openFolder(parentDir(path)).catch(() => []);
+        restored = photos.find((photo) => photo.path === path && photo.version === active.version);
+      }
+      if (restored) await openFile(restored.path, restored.imgid);
+      else if (!active.copy) await openFile(path);
+    }
+    if (refresh) {
+      setSelection(new Set(selected.flatMap((photo) => {
+        const match = matching(photo);
+        return match ? [match.imgid] : [];
+      })));
+      pickAnchor.current = anchor ? matching(anchor)?.imgid ?? null : null;
+    }
+    if (moved.size) setStatus(t("dialogs.rename.success", { n: moved.size, count: formatNumber(moved.size) }));
+    return result.rows;
   };
   const deleteRejected = async (list: ImageEntry[]) => {
     if (!list.length) return;
@@ -3801,10 +4020,10 @@ export default function App() {
   };
 
   // no photo open: the last one was deleted
-  const closePhoto = async () => {
+  const closePhoto = async (confirmSave = false) => {
     const s = session.current;
     if (!s) return;
-    await s.close();
+    await s.close(confirmSave);
     session.current = null;
     currentRef.current = null;
     setCurrent(null);
@@ -4060,6 +4279,7 @@ export default function App() {
         baseLowRes.current = false;
         prefetchNext(s);
       };
+      s.onWbAreaPick = () => { setWbPicking(true); setStatus(t("fields.module.wb.pickAreaHint")); };
       s.onCopy = (f) => {
         const cc = copyCanvas.current, gen = ++copyGen.current;
         if (!f) {
@@ -4121,8 +4341,7 @@ export default function App() {
         void syncEditedKeywords(s.imgid, edited);
         if (edited) void fillEditedMeta(s.imgid);
       };
-      // kept on screen until a save works: the status line is cleared by the
-      // next frame painted, which follows a failed save within a second
+      // shown for a while (it fades after 15 seconds) or until a save works
       s.onSaveError = (e) => {
         if (session.current !== s) return;
         const why = e.replace(/^error:\s*/i, "");
@@ -4298,26 +4517,33 @@ export default function App() {
   // the History panel follows the stack, which is kept outside React
   const [historyRev, setHistoryRev] = useState(0);
   const [historyBase, setHistoryBase] = useState<HistoryItem[]>([]);
-  // Simple: per group, the Advanced edits its sliders cannot show, read
-  // again after each history change (a photo opened, undo, a paste)
-  const [advancedEditCounts, setAdvancedEditCounts] = useState<Map<string, number>>(new Map());
+  // Both the header and Simple's group badges follow the effective module edits.
+  const [advancedSummary, setAdvancedSummary] = useState<{
+    session: Session; photo: Opened; edits: ReturnType<typeof advancedEdits<Instance>>;
+  } | null>(null);
   useEffect(() => {
     const s = session.current;
-    if (editMode !== "simple" || !s) { setAdvancedEditCounts(new Map()); return; }
+    if (!s || !current || current.imgid !== s.imgid) return;
     let live = true;
-    void s.settled().then(() => commands.instances())
-      .then((list) => { if (live && session.current === s) setAdvancedEditCounts(advancedEdits(list)); })
-      .catch(() => { /* the photo closed meanwhile */ });
+    const active = () => live && session.current === s && currentRef.current === current;
+    void s.settled().then(async () => {
+      if (!active()) return;
+      const list = await commands.instances();
+      if (active()) setAdvancedSummary({ session: s, photo: current, edits: advancedEdits(list) });
+    }).catch(() => { if (active()) setAdvancedSummary(null); });
     return () => { live = false; };
-  }, [editMode, historyRev]);
-  const record = (ids: string[], label?: string) => {
+  }, [current, historyRev]);
+  const photoAdvancedEdits = advancedSummary?.photo === current && advancedSummary.session === session.current
+    ? advancedSummary.edits : null;
+  const modeLabel = t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced");
+  const record = (ids: string[], label?: string, gesture?: number) => {
     const s = session.current;
     if (!s || holdRecord.current) return;
     // what Immage gave a new photo stays its unedited state; this is the
     // user's own first change (auto tone's are made quietly)
     s.endBaseline();
-    const key = [...ids].sort().join(","), now = performance.now(), u = undo.current;
-    const step = key !== u.key || now - u.at > 1000;
+    const key = editGroup(ids, gesture), now = performance.now(), u = undo.current;
+    const step = startsEditStep(u, key, now, gesture);
     if (step) {
       u.past.push(snapshot(s, label ?? stepName(ids)));
       if (u.past.length > 200) discardPastes(u.past.splice(0, 1));
@@ -4675,7 +4901,7 @@ export default function App() {
     showRight("negative");
   };
   // what a box holds at negadoctor's input, once the edits ahead of it are in
-  const negSample = async (box: [number, number, number, number]): Promise<Stats> => {
+  const negSample = async (box: [number, number, number, number], stage = "negadoctor"): Promise<Stats> => {
     const s = session.current!;
     let stopped = false;
     while (!s.idle && session.current === s) {
@@ -4683,9 +4909,21 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 30));
     }
     try {
-      return (await commands.sample((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box, "negadoctor")).picker!;
+      return (await commands.sample((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box, stage)).picker!;
     } finally {
       if (stopped) resumeBase();
+    }
+  };
+  // temperature.c, color_picker_apply: the coefficients that make the area neutral
+  const pickWbArea = async (box: [number, number, number, number]) => {
+    const s = session.current;
+    if (!s) return;
+    try {
+      const { mean, fourth } = await negSample(box, "temperature") as Stats & { fourth?: number | null };
+      record(["adv:temperature#0:wb_pick"], "White balance");
+      s.setFields("temperature", 0, pickedCoefficients([...mean, fourth ?? 0]));
+    } catch (e) {
+      setStatus(t("app.status.sampleError", { error: e }));
     }
   };
   // tone mappers from darktable that no slider covers, and modules a
@@ -5230,7 +5468,7 @@ export default function App() {
   pastePreviousRef.current = () => pastePrevious();
   startOverRef.current = () => void startOver();
 
-  const changeMany = (entries: [string, number][], label?: string) => {
+  const changeMany = (entries: [string, number][], label?: string, gesture?: number) => {
     const s = session.current;
     entries = [...new Map(entries)];
     if (!entries.length || entries.every(([id, v]) => s?.values[id] === v)) return;
@@ -5242,7 +5480,8 @@ export default function App() {
       if (entries.some(([id]) => id.startsWith("vig_") && id !== "vig_amount")) vigMoved();
     }
     if (entries.some(([id]) => id.startsWith("tf_"))) tfMoved();
-    record(entries.map(([id]) => id), label);
+    if (gesture !== undefined) setAmount(null);
+    record(entries.map(([id]) => id), label, gesture);
     baseStale.current = true;
     setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
     session.current?.setMany(entries, dragging.current);
@@ -5476,6 +5715,15 @@ export default function App() {
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (lineRef.current) return;
     if (!current || croppingRef.current || !viewZ.current) return;
+    if (wbPickingRef.current) {
+      const { sx, sy } = paneXY(e.clientX, e.clientY);
+      const { ix, iy } = imageAt(sx, sy);
+      if (ix >= 0 && ix <= 1 && iy >= 0 && iy <= 1) {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        wbDrag.current = { ix, iy, x: e.clientX, y: e.clientY };
+      }
+      return;
+    }
     if (pickingRef.current) {
       const { sx, sy } = paneXY(e.clientX, e.clientY);
       const { ix, iy } = imageAt(sx, sy);
@@ -5488,6 +5736,12 @@ export default function App() {
   };
   const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     moveProbe(e);
+    if (wbDrag.current) {
+      const v = viewer.current!.getBoundingClientRect(), d = wbDrag.current;
+      setWbBox({ left: Math.min(d.x, e.clientX) - v.left, top: Math.min(d.y, e.clientY) - v.top,
+                 width: Math.abs(e.clientX - d.x), height: Math.abs(e.clientY - d.y) });
+      return;
+    }
     if (lineRef.current) {
       const v = viewer.current!.getBoundingClientRect();
       lineRef.current = { ...lineRef.current, x1: e.clientX - v.left, y1: e.clientY - v.top };
@@ -5506,6 +5760,18 @@ export default function App() {
     placeLayers();
   };
   const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (wbDrag.current) {
+      const d = wbDrag.current, { sx, sy } = paneXY(e.clientX, e.clientY), { ix, iy } = imageAt(sx, sy);
+      const clamp = (v: number) => Math.min(1, Math.max(0, v));
+      wbDrag.current = null;
+      setWbBox(null);
+      setWbPicking(false);
+      // a click reads a few pixels round the point
+      const clicked = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4, r = clicked ? 0.004 : 0;
+      void pickWbArea([clamp(Math.min(d.ix, ix) - r), clamp(Math.min(d.iy, iy) - r),
+                       clamp(Math.max(d.ix, ix) + r), clamp(Math.max(d.iy, iy) + r)]);
+      return;
+    }
     if (lineRef.current) { finishStraighten(); return; }
     const d = drag.current;
     drag.current = null;
@@ -5832,7 +6098,7 @@ export default function App() {
           return next;
         });
       },
-      "hide-panels": () => { hidePanels(["left", "right"]); },
+      "hide-panels": () => { hidePanels(["left", rightPanelRef.current]); },
       "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
       "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
       "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
@@ -5906,7 +6172,7 @@ export default function App() {
       if (previewRef.current) {
         if (e.key === "f" || e.key === "F" || e.key === "Escape") { e.preventDefault(); e.key === "Escape" ? setPreview(false) : run("fullscreen-preview"); return; }
         if (!/^([zZyYxXiIlL\\0-9]|ArrowLeft|ArrowRight)$/.test(e.key)) return;
-      } else if ((e.key === "f" || e.key === "F") && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
+      } else if ((e.key === "f" || e.key === "F") && !gridRef.current && session.current) { e.preventDefault(); run("fullscreen-preview"); return; }
       // I cycles the info over the photo: file, exposure, none, as Lightroom's
       if ((e.key === "i" || e.key === "I") && session.current) { run("info-overlay"); return; }
       // L steps the canvas: dark, neutral gray, white. Lightroom sets it only
@@ -5917,7 +6183,7 @@ export default function App() {
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        if (e.shiftKey) hidePanels(["left", "right", "strip"]); else run("hide-panels");
+        if (e.shiftKey) hidePanels(["left", rightPanelRef.current, "strip"]); else run("hide-panels");
         return;
       }
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
@@ -5936,6 +6202,7 @@ export default function App() {
         else if (e.key === "x" || e.key === "X") chooseAspect(cropRef.current.aspect, !cropRef.current.portrait);
         return;
       }
+      if (wbPickingRef.current && e.key === "Escape") { wbDrag.current = null; setWbBox(null); setWbPicking(false); return; }
       if (pickingRef.current && e.key === "Escape") { setPicking(false); return; }
       // W picks white balance from the image, as in Lightroom
       if ((e.key === "w" || e.key === "W") && session.current && session.current.values.neg_on !== 1) {
@@ -6043,6 +6310,16 @@ export default function App() {
   const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
   const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
   const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
+  const hasPhoto = current !== null;
+  const disabledMenuActions = useMemo(
+    () => disabledViewActions(grid, hasPhoto, hasCullingPhotos, cropping, preview),
+    [grid, hasPhoto, hasCullingPhotos, cropping, preview],
+  );
+  disabledMenuActionsRef.current = disabledMenuActions;
+  useEffect(() => {
+    if (IS_MAC) void commands.menuSet(nativeSpec(MENUS, disabledMenuActions)).catch(() => {});
+  }, [disabledMenuActions]);
   const passingRaws = stackPairs ? new Set(passing.filter(stackRaw).map((i) => pairKey(i.path))) : null;
   const provisional = unread.filter((k) => !stacked(k) && !(!k.copy && isCompanion(k.filename) && passingRaws?.has(pairKey(k.path))));
   const cells: (ImageEntry | Known)[] = provisional.length ? withKnown(shown, provisional) : shown;
@@ -6192,51 +6469,41 @@ export default function App() {
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
     left: autoHide && !touring && !preview && layout.left && !pins.left,
-    right: autoHide && !touring && !preview && layout.right && !pins.right,
+    right: autoHide && !touring && !preview && rightPanelOpen && !pins[rightPanel],
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
-  // the toolbar's Find button: the popup, or in the grid the column, shown if hidden, with the box focused
+  // the toolbar's Find button: Find is the grid's right-hand column, so this goes to
+  // the grid (from Print, back to that column), shows the column if hidden and
+  // puts the cursor in the box
   const toggleFind = () => {
-    if (!findLocked) { setFindOpen((o) => !o); return; }
-    if (!layout.right) toggleSide("right");
-    revealedRef.current = { ...revealedRef.current, right: true };
-    setRevealed(revealedRef.current);
+    if (!grid) setGrid(true);
+    if (rightMode === "print") setRightMode("adjust");
+    if (layout.find) revealRightPanel();
+    else toggleSide("find");
     setFindFocus((n) => n + 1);
   };
-  useEffect(() => { if (findLocked) setFindOpen(false); }, [findLocked]);
-  const renderFind = (locked: boolean) => (
+  // spent on leaving, or coming back to the grid would take the keyboard for the box
+  useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
+  const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-              smart={smartAvailable(clipReady, !!immichBase)} analysis={clipReady}
+              smart={smartAvailable(clipReady, !!immichBase)}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
               } : undefined}
               count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
-              onShow={() => { setFindOpen(false); setGrid(true); }} onClose={() => setFindOpen(false)}
               saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                                button={<>{t("library.find.saved.load")}<ChevronDown size={12} strokeWidth={1.8} /></>}
                                 onManage={() => setManageSaved(true)} />}
               savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              anchor={() => findButton.current?.getBoundingClientRect()}
-              bounds={() => {
-                // the photo area: across the filmstrip, clear of a side panel shown over
-                // it (auto-hide), from the top of the viewer to the toolbar
-                const sr = stripSlot.current?.getBoundingClientRect();
-                if (!sr) return undefined;
-                const l = leftAside.current?.getBoundingClientRect(), r = rightAside.current?.getBoundingClientRect();
-                return {
-                  left: l && l.width && l.right > 0 ? Math.max(sr.left, l.right) : sr.left,
-                  right: r && r.width && r.left < window.innerWidth ? Math.min(sr.right, r.left) : sr.right,
-                  top: viewer.current?.parentElement?.getBoundingClientRect().top ?? 0,
-                  bottom: toolbar.current?.getBoundingClientRect().top ?? window.innerHeight,
-                };
-              }} locked={locked} focusToken={findFocus} pin={locked ? pinButton("right") : undefined} />
+              focusToken={findFocus} pin={pinButton("find")} />
   );
-  const docked = { left: layout.left && !floating.left, right: layout.right && !floating.right };
+  const docked = { left: layout.left && !floating.left, right: rightPanelOpen && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
   // arrow keys), and keeps to the photos still listed
@@ -6275,6 +6542,9 @@ export default function App() {
   }, [photoDir]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
+    <CheckerViewer.Provider value={{ host: current && !grid && !cropping && !preview && !before && !holding
+      && !sheet && !cellsPage && baMode === "off" && compare === null ? checkerHost : null,
+      active: checkerActive, setActive: setCheckerActive, photo: current }}>
     <div className={`window${preview ? " preview" : ""}`} data-module-choices={JSON.stringify(Object.fromEntries(Object.entries(values).filter(([id]) => id.startsWith("mod_"))))}>
     {pasting && <div className="modal-backdrop" data-batch-paste="busy" role="dialog" aria-modal="true" aria-label={t("app.action.pasting")}
       onKeyDownCapture={e => { e.preventDefault(); e.stopPropagation(); }} tabIndex={-1} ref={el => el?.focus()}>
@@ -6283,17 +6553,18 @@ export default function App() {
     {grid && <GridCulling key={folder ?? "remote"} images={shown.filter(i => !isRemote(i))} allImages={images} selection={selection}
       anchor={pickAnchor.current}
       thumbnail={id => loader.current?.get(id)}
+      activeEditorId={session.current?.imgid}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
       onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
-    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} onAction={runMenuAction} />}</div>}
+    {!fullscreen && <div className={`titlebar${!IS_MAC ? " with-menus" : ""}`} data-tauri-drag-region><span data-tauri-drag-region>Immage</span>{!IS_MAC && <MenuBar menus={OTHER_MENUS} disabled={disabledMenuActions} onAction={runMenuAction} />}</div>}
     <div className={`app${sliding ? " sliding" : ""}`} style={{
       gridTemplateColumns: preview ? "0px 0px minmax(0, 1fr) 0px 0px 0px 0px"
         : `${docked.left ? layout.leftWidth : 0}px ${docked.left ? 8 : 0}px minmax(0, 1fr)`
-          + ` ${docked.right ? 8 : 0}px ${docked.right ? layout.rightWidth : 0}px 8px 44px`,
+          + ` ${docked.right ? 8 : 0}px ${docked.right ? rightWidth : 0}px 8px 44px`,
     }}>
       <div className={`slot left-slot${layout.left ? "" : " closed"}${floating.left ? " floating" : ""}`
                       + `${floating.left && revealed.left ? " revealed" : ""}`}>
@@ -6352,7 +6623,10 @@ export default function App() {
               </label>
               <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
-                          refresh={folderRefresh}
+                          refresh={folderRefresh} transfer={folderTransfer}
+                          onDropFolder={(source, dest, copy) => {
+                            if (!folderMoveDialog && !moveDialog && !folderTransfer) askFolderMove(source, dest, copy);
+                          }}
                           icon={<FolderIcon />} driveIcon={<DriveIcon />} networkIcon={<NetworkIcon />}
                           onFold={(m) => {
                             const next = new Set(foldedVolumes);
@@ -6398,10 +6672,11 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
-              onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!onLoupePickDown(e)) onStraightenDown(e); }}
+        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+              onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!(e.target as Element).closest(".checker-corner") && !onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
+          {wbBox && <div className="wb-area-box" style={wbBox} />}
           {sheet && (
             <div className="print-sheet" data-print-page={`${printPage!.page.width}x${printPage!.page.height}`}
                  style={sheet.page}>
@@ -6506,6 +6781,7 @@ export default function App() {
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
               </div>
             )}
+            <div className="mask-box checker-box" ref={setCheckerBox} />
             {negWhole && !cropping && full.current && (
               <div className="mask-box" ref={negBox}>
                 {negArea && (
@@ -6641,37 +6917,47 @@ export default function App() {
             </svg>
           )}
           <div className={`working${working ? " on" : ""}`} title={t("app.status.working")} aria-hidden={!working}><span /></div>
-          <div className="status">{status}{isEngineExit(status) && <button className="status-action"
-            onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
-            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</div>
+          <Notice className="status" stamp={statusStamp} active={status !== ""} onDone={() => setStatusRaw("")}>
+            {status}{isEngineExit(status) && <button className="status-action"
+            onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</Notice>
           <div className="activities">
-          {imageQuery && immich && <div className="activity"><span>{t("app.status.imageQuery", { query: imageQuery })}</span>
-            <button onClick={() => void searchImmich(immichFormRef.current)}>{t("app.status.clearImageQuery")}</button></div>}
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
+          {morfPhotoCoverage && (
+            <Notice className="activity waiting" stamp={morfPhotoCoverage} onDone={() => setMorfPhotoCoverage(null)} role="status">
+              <span>{t("morfphoto.coverage", {
+                indexed: formatNumber(morfPhotoCoverage.indexed),
+                eligible: formatNumber(morfPhotoCoverage.eligible),
+              })}</span>
+            </Notice>
+          )}
+          {morfPhotoFallback && (
+            <Notice className="activity waiting" stamp={morfPhotoFallback} onDone={() => setMorfPhotoFallback(null)} role="status">
+              <span>{t("morfphoto.fallback", morfPhotoFallback)}</span>
+            </Notice>
+          )}
           {engineNotice?.kind === "slow" && (
-            <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
-                 onPointerUp={(e) => e.stopPropagation()}>
+            <div className="activity waiting" {...keepPointer}>
               <span>{t("app.status.engineNotAnswering")}</span>
               <button onClick={hideEngineNotice}>{t("app.status.wait")}</button>
               <button onClick={() => { hideEngineNotice(); void commands.engineRestart().catch((e) => setStatus(t("app.status.error", { error: e }))); }}>{t("app.status.restart")}</button>
             </div>
           )}
           {saveError && (
-            <div className="activity" data-save-error><span className="failed">{t("app.status.saveError", { error: saveError })}</span></div>
+            <Notice className="activity waiting" data-save-error stamp={saveError} onDone={() => setSaveError(null)}>
+              <span className="failed">{t("app.status.saveError", { error: saveError })}</span></Notice>
           )}
-          {engineNotice?.kind === "failed" && (
-            <div className="activity"><span className="failed">{t("app.status.engineKeepsStopping")}</span>
-              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></div>
+          {engineNotice?.kind === "failed" && !failedHidden && (
+            <Notice className="activity waiting" stamp={engineNotice} onDone={() => setFailedHidden(true)}>
+              <span className="failed">{t("app.status.engineKeepsStopping")}</span>
+              <button className="status-action" onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button></Notice>
           )}
           {(() => {
             // the folder's reading, then its thumbnails
-            if (immich?.busy) return <div className="activity"><span>{t("app.status.searching")}</span>
+            if (immich?.busy) return <div className="activity waiting" {...keepPointer}><span>{t("app.status.searching")}</span>
               <button onClick={() => { combined.current?.cancel(); const prev = immichRef.current; if (prev) setImmich({ ...prev, busy: false, next: null }); setStatus(t("app.status.searchStopped")); }}>{t("app.status.stop")}</button></div>;
             const w = waiting[waiting.length - 1];
             if (w && !reading) return (
-              // the viewer's own pointer handling (zoom on click) stays off it
-              <div className="activity waiting" onPointerDown={(e) => e.stopPropagation()}
-                   onPointerUp={(e) => e.stopPropagation()}>
+              <div className="activity waiting" {...keepPointer}>
                 <span>{t("app.status.waiting", { name: w.name, progress: w.total > 1 ? t("app.status.waitingProgress", { back: w.back, total: w.total }) : "" })}</span>
                 <button onClick={() => void commands.pluginCancel(w.token)}>{t("app.status.stopWaiting")}</button>
               </div>
@@ -6688,7 +6974,7 @@ export default function App() {
                // would hide its first or last column (the panels' edges are the
                // viewer's, styles.css: auto-hide), and covers the photo in the gap
                ...(grid && floating.left && revealed.left ? { left: layout.leftWidth, background: "var(--window)" } : {}),
-               ...(grid && floating.right && revealed.right ? { right: layout.rightWidth, background: "var(--window)" } : {}),
+               ...(grid && floating.right && revealed.right ? { right: rightWidth, background: "var(--window)" } : {}),
              } : undefined}
              className={`strip-slot${layout.strip || grid ? "" : " closed"}${floating.strip ? " floating" : ""}`
                         + `${floating.strip && revealed.strip ? " revealed" : ""}${grid ? " grid" : ""}`}>
@@ -6724,8 +7010,8 @@ export default function App() {
                        onMeta={(i, fields) => rateSelection(i, fields)} />
           </div>
         </div>
-        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked ? layout.right : findOpen}
-                 onToggleFind={toggleFind} findButtonRef={findButton}
+        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
+                 onToggleFind={toggleFind}
                  onFindMenu={immich ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
@@ -6757,18 +7043,17 @@ export default function App() {
                    </div>
                  </>}
                  onLayout={toggleSide} />
-        {findOpen && !findLocked && renderFind(false)}
         {saveDialog && <SaveDialog initial="" onCancel={() => setSaveDialog(false)}
                                    onSave={(name) => { setSavedId(addSaved(name, find).id); setSaveDialog(false); }} />}
         {manageSaved && <ManageSavedDialog onClose={() => setManageSaved(false)} />}
       </section>
 
-      <Splitter axis="x" value={layout.rightWidth} min={280} max={620} invert hidden={!docked.right}
-                onChange={(v) => setLayout((l) => ({ ...l, rightWidth: v }))} />
-      <div className={`slot right-slot${layout.right ? "" : " closed"}${floating.right ? " floating" : ""}`
+      <Splitter axis="x" value={rightWidth} min={280} max={620} invert hidden={!docked.right}
+                onChange={(v) => setLayout((l) => ({ ...l, [rightWidthKey]: v }))} />
+      <div className={`slot right-slot${rightPanelOpen ? "" : " closed"}${floating.right ? " floating" : ""}`
                       + `${floating.right && revealed.right ? " revealed" : ""}`}>
-      <aside className="right" ref={rightAside} style={{ width: layout.rightWidth }}>
-        {findLocked && renderFind(true)}
+      <aside className="right" ref={rightAside} style={{ width: rightWidth }}>
+        {findLocked && renderFind()}
         {/* stays mounted under Find, as the zoom bar's photo does in the grid */}
         <div style={{ display: findLocked ? "none" : "contents" }}>
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
@@ -6777,8 +7062,23 @@ export default function App() {
             <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
                       data-tour="advanced-mode"
-                      title={t(editMode === "advanced" ? "app.mode.advancedOn" : "app.mode.switchAdvanced")}>
-                <ModulesIcon /></button>
+                      aria-label={modeLabel}
+                      aria-describedby={photoAdvancedEdits?.modules.length ? "photo-advanced-edits" : undefined}
+                      title={photoAdvancedEdits?.modules.length ? undefined : modeLabel}>
+                <ModulesIcon />
+                {!!photoAdvancedEdits?.modules.length && <>
+                  <span className="advanced-dot" aria-hidden="true" />
+                  <span className="edit-mode-tooltip" id="photo-advanced-edits" role="tooltip">
+                    <span aria-hidden="true">{modeLabel}</span>
+                    <strong>{t("app.mode.adjustedModules")}</strong>
+                    {photoAdvancedEdits.modules.map(({ instance, title }) => (
+                      <span key={`${instance.op}#${instance.priority}`}>
+                        {fieldText(title)}{instance.label ? ` ${instance.label}` : ""}
+                      </span>
+                    ))}
+                  </span>
+                </>}
+            </button>
             <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
@@ -6852,6 +7152,17 @@ export default function App() {
                         onBrush={setBrush}
                         onOverlay={() => overlayEvent("key")}
                         onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
+                        onLocalMany={(entries, gesture) => {
+                          const s = session.current;
+                          const mask = s?.masks.find((m) => m.name === maskSel);
+                          if (!s || !mask || entries.every(([id, v]) => mask.values[id] === v)) return;
+                          adjusted();
+                          overlayEvent("adjust");
+                          record(entries.map(([id]) => `mask:${mask.name}:${id}`),
+                            `${mask.name}: ${t("fields.maskModule.colorGrading")}`, gesture);
+                          s.setLocalMany(mask.name, entries);
+                          syncMasks();
+                        }}
                         onRange={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
                         onDepth={(k, depth, feather) => { refined(); void editDepth(k, depth, feather); }}
                         onFeather={(k, patch) => { refined(); editShapes((sh) => sh.map((x, i) => (i === k ? { ...x, ...patch } as Shape : x))); }}
@@ -7102,7 +7413,7 @@ export default function App() {
                             applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={advancedEditCounts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -7247,8 +7558,11 @@ export default function App() {
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
+    {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
+      onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
+    {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
       const hit = images.find((i) => i.imgid === fileMenu.imgid);
@@ -7271,6 +7585,8 @@ export default function App() {
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
+                  onRename={grid && local.length > 0 && local.length === fileMenu.targets.length
+                    ? () => startRename(local) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
@@ -7397,6 +7713,7 @@ export default function App() {
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
     </div>
+    </CheckerViewer.Provider>
   );
 }
 

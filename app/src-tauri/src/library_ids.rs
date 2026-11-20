@@ -79,7 +79,8 @@ impl LibraryIds {
     pub fn changed(&mut self, req: &Value, reply: &Value) -> Vec<(Photo, bool)> {
         let command = req["cmd"].as_str().unwrap_or_default();
         let mut affected = Vec::new();
-        if matches!(command, "save" | "close" | "open") {
+        // Open and close change the active session. Saved edits arrive separately.
+        if command == "save" {
             if let Some(photo) = self.active.clone() {
                 affected.push((photo, false));
             }
@@ -96,6 +97,21 @@ impl LibraryIds {
                 });
         } else if command == "close" {
             self.active = None;
+        }
+        if command == "forget_folder" {
+            if let Some(path) = req["path"].as_str() {
+                let folder = std::path::Path::new(path);
+                self.real.retain(|photo, id| {
+                    if std::path::Path::new(&photo.path).starts_with(folder) {
+                        self.reverse.remove(id);
+                        return false;
+                    }
+                    true
+                });
+                if self.active.as_ref().is_some_and(|photo| std::path::Path::new(&photo.path).starts_with(folder)) {
+                    self.active = None;
+                }
+            }
         }
         if matches!(
             command,
@@ -249,6 +265,45 @@ pub fn request_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn forgetting_a_folder_clears_engine_ids_for_every_version() {
+        let mut ids = LibraryIds::default();
+        let path = "/library/month/nested/photo.jpg";
+        let sibling = "/library/month-old/photo.jpg";
+        let handles: Vec<_> = (0..=5).map(|version| ids.advertise(path, version)).collect();
+        for version in 0..=5 {
+            ids.reply(&mut json!({"path":path,"version":version,"imgid":version + 1}));
+        }
+        ids.reply(&mut json!({"path":sibling,"version":0,"imgid":7}));
+        ids.changed(&json!({"cmd":"open","path":path,"imgid":1}), &json!({"imgid":1}));
+        ids.changed(&json!({"cmd":"forget_folder","path":"/library/month"}), &json!({}));
+        for id in handles {
+            let photo = ids.photo(id).unwrap().unwrap();
+            assert_eq!(ids.resolved(&photo), None);
+        }
+        assert_eq!(ids.advertise(sibling, 0), 7);
+        assert_eq!(ids.active_photo(), None);
+    }
+
+    #[test]
+    fn browsing_preserves_search_analysis_and_save_targets_the_active_copy() {
+        let mut ids = LibraryIds::default();
+        ids.reply(&mut json!({"images":[
+            {"imgid":1,"path":"/a","version":0},
+            {"imgid":2,"path":"/a","version":2},
+            {"imgid":3,"path":"/b","version":0}
+        ]}));
+        for (path, id) in [("/a", 1), ("/b", 3), ("/a", 2)] {
+            assert!(ids.changed(&json!({"cmd":"open","path":path}), &json!({"imgid":id})).is_empty());
+        }
+        assert_eq!(
+            ids.changed(&json!({"cmd":"save"}), &json!({})),
+            vec![(Photo { path: "/a".into(), version: 2 }, false)],
+        );
+        assert!(ids.changed(&json!({"cmd":"close"}), &json!({})).is_empty());
+        assert_eq!(ids.active_photo(), None);
+    }
+
     #[test]
     fn mutations_target_exact_versions_and_forget_does_not_remove_moved_cache_rows() {
         let mut ids = LibraryIds::default();

@@ -102,15 +102,35 @@ impl DiskCache {
         if self.guard_space && !self.space_free() {
             return Err("cache: the disk is nearly full".into());
         }
+        self.write_at(name, &path, bytes)
+    }
+
+    fn write_at(&self, name: &str, path: &Path, bytes: &[u8]) -> Result<(), String> {
         std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         let part = self.dir.join(format!(".{name}.part"));
         std::fs::write(&part, bytes).map_err(|e| e.to_string())?;
-        std::fs::rename(&part, &path).map_err(|e| {
+        std::fs::rename(&part, path).map_err(|e| {
             let _ = std::fs::remove_file(&part);
             e.to_string()
         })?;
         self.added(name);
         Ok(())
+    }
+
+    // The JPEG is already on this filesystem. Link its new name without
+    // duplicating the data or going through the guard for new thumbnails.
+    fn link_thumbnail(&self, old: &str, new: &str) -> bool {
+        let (Some(old), Some(target)) = (self.path(old), self.path(new)) else { return false };
+        let part = self.dir.join(format!(".{new}.link"));
+        if std::fs::hard_link(old, &part).is_err() { return false; }
+        if std::fs::rename(&part, target).is_err() {
+            let _ = std::fs::remove_file(part);
+            return false;
+        }
+        // Both names may already have pointed to the same inode.
+        let _ = std::fs::remove_file(part);
+        self.added(new);
+        true
     }
 
     // an entry just put in the folder (by write(), or a download made into
@@ -295,6 +315,49 @@ fn named(photo: &Path, version: i64, size: u32, (file, side): (String, String)) 
     format!("{}.jpg", h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
+// Re-key the library grid thumbnail and native-resolution preview using
+// verified stamps. Keep the source cache entry useful for copies and retries.
+pub(crate) fn transfer_thumbs(
+    cache: &DiskCache, source: &Path, dest: &Path, physical_dest: &Path,
+    original: &Listed, copied: Option<&Listed>,
+) {
+    let stamps = |listing: &Listed, path: &Path, version| -> Option<(String, String)> {
+        let file = listing.stamps.get(path)?.as_ref()?.clone();
+        let side = listing.stamps.get(&sidecar(path, version)).and_then(Option::as_deref).unwrap_or("-");
+        Some((file, side.to_string()))
+    };
+    let Some(versions) = original.versions(source) else { return };
+    for version in versions {
+        let Some(old_stamps) = stamps(original, source, version) else { continue };
+        let new_stamps = match copied {
+            Some(listing) => {
+                let Some(stamps) = stamps(listing, dest, version) else { continue };
+                stamps
+            }
+            None => old_stamps.clone(),
+        };
+        // NAS volumes may round timestamps. Only use verified target
+        // timestamps, and reject an extra or newly changed destination edit.
+        let mut checked = false;
+        for size in [240, 0] {
+            let old = named(source, version, size, old_stamps.clone());
+            if !cache.path(&old).is_some_and(|path| path.is_file()) { continue; }
+            if !checked && stamps_now(physical_dest, version).as_ref() != Some(&new_stamps) {
+                break;
+            }
+            checked = true;
+            let new = named(dest, version, size, new_stamps.clone());
+            if (cache.link_thumbnail(&old, &new)
+                || cache.read(&old).is_some_and(|bytes| cache.write(&new, &bytes).is_ok())) && size > 0 {
+                let known = known_name(dest, version, size);
+                if let Some(path) = cache.path(&known) {
+                    let _ = cache.write_at(&known, &path, new.as_bytes());
+                }
+            }
+        }
+    }
+}
+
 // a library thumbnail's name in the cache: the photo's path, size and
 // time, its sidecar's (so an edit, here or in darktable, makes a new one)
 // and the size asked for. None when the photo is not there. the app names
@@ -355,7 +418,13 @@ impl Listed {
     pub fn versions(&self, photo: &Path) -> Option<Vec<i64>> {
         if !self.dirs.contains(photo.parent()?) { return None; }
         let mut versions = self.sidecar_versions.get(photo).cloned().unwrap_or_default();
-        versions.push(0); versions.sort_unstable(); versions.dedup();
+        // Darktable uses the first numbered sidecar as the imported image
+        // when there is no unnumbered sidecar.
+        if versions.is_empty() || self.stamps.contains_key(&sidecar(photo, 0)) {
+            versions.push(0);
+        }
+        versions.sort_unstable();
+        versions.dedup();
         Some(versions)
     }
 
@@ -686,6 +755,67 @@ mod tests {
     }
 
     #[test]
+    fn folder_transfer_preserves_a_stamped_grid_thumbnail() {
+        let temp = tempfile::tempdir_in("target").unwrap();
+        let old_dir = temp.path().join("month");
+        let new_dir = temp.path().join("archive/month");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::create_dir_all(new_dir.parent().unwrap()).unwrap();
+        let old = old_dir.join("photo.jpg");
+        let new = new_dir.join("photo.jpg");
+        std::fs::write(&old, b"photo").unwrap();
+        std::fs::write(sidecar(&old, 2), b"edit").unwrap();
+
+        let caches = Caches::new(&temp.path().join("cache"));
+        let mut listed = Listed::default();
+        let entries = [&old, &sidecar(&old, 2)];
+        listed.add(&old_dir, entries.into_iter().map(|p| {
+            (p.to_path_buf(), Some(stamp(&std::fs::metadata(p).unwrap())))
+        }));
+        let name = thumb_name(&old, 2, 240).unwrap();
+        caches.thumbs.write(&name, b"cached thumbnail").unwrap();
+        std::fs::rename(&old_dir, &new_dir).unwrap();
+
+        *caches.thumbs.space.lock().unwrap() = Some((Instant::now(), false));
+        transfer_thumbs(&caches.thumbs, &old, &new, &new, &listed, None);
+        let new_name = thumb_name(&new, 2, 240).unwrap();
+        assert_eq!(caches.thumbs.read(&new_name).as_deref(), Some(&b"cached thumbnail"[..]));
+        assert_eq!(caches.thumbs.read_known(&new, 2, 240).as_deref(), Some(&b"cached thumbnail"[..]));
+    }
+
+    #[test]
+    fn verified_copy_rekeys_thumbnails_with_destination_timestamps() {
+        use std::fs;
+        use std::time::Duration;
+
+        let temp = tempfile::tempdir_in("target").unwrap();
+        let source = temp.path().join("source.jpg");
+        let target = temp.path().join("target.jpg");
+        fs::write(&source, b"photo").unwrap();
+        fs::copy(&source, &target).unwrap();
+        std::fs::OpenOptions::new().write(true).open(&target).unwrap().set_modified(UNIX_EPOCH + Duration::from_secs(1000)).unwrap();
+        let listing = |path: &Path| {
+            let mut listed = Listed::default();
+            listed.add(path.parent().unwrap(), [
+                (path.to_path_buf(), Some(stamp(&fs::metadata(path).unwrap()))),
+            ]);
+            listed
+        };
+        let original = listing(&source);
+        let verified = listing(&target);
+        let caches = Caches::new(&temp.path().join("cache"));
+        let old = thumb_name(&source, 0, 240).unwrap();
+        caches.thumbs.write(&old, b"cached thumbnail").unwrap();
+
+        transfer_thumbs(&caches.thumbs, &source, &target, &target, &original, Some(&verified));
+        let new = thumb_name(&target, 0, 240).unwrap();
+        assert_eq!(caches.thumbs.read(&new).as_deref(), Some(&b"cached thumbnail"[..]));
+        fs::write(sidecar(&target, 0), b"an extra edit").unwrap();
+        transfer_thumbs(&caches.thumbs, &source, &target, &target, &original, Some(&verified));
+        assert!(caches.thumbs.read(&thumb_name(&target, 0, 240).unwrap()).is_none());
+    }
+
+    #[test]
     fn a_thumbnail_name_follows_the_sidecar() {
         let dir = test_dir("cache-key");
         std::fs::create_dir_all(&dir).unwrap();
@@ -741,6 +871,15 @@ mod tests {
             (sidecar(&photo, 1_000_000), Some("snapshot".into())),
         ]);
         assert_eq!(listed.versions(&photo), Some(vec![0, 2]));
+    }
+
+    #[test]
+    fn listed_versions_use_the_only_numbered_sidecar() {
+        let dir = test_dir("cache-numbered-sidecar");
+        let photo = dir.join("PA150006.ORF");
+        let mut listed = Listed::default();
+        listed.add(&dir, [(sidecar(&photo, 1), Some("edit".into()))]);
+        assert_eq!(listed.versions(&photo), Some(vec![1]));
     }
 
     // a name from the folder's listing is the one a stat gives, so the

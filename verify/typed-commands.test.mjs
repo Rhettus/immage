@@ -48,10 +48,11 @@ test('every #[tauri::command] is listed in collect_commands!', () => {
     .replace(/\/\/[^\n]*/g, '').split(',').map((s) => s.trim()).filter(Boolean)]
     .map((path) => path.split('::').slice(1).join('::')));
   const declared = [];
-  for (const file of readdirSync(root + 'app/src-tauri/src').filter((f) => f.endsWith('.rs'))) {
+  for (const path of walk('app/src-tauri/src/', '.rs')) {
+    const file = path.slice('app/src-tauri/src/'.length);
     const src = rust(file);
     for (const m of src.matchAll(/#\[tauri::command[^\]]*\]((?:\s*#\[[^\]]*\])*)\s*(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?fn\s+([a-z_0-9]+)/g)) {
-      const module = file === 'main.rs' ? '' : file.replace(/\.rs$/, '::');
+      const module = file === 'main.rs' ? '' : file.replace(/\.rs$/, '').replace(/\/mod$/, '').replaceAll('/', '::') + '::';
       declared.push({ path: module + m[2], specta: /specta::specta/.test(m[1]) });
     }
   }

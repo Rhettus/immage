@@ -2,16 +2,27 @@
 import { useSyncExternalStore } from "react";
 import { parseTheme, THEME_TOKENS, validateTheme, type Theme } from './themeValidation';
 import { settings } from "./settings";
+import graphite from './themes/graphite.json' with { type: 'json' };
+import slate from './themes/slate.json' with { type: 'json' };
+import warmAsh from './themes/warm-ash.json' with { type: 'json' };
+import classicGrey from './themes/classic-grey.json' with { type: 'json' };
+import softGrey from './themes/soft-grey.json' with { type: 'json' };
 export { parseTheme, THEME_MAX_BYTES, THEME_TOKENS, validateTheme } from './themeValidation';
 export type { Theme } from './themeValidation';
 
 const dark = { window: '#0e0e0e', panel: '#181818', card: '#1f1f1f', inset: '#262626', hover: '#2a2a2a', text: '#f0f0f0', 'text-2': '#a3a3a3', 'text-3': '#6b6b6b', track: '#2e2e2e', thumb: '#f5f5f5', accent: '#ffffff', border: '#333333', 'on-accent': '#111111', focus: '#a3a3a3', error: '#ef7777', success: '#78bb87', 'graph-bg': '#181818', 'graph-grid': '#262626' };
 export type ThemeEntry = Theme & { id: string };
+// Ordered by the luminance of the window background.
 export const BUILTIN_THEMES: ThemeEntry[] = [
   { id: 'dark', version: 1, name: 'Dark', colorScheme: 'dark', colors: dark },
+  { ...validateTheme(graphite), id: 'graphite' },
+  { ...validateTheme(slate), id: 'slate' },
+  { ...validateTheme(warmAsh), id: 'warm-ash' },
   // darktable-elegant-grey: grey_45 background, grey_95 foreground,
   // grey_55 headers/buttons, grey_40 borders/graphs, grey_80 labels.
   { id: 'grey', version: 1, name: 'Darktable Grey', colorScheme: 'dark', colors: { ...dark, window: '#6a6a6a', panel: '#656565', card: '#848484', inset: '#6a6a6a', hover: '#ababab', text: '#f1f1f1', 'text-2': '#c6c6c6', 'text-3': '#9e9e9e', track: '#5e5e5e', thumb: '#f1f1f1', accent: '#f1f1f1', border: '#5e5e5e', 'on-accent': '#474747', focus: '#c6c6c6', 'graph-bg': '#5e5e5e', 'graph-grid': '#777777' } },
+  { ...validateTheme(classicGrey), id: 'classic-grey' },
+  { ...validateTheme(softGrey), id: 'soft-grey' },
   { id: 'light', version: 1, name: 'Light', colorScheme: 'light', colors: { window: '#e5e5e5', panel: '#f4f4f4', card: '#ffffff', inset: '#e8e8e8', hover: '#d8d8d8', text: '#202020', 'text-2': '#505050', 'text-3': '#707070', track: '#cccccc', thumb: '#333333', accent: '#303030', border: '#bcbcbc', 'on-accent': '#ffffff', focus: '#555555', error: '#b32626', success: '#286b37', 'graph-bg': '#eeeeee', 'graph-grid': '#cccccc' } },
 ];
 const KEY = 'immage.themes.v1';

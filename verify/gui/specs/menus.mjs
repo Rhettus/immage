@@ -350,3 +350,51 @@ export async function menusGuards(t) {
   assert.equal(await t.driver.observe(() => document.querySelectorAll('.kw-chip').length), 0, 'no keyword was added');
   await resetExposure(t, baseline);
 }
+
+export async function menusViewMode(t) {
+  const culling = '[data-menu-item="culling-preview"]';
+  const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
+  const photoReady = () => t.driver.observe(() => {
+    const root = document.querySelector('.culling-lightbox');
+    const canvas = root?.querySelector('canvas');
+    if (!canvas?.width || !canvas.height || root.querySelector('.culling-status')?.textContent.trim()) return false;
+    const pixel = canvas.getContext('2d')?.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1);
+    return pixel?.data[3] === 255;
+  });
+  const assertView = async (mode, disabled, enabled) => {
+    await openMenu(t, 'View');
+    const items = await t.driver.observe(() => [...document.querySelectorAll('.menubar-menu [data-menu-item]')].map(b => ({
+      id: b.dataset.menuItem, disabled: b.disabled, color: getComputedStyle(b).color,
+    })));
+    const byId = new Map(items.map(item => [item.id, item]));
+    for (const id of disabled) {
+      assert.equal(byId.get(id)?.disabled, true, `${mode}: ${id} is disabled`);
+      assert.notEqual(byId.get(id).color, byId.get('hide-panels').color, `${mode}: ${id} is dimmed`);
+    }
+    for (const id of enabled) assert.equal(byId.get(id)?.disabled, false, `${mode}: ${id} is enabled`);
+    t.measure({ name: mode, items });
+    await t.evidence(mode);
+  };
+
+  await assertView('editor-view-menu', ['culling-preview'], ['fullscreen-preview', 'before-after']);
+  const row = await reveal(t, culling);
+  await t.driver.point(row.x, row.y);
+  assert(await expanded(t, 'View'), 'clicking the disabled row leaves the menu open');
+  assert.equal(await t.driver.observe(s => Boolean(document.querySelector(s)), lightbox), false);
+
+  await pick(t, 'View', 'grid');
+  await until(() => t.driver.observe(() => Boolean(document.querySelector('.filmstrip.grid .thumb[data-imgid]'))), 'local thumbnail in the grid');
+  await assertView('grid-view-menu',
+    ['fullscreen-preview', 'zoom-toggle', 'before-after', 'clipping', 'next-scope', 'info-overlay', 'canvas', 'soft-proof'],
+    ['culling-preview', 'zoom-in', 'zoom-out', 'compare']);
+  await pick(t, 'View', 'culling-preview');
+  await until(photoReady, 'culling preview canvas');
+  await t.evidence('grid-culling-from-view-menu');
+  await t.driver.keys(ESC);
+  await until(() => t.driver.observe(s => !document.querySelector(s), lightbox), 'culling preview closed');
+
+  await pick(t, 'View', 'grid');
+  await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'returned to the editor');
+  await assertView('returned-editor-view-menu', ['culling-preview'], ['fullscreen-preview']);
+  await t.driver.keys(ESC);
+}

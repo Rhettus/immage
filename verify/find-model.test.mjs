@@ -47,11 +47,11 @@ test('searchIn and withSearchIn round-trip', () => {
   assert.equal(withSearchIn(NO_SEARCH, 'both').source, 'both');
 });
 
-test('folderSearch returns to the open folder with no words and no filters, keeping the mode', () => {
+test('folderSearch returns to the open folder with no words, keeping filters and mode', () => {
   assert.equal(NO_SEARCH.scope, 'folder');
   const q = folderSearch({ ...NO_SEARCH, source: 'both', scope: 'library', mode: 'filename', text: 'cat', minRating: 3, favorites: true, takenFrom: '2024-01-01' });
   assert.equal(q.source, 'local'); assert.equal(q.scope, 'folder'); assert.equal(q.text, '');
-  assert.equal(q.minRating, 0); assert.equal(q.favorites, false); assert.equal(q.takenFrom, ''); assert.equal(q.mode, 'filename');
+  assert.equal(q.minRating, 3); assert.equal(q.favorites, true); assert.equal(q.takenFrom, '2024-01-01'); assert.equal(q.mode, 'filename');
   assert.equal(needsSearch({ search: q, filter: NO_FILTER }, true), false);
 });
 
@@ -168,6 +168,11 @@ test('clearAll clears the words, keeping where and how', () => {
     { cameras: ['c'], bodies: ['b'], lenses: ['l'], iso: ['100'], kinds: ['RAW'], rejected: 'only', labels: 1, unlabeled: true, edited: 'only' });
   assert.ok(sameFind(clearAll(dirty), st({ ...base, text: '' })));
   assert.deepEqual([clearAll(dirty).search.text, clearAll(dirty).search.mode], ['', 'filename']);
+});
+
+test('active filters count categories, not values', () => {
+  assert.equal(findCount(st({ minRating: 3 }, { minRating: 3, rejected: 'hide' }), false), 1);
+  assert.equal(findCount(st({ minRating: 3 }, { minRating: 3, rejected: 'hide', edited: 'edited' }), false), 2);
 });
 
 test('chips excludes', () => {

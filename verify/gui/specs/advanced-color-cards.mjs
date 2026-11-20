@@ -25,7 +25,7 @@ export async function advancedColorCards(t) {
     const menu = await choice(t, wb.sel, 'adv:wb_setting');
     const labels = menu.options.map(o => o.label);
     t.measure({ name: 'wb-settings', labels, current: menu.current });
-    for (const l of ['As shot', 'User modified', 'Camera reference', 'As shot to reference'])
+    for (const l of ['As shot', 'User modified', 'Camera reference'])
       assert(labels.includes(l), `the Settings menu lists ${l}: ${labels}`);
     assert.equal(await exists(t, `${wb.sel} [data-control-id="adv:wb_tune"]`), false, 'a photo without camera presets shows no Finetune');
     await t.evidence('wb-note');

@@ -40,6 +40,8 @@ a photo open.
 Every rail panel keeps the same header icons in the same order: pin,
 Simple/Advanced mode, expand/collapse all, and Reset all. The stacked-cards
 button switches the shared editing mode, including the controls in Masks.
+A green dot marks active photo adjustments that require Advanced mode. Hover
+over the button or focus it with the keyboard to see the module names.
 Expand/collapse all folds the groups in Adjustments, Presets and Masks;
 it stays visible but disabled in tools without this group-folding control.
 
@@ -174,7 +176,12 @@ the photo:
   steps through them.
 
 The toolbar under the filmstrip also has buttons to show or hide the
-Library panel, the filmstrip and the Adjustments panel.
+Library panel and the filmstrip. In Grid view, the **Find panel** button
+shows or hides Find. In the photo editing view, the **Adjustments panel**
+button controls the editing panel. Immage remembers each panel's width and
+whether it is open when you switch views or relaunch. If you use auto-hide,
+each panel also remembers its own pin. Click its toolbar toggle to reopen a
+closed panel, or hover over the right rail to reveal one that has slid away.
 
 ## Menus
 
@@ -196,7 +203,11 @@ bug report; see [Troubleshooting](troubleshooting.md#support-bundle).
 
 On Windows and Linux, click a menu to open it. While one is open, moving the
 pointer over another menu opens that one. The arrow keys move through the
-items, Enter chooses the highlighted one and Escape closes the menu.
+enabled items, Enter chooses the highlighted one and Escape closes the menu.
+
+The View menu dims commands that are unavailable in the current view. Culling
+Preview requires a local photo in the grid. Full Screen Preview and Before /
+After require a photo in the editor.
 
 Menu items do nothing while a dialog is open, as the keys do. While you type
 in a text field, Edit's Undo, Redo, Cut, Copy, Paste and Select All act on
@@ -207,6 +218,16 @@ the text.
 ⌘Z undoes any edit and ⇧⌘Z redoes it. The undo and redo buttons also sit
 in the toolbar under the filmstrip. See [History, undo and copying
 settings](history-and-sync.md).
+
+## Messages in the corners of the photo
+
+The status text at the bottom right and the notices at the bottom left (a
+finished export, a save error, "The engine keeps stopping") fade away after 15
+seconds. Rest the pointer on one to keep it; it fades 15 seconds after you move
+away. Click it, outside its buttons, to dismiss it at once. Work in progress,
+such as an export's progress, a search with its **Stop** button, or a
+waiting engine, stays until it finishes. Every button in these notices can be
+clicked, and clicking them does not zoom the photo.
 
 ## Checking interface regressions
 

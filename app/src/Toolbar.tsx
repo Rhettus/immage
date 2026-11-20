@@ -3,7 +3,7 @@
 import { BanIcon, FilterIcon, MagnifierIcon, PanelIcon, ResetIcon, SlidersIcon, StarIcon, icon } from "./icons";
 import { effectiveFilter, clearAll, findCount, serverPickers, setStars, withFilter, type FindState } from "./findModel";
 import { LABEL_COLORS } from "./library";
-import { Layout } from "./layoutPrefs";
+import { Layout, PanelKey } from "./layoutPrefs";
 import { ChevronDown } from "lucide-react";
 import { invert } from "./probe";
 import { keys } from "./keys";
@@ -56,8 +56,10 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
 }) {
   const range = useRef<HTMLInputElement>(null);
   const label = useRef<HTMLSpanElement>(null);
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
   const toPos = (z: number) => {
-    const f = fit();
+    const f = fitRef.current();
     if (z >= f) return f >= ZOOM_MAX ? 0 : (1000 * Math.log(z / f)) / Math.log(ZOOM_MAX / f);
     return Math.max(-1000, (1000 * Math.log(z / f)) / Math.log(ZOOM_OUT));
   };
@@ -68,6 +70,7 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   return (
     <div className="tool-group zoom-bar" title={t("library.toolbar.zoomHint")} onDoubleClick={onToggle}>
       <input ref={range} type="range" min={-1000} max={1000} step={1} defaultValue={0} disabled={disabled}
+             aria-label={t("library.toolbar.zoomHint")}
              onChange={(e) => {
                const p = Number(e.target.value), f = fit();
                onZoom(Math.abs(p) < 25 ? "fit" : p > 0 ? f * (ZOOM_MAX / f) ** (p / 1000) : f * ZOOM_OUT ** (p / 1000));
@@ -95,8 +98,8 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 
 // the bar under the filmstrip: rate and reject the open image, filter the
 // folder, and show or hide the side panels and the filmstrip
-export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, findButtonRef, onFindMenu, savedMenu,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid }: {
+export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind, onFindMenu, savedMenu,
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;               // undo, redo, before/after, compare
   grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
@@ -105,12 +108,12 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
   immichAvailable: boolean;
   onFind: (next: FindState, now?: boolean) => void;
   findOpen: boolean;
-  onToggleFind: () => void;                 // the Find button opens and closes the popup; in the grid it shows the column
-  findButtonRef: React.RefObject<HTMLButtonElement | null>;  // the popup's anchor
+  onToggleFind: () => void;                 // opens Grid, shows Find and focuses the search box
   onFindMenu?: (e: React.MouseEvent) => void; // right-click on Find while search results show
   savedMenu: (button: React.ReactNode) => React.ReactNode;   // the Saved menu, with its button drawn here
   layout: Layout; zoomBar: React.ReactNode;
-  onLayout: (k: "left" | "strip" | "right") => void;
+  rightPanel: "right" | "find";
+  onLayout: (k: PanelKey) => void;
 }) {
   const f = find.filter;
   // an Immich-only search has no reject flag or labels, and the stars set the server's
@@ -181,7 +184,7 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
         <span className="sep" />
         {/* Find and its saved filters, as a split button */}
         <div className="find-split">
-          <button ref={findButtonRef} className={`tool find-button${count > 0 ? " on" : ""}${findOpen ? " open" : ""}`} data-tour="find"
+          <button className={`tool find-button${count > 0 ? " on" : ""}${findOpen ? " open" : ""}`} data-tour="find"
                   aria-expanded={findOpen} title={t("library.find.title")} onClick={onToggleFind} onContextMenu={onFindMenu}>
             {count > 0 ? t("library.find.titleCount", { count }) : t("library.find.title")}
           </button>
@@ -209,8 +212,11 @@ export function Toolbar({ find, immichAvailable, onFind, findOpen, onToggleFind,
                 onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
         <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")}
                 onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
-        <button className={`tool${layout.right ? " on" : ""}`} title={t("library.toolbar.adjustmentsPanel")}
-                onClick={() => onLayout("right")}><PanelIcon side="right" /></button>
+        <button className={`tool${layout[rightPanel] ? " on" : ""}`} data-panel-toggle={rightPanel}
+                title={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
+                aria-pressed={layout[rightPanel]} onClick={() => onLayout(rightPanel)}>
+          <PanelIcon side="right" />
+        </button>
         {/* the filmstrip's pin, after the panel switches rather than among them */}
         {pin}
       </div>

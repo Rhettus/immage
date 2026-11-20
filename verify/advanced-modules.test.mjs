@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerHooks } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 // the app's own imports leave out the .ts the bundler adds
 registerHooks({
@@ -305,7 +306,9 @@ test('Simple counts the Advanced edits its sliders cannot show', { skip: skip ||
   if (raw) { photos.push(join(work, 'photos', 'raw' + raw.slice(raw.lastIndexOf('.')))); copyFileSync(raw, photos[1]); }
   const e = new Engine(work);
   t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
-  const counts = async () => Object.fromEntries(advancedEdits((await e.call({ cmd: 'instances' })).instances));
+  const summary = async () => advancedEdits((await e.call({ cmd: 'instances' })).instances);
+  const counts = async () => Object.fromEntries((await summary()).counts);
+  const names = async () => (await summary()).modules.map(({ title }) => title).sort();
   for (const photo of photos.slice(1)) {
     await e.call({ cmd: 'open', path: photo });
     assert.deepEqual(await counts(), {}, `${photo} at open`);
@@ -323,10 +326,12 @@ test('Simple counts the Advanced edits its sliders cannot show', { skip: skip ||
   assert.deepEqual(await counts(), {}, 'Simple\'s own instances');
   const p1 = (await e.call({ cmd: 'instance', action: 'new', op: 'exposure', priority: 0 })).priority;
   await e.call({ cmd: 'set', op: 'exposure', priority: p1, params: { exposure: -0.25 } });
-  await e.call({ cmd: 'set', op: 'velvia', priority: 0, params: { strength: 40 }, enabled: true });
+  await e.call({ cmd: 'set', op: 'velvia', priority: 0, enabled: true });
   assert.deepEqual(await counts(), { basic: 1, hsl: 1 });
+  assert.deepEqual(await names(), ['Exposure', 'Velvia']);
   await e.call({ cmd: 'set', op: 'velvia', priority: 0, enabled: false });
   assert.deepEqual(await counts(), { basic: 1 }, 'a module switched off');
+  assert.deepEqual(await names(), ['Exposure']);
 });
 
 // Advanced mode phase 4: the instance menu's actions on exposure. A second
@@ -471,6 +476,27 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   const named = (await e.call({ cmd: 'instances' })).instances.find((i) => i.op === 'exposure' && i.priority === p1);
   assert.equal(named.name, 'mine');
   assert.equal(named.hand_edited, true);
+  // On a mask card, a preset changes params while keeping the attachment
+  // and the user's switch state, even when the module is off.
+  await e.call({ cmd: 'mask', name: 'Sky', shapes: [
+    { type: 'ellipse', x: .5, y: .5, rx: .3, ry: .3, angle: 0, feather: .2 },
+  ] });
+  await e.call({ cmd: 'set', op: 'exposure', instance: 'Sky', mask: 'Sky',
+    invert: true, opacity: 42, params: { exposure: .5 }, enabled: false });
+  const maskInstance = async () => (await e.call({ cmd: 'instances' })).instances.find((i) =>
+    i.op === 'exposure' && i.owner === 'mask' && i.mask === 'Sky');
+  const masked = await maskInstance();
+  assert.ok(masked);
+  const maskState = { cmd: 'module_state', op: 'exposure', priority: masked.priority };
+  const maskedPreset = await e.call({ ...maskState, preset: ML });
+  assert.notEqual(maskedPreset.was.params, maskedPreset.now.params);
+  assert.equal(maskedPreset.now.blend, maskedPreset.was.blend);
+  assert.equal(maskedPreset.now.enabled, false);
+  assert.equal((await maskInstance()).name, masked.name);
+  assert.equal((await e.call({ cmd: 'presets', op: 'exposure', priority: masked.priority }))
+    .presets.find((p) => p.name === ML).active, true);
+  assert.deepEqual((await e.call({ ...maskState, restore: maskedPreset.was })).now, maskedPreset.was);
+  assert.deepEqual((await e.call({ ...maskState, restore: maskedPreset.now })).now, maskedPreset.now);
   // the preset's params survive a save and reopen
   await e.call({ cmd: 'module_state', op: 'exposure', priority: 0, preset: ML });
   await e.call({ cmd: 'save' });
@@ -478,6 +504,84 @@ test('Advanced mode darktable presets (exposure)', { skip: skip || false }, asyn
   await e.call({ cmd: 'open', path: photo });
   assert.equal((await read('exposure')).params.mode, 1, 'the preset did not survive reopening');
   assert.equal((await read(`exposure@${p1}`)).params.mode, 1);
+  const reopenedMask = await maskInstance();
+  assert.ok(reopenedMask);
+  const reopenedPreset = await e.call({ ...maskState, priority: reopenedMask.priority });
+  assert.equal(reopenedPreset.now.params, maskedPreset.now.params);
+  assert.equal(reopenedPreset.now.enabled, false);
+});
+
+test('Advanced user presets survive restart and can be applied and deleted', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-userpreset-'));
+  const photo = join(work, 'stairs.jpg');
+  const otherPhoto = join(work, 'other.jpg');
+  copyFileSync(SAMPLE, photo);
+  copyFileSync(SAMPLE, otherPhoto);
+  let e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+  const presets = (fields = {}) => e.call({ cmd: 'presets', op: 'exposure', priority: 0, ...fields });
+  const name = 'Éclairage';
+  const { imgid } = await e.call({ cmd: 'open', path: photo });
+  await e.call({ cmd: 'set', op: 'exposure', params: { exposure: .7 }, enabled: true });
+  const state = { cmd: 'module_state', op: 'exposure', priority: 0 };
+  const before = (await e.call(state)).now;
+  const { presets: list } = await presets({ action: 'save', name, imgid });
+  const saved = list.find((p) => p.name === name);
+  assert.equal(saved?.active, true);
+  assert.equal(saved.builtin, false);
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(join(work, 'config', 'data.db'), { readOnly: true });
+  const { blendop_version: blendVersion } = db.prepare('SELECT blendop_version FROM presets WHERE name = ? AND operation = ?').get(name, 'exposure');
+  db.close();
+  const data = Buffer.from(before.params, 'base64');
+  const blend = Buffer.from(before.blend, 'base64').toString('hex');
+  const gz = `gz01${deflateSync(data).toString('base64')}`;
+  const darktablePreset = ({ title = 'From &amp; darktable', operation = 'exposure', version = saved.version,
+                             params = gz } = {}) => `<?xml version="1.0" encoding="UTF-8"?>
+<darktable_preset version="1.0"><preset><name>${title}</name><description>A preset from darktable</description>
+<operation>${operation}</operation><op_params>${params}</op_params><op_version>${version}</op_version>
+<enabled>1</enabled><autoapply>1</autoapply><filter>1</filter><maker>Another camera</maker>
+<blendop_params>${blend}</blendop_params><blendop_version>${blendVersion}</blendop_version>
+<multi_name>Imported exposure</multi_name><multi_name_hand_edited>1</multi_name_hand_edited></preset></darktable_preset>`;
+  const importedName = 'From & darktable';
+  const importPreset = (xml) => presets({ action: 'import', xml, imgid });
+  const imported = (await importPreset(darktablePreset())).presets.find(p => p.name === importedName);
+  assert.equal(imported?.active, true);
+  assert.equal(imported.builtin, false);
+  assert.equal(imported.description, 'A preset from darktable');
+  await assert.rejects(importPreset(darktablePreset()), /UNIQUE/);
+  await assert.rejects(importPreset(darktablePreset({ operation: 'agx' })), /different darktable module/);
+  await assert.rejects(importPreset(darktablePreset({ version: saved.version + 1 })), /incompatible/);
+  await assert.rejects(importPreset(darktablePreset({ params: 'gz00broken' })), /invalid adjustment data/);
+  await assert.rejects(importPreset(darktablePreset({ params: '000' })), /invalid adjustment data/);
+  await assert.rejects(importPreset('<!DOCTYPE darktable_preset><darktable_preset/>'), /invalid darktable preset/);
+  const builtin = list.find((p) => p.builtin && p.applicable);
+  assert.ok(builtin);
+  await assert.rejects(presets({ action: 'delete', name: builtin.name, version: builtin.version }), /user preset/);
+  await assert.rejects(presets({ action: 'save', name: builtin.name }), /UNIQUE/);
+  await assert.rejects(presets({ action: 'save', name }), /UNIQUE/);
+  await assert.rejects(presets({ action: 'save', name: 'Wrong photo', imgid: imgid + 1000 }), /active photo changed/);
+  assert.deepEqual((await e.call(state)).now, before, 'preset management leaves the photo state alone');
+
+  const exited = new Promise((resolve) => e.child.once('exit', resolve));
+  e.stop();
+  await exited;
+  e = new Engine(work);
+  await e.call({ cmd: 'open', path: otherPhoto });
+  assert.ok((await presets()).presets.some((p) => p.name === name));
+  const { now } = await e.call({ ...state, preset: name });
+  assert.equal(now.params, before.params);
+  assert.equal(now.blend, before.blend);
+  assert.equal(now.enabled, before.enabled);
+  const removed = await presets({ action: 'delete', name, version: saved.version });
+  assert.ok(!removed.presets.some((p) => p.name === name));
+  assert.ok(removed.presets.some((p) => p.name === builtin.name));
+  assert.deepEqual((await e.call(state)).now, now, 'deleting a preset preserves the applied edit');
+  assert.ok(removed.presets.some((p) => p.name === importedName), 'import persists on another photo after restart');
+  const restored = await e.call({ ...state, preset: importedName });
+  assert.deepEqual(restored.now, before, 'the exported settings load byte for byte');
+  await presets({ action: 'delete', name: importedName, version: imported.version });
+
 });
 
 // every card layout (app/src/advancedLayout.ts) against darktable's schema:
@@ -1323,6 +1427,63 @@ test('Advanced alignment and composite photo (engine)', { skip: skip || false },
 const wbPhotos = [['the sample JPEG', SAMPLE]];
 if (process.env.IMMAGE_RAW) wbPhotos.push(['IMMAGE_RAW', process.env.IMMAGE_RAW]);
 for (const [what, source] of wbPhotos) {
+  test(`Color calibration follows the white balance module (${what})`, { skip: skip || what === 'the sample JPEG' }, async (t) => {
+    const work = mkdtempSync(join(tmpdir(), 'immage-advcat-'));
+    mkdirSync(join(work, 'photos'));
+    const photo = join(work, 'photos', `cat${source.slice(source.lastIndexOf('.'))}`);
+    copyFileSync(source, photo);
+    const e = new Engine(work);
+    t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+    await e.call({ cmd: 'open', path: photo });
+    const cat = async (...f) => (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': f } })).modules['channelmixerrgb@0'].params;
+    const first = await cat('illuminant', 'wb_x', 'wb_y');
+    assert.equal(first.illuminant, 11, 'a raw starts from the white balance module');
+    await e.call({ cmd: 'set', op: 'temperature', priority: 0, params: { wb_setting: 3 }, enabled: true });
+    const reference = await cat('wb_x', 'wb_y');
+    assert.ok(Math.abs(reference.wb_x - first.wb_x) + Math.abs(reference.wb_y - first.wb_y) > 1e-4, 'the illuminant follows the setting');
+    // channelmixerrgb.c, gui_changed: the new mode starts from that illuminant
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: true });
+    const custom = await cat('illuminant', 'x', 'y');
+    assert.equal(custom.illuminant, 7);
+    assert.ok(Math.abs(custom.x - reference.wb_x) < 1e-5 && Math.abs(custom.y - reference.wb_y) < 1e-5, 'custom starts from the illuminant it left');
+    // temperature.c, color_picker_apply reads the sensor's channels at the module's input
+    const { picker } = await e.call({ cmd: 'sample', x: .5, y: .5, box: [.45, .45, .55, .55], stage: 'temperature' });
+    assert.equal(picker.mean.length, 3, 'the picker reads the three channels the reply types');
+    assert.ok(Number.isFinite(picker.fourth), 'the fourth sensor channel comes apart');
+    assert.ok(picker.mean.every((v) => Number.isFinite(v) && v > 0), `picked ${picker.mean}`);
+
+    // channelmixerrgb.c, _set_trouble_messages
+    const trouble = async () => { const m = (await e.call({ cmd: 'get', modules: { temperature: ['wb_trouble'], 'channelmixerrgb@0': ['wb_trouble'] } })).modules; return [m.temperature.params.wb_trouble, m['channelmixerrgb@0'].params.wb_trouble]; };
+    const wbSet = (params, enabled = true) => e.call({ cmd: 'set', op: 'temperature', priority: 0, params, enabled });
+    const catSet = (params) => e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params, enabled: true });
+    await catSet({ illuminant: 11 });
+    await wbSet({ wb_setting: 0, late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared for color calibration, no warning');
+    await wbSet({ late_correction: 0 });
+    assert.deepEqual(await trouble(), [1, 1], 'not prepared for the illuminant from white balance');
+    await catSet({ illuminant: 7 });
+    assert.deepEqual(await trouble(), [3, 3], 'white balance applied twice');
+    await wbSet({ late_correction: 1 });
+    assert.deepEqual(await trouble(), [0, 0], 'prepared, its own illuminant is fine');
+    const second = (await e.call({ cmd: 'instance', action: 'new', op: 'channelmixerrgb', priority: 0 })).priority;
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: second, params: { adaptation: 1, illuminant: 7 }, enabled: true });
+    const cats = (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': ['wb_trouble'], [`channelmixerrgb@${second}`]: ['wb_trouble'] } })).modules;
+    assert.deepEqual([cats['channelmixerrgb@0'].params.wb_trouble, cats[`channelmixerrgb@${second}`].params.wb_trouble].sort(), [0, 2], 'the later of two adapting instances warns of a double CAT');
+    await e.call({ cmd: 'instance', action: 'delete', op: 'channelmixerrgb', priority: second });
+    await wbSet({}, false);
+    assert.deepEqual(await trouble(), [4, 4], 'white balance missing');
+    await wbSet({ wb_setting: 3 });
+    await catSet({ illuminant: 7 });
+
+    // temperature.c, _update_controls_lock
+    const locked = async () => (await e.call({ cmd: 'get', modules: { 'temperature@0': ['wb_locked'] } })).modules['temperature@0'].params.wb_locked;
+    assert.ok(await locked(), 'its own illuminant locks the white balance');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 11 }, enabled: true });
+    assert.ok(!(await locked()), 'following the white balance module does not');
+    await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: { illuminant: 7 }, enabled: false });
+    assert.ok(!(await locked()), 'color calibration off does not');
+  });
+
   test(`Advanced white balance temperature and tint (${what})`, { skip: skip || false }, async (t) => {
     const work = mkdtempSync(join(tmpdir(), 'immage-advwb-'));
     mkdirSync(join(work, 'photos'));
@@ -1365,8 +1526,9 @@ for (const [what, source] of wbPhotos) {
     if (what === 'the sample JPEG') {
       assert.deepEqual(presets, [], 'a JPEG has no camera presets');
       await write({ wb_setting: 3 });
-      // sRGB has no separate reference, so the as shot match wins as in gui_update
-      assert.equal((await get('wb_setting')).wb_setting, 0, 'as shot and camera reference are the same');
+      // temperature.c, gui_update: the mode labels the setting, even where
+      // sRGB gives both modes the same coefficients
+      assert.equal((await get('wb_setting')).wb_setting, 3, 'camera reference stays chosen');
       return;
     }
     const same = (x, y) => ['red', 'green', 'blue'].every((c) => Math.abs(x[c] - y[c]) < 1e-5);
@@ -1378,26 +1540,56 @@ for (const [what, source] of wbPhotos) {
     const ref = await get(...coeffs);
     assert.equal(ref.wb_setting, 3, 'camera reference');
     assert.ok(!same(ref, shot), 'camera reference differs from as shot');
+    assert.ok(Number.isFinite((await get('various')).various), 'camera reference reads a fourth coefficient the reply can carry');
+    // an edit saved with the old "as shot to reference" setting
     await write({ wb_setting: 4 });
-    const late = await get(...coeffs);
-    assert.equal(late.wb_setting, 4, 'as shot to reference');
-    assert.ok(same(late, shot), 'as shot to reference starts from the as shot coefficients');
+    const late = await get(...coeffs, 'late_correction');
+    assert.equal(late.wb_setting, 0, 'the old setting reads as shot');
+    assert.ok(late.late_correction, 'the old setting prepares for color calibration');
+    assert.ok(same(late, shot), 'the old setting starts from the as shot coefficients');
+    await write({ late_correction: 0 });
+    assert.equal((await get('wb_setting')).wb_setting, 0, 'the checkbox does not change the setting');
     await write({ wb_setting: 0 });
     await write({ red: shot.red * 1.2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'an edit is user modified');
     await write({ wb_setting: 2 });
     assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified keeps the coefficients');
+    await write({ red: shot.red, green: shot.green, blue: shot.blue });
+    assert.equal((await get('wb_setting')).wb_setting, 2, 'user modified stays so at the as shot coefficients');
+
+    // as shot with another photo's coefficients, as a pasted history carries
+    // them: the photo renders with its own (temperature.c, _own_coeffs)
+    await write({ red: shot.red * 1.2 });
+    await write({ preset: 0 });
+    const carried = await get(...coeffs);
+    assert.equal(carried.wb_setting, 0, 'carried as shot reads as shot');
+    assert.ok(same(carried, shot), 'carried as shot shows the photo\'s own coefficients');
+
+    // temperature.c, _update_preset: a camera preset keeps "prepare data for
+    // color calibration", and leaving camera reference sets it from whether
+    // color calibration adapts
+    if (presets.length) {
+      await write({ wb_setting: 4 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'a camera preset keeps the preparation');
+      await write({ wb_setting: 0, late_correction: 0 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok(!(await get('late_correction')).late_correction, 'a camera preset keeps it off');
+      await write({ wb_setting: 3 });
+      await write({ wb_setting: presets[0].value });
+      assert.ok((await get('late_correction')).late_correction, 'leaving camera reference prepares for color calibration');
+    }
 
     // the "white balance in the module" note (Session.wbInModule): temperature
-    // on, a setting other than camera reference and as shot to reference, and
+    // on, neither camera reference nor prepared for color calibration, and
     // color calibration off
     const inModule = async () => {
-      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting'], channelmixerrgb: ['illuminant'] } })).modules;
-      return !!r.temperature.enabled && ![3, 4].includes(r.temperature.params.wb_setting) && !r.channelmixerrgb.enabled;
+      const r = (await e.call({ cmd: 'get', modules: { temperature: ['wb_setting', 'late_correction'], channelmixerrgb: ['illuminant'] } })).modules;
+      return !!r.temperature.enabled && r.temperature.params.wb_setting !== 3 && !r.temperature.params.late_correction && !r.channelmixerrgb.enabled;
     };
-    await write({ wb_setting: 4 });
-    assert.equal(await inModule(), false, 'as shot to reference is not the note');
-    await write({ wb_setting: 0 });
+    await write({ wb_setting: 0, late_correction: 1 });
+    assert.equal(await inModule(), false, 'prepared for color calibration is not the note');
+    await write({ late_correction: 0 });
     assert.equal(await inModule(), false, 'color calibration on is not the note');
     await e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params: {}, enabled: false });
     assert.equal(await inModule(), true, 'as shot with color calibration off is the note');
@@ -1638,3 +1830,64 @@ for (const [sensor, exts, def, other] of [['xtrans', ['raf'], 1025, 1026], ['bay
     assert.ok(!a.equals(b), `methods ${def} and ${other} render the same 100% crop`);
   });
 }
+
+test('Color calibration profiles and validates a photographed chart', { skip: skip || false }, async (t) => {
+  const work = mkdtempSync(join(tmpdir(), 'immage-advchecker-'));
+  const e = new Engine(work);
+  t.after(() => { e.stop(); rmSync(work, { recursive: true, force: true }); });
+
+  const { centers, radius, ratio } = await (async () => {
+    const sample = join(work, 'sample.jpg');
+    copyFileSync(SAMPLE, sample);
+    await e.call({ cmd: 'open', path: sample });
+    const charts = await Promise.all([0, 1, 2, 3, 4].map(chart => e.call({ cmd: 'checker_analyze', layout: true, chart })));
+    assert.deepEqual(charts.map(chart => chart.centers.length / 2), [24, 24, 24, 48, 48]);
+    return charts[0];
+  })();
+  const colors = [
+    '735244', 'c29682', '627a9d', '576c43', '8580b1', '67bdaa',
+    'd67e2c', '505ba6', 'c15a63', '5e3c6c', '9dbc40', 'e0a32e',
+    '383d96', '469449', 'af363c', 'e7c71f', 'bb5695', '0885a1',
+    'f3f3f2', 'c8c8c8', 'a0a0a0', '7a7a79', '555555', '343434',
+  ].map(color => Buffer.from(color, 'hex'));
+  const box = [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9];
+  const results = [];
+  // Uniform patch interiors should give the same fit across the engine's
+  // preview-size cap. Apply the fit before sampling the module's output.
+  for (const width of [768, 1536]) {
+    const height = width * 2 / 3;
+    const pixels = Buffer.alloc(width * height * 3, 36);
+    for (let patch = 0; patch < colors.length; patch++) {
+      const x = 0.1 + 0.8 * centers[2 * patch], y = 0.1 + 0.8 * centers[2 * patch + 1];
+      const rx = 0.78 * radius, ry = rx / ratio;
+      for (let j = Math.floor((y - ry) * height); j < Math.ceil((y + ry) * height); j++) {
+        const start = (j * width + Math.floor((x - rx) * width)) * 3;
+        const end = (j * width + Math.ceil((x + rx) * width)) * 3;
+        pixels.fill(colors[patch], start, end);
+      }
+    }
+    const path = join(work, `chart-${width}.ppm`);
+    writeFileSync(path, Buffer.concat([Buffer.from(`P6\n${width} ${height}\n255\n`), pixels]));
+    const { imgid } = await e.call({ cmd: 'open', path });
+    const write = params => e.call({ cmd: 'set', op: 'channelmixerrgb', priority: 0, params, enabled: true });
+    await write({});
+    const fit = await e.call({ cmd: 'checker_analyze', box, imgid });
+    assert.ok(fit.report[0] < fit.report[2], 'the fit improves mean color error');
+    assert.equal(fit.fields.illuminant, 7, 'the fit selects a custom illuminant');
+    const params = { ...fit.fields, checker_box_set: 1, ...Object.fromEntries(box.map((v, index) => [`checker_box[${index}]`, v])) };
+    await write(params);
+    const checked = await e.call({ cmd: 'checker_analyze', box, imgid, validate: true });
+    assert.equal(checked.fields, undefined, 'validation only measures the output');
+    assert.ok(checked.report[0] < fit.report[2], 'the module output improves mean color error');
+    await e.call({ cmd: 'save' });
+    await e.call({ cmd: 'close' });
+    await e.call({ cmd: 'open', path, imgid });
+    const saved = (await e.call({ cmd: 'get', modules: { 'channelmixerrgb@0': Object.keys(params) } })).modules['channelmixerrgb@0'].params;
+    for (const [key, value] of Object.entries(params))
+      assert.ok(Math.abs(saved[key] - value) < 1e-4, `${key} survives saving and reopening`);
+    results.push({ fit: fit.report[0], checked: checked.report[0] });
+    await assert.rejects(e.call({ cmd: 'checker_analyze', box: Array(8).fill(0.5) }), /invalid color checker corners/);
+  }
+  assert.ok(Math.abs(results[0].fit - results[1].fit) < 0.03, 'the fit agrees across source resolutions');
+  assert.ok(Math.abs(results[0].checked - results[1].checked) < 0.03, 'validation agrees across source resolutions');
+});
