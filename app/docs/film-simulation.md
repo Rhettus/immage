@@ -23,7 +23,9 @@ data is saved in darktable's own data folder
 computer uses the same copy, and so does a copy you installed there by hand.
 
 The data comes from the darktable-spektrafilm repository and is licensed
-under CC BY-SA 4.0.
+under CC BY-SA 4.0. The download needs HTTPS access to
+`raw.githubusercontent.com`. On Windows, the Immage installer includes
+the certificates the downloader uses to verify GitHub's connection.
 
 ## Converting the photo
 

@@ -29,7 +29,9 @@ and Linux. **All builds are alpha; bugs are expected.**
   In Advanced mode, apply built-in presets, import darktable `.dtpreset`
   files, and save or delete your own module presets, including within masks.
   Copied AI masks are recalculated for each destination photo.
-- Heal and clone, simulate film stocks and papers, convert film negatives with input and working color profiles, and merge HDR photos or panoramas.
+- Heal and clone, [simulate film stocks and papers](app/docs/film-simulation.md)
+  with a one-time data download from GitHub, convert film negatives with input
+  and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.
 - Use Immage in English or French.
 - Choose from eight built-in interface themes ordered from darkest to lightest,

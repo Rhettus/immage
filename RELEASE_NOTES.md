@@ -11,6 +11,8 @@ Bug fixes
   invalid measurements before solving the calibration matrix.
 - Moving a folder from a local drive to a Windows mapped network drive uses
   a verified copy before removing the originals.
+- The Windows installer includes the certificates needed to download Film
+  Simulation data from GitHub.
 
 ## 0.47.0
 
