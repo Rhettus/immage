@@ -7,12 +7,12 @@ what Immage's update banner shows under Release Notes.
 
 Bug fixes
 
+- On Windows, moving folders from a local drive to a network share via a UNC
+  path or mapped drive verifies the copy before removing the originals.
+- The Windows installer now includes the certificates needed to download
+  spektrafilm data from GitHub for Film Simulation.
 - Color calibration uses higher precision for chart fitting and rejects
   invalid measurements before solving the calibration matrix.
-- Moving a folder from a local drive to a Windows mapped network drive uses
-  a verified copy before removing the originals.
-- The Windows installer includes the certificates needed to download Film
-  Simulation data from GitHub.
 - Browsing mapped shares through morfPhoto loads the folder tree without
   paging through the entire photo catalog.
 
