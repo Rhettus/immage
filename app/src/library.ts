@@ -41,6 +41,7 @@ export type ImageEntry = {
   // version but the lowest, which is the original (absent on Immich results)
   version?: number;
   copy?: boolean;
+  morfphotoPreview?: boolean | null;
   // an Immich search result (immich.ts): the server's asset, and the file on
   // this computer when its external library is here too
   remote?: { assetId: string; originalPath: string; localPath: string | null };
@@ -183,6 +184,15 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSource = false, cameraPreview = false): Promise<ImageBitmap | null> {
   const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size, preferSource, cameraPreview);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
+}
+
+async function fetchMorfPhotoThumb(path: string): Promise<ImageBitmap | null> {
+  try {
+    const jpeg = await commands.morfPhotoThumbnail(path);
+    return jpeg.byteLength ? await createImageBitmap(new Blob([jpeg], { type: "image/jpeg" })) : null;
+  } catch {
+    return null;
+  }
 }
 
 // the thumbnail last made of the file, found by its path alone, which on
@@ -464,11 +474,12 @@ export class ThumbLoader {
         }
         const id = this.queue.shift()!;
         if (typeof id === "string" || (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id))) continue;
+        const useServerPreview = this.visible.has(id) && !this.stale.has(id) && !this.unverified.has(id);
         this.stale.delete(id);
         this.unverified.delete(id);
         this.inFlight++;
         this.rendering.add(id);
-        void this.fetch(id).finally(() => {
+        void this.fetch(id, useServerPreview).finally(() => {
           this.rendering.delete(id);
           this.inFlight--;
           const wake = this.wake;
@@ -481,12 +492,17 @@ export class ThumbLoader {
     }
   }
 
-  private async fetch(id: number) {
+  private async fetch(id: number, useServerPreview: boolean) {
     const generation = this.generation;
     try {
       // below zero, an Immich result: the server's own thumbnail
-      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, this.entryOf(id));
+      const entry = id >= 0 ? this.entryOf(id) : undefined;
+      const preview = useServerPreview && entry?.morfphotoPreview && !entry.edited && !entry.copy && (entry.version ?? 0) === 0
+        ? await fetchMorfPhotoThumb(entry.path) : null;
+      if (generation !== this.generation) { preview?.close(); return; }
+      const bitmap = preview ?? (id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry));
       if (generation === this.generation) this.keep(id, bitmap);
+      else bitmap.close();
     } catch (e) {
       if (generation !== this.generation) return;
       // an image without a thumbnail keeps its placeholder

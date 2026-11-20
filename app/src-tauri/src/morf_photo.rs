@@ -17,6 +17,8 @@ const PAGE_SIZE: usize = 500;
 const MAX_PAGE_BYTES: u64 = 16 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const LIST_TIMEOUT: Duration = Duration::from_secs(25);
+const THUMBNAIL_TIMEOUT: Duration = Duration::from_millis(1500);
+const MAX_THUMBNAIL_BYTES: u64 = 1024 * 1024;
 
 #[derive(Default, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +167,14 @@ impl Config {
         Ok(())
     }
 
+    pub(crate) fn thumbnail(&self, path: &Path) -> Option<Vec<u8>> {
+        if !self.covers(path) {
+            return None;
+        }
+        let server_path = self.server_folder(path).ok()?;
+        self.client(None).ok()?.thumbnail(&server_path)
+    }
+
     pub(crate) fn list(
         &self,
         path: &Path,
@@ -265,6 +275,25 @@ struct Page {
 }
 
 impl Api {
+    fn thumbnail(&self, server_path: &str) -> Option<Vec<u8>> {
+        let mut url = self.endpoint.clone();
+        url.path_segments_mut().ok()?.pop().extend(["thumbnail", "cached"]);
+        url.query_pairs_mut().append_pair("path", server_path);
+        let query = url.query()?.replace('+', "%20");
+        url.set_query(Some(&query));
+        let response = self.client.get(url)
+            .header(reqwest::header::AUTHORIZATION, self.auth.clone())
+            .timeout(THUMBNAIL_TIMEOUT)
+            .send().ok()?.error_for_status().ok()?;
+        if response.headers().get(reqwest::header::CONTENT_TYPE)?.to_str().ok()? != "image/jpeg" {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        response.take(MAX_THUMBNAIL_BYTES + 1).read_to_end(&mut bytes).ok()?;
+        (bytes.len() as u64 <= MAX_THUMBNAIL_BYTES && bytes.starts_with(&[0xff, 0xd8]))
+            .then_some(bytes)
+    }
+
     fn page(
         &self,
         folder: Option<&str>,
@@ -380,6 +409,7 @@ impl Photo {
                 "labels": version.labels & 31, "edited": version.edited.unwrap_or(false),
                 "width": 0, "height": 0, "location": location, "keywords": version.keywords,
                 "version": version.version, "copy": version.copy,
+                "morfphotoPreview": true,
                 "exif": {
                     "maker": text("make"), "model": text("camera_model"), "lens": text("lens"),
                     "body_serial": text("body_serial"), "exposure": number("shutter_speed_s"),
@@ -497,6 +527,36 @@ mod tests {
         let requests = server.join().unwrap();
         assert!(requests[0].contains("folder_path=%2Fsrv%2Fphotos%2FJune%20%2B%20July"));
         assert!(requests[0].contains("authorization: Bearer test-key"));
+    }
+
+    #[test]
+    fn thumbnail_uses_the_authenticated_cached_route() {
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let config = Config {
+            url: format!("http://{}/morf", server.local_addr().unwrap()),
+            ..Config::default()
+        };
+        let worker = thread::spawn(move || {
+            let (mut stream, _) = server.accept().unwrap();
+            stream.set_read_timeout(Some(REQUEST_TIMEOUT)).unwrap();
+            let mut reader = BufReader::new(&mut stream);
+            let mut request = String::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
+                    break;
+                }
+                request.push_str(&line);
+            }
+            assert!(request.starts_with("GET /morf/api/v1/thumbnail/cached?path=%2Fphotos%2FA%20%2B%20B.ORF "));
+            assert!(request.contains("authorization: Bearer test-key"));
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: 4\r\nConnection: close\r\n\r\n\xff\xd8\xff\xd9").unwrap();
+        });
+        assert_eq!(
+            config.client(Some("test-key")).unwrap().thumbnail("/photos/A + B.ORF"),
+            Some(vec![0xff, 0xd8, 0xff, 0xd9])
+        );
+        worker.join().unwrap();
     }
 
     #[test]

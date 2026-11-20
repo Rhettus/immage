@@ -40,3 +40,9 @@ to appear.
 If Immage cannot read the API for a mapped folder, it shows a notice and uses
 its usual file-based workflow for that scope. Refresh to try morfPhoto again.
 Local similarity search still depends on Immage's local image analysis.
+
+For visible thumbnails of unedited originals, Immage checks its own cache
+first and then can use an embedded camera preview from a morfPhoto server
+with its optional thumbnail cache enabled. If the preview is unavailable, Immage renders the
+thumbnail from the mounted file. Edited photos and virtual copies use
+Immage's rendered thumbnails.

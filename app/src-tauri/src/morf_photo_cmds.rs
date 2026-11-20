@@ -3,6 +3,7 @@
 
 use crate::morf_photo::{self, Config, Credential, SETTINGS};
 use serde::Serialize;
+use std::path::Path;
 use tauri::{AppHandle, Manager, State};
 
 #[derive(Serialize, specta::Type)]
@@ -19,6 +20,18 @@ async fn worker<T: Send + 'static>(
     tauri::async_runtime::spawn_blocking(run)
         .await
         .map_err(|_| "morfPhoto preferences operation failed".to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn morf_photo_thumbnail(
+    state: State<'_, crate::AppState>,
+    path: String,
+) -> Result<crate::bindings::Frame, String> {
+    let runtime = state.runtime.clone();
+    let jpeg = worker(move || Ok(morf_photo::load(&runtime)
+        .thumbnail(Path::new(&path)).unwrap_or_default())).await?;
+    Ok(crate::bindings::Frame(tauri::ipc::Response::new(jpeg)))
 }
 
 #[tauri::command]

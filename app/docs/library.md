@@ -109,7 +109,8 @@ and slows Immage. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
 For mapped network shares, [morfPhoto (Experimental)](morfphoto.md) can
-provide folder listings and metadata for Library filters and Find.
+provide folder listings, metadata for Library filters and Find, and embedded
+previews for visible unedited originals when Immage has no cached thumbnail.
 
 [Find](#find) searches this cache without an Immich connection. Choose
 **This folder** (respecting Include subfolders) or **All folders** under

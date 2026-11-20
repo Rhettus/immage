@@ -33,6 +33,8 @@ pub struct LibraryImage {
     // the file's version: every one but the lowest is a virtual copy
     pub version: u32,
     pub copy: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "morfphotoPreview")]
+    pub morfphoto_preview: Option<bool>,
 }
 
 // what `open_folder` returns, and what each engine `import` batch carries:

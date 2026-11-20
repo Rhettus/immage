@@ -188,6 +188,7 @@ export const commands = {
 	immichThumb: (id: string) => __TAURI_INVOKE<ArrayBuffer>("immich_thumb", { id }),
 	immichResolve: (id: string, name: string, path: string, map: PathMap | null) => __TAURI_INVOKE<Resolved>("immich_resolve", { id, name, path, map }),
 	morfPhotoStatus: () => __TAURI_INVOKE<MorfPhotoStatus>("morf_photo_status"),
+	morfPhotoThumbnail: (path: string) => __TAURI_INVOKE<ArrayBuffer>("morf_photo_thumbnail", { path }),
 	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
 	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
 	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
@@ -654,6 +655,7 @@ export type LibraryImage = {
 	keywords: string[],
 	version: number,
 	copy: boolean,
+	morfphotoPreview?: boolean | null,
 };
 
 export type Licenses = {

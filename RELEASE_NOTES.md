@@ -59,6 +59,8 @@ Improvements
 
 Performance
 
+- For visible, unedited originals on a mapped share, use morfPhoto camera
+  previews when Immage has no cached thumbnail and the server can supply one.
 - The culling lightbox uses the largest embedded camera preview for unedited
   RAWs when available, avoiding a RAW render even if the preview is smaller
   than the lightbox.
