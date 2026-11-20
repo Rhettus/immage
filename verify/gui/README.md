@@ -340,6 +340,9 @@ on manifest panels and range widgets. They never bypass UI interactions.
 The range walker visits mounted sliders in available panels, records disabled
 controls as blocked, and captures changes and reset frames. It does not reach
 hidden tabs/sections/module branches or establish every slider's image effect.
+Use `--failure-screenshots-only` for long control batches on a space-constrained
+machine. Assertions, measurements, and action logs still run, and failed cases
+retain their screenshots. Use the default capture mode for screenshot workflows.
 Module-options exercises preference selection, not every engine implementation.
 Diagnostic screenshots require review and are not approved visual baselines.
 

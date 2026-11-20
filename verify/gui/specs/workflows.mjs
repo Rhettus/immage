@@ -365,8 +365,11 @@ const PRINT_PROFILE = 'immage-test-narrow.icc';
 const chromaOf = p => { let c = 0; for (let i = 0; i < p.rgba.length; i += 4)
   c += Math.max(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]) - Math.min(p.rgba[i], p.rgba[i + 1], p.rgba[i + 2]);
   return c / (p.rgba.length / 4); };
-const cyanOf = p => { let n = 0; for (let i = 0; i < p.rgba.length; i += 4)
-  if (p.rgba[i] < 40 && p.rgba[i + 1] > 200 && p.rgba[i + 2] > 200) n++; return n; };
+// The proof profile transforms the warning to a lighter cyan.
+const isCyan = (rgba, i) => {
+  const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+  return Math.min(g, b) > 200 && Math.min(g, b) - r > 50 && Math.abs(g - b) < 10;
+};
 // the page in the viewer, and the photo's rectangle on it, in CSS pixels
 const pageView = t => t.driver.observe(() => {
   const box = s => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height }; };
@@ -405,7 +408,10 @@ export async function print(t) {
   // gamut warning: what the printer can't reach painted cyan
   await click(t, 'input[data-action="print-gamut"]');
   const gamut = await settledPhoto(t, p => p.hash !== proofed.hash);
-  assert(cyanOf(gamut) > cyanOf(proofed), `gamut warning paints cyan: ${cyanOf(proofed)} -> ${cyanOf(gamut)}`);
+  let marked = 0;
+  for (let i = 0; i < gamut.rgba.length; i += 4)
+    if (isCyan(gamut.rgba, i) && !isCyan(proofed.rgba, i)) marked++;
+  assert(marked > 0, 'gamut warning adds cyan marks');
   await t.evidence('gamut-warning');
   await click(t, 'input[data-action="print-gamut"]');
   await settledPhoto(t, p => p.hash === proofed.hash);

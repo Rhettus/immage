@@ -204,7 +204,7 @@ export async function findLive(t) {
   await click(t, `${pop} .find-clear`);
   await until(async () => await count(t, cells) === all, 'clearing the words restores the grid');
 
-  // 6. the column has a Find title like the other panels; with auto-hide its pin ends that row
+  // With auto-hide, the Find pin sits beside Reset in the title row.
   assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-head h1`)?.textContent, pop), 'Find', 'the column is titled Find');
   await preference(t, 'Auto-hide panels', true);
   try {
@@ -212,13 +212,14 @@ export async function findLive(t) {
     const g = await t.driver.observe(s => {
       const box = q => document.querySelector(`${s} ${q}`).getBoundingClientRect();
       const head = document.querySelector(`${s} .panel-head`), cs = getComputedStyle(head);
-      const pin = box('.panel-head .pin'), title = box('.panel-head h1');
+      const pin = box('.panel-head .pin'), title = box('.panel-head h1'), reset = box('.panel-head .find-clear');
       return { pinMid: pin.top + pin.height / 2, titleMid: title.top + title.height / 2, pinRight: pin.right,
+               resetLeft: reset.left, resetRight: reset.right,
                end: head.getBoundingClientRect().right - parseFloat(cs.paddingRight), inRow: !document.querySelector(`${s} .find-head .pin`) };
     }, pop);
     assert(g.inRow, 'the pin is not in the search row');
     assert(Math.abs(g.pinMid - g.titleMid) <= 2, `the pin is centered on the title (${g.pinMid} vs ${g.titleMid})`);
-    assert(Math.abs(g.pinRight - g.end) <= 1, `the pin ends the title row (${g.pinRight} vs ${g.end})`);
+    assert(g.pinRight <= g.resetLeft && Math.abs(g.resetRight - g.end) <= 1, 'the pin precedes Reset at the end of the title row');
     // pinned, the column stays shown for the picture: rest on the rail to bring it in first
     // the reveal is a hover, so the pointer rests on the rail until the column is in view
     // (one move can land before the rail has its hover, and nothing else would re-send it)

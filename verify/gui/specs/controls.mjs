@@ -36,8 +36,8 @@ export async function sliderInput(t) {
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value - 1) < .02, 'typed Exposure');
   await settledPhoto(t, p => p.luma > baseline.luma + 2);
   await t.evidence('typed-value');
-  s = await reveal(t, selector);
-  await t.driver.point(s.label.x, s.label.y, 2);
+  const resetLabel = await reveal(t, '[data-control-id="exposure"] label');
+  await t.driver.point(resetLabel.x, resetLabel.y, 2);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value) < .02, 'reset after typing');
   await settledPhoto(t, p => p.hash === baseline.hash);
 }

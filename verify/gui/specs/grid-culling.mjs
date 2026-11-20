@@ -186,8 +186,12 @@ export async function gridCulling(t) {
   const fitBeforeWheel = await t.driver.observe(inspect);
   const wheelPoint = { x: fitBeforeWheel.scroll.x + fitBeforeWheel.scroll.width * .5,
     y: fitBeforeWheel.scroll.y + fitBeforeWheel.scroll.height * .5 };
-  const wheelStart = await until(() => t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y),
-    'settled Fit before wheel zoom');
+  const fittedState = s => s?.label === 'Fit' && !s.loading
+    && s.image.width <= s.viewport.width + 2 && s.image.height <= s.viewport.height + 2;
+  const wheelStart = await until(async () => {
+    const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
+    return fittedState(s) ? s : null;
+  }, 'settled Fit before wheel zoom');
   assert.equal(wheelStart.label, 'Fit', 'wheel starts in Fit');
   assert(wheelStart.scale > 0 && wheelStart.scale < 4, `Fit scale allows wheel zoom (${wheelStart.scale})`);
   // The first zoom requests full detail. Wait for that replacement bitmap
@@ -244,16 +248,18 @@ export async function gridCulling(t) {
   assert(Math.abs(wheelAfter.viewport.scrollLeft - expectedScroll.left) < 3
     && Math.abs(wheelAfter.viewport.scrollTop - expectedScroll.top) < 3,
   `viewport scroll preserves the pointer anchor without native wheel scrolling (${JSON.stringify(expectedScroll)} vs ${wheelAfter.viewport.scrollLeft},${wheelAfter.viewport.scrollTop})`);
-  const returnSteps = Math.min(180, Math.ceil(Math.log(wheelAfter.scale / wheelStart.scale) / .04) + 5);
-  let wheelFit = null;
+  // Fit and detail can use different bitmaps. Compute the return budget in
+  // the current detail bitmap's coordinates, then check the fitted geometry.
+  const detailFitScale = wheelAfter.scale * Math.min(wheelAfter.viewport.width / wheelAfter.image.width,
+    wheelAfter.viewport.height / wheelAfter.image.height);
+  const returnSteps = Math.min(180, Math.ceil(Math.log(wheelAfter.scale / detailFitScale) / .04) + 5);
   for (let i = 0; i < returnSteps; i++) {
     await t.driver.wheel(wheelPoint.x, wheelPoint.y, 50);
-    wheelFit = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    if (wheelFit?.label === 'Fit' && Math.abs(wheelFit.scale - wheelStart.scale) < .03) break;
+    if ((await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y))?.label === 'Fit') break;
   }
-  wheelFit = await until(async () => {
+  const wheelFit = await until(async () => {
     const s = await t.driver.observe(zoomState, wheelPoint.x, wheelPoint.y);
-    return s?.label === 'Fit' && Math.abs(s.scale - wheelStart.scale) < .03 ? s : null;
+    return fittedState(s) ? s : null;
   }, 'wheel down returns to Fit', 15000);
   t.measure({ name: 'culling-wheel-zoom', start: wheelStart, detail: wheelDetail, max: wheelAtMax,
     anchor: { point: anchorPoint, before: anchorBefore, after: wheelAfter }, fit: wheelFit,

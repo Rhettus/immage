@@ -28,7 +28,7 @@ const git = (...args) => {
 };
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME[,NAME...]] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--list]');
+  console.log('node verify/gui/run.mjs --config verify/gui/local.json [--suite smoke|regressions|controls|crop|workflows|inventory|all | --case NAME[,NAME...]] [--fixture NAME] [--viewport WIDTHxHEIGHT] [--failure-screenshots-only] [--list]');
   process.exit(0);
 }
 if (args.includes('--list')) {
@@ -36,10 +36,12 @@ if (args.includes('--list')) {
   process.exit(0);
 }
 let configFile = 'verify/gui/local.json', selected = 'smoke', fixtureName = 'configured', expectedViewport = null;
+let failureScreenshotsOnly = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--config' && args[i + 1]) configFile = args[++i];
   else if (args[i] === '--fixture' && args[i + 1]) fixtureName = args[++i];
   else if (args[i] === '--viewport' && args[i + 1]) expectedViewport = parseViewport(args[++i]);
+  else if (args[i] === '--failure-screenshots-only') failureScreenshotsOnly = true;
   else if (['--suite', '--case'].includes(args[i]) && args[i + 1]) selected = args[++i];
   else throw Error(`Unknown argument: ${args[i]}`);
 }
@@ -53,7 +55,7 @@ const report = { id, runnerPid: process.pid, status: 'blocked', started: new Dat
   host: hostname(), platform: process.platform, arch: process.arch,
   display: { wayland: process.env.WAYLAND_DISPLAY, x11: process.env.DISPLAY, backend: process.env.XDG_SESSION_TYPE },
   coverage: 'Visible Linux app using system WebKit. Only selected cases are exercised; case status, subchecks, limitations and evidence are recorded below and in report.json.',
-  selected, selectedCases, expectedViewport,
+  selected, selectedCases, expectedViewport, failureScreenshotsOnly,
   actions: [], cases: [], errors: [] };
 const journal = new Journal(out);
 journal.checkpoint(report);
@@ -538,7 +540,8 @@ try {
         const result = { name: check, status: passed ? 'pass' : 'failure', ...details };
         c.subchecks.push(result); journal.event('subcheck', { case: name, ...result }); journal.checkpoint(report);
         return passed;
-      }, evidence: async (label, selector) => {
+    }, evidence: async (label, selector, failure = false) => {
+      if (failureScreenshotsOnly && !failure) return;
       const withheld = selector ? await driver.observe(visiblePath, selector) : await pathFree(driver);
       if (withheld) { c.measurements.push({ name: label, screenshot: `withheld: ${withheld}` }); journal.event('screenshot-withheld', { case: name, label }); return; }
       const path = join(caseDir, `${label}.png`);
@@ -552,12 +555,17 @@ try {
       await run(t);
       if (resourceFailure) throw resourceFailure;
       const failed = c.subchecks.filter(check => check.status === 'failure');
-      if (failed.length) { c.status = 'failure'; c.error = `Failed subchecks: ${failed.map(check => check.name).join(', ')}`; }
+      if (failed.length) {
+        c.status = 'failure'; c.error = `Failed subchecks: ${failed.map(check => check.name).join(', ')}`;
+        if (failureScreenshotsOnly) {
+          try { await t.evidence('failure', undefined, true); } catch (capture) { c.captureError = capture.message; }
+        }
+      }
       else c.status = 'pass';
     }
     catch (e) {
       c.status = e.name === 'Blocked' ? 'blocked' : 'failure'; c.error = e.stack;
-      try { await t.evidence('failure'); } catch (capture) { c.captureError = capture.message; }
+      try { await t.evidence('failure', undefined, true); } catch (capture) { c.captureError = capture.message; }
       throw e;
     } finally { c.finished = new Date().toISOString(); journal.event('case-finished', { name, status: c.status }); journal.checkpoint(report); }
   }

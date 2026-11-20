@@ -28,10 +28,16 @@ export async function previewAlignment(t){
   const c=document.querySelector('canvas.layer.sharp'),draft=document.querySelector('canvas.layer.draft');
   const b=e=>{if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{sharp:b(c),draft:b(draft)};
  };
- const before=await t.driver.observe(bounds),s=await reveal(t,selector);
- await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});await settledPhoto(t);
- const after=await t.driver.observe(bounds);for(const k of ['x','y','width','height'])assert(Math.abs(after.sharp[k]-before.sharp[k])<1,`scaled preview ${k} aligned`);
- t.measure({name:'630672c',before,after,scale:env.scale});await t.evidence('scaled-preview-final');
+ const s=await reveal(t,selector);
+ const baseline=await settledPhoto(t);
+ const before=await t.driver.observe(bounds);
+ await t.driver.drag({x:s.x,y:s.y},{x:s.x+s.bounds.width*.1,y:s.y});
+ await settledPhoto(t, photo => photo.hash !== baseline.hash);
+ const after=await t.driver.observe(bounds);
+ t.measure({name:'630672c',before,after,scale:env.scale});
+ for(const k of ['x','y','width','height'])
+  assert(Math.abs(after.sharp[k]-before.sharp[k])<1,`scaled preview ${k} aligned (${before.sharp[k]} → ${after.sharp[k]})`);
+ await t.evidence('scaled-preview-final');
 }
 export async function loupeGrid(t){
  await click(t,'button[data-tour="prefs"]');await textButton(t,'.prefs-tabs','Performance');await click(t,'[data-pref-fold="performance-advanced"]');
