@@ -3,7 +3,7 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
-## Unreleased
+## 0.48.0
 
 Bug fixes
 
