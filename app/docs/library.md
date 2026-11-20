@@ -432,6 +432,8 @@ Searching the library and narrowing a folder both happen here.
   the same pause as **Pause / Resume** in Preferences > General > Background
   work. Before the model is downloaded the icon is dimmed and does nothing; its
   tooltip says the model is not installed.
+  Browsing photos keeps their existing analysis. Saving edits queues fresh
+  analysis for the edited photo or virtual copy.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.

@@ -79,7 +79,8 @@ impl LibraryIds {
     pub fn changed(&mut self, req: &Value, reply: &Value) -> Vec<(Photo, bool)> {
         let command = req["cmd"].as_str().unwrap_or_default();
         let mut affected = Vec::new();
-        if matches!(command, "save" | "close" | "open") {
+        // Open and close change the active session. Saved edits arrive separately.
+        if command == "save" {
             if let Some(photo) = self.active.clone() {
                 affected.push((photo, false));
             }
@@ -281,6 +282,25 @@ mod tests {
             assert_eq!(ids.resolved(&photo), None);
         }
         assert_eq!(ids.advertise(sibling, 0), 7);
+        assert_eq!(ids.active_photo(), None);
+    }
+
+    #[test]
+    fn browsing_preserves_search_analysis_and_save_targets_the_active_copy() {
+        let mut ids = LibraryIds::default();
+        ids.reply(&mut json!({"images":[
+            {"imgid":1,"path":"/a","version":0},
+            {"imgid":2,"path":"/a","version":2},
+            {"imgid":3,"path":"/b","version":0}
+        ]}));
+        for (path, id) in [("/a", 1), ("/b", 3), ("/a", 2)] {
+            assert!(ids.changed(&json!({"cmd":"open","path":path}), &json!({"imgid":id})).is_empty());
+        }
+        assert_eq!(
+            ids.changed(&json!({"cmd":"save"}), &json!({})),
+            vec![(Photo { path: "/a".into(), version: 2 }, false)],
+        );
+        assert!(ids.changed(&json!({"cmd":"close"}), &json!({})).is_empty());
         assert_eq!(ids.active_photo(), None);
     }
 

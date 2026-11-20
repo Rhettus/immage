@@ -87,6 +87,8 @@ Bug fixes
   When launched from Terminal, Immage logs the failed operation and path if a
   photo transfer fails.
 - Find finishes indexing photos that have only numbered darktable XMP sidecars.
+- Browsing photos keeps their cached Smart search analysis and avoids
+  unnecessary background processing.
 - Each Color Grading wheel drag is a single undo step, including on masks
   and in Advanced mode.
 - Module cards under Masks in Advanced mode show darktable presets. Applying

@@ -1640,7 +1640,7 @@ mod tests {
         image["keywords"] = json!(["Places|Updated"]);
         let current_snapshot = mutation_metadata_snapshot(&index, photo.to_str().unwrap(), "").unwrap().unwrap();
         assert_ne!(metadata_refresh_key(&stale_same_photo), metadata_refresh_key(&current_snapshot),
-            "each save/open invalidation generation must get a distinct queue key");
+            "each invalidation generation must get a distinct queue key");
         // A concurrent metadata change in another photo must not drop this
         // photo's independent, fingerprint-guarded refresh.
         index.invalidate_edited(other.to_str().unwrap(), "").unwrap();
