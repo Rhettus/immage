@@ -184,6 +184,19 @@ impl Config {
         self.list_with_api(path, recursive, cancelled, self.client(None)?)
     }
 
+    pub(crate) fn metrics(&self) -> Result<Value, String> {
+        let api = self.client(None)?;
+        let mut url = api.endpoint.clone();
+        url.path_segments_mut().map_err(|_| "Invalid morfPhoto endpoint")?
+            .pop().extend(["index", "status"]);
+        let response = api.client.get(url)
+            .header(reqwest::header::AUTHORIZATION, api.auth)
+            .timeout(REQUEST_TIMEOUT)
+            .send().and_then(|response| response.error_for_status())
+            .map_err(|_| "morfPhoto index status unavailable")?;
+        serde_json::from_reader(response.take(65536)).map_err(|_| "Invalid morfPhoto index status".into())
+    }
+
     pub(crate) fn semantic(
         &self,
         folder: &Path,

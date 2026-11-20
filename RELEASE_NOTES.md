@@ -12,6 +12,8 @@ Improvements
   workflow if the server is unavailable.
 - Search mapped morfPhoto folders by description using the NAS Smart Search
   index for unedited originals. Immage shows indexing coverage during backfill.
+- View morfPhoto scan, thumbnail generation, and CLIP analysis counters in
+  Preferences → Performance.
 - Import darktable `.dtpreset` files and save, apply, or delete your own
   Advanced module presets, including on module cards inside masks.
 - The lightbox can show embedded camera previews for edited RAWs in Fit.

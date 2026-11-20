@@ -199,6 +199,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::immich_cmds::immich_thumb,
         crate::immich_cmds::immich_resolve,
         crate::morf_photo_cmds::morf_photo_status,
+        crate::morf_photo_cmds::morf_photo_metrics,
         crate::morf_photo_cmds::morf_photo_thumbnail,
         crate::morf_photo_cmds::morf_photo_save,
         crate::morf_photo_cmds::morf_photo_test,

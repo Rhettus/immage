@@ -15,6 +15,7 @@ import { SearchPrefs, ClipPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
+import { MorfPhotoMetrics } from "./MorfPhotoMetrics";
 import { MorfPhotoPrefs } from "./MorfPhotoPrefs";
 import { ModulePrefs } from "./ModulePrefs";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
@@ -921,6 +922,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             )}
             {tab === "performance" && (
               <>
+              <MorfPhotoMetrics />
               <PrefCard title={t("prefs.card.gpu")}>
                 <PrefRow id="GPU" label={t("prefs.row.gpu")} hint={accel === null ? t("prefs.row.gpu.hint.looking")
                   : accel.length ? t("prefs.row.gpu.hint.some")

@@ -24,6 +24,18 @@ async fn worker<T: Send + 'static>(
 
 #[tauri::command]
 #[specta::specta]
+pub(crate) async fn morf_photo_metrics(
+    state: State<'_, crate::AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let runtime = state.runtime.clone();
+    worker(move || {
+        let config = morf_photo::load(&runtime);
+        config.enabled.then(|| config.metrics()).transpose()
+    }).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub(crate) async fn morf_photo_thumbnail(
     state: State<'_, crate::AppState>,
     path: String,
