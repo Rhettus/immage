@@ -9,6 +9,8 @@ Bug fixes
 
 - Color calibration uses higher precision for chart fitting and rejects
   invalid measurements before solving the calibration matrix.
+- Moving a folder from a local drive to a Windows mapped network drive uses
+  a verified copy before removing the originals.
 
 ## 0.47.0
 

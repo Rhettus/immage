@@ -306,7 +306,8 @@ keeps the source folder if it still contains links or skipped files.
 
 A move on the same drive can rename the whole folder, including Finder’s
 `.DS_Store` and Windows Explorer’s `Thumbs.db` files. For a copy, a move across
-drives, or a merge, Immage skips those files at every level, including uppercase
+drives (including from a local disk to a Windows mapped network drive), or a
+merge, Immage skips those files at every level, including uppercase
 and mixed-case spellings of `Thumbs.db`. It copies the other files in parallel using
 **Preferences > Performance > Memory > Library workers** and reads back each
 copy to verify its checksum. A move starts removing originals only after the
