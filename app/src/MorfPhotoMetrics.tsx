@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands } from "./bindings";
 import { formatNumber, t } from "./i18n";
-import { PrefCard, PrefRow } from "./PrefsUI";
+import { PrefRow } from "./PrefsUI";
 import "./morfPhotoMetrics.css";
 
 type State = "idle" | "indexing" | "warming" | "paused" | "disabled" | "starting" | "retrying" | "error";
@@ -32,6 +32,14 @@ const state = (value?: State) => value && Object.hasOwn(states, value)
   ? t(states[value]) : t("morfphoto.metrics.unavailable");
 
 export function MorfPhotoMetrics() {
+  const [expanded, setExpanded] = useState(false);
+  return <details className="pref-card nas-metrics" onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary>{t("morfphoto.metrics.title")}</summary>
+    {expanded && <MetricsRows />}
+  </details>;
+}
+
+function MetricsRows() {
   const [metrics, setMetrics] = useState<Metrics | null>();
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
@@ -57,10 +65,12 @@ export function MorfPhotoMetrics() {
     };
   }, []);
 
-  if (!metrics && !unavailable) return null;
+  if (metrics === undefined && !unavailable) {
+    return <PrefRow label={t("morfphoto.metrics.loading")} children={null} />;
+  }
   const { progress, last_run: lastRun, thumbnails, clip } = metrics ?? {};
-  return <PrefCard title={t("morfphoto.metrics.title")}>
-    {unavailable
+  return <>
+    {unavailable || !metrics
       ? <PrefRow label={t("morfphoto.metrics.unavailable")} children={null} />
       : <>
         <MetricGroup title={t("morfphoto.metrics.scan")} rows={[
@@ -83,7 +93,7 @@ export function MorfPhotoMetrics() {
           [t("morfphoto.metrics.failed"), number(clip?.failed)],
         ]} />
       </>}
-  </PrefCard>;
+  </>;
 }
 
 function MetricGroup({ title, rows }: { title: string; rows: [string, string][] }) {

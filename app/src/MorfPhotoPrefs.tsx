@@ -6,6 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { commands } from "./commands";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { t } from "./i18n";
+import { MorfPhotoMetrics } from "./MorfPhotoMetrics";
 
 type Status = Awaited<ReturnType<typeof commands.morfPhotoStatus>>;
 type Settings = Required<Status["settings"]>;
@@ -115,6 +116,7 @@ export function MorfPhotoPrefs() {
 
   return <>
     <p className="prefs-lead">{t("morfphoto.lead")}</p>
+    <p className="pref-hint">{t("morfphoto.credit")}</p>
     <PrefCard title={t("morfphoto.server")}>
       <PrefRow id="Use morfPhoto" label={t("morfphoto.enable")}>
         <PrefSwitch checked={form.enabled} onChange={enabled => update({ enabled })} disabled={!!busy}
@@ -161,6 +163,7 @@ export function MorfPhotoPrefs() {
         </div>
       </PrefRow>
     </PrefCard>
+    {saved.settings.enabled && <MorfPhotoMetrics key={saved.settings.url} />}
     {message && <div role="status" className={`prefs-status${message.error ? " warn" : ""}`}>{message.text}</div>}
   </>;
 }

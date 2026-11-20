@@ -7,14 +7,13 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- **Experimental:** Use a morfPhoto NAS index to browse mapped network shares
-  and filter their photos by indexed metadata. Immage uses its file-based
-  workflow if the server is unavailable.
+- **Immage Accelerator (Experimental):** Browse and filter mapped network
+  shares with a morfPhoto index. Immage uses its file-based workflow if the
+  server is unavailable.
 - Search mapped morfPhoto folders by description using the NAS Smart Search
   index for unedited originals. Immage shows indexing coverage during backfill.
-- View morfPhoto scan, thumbnail generation, and CLIP analysis counters in
-  Preferences → Performance, with a separate line for each metric and the
-  thumbnail total currently on NAS storage.
+- Expand NAS activity in Immage Accelerator preferences to see scan progress,
+  the thumbnail total on disk, and CLIP analysis coverage, one metric per line.
 - Import darktable `.dtpreset` files and save, apply, or delete your own
   Advanced module presets, including on module cards inside masks.
 - The lightbox can show embedded camera previews for edited RAWs in Fit.

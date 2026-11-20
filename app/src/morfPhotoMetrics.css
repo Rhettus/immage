@@ -23,3 +23,10 @@
 .nas-metric-group .pref-control:empty {
   display: none;
 }
+
+.nas-metrics > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: 0.75rem;
+  padding-inline: 1rem;
+}

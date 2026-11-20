@@ -48,7 +48,7 @@ is also on the [Immage website](https://immage.photo/guide/).
   filtering, virtual copies, metadata and keywords
 - [Import](import.md): copying photos off a card, verified, without
   duplicates
-- [morfPhoto (Experimental)](morfphoto.md): browse and filter photos on a
+- [Immage Accelerator (Experimental)](morfphoto.md): browse and filter photos on a
   mapped network share using the NAS index.
 - [Immich](immich.md): connecting your server, searching it, exporting to
   albums

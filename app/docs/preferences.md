@@ -654,10 +654,10 @@ module chosen here. See [Adjustments](adjustments.md#contrast-equalizer)
 for the equalizer graph. Defringe, global and in masks, always uses
 chromatic aberrations: darktable deprecates its older defringe module.
 
-## morfPhoto (Experimental)
+## Immage Accelerator (Experimental)
 
 Set the server URL, key, and path mapping for indexed photos on a network
-share. See [morfPhoto](morfphoto.md) for setup and fallback behavior.
+share. See [Immage Accelerator](morfphoto.md) for setup and fallback behavior.
 
 ## Immich
 

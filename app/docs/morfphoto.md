@@ -1,32 +1,96 @@
-# morfPhoto (Experimental)
+# Immage Accelerator (Experimental)
 
-Immage 0.47.0 can use a morfPhoto server to browse and filter photos on a
-mounted network share. morfPhoto supplies the folder contents and indexed EXIF
-and XMP, including ratings, color labels, keywords, and virtual copies. Immage
-opens the originals through the mounted share, so keep that share connected
-when viewing, editing, or exporting photos.
+Immage Accelerator uses morfPhoto, a service you run on the NAS, to browse
+and search a photo library on a mounted network share. morfPhoto serves the
+folder listing and indexed EXIF and XMP, including ratings, color labels,
+keywords, and virtual copies. With optional caches, it can also serve
+thumbnails and rank originals by a text description. Immage opens originals
+through the mounted share for viewing, editing, and exporting.
+
+morfPhoto was created by Frédéric Biron (morfredus) and is licensed GPL-3.0-only.
+The Docker image and Compose files below come from the Rhettus morfPhoto fork.
+
+## Install on the NAS
+
+You need Docker with Compose, a directory of photos the container can read,
+and a network share that exposes those same photos to the Immage computer.
+Use NAS storage for the optional caches. The image supports AMD64 and ARM64.
+
+1. Create a deployment directory such as `/storage/morfphoto`, then download
+   the Compose files and example settings from that directory.
+
+   ```bash
+   base='https://raw.githubusercontent.com/Rhettus/morfPhoto/fork/nas'
+   for file in docker-compose.yml docker-compose.thumbnails.yml docker-compose.clip.yml .env.example; do
+     curl -fLO "$base/$file" || break
+   done
+   cp -n .env.example .env
+   ```
+
+2. Set `PHOTOS_DIR` in `.env` to the absolute path of the photo folder on the
+   NAS. Set `PUID` and `PGID` to a NAS account that can read it. The container
+   mounts this folder read-only as `/photos`. Generate a bearer key with
+   `openssl rand -hex 32` and put it in `MORFPHOTO_API_KEY`. The default port is
+   8793. Keep the key for the Immage connection setup.
+3. For metadata-only browsing, run `docker compose pull` followed by
+   `docker compose up -d`. The first start registers `/photos` and starts the
+   catalog scan. Use `sudo` if your NAS requires it for Docker. For thumbnail
+   warming or Smart Search, add the corresponding overrides below.
+
+### Optional thumbnail cache
+
+Set `MORFPHOTO_THUMBNAIL_DIR` in `.env` to a directory on NAS storage, such as
+`/storage/morfphoto/thumbnail-cache`. Create it and give the configured
+`PUID` and `PGID` write access. Apply it with
+`docker compose -f docker-compose.yml -f docker-compose.thumbnails.yml up -d`.
+Use the same Compose files on future upgrades to keep the cache attached.
+
+### Optional CLIP Smart Search
+
+Set `MORFPHOTO_CLIP_DIR` to a writable directory on NAS storage, such as
+`/storage/morfphoto/clip`. It holds the model and persistent embedding database.
+With the default `MORFPHOTO_CLIP_THREADS=1`, inference uses one CPU thread.
+
+Create the `model/onnx` subdirectory, then download these files into your CLIP
+directory. The worker checks their hashes when it starts.
+
+```bash
+clip_dir=/storage/morfphoto/clip
+mkdir -p "$clip_dir/model/onnx"
+model_url='https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523'
+for asset in tokenizer.json onnx/text_model.onnx onnx/vision_model.onnx; do
+  curl -fL --retry 3 "$model_url/$asset" -o "$clip_dir/model/$asset" || break
+done
+```
+
+The download is about 608 MB. After all three files are present, include
+`-f docker-compose.clip.yml` along with the base and any thumbnail override.
+For example, to enable both:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.thumbnails.yml -f docker-compose.clip.yml pull
+docker compose -f docker-compose.yml -f docker-compose.thumbnails.yml -f docker-compose.clip.yml up -d
+```
+
+The worker starts from the saved catalog and reuses thumbnails when available.
 
 ## Connect the server
 
-1. On the NAS, run a morfPhoto build with the Library API and Bearer-key
-   authentication, such as the `fork/nas` build. Enable `xmp.enabled` and set
-   `MORFPHOTO_API_KEY` or `api_key` on the server. Index the folders you want to
-   browse.
-2. In **Preferences → morfPhoto (Experimental)**, enter the server's base URL
-   and API key. Use HTTPS so the key travels encrypted. Immage stores the key
-   in the OS keychain when you save.
-3. Enter the mapped folder's absolute path as morfPhoto sees it, for example
-   `/photos`. Next to **Folder on this computer**, choose the mounted network
-   folder with the same contents, for example `/Volumes/photos`. A file at
+1. In **Preferences → Immage Accelerator (Experimental)**, enter the server
+   URL and API key. For example, use `http://nas-hostname:8793` on your local
+   network, or your HTTPS URL if you have set up a reverse proxy. Immage
+   stores the key in the OS keychain when you save.
+2. Set **Server folder** to the path as morfPhoto sees it, usually `/photos`.
+   Set **Folder on this computer** to the mounted share with the same
+   contents, for example `/Volumes/photos`. A file listed as
    `/photos/2026/example.raw` then opens from
-   `/Volumes/photos/2026/example.raw`. The mapping is saved separately from
-   your Immich settings.
-4. Select **Test**, enable **Use morfPhoto**, and select **Save**. Add the
-   mounted folder to your [Library](library.md) if it is not already there.
+   `/Volumes/photos/2026/example.raw`.
+3. Select **Test**, turn on **Enable Immage Accelerator**, and select **Save**.
+   Add the mounted folder to your [Library](library.md).
 
 Use **Replace** to enter a new key. **Forget** removes the stored key and
 disables the integration. To keep the key while using file-based browsing,
-turn off **Use morfPhoto** and save. Refresh the Library folders to apply the
+turn off **Enable Immage Accelerator** and save. Refresh the Library folders to apply the
 change to the current view.
 
 ## Browse and search
@@ -65,12 +129,11 @@ use the existing desktop index. If the server cannot handle the search or an
 active filter, Immage falls back to desktop search, which uses its own CLIP
 model and can only rank photos it has analyzed.
 
-## NAS activity in Performance
+## Monitor NAS activity
 
-With morfPhoto enabled, open **Preferences → Performance** to see the NAS scan
-state, photos scanned and scan errors, thumbnails on disk, checked and generated, and
-CLIP analysis coverage and failures. The panel refreshes about every 10 seconds
-while the tab is open. Each metric has its own row. The on-disk thumbnail count
+Open **Preferences → Immage Accelerator (Experimental)** and expand
+**NAS activity** to see scan progress, thumbnail counts, and CLIP coverage
+and failures. The panel refreshes about every 10 seconds while expanded. Each metric has its own row. The on-disk thumbnail count
 is measured about every 30 seconds while thumbnail warming is available and
 includes files written before the last restart. The generated and checked counts
 reset on restart. Older servers may omit some counters.
