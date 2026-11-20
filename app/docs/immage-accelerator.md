@@ -1,11 +1,34 @@
 # Immage Accelerator (Experimental)
 
-Immage Accelerator uses morfPhoto, a service you run on the NAS, to browse
-and search a photo library on a mounted network share. morfPhoto serves the
-folder listing and indexed EXIF and XMP, including ratings, color labels,
-keywords, and virtual copies. With optional caches, it can also serve
-thumbnails and rank originals by a text description. Immage opens originals
-through the mounted share for viewing, editing, and exporting.
+Immage Accelerator is for browsing large photo libraries and getting to the
+photo you want to edit faster when the originals live on a network share or
+slower disks. It can make a substantial difference on a low-powered NAS such
+as a Raspberry Pi, where repeatedly opening originals over the network to read
+metadata or generate grid thumbnails adds up. Expect a smaller gain when your
+photos already live on fast local NVMe storage.
+
+Run morfPhoto once on the NAS and connect as many Immage clients as you need to
+the same library. The server indexes metadata once and, with thumbnail caching
+enabled, builds a shared cache that every client can reuse. If you clear
+Immage’s local caches, the server still has its metadata index and cached
+previews. Immage can use them again as you browse, without regenerating those
+thumbnails from the originals.
+
+The shared cache covers embedded camera previews for unedited originals.
+Immage still opens originals through the mounted share for editing and
+exporting, and renders thumbnails for edits and virtual copies locally.
+Optional server-side CLIP lets clients share an analysis index for Smart
+Search, too.
+
+## Where your photo data lives
+
+Your original photos stay on the photo share, and their XMP sidecars remain
+the system of record for edits and other sidecar metadata. Accelerator stores
+only data it can rebuild from the photos and sidecars: the metadata index,
+cached thumbnails, and optional CLIP embeddings. If Accelerator is unavailable
+or its stored data is lost, Immage reads metadata from the photos and XMP
+sidecars and generates thumbnails from the mounted share using its usual
+file-based workflow.
 
 morfPhoto was created by Frédéric Biron (morfredus) and is licensed GPL-3.0-only.
 The Docker image and Compose files below come from the Rhettus morfPhoto fork.

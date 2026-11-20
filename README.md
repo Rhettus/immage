@@ -48,7 +48,7 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
 - Browse indexed photos on mapped network shares with experimental
-  [Immage Accelerator](app/docs/morfphoto.md) support, including embedded previews for
+  [Immage Accelerator](app/docs/immage-accelerator.md) support, including embedded previews for
   unedited originals, optional NAS Smart Search, and NAS progress in
   Preferences → Immage Accelerator (Experimental).
 - Export to a folder or an Immich album, with borders and file-name templates.

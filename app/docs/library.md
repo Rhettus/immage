@@ -108,7 +108,7 @@ download and CPU model check, and warns that background analysis uses the CPU
 and slows Immage. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
-For mapped network shares, [Immage Accelerator (Experimental)](morfphoto.md) can
+For mapped network shares, [Immage Accelerator (Experimental)](immage-accelerator.md) can
 provide folder listings, metadata for Library filters and Find, and embedded
 previews for visible unedited originals when Immage has no cached thumbnail.
 

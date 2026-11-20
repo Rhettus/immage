@@ -657,7 +657,7 @@ chromatic aberrations: darktable deprecates its older defringe module.
 ## Immage Accelerator (Experimental)
 
 Set the server URL, key, and path mapping for indexed photos on a network
-share. See [Immage Accelerator](morfphoto.md) for setup and fallback behavior.
+share. See [Immage Accelerator](immage-accelerator.md) for setup and fallback behavior.
 
 ## Immich
 
