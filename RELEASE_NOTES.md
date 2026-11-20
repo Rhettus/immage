@@ -7,8 +7,6 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Choose from five new built-in themes in Preferences, with all built-in
-  themes ordered from darkest to lightest.
 - **Darktable 5.8 rendering:** Immage now uses darktable's code from the 5.8
   feature freeze. Keep photos edited in this release in Immage 0.47 or later.
   Earlier versions drop the saved white balance, input color and demosaic
@@ -52,6 +50,8 @@ Improvements
   Simple cannot show. Hover over the button to see their names.
 - Messages in the corners of the photo fade after 15 seconds unless hovered.
   Click a message to dismiss it immediately.
+- Choose from five new built-in themes in Preferences, with all built-in
+  themes ordered from darkest to lightest.
 
 Performance
 
