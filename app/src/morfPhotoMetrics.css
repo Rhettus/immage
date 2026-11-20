@@ -1,0 +1,25 @@
+.nas-metric-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.nas-metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.nas-metric strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nas-metric-group .pref-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.nas-metric-group .pref-control:empty {
+  display: none;
+}

@@ -68,7 +68,9 @@ model and can only rank photos it has analyzed.
 ## NAS activity in Performance
 
 With morfPhoto enabled, open **Preferences → Performance** to see the NAS scan
-state, photos scanned and scan errors, thumbnails checked and generated, and
+state, photos scanned and scan errors, thumbnails on disk, checked and generated, and
 CLIP analysis coverage and failures. The panel refreshes about every 10 seconds
-while the tab is open. Thumbnail counts are for the current server process and
-reset when morfPhoto restarts. Older servers may omit some counters.
+while the tab is open. Each metric has its own row. The on-disk thumbnail count
+is measured about every 30 seconds while thumbnail warming is available and
+includes files written before the last restart. The generated and checked counts
+reset on restart. Older servers may omit some counters.

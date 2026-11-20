@@ -13,7 +13,8 @@ Improvements
 - Search mapped morfPhoto folders by description using the NAS Smart Search
   index for unedited originals. Immage shows indexing coverage during backfill.
 - View morfPhoto scan, thumbnail generation, and CLIP analysis counters in
-  Preferences → Performance.
+  Preferences → Performance, with a separate line for each metric and the
+  thumbnail total currently on NAS storage.
 - Import darktable `.dtpreset` files and save, apply, or delete your own
   Advanced module presets, including on module cards inside masks.
 - The lightbox can show embedded camera previews for edited RAWs in Fit.

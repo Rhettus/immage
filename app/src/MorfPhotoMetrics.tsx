@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import { commands } from "./bindings";
 import { formatNumber, t } from "./i18n";
 import { PrefCard, PrefRow } from "./PrefsUI";
+import "./morfPhotoMetrics.css";
 
 type State = "idle" | "indexing" | "warming" | "paused" | "disabled" | "starting" | "retrying" | "error";
 type Metrics = {
   state?: State;
   progress?: { files_seen?: number; files_total?: number };
   last_run?: { files_seen?: number; errors_count?: number };
-  thumbnails?: { state?: State; workers?: number; checked?: number; generated?: number };
+  thumbnails?: { state?: State; workers?: number; checked?: number; generated?: number; cached?: number };
   clip?: { state?: State; eligible?: number; indexed?: number; failed?: number };
 };
 
@@ -62,18 +63,35 @@ export function MorfPhotoMetrics() {
     {unavailable
       ? <PrefRow label={t("morfphoto.metrics.unavailable")} children={null} />
       : <>
-        <PrefRow label={t("morfphoto.metrics.scan")} summary={t("morfphoto.metrics.scanCounts", {
-          state: state(metrics?.state), seen: number(progress?.files_seen ?? lastRun?.files_seen),
-          total: number(progress?.files_total ?? lastRun?.files_seen), errors: number(lastRun?.errors_count),
-        })} children={null} />
-        <PrefRow label={t("morfphoto.metrics.thumbnails")} summary={t("morfphoto.metrics.thumbnailCounts", {
-          state: state(thumbnails?.state), generated: number(thumbnails?.generated),
-          checked: number(thumbnails?.checked), workers: number(thumbnails?.workers),
-        })} children={null} />
-        <PrefRow label={t("morfphoto.metrics.clip")} summary={t("morfphoto.metrics.clipCounts", {
-          state: state(clip?.state), indexed: number(clip?.indexed),
-          eligible: number(clip?.eligible), failed: number(clip?.failed),
-        })} children={null} />
+        <MetricGroup title={t("morfphoto.metrics.scan")} rows={[
+          [t("morfphoto.metrics.status"), state(metrics?.state)],
+          [t("morfphoto.metrics.scanned"), number(progress?.files_seen ?? lastRun?.files_seen)],
+          [t("morfphoto.metrics.total"), number(progress?.files_total ?? lastRun?.files_seen)],
+          [t("morfphoto.metrics.errors"), number(lastRun?.errors_count)],
+        ]} />
+        <MetricGroup title={t("morfphoto.metrics.thumbnails")} rows={[
+          [t("morfphoto.metrics.status"), state(thumbnails?.state)],
+          [t("morfphoto.metrics.cached"), number(thumbnails?.cached)],
+          [t("morfphoto.metrics.generated"), number(thumbnails?.generated)],
+          [t("morfphoto.metrics.checked"), number(thumbnails?.checked)],
+          [t("morfphoto.metrics.workers"), number(thumbnails?.workers)],
+        ]} />
+        <MetricGroup title={t("morfphoto.metrics.clip")} rows={[
+          [t("morfphoto.metrics.status"), state(clip?.state)],
+          [t("morfphoto.metrics.analysed"), number(clip?.indexed)],
+          [t("morfphoto.metrics.eligible"), number(clip?.eligible)],
+          [t("morfphoto.metrics.failed"), number(clip?.failed)],
+        ]} />
       </>}
   </PrefCard>;
+}
+
+function MetricGroup({ title, rows }: { title: string; rows: [string, string][] }) {
+  return <div className="nas-metric-group"><PrefRow label={title} summary={
+    <span className="nas-metric-list">
+      {rows.map(([label, value]) => <span className="nas-metric" key={label}>
+        <span>{label}</span><strong>{value}</strong>
+      </span>)}
+    </span>
+  } children={null} /></div>;
 }
