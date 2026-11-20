@@ -7,59 +7,49 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- **Immage Accelerator (Experimental):** Browse and filter mapped network
-  shares with a morfPhoto index. Immage uses its file-based workflow if the
-  server is unavailable.
-- Search mapped morfPhoto folders by description using the NAS Smart Search
-  index for unedited originals. Immage shows indexing coverage during backfill.
-- Expand NAS activity in Immage Accelerator preferences to see scan progress,
-  the thumbnail total on disk, and CLIP analysis coverage, one metric per line.
-- Import darktable `.dtpreset` files and save, apply, or delete your own
-  Advanced module presets, including on module cards inside masks.
-- The lightbox can show embedded camera previews for edited RAWs in Fit.
-  Use 100% detail to inspect the edited image.
-- The lightbox toolbar uses icons for Camera previews, Keywords, and Edit.
-  The camera icon highlights when Camera previews is active.
-- The Advanced mode button shows a green dot for active module edits that
-  Simple cannot show. Hover over the button to see the module names.
-- Drag whole folders onto another folder, including a NAS destination. Immage
-  verifies the entire copy phase before removing originals and uses your Library
-  worker setting to transfer files in parallel. Cached thumbnails and virtual
+- **Darktable 5.8 rendering:** Immage now uses darktable's code from the 5.8
+  feature freeze. Keep photos edited in this release in Immage 0.47 or later.
+  Earlier versions drop the saved white balance, input color and demosaic
+  steps.
+- Find opens in the Library grid from any view and focuses the search box.
+  Filters expand inline one at a time, show their selections and can be
+  cleared individually. The header counts active filters, and Reset clears
+  filters and search text. Exposure settings use tabs, rating and color
+  labels have clearer buttons, and long lists scroll. Saved filters and the
+  photo count are at the bottom.
+- Rename photos individually or in bulk from the Library grid. Preview the
+  batch count and an example name built from photo info and sequence numbers.
+  Edits and sidecars follow the new names.
+- Drag whole folders onto another folder, including a NAS destination.
+  Transfers run in parallel using your Library worker setting. Immage verifies
+  the full copy before removing originals, and cached thumbnails and virtual
   copies follow the photos.
-- Rename photos individually or in bulk from the Library grid. See the batch
-  count and one example built from photo info and sequence numbers. Edits and
-  sidecars follow the new names.
-- Immage now renders with darktable's code from the 5.8 feature freeze. Photos
-  edited in this version should not be reopened in Immage 0.46 or earlier: those
-  versions drop the white balance, input color and demosaic steps saved by this
-  one.
-- Advanced white balance replaces As shot to reference with Prepare data for
-  color calibration and adds From image area with an eyedropper. The white
-  balance and color calibration cards warn when their settings conflict.
+- Save, import, apply and delete Advanced module presets, including darktable
+  `.dtpreset` files and presets on module cards inside masks.
+- The lightbox toolbar uses icons for Camera previews, Keywords and Edit.
+  The highlighted camera icon shows when Camera previews is on, letting you
+  view embedded previews for edited RAWs at Fit. Use 100% detail to inspect
+  the edited image.
+- Advanced white balance adds a From image area eyedropper and replaces As shot
+  to reference with Prepare data for color calibration. Color calibration uses
+  white balance as the default illuminant for RAWs, so Temp and Tint follow it.
+  Other illuminants lock unused white balance controls, and both cards warn
+  about conflicting settings.
 - Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced
   Color calibration. Align the chart overlay, review the measured color error,
   and apply the computed illuminant and channel matrix.
-- Color calibration can take its illuminant from the white balance module,
-  darktable's new default for raw photos. Temp and Tint follow it. With any
-  other illuminant, the white balance card locks the controls that no longer
-  decide the colors.
-- Clarity and Texture use darktable's new local contrast filter, so both can look
-  a little different. Existing edits keep their settings, and their Base detail
-  level moves to the value that matches the new filter.
-- Messages in the corners of the photo, such as the status text, errors and
-  export summaries, fade after 15 seconds unless the pointer is over them. A
-  click dismisses them at once.
-- Find now lives only in the grid, as its right-hand panel, and can no longer
-  float over the photo or the Adjustments panel. The toolbar's Find button
-  goes to the grid from any view and puts the cursor in the search box.
-- Find's filters are a single list: click a filter's row and its options open
-  right beneath it, one at a time, with what each is set to shown on the row
-  and an x to turn it off. The chips are gone. A Filters header counts the
-  filters that are on, and the reset icon in Find's title bar clears them
-  and your search words. Exposure has tabs for ISO, aperture, focal length and shutter
-  speed, rating and color label choices have clearer buttons, and long value
-  lists scroll in their own box. Load and Save filter stay at the bottom with
-  the photo count.
+- Clarity and Texture use darktable's new local contrast filter and can look a
+  little different. Existing edits retain their settings, with Base detail
+  adjusted to match the new filter.
+- **Immage Accelerator (Experimental):** Browse and filter mapped network
+  shares using the morfPhoto index and search unedited originals by description
+  with NAS Smart Search. Immage falls back to file-based browsing when the
+  server is unavailable. Expand NAS activity in Preferences to see scan
+  progress, the on-disk thumbnail count and CLIP indexing coverage.
+- The Advanced mode button shows a green dot when edits use modules that
+  Simple cannot show. Hover over the button to see their names.
+- Messages in the corners of the photo fade after 15 seconds unless hovered.
+  Click a message to dismiss it immediately.
 
 Performance
 
@@ -82,19 +72,12 @@ Bug fixes
   standard dialog layout. The preview toolbar groups the filename and photo
   position separately from its controls and uses the editor’s zoom slider in
   the center of the bottom bar. Both windows close with an X icon.
-- When launched from Terminal, Immage logs the failed filesystem operation
-  and path for photo and folder transfers to help diagnose errors on SMB shares.
-- Grid's Find panel and the editing panel have their own toolbar buttons and
-  remember their widths, visibility and auto-hide pins independently. Their
-  toolbar buttons also reveal them when reopened with auto-hide on.
-- Fixed photo and folder transfers to macOS SMB shares that reject the full
-  file flush. Immage falls back to the standard flush and still verifies the
-  copy before removing originals.
-- Folder transfers can create and verify new files on macOS SMB shares that
-  reject no-overwrite renames. Existing destination files stay protected.
-- Folder transfers skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`
-  when copying files. If copying fails, Immage cleans up newly created empty
-  destination folders when the drive is reachable.
+- Find and Adjustments remember their widths, visibility and auto-hide pins
+  independently.
+- Photo transfers to macOS SMB shares that reject a full file flush now use
+  the standard flush. Immage still verifies the copy before removing originals.
+  When launched from Terminal, Immage logs the failed operation and path if a
+  photo transfer fails.
 - Find finishes indexing photos that have only numbered darktable XMP sidecars.
 - Each Color Grading wheel drag is a single undo step, including on masks
   and in Advanced mode.
