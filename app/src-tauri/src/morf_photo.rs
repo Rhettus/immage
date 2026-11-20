@@ -728,7 +728,14 @@ mod tests {
             (503, json!({})),
         ]);
         config.url = url;
-        assert_eq!(list(&config).err().unwrap(), "morfPhoto returned HTTP 503");
+        let Err(error) = list(&config) else {
+            panic!("a failed second page must discard the listing");
+        };
+        assert!(error.starts_with("morfPhoto catalog page 2 after "), "{error}");
+        assert!(
+            error.ends_with(" (recursive=true): morfPhoto returned HTTP 503"),
+            "{error}"
+        );
         assert_eq!(failing_server.join().unwrap().len(), 2);
     }
 }
