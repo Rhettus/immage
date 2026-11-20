@@ -202,8 +202,8 @@ parts that exist are offered:
 
 The file is named **Immage Backup YYYY-MM-DD.zip** by default. Photos and their
 XMP sidecars are never included: they are your files, so back them up with your
-photos. API keys for Immich and map search stay in the system keychain and are
-not in a backup, so enter them again on another computer.
+photos. API keys for Immich, morfPhoto, and map search stay in the system
+keychain and are not in a backup, so enter them again on another computer.
 
 **Restore…** opens a backup. It shows the date and the version of Immage that
 made it, and lists only the parts the backup holds. Choose the parts to
@@ -653,6 +653,11 @@ as well as photos opened later. **Reset all** puts every tool back on the
 module chosen here. See [Adjustments](adjustments.md#contrast-equalizer)
 for the equalizer graph. Defringe, global and in masks, always uses
 chromatic aberrations: darktable deprecates its older defringe module.
+
+## Immage Accelerator (Experimental)
+
+Set the server URL, key, and path mapping for indexed photos on a network
+share. See [Immage Accelerator](morfphoto.md) for setup and fallback behavior.
 
 ## Immich
 

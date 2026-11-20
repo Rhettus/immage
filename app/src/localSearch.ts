@@ -20,8 +20,15 @@ export async function localSearch(q: ImmichSearch, filters: Filter, folder: stri
       imageVariant, subject: "edited", scope: q.scope, folder: folder || null, recursive,
       filters, remote: nativeSearchArgs(q, null), next, size: 250 }, id);
     if (signal.aborted) throw new Error("Search cancelled");
-    return { items: page.items.map(hit => ({ ...hit.image,
-      localIndex: { assetId: hit.asset_id, variantId: hit.variant_id, subject: hit.subject } } satisfies ImageEntry)), next: page.next };
+    return {
+      items: page.items.map(hit => ({
+        ...hit.image,
+        localIndex: hit.asset_id && hit.variant_id
+          ? { assetId: hit.asset_id, variantId: hit.variant_id, subject: hit.subject }
+          : undefined,
+      } satisfies ImageEntry)),
+      next: page.next,
+    };
   } finally { signal.removeEventListener("abort", cancel); }
 }
 

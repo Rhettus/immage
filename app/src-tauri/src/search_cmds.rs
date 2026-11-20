@@ -81,6 +81,7 @@ pub async fn search_cache_clear(app: AppHandle, rebuild: bool) -> Result<(), Str
                 state.search_cache.clone(),
                 &state.runtime,
                 &state.analysis_queue,
+                &app,
             );
         }
         Ok(())

@@ -15,6 +15,7 @@ import { SearchPrefs, ClipPrefs } from "./SearchPrefs";
 import { MapSearchPrefs } from "./MapSearchPrefs";
 import { Chevron, Collapse } from "./Collapse";
 import { ImmichPrefs } from "./ImmichPrefs";
+import { MorfPhotoPrefs } from "./MorfPhotoPrefs";
 import { ModulePrefs } from "./ModulePrefs";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { PluginPrefs } from "./PluginPrefs";
@@ -423,7 +424,7 @@ export function storeAccel(v: AccelChoice) {
   try { settings.set(ACCEL_KEY, JSON.stringify(v)); } catch { /* not kept */ }
 }
 
-export type PrefsTab = "photos" | "modules" | "immich" | "plugins" | "general" | "performance" | "about";
+export type PrefsTab = "photos" | "modules" | "immich" | "morfphoto" | "plugins" | "general" | "performance" | "about";
 type Tab = PrefsTab;
 
 const svg = (body: React.ReactNode) => (
@@ -439,6 +440,8 @@ const TABS: [Tab, string, React.ReactNode][] = [
     <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M17 13.5v7M13.5 17h7" /></>)],
   ["immich", t("prefs.tab.immich"), svg(<><path d="M7 17.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.5 1.46A3.75 3.75 0 0 1 17.25 17.5z" />
     <path d="M12 10.5v5M9.8 12.7 12 10.5l2.2 2.2" /></>)],
+  ["morfphoto", t("prefs.tab.morfphoto"), svg(<><rect x="4" y="4" width="16" height="7" rx="1.5" />
+    <rect x="4" y="13" width="16" height="7" rx="1.5" /><path d="M7.5 7.5h.1M7.5 16.5h.1M12 7.5h4.5M12 16.5h4.5" /></>)],
   ["plugins", t("prefs.tab.plugins"), svg(<path d="M9.5 4.5a2 2 0 0 1 4 0V6H17a1 1 0 0 1 1 1v3.5h-1.5a2 2 0 0 0 0 4H18V18a1 1 0 0 1-1 1h-3.5v-1.5a2 2 0 0 0-4 0V19H6a1 1 0 0 1-1-1v-3.5h1.5a2 2 0 0 0 0-4H5V7a1 1 0 0 1 1-1h3.5z" />)],
   ["about", t("prefs.tab.about"), svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.6v.2" /></>)],
 ];
@@ -783,6 +786,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             )}
             {tab === "modules" && <ModulePrefs focusMode={focusMode} />}
             {tab === "immich" && <ImmichPrefs />}
+            {tab === "morfphoto" && <MorfPhotoPrefs />}
             {tab === "plugins" && <PluginPrefs plugins={plugins} onPlugins={onPlugins} />}
             {tab === "general" && (
               <>

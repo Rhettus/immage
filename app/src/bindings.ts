@@ -187,6 +187,12 @@ export const commands = {
 	immichTags: () => __TAURI_INVOKE<Named[]>("immich_tags"),
 	immichThumb: (id: string) => __TAURI_INVOKE<ArrayBuffer>("immich_thumb", { id }),
 	immichResolve: (id: string, name: string, path: string, map: PathMap | null) => __TAURI_INVOKE<Resolved>("immich_resolve", { id, name, path, map }),
+	morfPhotoStatus: () => __TAURI_INVOKE<MorfPhotoStatus>("morf_photo_status"),
+	morfPhotoMetrics: () => __TAURI_INVOKE<Value | null>("morf_photo_metrics"),
+	morfPhotoThumbnail: (path: string) => __TAURI_INVOKE<ArrayBuffer>("morf_photo_thumbnail", { path }),
+	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
+	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
+	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
 	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
 	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
 	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
@@ -381,6 +387,13 @@ export type CombineMember = {
 	mask: string,
 	opacity: number,
 	invert: boolean,
+};
+
+export type Config = {
+	enabled: boolean,
+	url: string,
+	serverPath: string,
+	localPath: string,
 };
 
 export type Counts = {
@@ -643,6 +656,7 @@ export type LibraryImage = {
 	keywords: string[],
 	version: number,
 	copy: boolean,
+	morfphotoPreview?: boolean | null,
 };
 
 export type Licenses = {
@@ -659,8 +673,8 @@ export type Limits = {
 };
 
 export type LocalHit = {
-	asset_id: string,
-	variant_id: string,
+	asset_id: string | null,
+	variant_id: string | null,
 	subject: string,
 	score: number | null,
 	image: LibraryImage,
@@ -844,6 +858,12 @@ export type ModuleState = {
 export type ModuleStateReply = {
 	was: ModuleState,
 	now: ModuleState,
+};
+
+export type MorfPhotoStatus = {
+	settings: Config,
+	hasKey: boolean,
+	hasStoredKey: boolean,
 };
 
 export type MoveFailure = {

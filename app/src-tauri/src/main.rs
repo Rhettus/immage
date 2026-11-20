@@ -53,6 +53,8 @@ mod library_cmds;
 mod export_cmds;
 mod move_cmds;
 mod immich_cmds;
+mod morf_photo;
+mod morf_photo_cmds;
 mod print_cmds;
 mod edit_cmds;
 mod ai_cmds;
@@ -264,7 +266,7 @@ fn main() {
             engine.set_search_cache(search_cache.clone());
             let analysis_queue = Arc::new(analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256));
             analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));
-            search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue);
+            search_reconcile::startup(search_cache.clone(), &runtime, &analysis_queue, app.handle());
             let frame_output = Arc::new(frame_output::FrameOutput::new(&runtime));
             let engine_link = engine.link();
             let events = app.handle().clone();

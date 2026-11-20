@@ -1129,7 +1129,7 @@ for line in sys.stdin:
             1,
             "backfilled metadata must be searchable with production version keys"
         );
-        assert_eq!(page.items[0].variant_id, variant.id.to_string());
+        assert_eq!(page.items[0].variant_id, Some(variant.id.to_string()));
         assert_eq!(page.items[0].image.version, 2);
     }
 }
