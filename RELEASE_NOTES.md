@@ -55,6 +55,8 @@ Performance
 
 - For visible, unedited originals on a mapped share, use morfPhoto camera
   previews when Immage has no cached thumbnail and the server can supply one.
+  Updated morfPhoto servers generate grid thumbnails that fit within 400 × 400
+  pixels and use a larger embedded preview when more detail is available.
 - The culling lightbox uses the largest embedded camera preview for unedited
   RAWs when available, avoiding a RAW render even if the preview is smaller
   than the lightbox.
@@ -67,6 +69,7 @@ Performance
 
 Bug fixes
 
+- NAS activity keeps counts and status text aligned as values change.
 - Library filters stay active when you switch folders.
 - The Keywords dialog opens in front of the culling preview and uses the
   standard dialog layout. The preview toolbar groups the filename and photo

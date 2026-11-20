@@ -5,14 +5,15 @@
 
 .nas-metric {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: baseline;
   gap: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .nas-metric strong {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  text-align: end;
 }
 
 .nas-metric-group .pref-label {

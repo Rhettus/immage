@@ -101,6 +101,13 @@ Set `MORFPHOTO_THUMBNAIL_DIR` in `.env` to a directory on NAS storage, such as
 `/storage/morfphoto/thumbnail-cache`. Create it and give the configured
 `PUID` and `PGID` write access. Apply it with
 `docker compose -f docker-compose.yml -f docker-compose.thumbnails.yml up -d`.
+
+With a morfPhoto server that supports grid-sized thumbnails, each JPEG fits
+within 400 × 400 pixels. The server uses a larger embedded camera preview when
+the thumbnail is too small, preserves the aspect ratio, and keeps smaller
+previews at their original size. After a server upgrade, background warming
+revisits indexed photos and replaces older cached thumbnails within the existing
+cache budget.
 Use the same Compose files on future upgrades to keep the cache attached.
 
 ### Optional CLIP Smart Search
@@ -191,7 +198,9 @@ model and can only rank photos it has analyzed.
 
 Open **Preferences → Immage Accelerator (Experimental)** and expand
 **NAS activity** to see scan progress, thumbnail counts, and CLIP coverage
-and failures. The panel refreshes about every 10 seconds while expanded. Each metric has its own row. The on-disk thumbnail count
+and failures. The panel refreshes about every 10 seconds while expanded. Each
+metric has its own row, with counts and statuses aligned at the end of the value
+column. The on-disk thumbnail count
 is measured about every 30 seconds while thumbnail warming is available and
 includes files written before the last restart. The generated and checked counts
 reset on restart. Older servers may omit some counters.
