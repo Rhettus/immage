@@ -57,7 +57,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let config = crate::morf_photo::load(&state.runtime);
             let mapped = mapped_folder_scope(&config, &dir, recursive, &skip)?;
             let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
-            match config.list(&mapped, recursive, &cancelled) {
+            match config.list(&mapped, recursive, cancelled) {
                 Ok(mut images) => {
                     images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
                     if let Some(index) = state.search_cache.as_deref() {
