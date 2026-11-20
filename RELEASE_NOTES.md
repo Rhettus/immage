@@ -3,6 +3,13 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Bug fixes
+
+- Color calibration uses higher precision for chart fitting and rejects
+  invalid measurements before solving the calibration matrix.
+
 ## 0.47.0
 
 Improvements

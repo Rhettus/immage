@@ -690,6 +690,7 @@ static gboolean _extract_color_checker(const float *const restrict in,
     return FALSE;
   }
 
+  gboolean finite = TRUE;
   for(size_t k = 0; k < g->checker->patches; k++)
   {
     float *const sample = patches + k * 4;
@@ -702,7 +703,7 @@ static gboolean _extract_color_checker(const float *const restrict in,
     convert_any_XYZ_to_LMS(XYZ_ref, LMS_ref, kind);
 
     // get the optimization weights
-    float w = 1.f;
+    double w = 1.0;
     if(g->optimization == DT_SOLVE_OPTIMIZE_NONE)
       w = sqrtf(1.f / (float)g->checker->patches);
     else if(g->optimization == DT_SOLVE_OPTIMIZE_HIGH_SAT)
@@ -731,6 +732,11 @@ static gboolean _extract_color_checker(const float *const restrict in,
       w = sqrtf(sqrtf(1.f / g->delta_E_in[k]));
     else if(g->optimization == DT_SOLVE_OPTIMIZE_MAX_DELTA_E)
       w = sqrtf(sqrtf(g->delta_E_in[k]));
+
+    finite = isfinite(w);
+    for(size_t c = 0; c < 3; c++)
+      finite &= isfinite(LMS_ref[c]) && isfinite(LMS_test[c]);
+    if(!finite) break;
 
     // fill 3 rows of the y column vector
     for(size_t c = 0; c < 3; c++) Y[k * 3 + c] = w * LMS_ref[c];
@@ -769,7 +775,7 @@ static gboolean _extract_color_checker(const float *const restrict in,
     A[k * 3 * 9 + 18 + 8] = w * LMS_test[2];
   }
 
-  const gboolean solved = pseudo_solve_gaussian(A, Y, g->checker->patches * 3, 9, TRUE);
+  const gboolean solved = finite && pseudo_solve_gaussian(A, Y, g->checker->patches * 3, 9, TRUE);
   if(!solved)
   {
     dt_free_align(Y);
@@ -863,7 +869,7 @@ gboolean checker_analyze(JsonObject *req, JsonBuilder *b, char **err)
   checker_fit_t g = { .checker = dt_get_color_checker(chart) };
   if(json_object_get_boolean_member_with_default(req, "layout", FALSE))
   {
-    engine_add_double(b, "radius", g.checker->radius * hypotf(1.f, g.checker->ratio));
+    engine_add_double(b, "radius", g.checker->radius * hypot(1.0, g.checker->ratio));
     engine_add_double(b, "ratio", g.checker->ratio);
     json_builder_set_member_name(b, "centers");
     json_builder_begin_array(b);

@@ -162,6 +162,8 @@ Besides exposure, the Basic group has these darktable modules:
   module's output so you can check the calibration after applying it. Immage
   saves the chart corners with the photo's Color calibration settings after a
   successful measurement, so you can return to the same alignment later.
+  If a measurement is invalid, Immage stops the fit and leaves the current
+  calibration in place.
 
 - **Highlight reconstruction**: **Method** and **Clipping threshold**, then
   the settings of the method chosen: segmentation's combine, candidating and
