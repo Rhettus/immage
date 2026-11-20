@@ -5,19 +5,6 @@ what Immage's update banner shows under Release Notes.
 
 ## 0.47.1
 
-Bug fixes
-
-- On Windows, moving folders from a local drive to a network share via a UNC
-  path or mapped drive verifies the copy before removing the originals.
-- The Windows installer now includes the certificates needed to download
-  spektrafilm data from GitHub for Film Simulation.
-- Color calibration uses higher precision for chart fitting and rejects
-  invalid measurements before solving the calibration matrix.
-- Browsing mapped shares through morfPhoto loads the folder tree without
-  paging through the entire photo catalog.
-
-## 0.47.0
-
 Improvements
 
 - **Darktable 5.8 rendering:** Immage now uses darktable's code from the 5.8
@@ -84,6 +71,14 @@ Performance
 
 Bug fixes
 
+- On Windows, moving folders from a local drive to a network share via a UNC
+  path or mapped drive verifies the copy before removing the originals.
+- The Windows installer now includes the certificates needed to download
+  spektrafilm data from GitHub for Film Simulation.
+- Color calibration uses higher precision for chart fitting and rejects
+  invalid measurements before solving the calibration matrix.
+- Browsing mapped shares through morfPhoto loads the folder tree without
+  paging through the entire photo catalog.
 - Profile, White Balance and other editor dropdowns use the selected theme’s
   inset color.
 - Texture, Clarity and Advanced module cards follow the selected theme.
