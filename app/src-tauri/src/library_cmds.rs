@@ -49,6 +49,60 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                                                     "known": known }));
     }
     let dir = PathBuf::from(&path);
+    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
+    let supplied = {
+        let (handle, dir, skip) = (app.clone(), dir.clone(), skip.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = handle.state::<AppState>();
+            let config = crate::morf_photo::load(&state.runtime);
+            let mapped = mapped_folder_scope(&config, &dir, recursive, &skip)?;
+            let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
+            match config.list(&mapped, recursive, &cancelled) {
+                Ok(mut images) => {
+                    images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                    if let Some(index) = state.search_cache.as_deref() {
+                        supplement_morf_folder_metadata(index, &mut images, cancelled);
+                    }
+                    Some((mapped, images))
+                }
+                Err(_) => {
+                    if !cancelled() {
+                        let _ = handle.emit("morfphoto-fallback", mapped.to_string_lossy());
+                    }
+                    None
+                }
+            }
+        }).await.map_err(|e| e.to_string())?
+    };
+    if state.folder_token.load(Ordering::SeqCst) != token {
+        return Err("superseded".into());
+    }
+    let mut supplied_images = Vec::new();
+    let mut supplied_files = Vec::new();
+    let mut skip = skip;
+    let local_listing = supplied.is_none();
+    if let Some((mapped, images)) = supplied {
+        let complete = mapped == dir;
+        skip.insert(mapped);
+        for mut image in images {
+            image.imgid = state.tagged.cached_photo(&image.path, i64::from(image.version));
+            supplied_files.push(image.path.clone());
+            supplied_images.push(serde_json::to_value(image).map_err(|e| e.to_string())?);
+        }
+        supplied_files.sort();
+        supplied_files.dedup();
+        if complete {
+            publish_listing(&app.state::<Caches>().listed, cache::Listed::default(),
+                || state.folder_token.load(Ordering::SeqCst) == token);
+            let count = supplied_files.len();
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": count, "total": count,
+                "images": supplied_images, "files": supplied_files }));
+            return serde_json::from_value(json!({ "images": supplied_images }))
+                .map_err(|e| format!("open_folder: unexpected reply: {e}"));
+        }
+        let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0,
+            "images": supplied_images }));
+    }
     let there = {
         let dir = dir.clone();
         tauri::async_runtime::spawn_blocking(move || volumes::answering(&dir).then(|| dir.is_dir()))
@@ -67,7 +121,6 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let _ = index.root_state(&observed, Some(&volume.mount), "online", None);
         }).await.map_err(|e| e.to_string())?;
     }
-    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let top = dir.clone();
     let (mut files, listed) = tauri::async_runtime::spawn_blocking(move || {
         let (mut out, mut listed) = (Vec::new(), cache::Listed::default());
@@ -87,9 +140,10 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     app.state::<plugins::Plugins>().drain_jobs();
     app.state::<plugins::Plugins>().beside_originals(&mut files);
     let total = files.len();
-    let list: Vec<String> = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-    let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": total, "images": [],
-                                                "files": list }));
+    let supplied_count = supplied_files.len();
+    supplied_files.extend(files.iter().map(|p| p.to_string_lossy().into_owned()));
+    let _ = app.emit("folder-progress", json!({ "token": token, "done": supplied_count, "total": total + supplied_count, "images": [],
+                                                "files": supplied_files }));
     // stamps the listing could not give (Linux) are read side by side, for
     // a few seconds at most, before the cached rows are checked against
     // them: a file that has not answered by then keeps its cached row
@@ -110,7 +164,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             publish_listing(&shared, now, || handle.state::<AppState>().folder_token.load(Ordering::SeqCst) == token);
         }).await.map_err(|e| e.to_string())?;
     }
-    let mut images = Vec::new();
+    let mut images = supplied_images;
     let mut unanswered: Vec<Value> = Vec::new();
     let mut done = 0;
     let mut size = IMPORT_BATCH.0;
@@ -200,11 +254,15 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         }
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
-            let _ = app.emit("folder-progress", json!({ "token": token, "done": done, "total": total, "images": got }));
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": done + supplied_count, "total": total + supplied_count, "images": got }));
         }
     }
-    let kept = images.clone();
-    tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
+    // Keep the last filesystem snapshot for fallback. A mixed listing can
+    // omit local files from a whole mapped subtree.
+    if local_listing {
+        let kept = images.clone();
+        tauri::async_runtime::spawn_blocking(move || write_snapshot(&snapshot, &kept));
+    }
     serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
 }
@@ -225,6 +283,47 @@ fn publish_listing(shared: &Mutex<cache::Listed>, listing: cache::Listed, curren
     if !current() { return false; }
     *slot = listing;
     true
+}
+
+// The NAS library response omits these fields. Leave metadata it does
+// expose intact, including empty EXIF/XMP values and zero ratings.
+pub(crate) fn supplement_morf_metadata(image: &mut LibraryImage, cached: &LibraryImage) {
+    if image.path != cached.path || image.version != cached.version || image.filename != cached.filename {
+        return;
+    }
+    (image.width, image.height) = (cached.width, cached.height);
+    let (target, source) = (&mut image.exif, &cached.exif);
+    target.focus_distance = source.focus_distance.clone();
+    target.crop_factor = source.crop_factor.clone();
+    target.white_balance.clone_from(&source.white_balance);
+    target.flash.clone_from(&source.flash);
+    target.exposure_program.clone_from(&source.exposure_program);
+    target.metering_mode.clone_from(&source.metering_mode);
+    (target.file_width, target.file_height) = (source.file_width, source.file_height);
+    (target.sensor_width, target.sensor_height) = (source.sensor_width, source.sensor_height);
+}
+
+// API results place all versions of a photo together. Reuse their cache
+// lookup while they are consecutive, with no filesystem reads.
+fn supplement_morf_folder_metadata(index: &crate::search_cache::SearchCache,
+                                   images: &mut [LibraryImage], cancelled: impl Fn() -> bool) {
+    let mut current = String::new();
+    let mut rows = Vec::new();
+    for image in images {
+        if cancelled() { return; }
+        if current != image.path {
+            current.clone_from(&image.path);
+            rows = index.path_metadata(&current).unwrap_or_default();
+        }
+        let version = if image.version == 0 { String::new() } else { format!("version:{}", image.version) };
+        let Some((_, _, _, raw)) = rows.iter().find(|(v, _, _, _)| *v == version) else { continue };
+        let Ok(mut value) = serde_json::from_str::<Value>(raw) else { continue };
+        let Some(object) = value.as_object_mut() else { continue };
+        object.insert("imgid".into(), json!(0));
+        if let Ok(cached) = serde_json::from_value::<LibraryImage>(value) {
+            supplement_morf_metadata(image, &cached);
+        }
+    }
 }
 
 // A complete, validated group only: one unknown/new/deleted sidecar forces
@@ -795,21 +894,71 @@ fn subdirs(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+fn mapped_folder_scope(config: &crate::morf_photo::Config, dir: &Path, recursive: bool,
+                       skip: &HashSet<PathBuf>) -> Option<PathBuf> {
+    if config.covers(dir) { return Some(dir.to_path_buf()); }
+    let root = config.mapped_root()?;
+    (recursive && root.starts_with(dir) && visible_morf_path(&root, dir, skip)).then_some(root)
+}
+
+fn visible_morf_path(path: &Path, root: &Path, skip: &HashSet<PathBuf>) -> bool {
+    path.strip_prefix(root).is_ok_and(|relative| {
+        !skip.iter().any(|p| path.starts_with(p))
+            && relative.components().all(|c| !c.as_os_str().to_string_lossy().starts_with('.'))
+    })
+}
+
+fn indexed_subfolders<'a>(root: &Path, paths: impl IntoIterator<Item = &'a Path>) -> Vec<SubFolder> {
+    let mut children = std::collections::BTreeMap::<PathBuf, bool>::new();
+    let skip = HashSet::new();
+    for photo in paths {
+        if !visible_morf_path(photo, root, &skip) { continue; }
+        let Some(parent) = photo.parent() else { continue; };
+        let Ok(relative) = parent.strip_prefix(root) else { continue; };
+        let mut components = relative.components();
+        if let Some(first) = components.next() {
+            let child = root.join(first.as_os_str());
+            *children.entry(child).or_default() |= components.next().is_some();
+        }
+    }
+    children.into_iter().map(|(p, has_children)| subfolder(&p, has_children)).collect()
+}
+
+fn subfolder(path: &Path, has_children: bool) -> SubFolder {
+    SubFolder {
+        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        path: path.to_string_lossy().into_owned(),
+        has_children,
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn list_subfolders(path: String) -> Vec<SubFolder> {
+pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFolder> {
     tauri::async_runtime::spawn_blocking(move || {
-        if !volumes::answering(Path::new(&path)) {
-            return Vec::new();
-        }
-        let mut list: Vec<SubFolder> = subdirs(Path::new(&path))
-            .into_iter()
-            .map(|p| SubFolder {
-                name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                has_children: !subdirs(&p).is_empty(),
-                path: p.to_string_lossy().into_owned(),
-            })
-            .collect();
+        let config = crate::morf_photo::load(&app.state::<AppState>().runtime);
+        let path = Path::new(&path);
+        let indexed = |dir: &Path| {
+            if !config.covers(dir) { return None; }
+            match config.list(dir, true, || false) {
+                Ok(images) => Some(indexed_subfolders(dir, images.iter().map(|i| Path::new(&i.path)))),
+                Err(_) => {
+                    let _ = app.emit("morfphoto-fallback", dir.to_string_lossy());
+                    None
+                }
+            }
+        };
+        let mut list = if let Some(list) = indexed(path) {
+            list
+        } else if volumes::answering(path) {
+            subdirs(path).into_iter().map(|p| {
+                let has_children = indexed(&p).map_or_else(|| !subdirs(&p).is_empty(),
+                    |children| !children.is_empty());
+                subfolder(&p, has_children)
+            }).collect()
+        } else {
+            Vec::new()
+        };
         list.sort_by_key(|f| f.name.to_lowercase());
         list
     })
@@ -1191,6 +1340,47 @@ mod tests {
         // the last batch whenever it comes, with those held
         assert_eq!(p.add(vec![json!(5)], ms(1100), false), None);
         assert_eq!(p.add(vec![json!(6)], ms(1200), true), Some(vec![json!(5), json!(6)]));
+    }
+
+    #[test]
+    fn cached_extras_fill_only_fields_morfphoto_omits() {
+        let fixture: Value = serde_json::from_str(include_str!("../tests/engine-replies/import.json")).unwrap();
+        let source = fixture.as_array().unwrap().iter().find_map(|row| row["reply"]["images"].get(0)).unwrap();
+        let mut image: LibraryImage = serde_json::from_value(source.clone()).unwrap();
+        let mut cached = image.clone();
+        image.rating = 0;
+        cached.rating = 5;
+        image.keywords.clear();
+        cached.keywords = vec!["old".into()];
+        image.exif.lens.clear();
+        cached.exif.lens = "old lens".into();
+        cached.width = 123;
+        cached.exif.white_balance = "daylight".into();
+        supplement_morf_metadata(&mut image, &cached);
+        assert_eq!(image.rating, 0);
+        assert!(image.keywords.is_empty());
+        assert!(image.exif.lens.is_empty());
+        assert_eq!(image.width, 123);
+        assert_eq!(image.exif.white_balance, "daylight");
+        cached.version += 1;
+        cached.width = 456;
+        supplement_morf_metadata(&mut image, &cached);
+        assert_eq!(image.width, 123);
+    }
+
+    #[test]
+    fn indexed_tree_uses_photo_ancestors_and_ignores_hidden_and_unrelated_paths() {
+        let root = PathBuf::from("share");
+        let photos = ["direct.jpg", "leaf/one.raw", "nested/2026/a.raw", "nested/b.jpg", ".hidden/a.raw"]
+            .map(|name| root.join(name));
+        let unrelated = Path::new("share-other/other/photo.raw");
+        let paths = photos.iter().map(PathBuf::as_path).chain(std::iter::once(unrelated));
+        let children = indexed_subfolders(&root, paths);
+        assert_eq!(children.iter().map(|item| (item.name.as_str(), item.has_children))
+            .collect::<Vec<_>>(), vec![("leaf", false), ("nested", true)]);
+        assert!(indexed_subfolders(&root, []).is_empty());
+        assert!(!visible_morf_path(&root.join("nested/2026/a.raw"), &root,
+            &HashSet::from([root.join("nested")])));
     }
 
     #[test]

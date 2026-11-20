@@ -47,6 +47,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
+- Browse indexed photos on mapped network shares with experimental
+  [morfPhoto](app/docs/morfphoto.md) support.
 - Export to a folder or an Immich album, with borders and file-name templates.
 - Print a photo, or a contact sheet of many with their file names, or save a
   PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the

@@ -108,6 +108,9 @@ download and CPU model check, and warns that background analysis uses the CPU
 and slows Immage. Clearing preserves model files;
 rebuilds wait while background work is paused.
 
+For mapped network shares, [morfPhoto (Experimental)](morfphoto.md) can
+provide folder listings and metadata for Library filters and Find.
+
 [Find](#find) searches this cache without an Immich connection. Choose
 **This folder** (respecting Include subfolders) or **All folders** under
 **Search in**. Smart search matches each photo as edited, using its saved edits.

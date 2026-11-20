@@ -85,9 +85,9 @@ export function PrefRow({ id, label, hint, summary, title, children }: {
 }
 
 // an on/off setting
-export function PrefSwitch({ checked, onChange, disabled }: {
-  checked: boolean; onChange: (v: boolean) => void; disabled?: boolean;
+export function PrefSwitch({ checked, onChange, disabled, "aria-label": label }: {
+  checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; "aria-label"?: string;
 }) {
-  return <input type="checkbox" className="switch" checked={checked} disabled={disabled}
+  return <input type="checkbox" className="switch" checked={checked} disabled={disabled} aria-label={label}
                 onChange={(e) => onChange(e.target.checked)} />;
 }

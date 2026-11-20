@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Experimental:** Use a morfPhoto NAS index to browse mapped network shares
+  and filter their photos by indexed metadata. Immage uses its file-based
+  workflow if the server is unavailable.
 - Import darktable `.dtpreset` files and save, apply, or delete your own
   Advanced module presets, including on module cards inside masks.
 - The lightbox can show embedded camera previews for edited RAWs in Fit.

@@ -60,6 +60,7 @@ import { renamePhotos } from './specs/rename-photos.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
 import { libraryMenuRate } from './specs/library-menu-rate.mjs';
 import { immichPrefs } from './specs/immich-prefs.mjs';
+import { morfphotoPrefs } from './specs/morfphoto-prefs.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
 import { gridCulling, gridCullingControls, gridCullingPriority, virtualCopyKeywords } from './specs/grid-culling.mjs';
 import { openFailureRecovery } from './specs/open-failure.mjs';
@@ -102,6 +103,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'folder-menu': folderMenu,
   'library-menu-rate': libraryMenuRate,
   'immich-prefs': immichPrefs,
+  'morfphoto-prefs': morfphotoPrefs,
   'detail-group': detailGroup,
   'agx-presets': agxPresets,
   'color-profiles': colorProfiles,

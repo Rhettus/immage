@@ -10,6 +10,7 @@ use crate::{
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter};
 
 #[derive(Default)]
 struct Scan {
@@ -311,7 +312,7 @@ fn reconcile(
     Ok(())
 }
 
-pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &AnalysisQueue) {
+pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &AnalysisQueue, app: &AppHandle) {
     let Some(index) = index else { return };
     let config = crate::settings::read_key(runtime, "immage.library")
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -334,11 +335,29 @@ pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &Analysis
             continue;
         }
         let expected = config["volumes"][root]["mount"].as_str().map(str::to_owned);
-        let (root, index, hidden) = (root.to_string(), index.clone(), hidden.clone());
+        let (root, index, mut hidden) = (root.to_string(), index.clone(), hidden.clone());
+        let (runtime, app) = (runtime.to_path_buf(), app.clone());
         let key = format!("reconcile:{root}");
         let accepted = queue.submit(key, move |job| {
             if job.cancelled() {
                 return;
+            }
+            let path = Path::new(&root);
+            let config = crate::morf_photo::load(&runtime);
+            let mapped = if config.covers(path) {
+                Some(path.to_path_buf())
+            } else {
+                config.mapped_root().filter(|mapped| mapped.starts_with(path))
+            };
+            if let Some(mapped) = mapped.filter(|mapped| !hidden.iter().any(|p| mapped.starts_with(p))) {
+                match config.list(&mapped, true, || job.cancelled()) {
+                    // The remote catalog owns discovery in this subtree. Preserve the
+                    // file-backed cache for fallback and existing similarity analyses.
+                    Ok(_) if mapped == path => return,
+                    Ok(_) => hidden.push(mapped),
+                    Err(_) if job.cancelled() => return,
+                    Err(_) => { let _ = app.emit("morfphoto-fallback", mapped.to_string_lossy()); }
+                }
             }
             let volume = crate::volumes::volume(&root);
             if let Err(error) = reconcile(

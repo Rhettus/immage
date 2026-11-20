@@ -676,7 +676,6 @@ impl SearchCache {
             .map_err(|e| e.to_string())
     }
 
-    #[cfg(test)]
     pub fn metadata(&self, variant_id: i64) -> Result<Option<String>, String> {
         self.db
             .lock()

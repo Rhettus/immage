@@ -13,7 +13,7 @@ use specta::Type;
 
 // an image as the engine's library lists it (`import`, `copy`): `meta`'s
 // image without the text fields, which a listing leaves out
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct LibraryImage {
     pub imgid: i64,
     pub path: String,

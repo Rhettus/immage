@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
-    collections::BinaryHeap,
+    collections::{BTreeMap, BinaryHeap},
     path::{Path, PathBuf},
 };
 pub const ANALYSIS_VERSION: i64 = 1;
@@ -79,8 +79,8 @@ impl LocalSearchArgs {
 }
 #[derive(Serialize, specta::Type)]
 pub struct LocalHit {
-    pub asset_id: String,
-    pub variant_id: String,
+    pub asset_id: Option<String>,
+    pub variant_id: Option<String>,
     pub subject: String,
     pub score: f64,
     pub image: LibraryImage,
@@ -146,6 +146,16 @@ fn validate_vector(values: &[f32]) -> Result<(), String> {
     }
     Ok(())
 }
+fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
+    let mut value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    value.as_object_mut()?.insert("imgid".into(), serde_json::json!(0));
+    let image: LibraryImage = serde_json::from_value(value).ok()?;
+    (image.path == path
+        && image.version == version
+        && Path::new(path).file_name().and_then(|p| p.to_str()) == Some(image.filename.as_str()))
+        .then_some(image)
+}
+
 fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[PathBuf]) -> bool {
     if hidden.iter().any(|p| path.starts_with(p)) || !roots.iter().any(|p| path.starts_with(p)) {
         return false;
@@ -160,12 +170,62 @@ fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[Pa
         path.parent() == Some(folder)
     }
 }
-pub fn retrieve(
+/// Complete morfPhoto scopes replace their local metadata candidates for one
+/// query. Local cache IDs and embeddings still belong to the local index.
+#[derive(Default)]
+pub struct ProviderMetadata {
+    scopes: Vec<(PathBuf, bool)>,
+    images: BTreeMap<(String, u32), LibraryImage>,
+}
+impl ProviderMetadata {
+    pub fn add(&mut self, scope: PathBuf, recursive: bool, images: Vec<LibraryImage>) {
+        self.scopes.push((scope, recursive));
+        for image in images {
+            self.images.insert((image.path.clone(), image.version), image);
+        }
+    }
+
+    fn covers(&self, path: &Path) -> bool {
+        self.scopes.iter().any(|(scope, recursive)| {
+            if *recursive {
+                path.starts_with(scope)
+            } else {
+                path.parent() == Some(scope.as_path())
+            }
+        })
+    }
+
+    fn hash(&self, hash: &mut Sha256, cancelled: &impl Fn() -> bool) -> Result<(), String> {
+        hash.update(serde_json::to_vec(&self.scopes).map_err(|e| e.to_string())?);
+        for image in self.images.values() {
+            if cancelled() {
+                return Err("Search cancelled".into());
+            }
+            hash.update(serde_json::to_vec(image).map_err(|e| e.to_string())?);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn retrieve(
     cache: &SearchCache,
     args: &LocalSearchArgs,
     roots: &[PathBuf],
     hidden: &[PathBuf],
     text_vector: Option<Vec<f32>>,
+    cancelled: impl Fn() -> bool,
+) -> Result<LocalPage, String> {
+    retrieve_with_provider(cache, args, roots, hidden, text_vector, &ProviderMetadata::default(), cancelled)
+}
+
+pub fn retrieve_with_provider(
+    cache: &SearchCache,
+    args: &LocalSearchArgs,
+    roots: &[PathBuf],
+    hidden: &[PathBuf],
+    text_vector: Option<Vec<f32>>,
+    provider: &ProviderMetadata,
     cancelled: impl Fn() -> bool,
 ) -> Result<LocalPage, String> {
     args.validate()?;
@@ -198,6 +258,7 @@ pub fn retrieve(
         serde_json::to_vec(&(parameters, roots, hidden, MODEL_VERSION, ANALYSIS_VERSION))
             .map_err(|e| e.to_string())?,
     );
+    provider.hash(&mut hash, &cancelled)?;
     if let Some(v) = &vector {
         for n in v {
             hash.update(n.to_le_bytes());
@@ -213,16 +274,60 @@ pub fn retrieve(
         c.signature != signature
             || c.revision != revision
             || !c.score.is_finite()
-            || c.variant_id <= 0
+            || c.variant_id == 0
     }) {
         return Err(format!("{INDEX_CHANGED}: local index or query changed; restart the search"));
     }
     let mut heap = BinaryHeap::new();
     let needed = args.size as usize + 1;
+    let filename_query = (args.mode == "filename").then(|| args.text.to_lowercase());
+    let matches = |image: &LibraryImage, capture: Option<&str>| {
+        search_filters::passes(image, capture, &args.filters, &args.remote)
+            && filename_query
+                .as_ref()
+                .is_none_or(|needle| image.filename.to_lowercase().contains(needle))
+    };
+    let follows = |score: f64, id: i64| {
+        cursor.as_ref().is_none_or(|c| score < c.score || (score == c.score && id > c.variant_id))
+    };
+    // Metadata-only API rows sort before positive SQLite IDs, in path/version
+    // order. These cursor keys never escape as local embedding identities.
+    if vector.is_none() {
+        let first_id = -(provider.images.len() as i64);
+        for (offset, image) in provider.images.values().enumerate() {
+            if cancelled() {
+                return Err("Search cancelled".into());
+            }
+            let id = first_id + offset as i64;
+            if !follows(0.0, id) || !in_scope(Path::new(&image.path), args, roots, hidden)
+                || !matches(image, None)
+            {
+                continue;
+            }
+            heap.push(Ranked {
+                score: 0.0,
+                id,
+                hit: LocalHit {
+                    asset_id: None,
+                    variant_id: None,
+                    subject: args.subject.clone(),
+                    score: 0.0,
+                    image: image.clone(),
+                },
+            });
+            if heap.len() == needed {
+                break;
+            }
+        }
+    }
     // Metadata ranks tie at zero and SQL returns stable ascending IDs. Resume
     // after the last ID and stop once one complete page plus lookahead matches.
-    let mut after = if vector.is_none() { cursor.as_ref().map_or(0, |c|c.variant_id) } else { 0 };
-    'scan: loop {
+    let mut after = if vector.is_none() {
+        cursor.as_ref().map_or(0, |c| c.variant_id.max(0))
+    } else {
+        0
+    };
+    'scan: while vector.is_some() || heap.len() < needed {
         if cancelled() {
             return Err("Search cancelled".into());
         }
@@ -248,38 +353,29 @@ pub fn retrieve(
             {
                 continue;
             }
-            let Some(raw) = row.metadata.as_deref() else {
-                continue;
+            let row_version = if row.copy_key.is_empty() {
+                Some(0)
+            } else {
+                row.copy_key.strip_prefix("version:").and_then(|s| s.parse::<u32>().ok())
             };
-            let Ok(mut metadata) = serde_json::from_str::<serde_json::Value>(raw) else {
-                continue;
+            let Some(version) = row_version else { continue };
+            let cached = || row.metadata.as_deref().and_then(|raw| cached_image(raw, &row.path, version));
+            let (image, capture) = if provider.covers(Path::new(&row.path)) {
+                if vector.is_none() {
+                    continue;
+                }
+                let Some(mut image) = provider.images.get(&(row.path.clone(), version)).cloned() else {
+                    continue;
+                };
+                if let Some(cached) = cached() {
+                    crate::library_cmds::supplement_morf_metadata(&mut image, &cached);
+                }
+                (image, None)
+            } else {
+                let Some(image) = cached() else { continue };
+                (image, row.capture_raw.as_deref())
             };
-            let Some(object) = metadata.as_object_mut() else {
-                continue;
-            };
-            object.insert("imgid".into(), serde_json::json!(0));
-            let Ok(image) = serde_json::from_value::<LibraryImage>(metadata) else {
-                continue;
-            };
-            if image.path != row.path
-                || (if row.copy_key.is_empty() { Some(0) } else { row.copy_key.strip_prefix("version:").and_then(|s|s.parse::<u32>().ok()) }) != Some(image.version)
-                || Path::new(&image.path).file_name().and_then(|p| p.to_str())
-                    != Some(image.filename.as_str())
-                || !search_filters::passes(
-                    &image,
-                    row.capture_raw.as_deref(),
-                    &args.filters,
-                    &args.remote,
-                )
-            {
-                continue;
-            }
-            if args.mode == "filename"
-                && !image
-                    .filename
-                    .to_lowercase()
-                    .contains(&args.text.to_lowercase())
-            {
+            if !matches(&image, capture) {
                 continue;
             }
             let score = if let Some(q) = &vector {
@@ -297,17 +393,15 @@ pub fn retrieve(
             } else {
                 0.0
             };
-            if cursor.as_ref().is_some_and(|c| {
-                score > c.score || (score == c.score && row.variant_id <= c.variant_id)
-            }) {
+            if !follows(score, row.variant_id) {
                 continue;
             }
             heap.push(Ranked {
                 score,
                 id: row.variant_id,
                 hit: LocalHit {
-                    asset_id: row.asset_id.to_string(),
-                    variant_id: row.variant_id.to_string(),
+                    asset_id: Some(row.asset_id.to_string()),
+                    variant_id: Some(row.variant_id.to_string()),
                     subject: args.subject.clone(),
                     score,
                     image,
@@ -321,9 +415,6 @@ pub fn retrieve(
     }
     if cancelled() {
         return Err("Search cancelled".into());
-    }
-    if cache.revision() != Ok(revision.clone()) {
-        return Err(format!("{INDEX_CHANGED}: local index changed; restart the search"));
     }
     let mut sorted = heap.into_vec();
     sorted.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.id.cmp(&b.id)));
@@ -345,6 +436,29 @@ pub fn retrieve(
     } else {
         None
     };
+    for ranked in &mut sorted {
+        if ranked.id > 0 {
+            continue;
+        }
+        if cancelled() {
+            return Err("Search cancelled".into());
+        }
+        let image = &mut ranked.hit.image;
+        let key = if image.version == 0 { String::new() } else { format!("version:{}", image.version) };
+        if let Some(variant) = cache.variant(&image.path, &key)? {
+            if let Some(cached) = cache.metadata(variant.id)?
+                .as_deref()
+                .and_then(|raw| cached_image(raw, &image.path, image.version))
+            {
+                crate::library_cmds::supplement_morf_metadata(image, &cached);
+            }
+            ranked.hit.asset_id = Some(variant.asset_id.to_string());
+            ranked.hit.variant_id = Some(variant.id.to_string());
+        }
+    }
+    if cache.revision() != Ok(revision.clone()) {
+        return Err(format!("{INDEX_CHANGED}: local index changed; restart the search"));
+    }
     Ok(LocalPage {
         items: sorted.into_iter().map(|r| r.hit).collect(),
         next,
@@ -455,6 +569,73 @@ mod tests {
             || false,
         )
     }
+    fn provider_image(f: &Fixture, path: &Path, rating: u8) -> LibraryImage {
+        let mut image: serde_json::Value =
+            serde_json::from_str(&f.cache.metadata(f.a.id).unwrap().unwrap()).unwrap();
+        image["imgid"] = serde_json::json!(0);
+        image["path"] = serde_json::json!(path);
+        image["filename"] = serde_json::json!(path.file_name().unwrap().to_str().unwrap());
+        image["rating"] = serde_json::json!(rating);
+        serde_json::from_value(image).unwrap()
+    }
+
+    #[test]
+    fn provider_scope_replaces_stale_metadata_and_paginates_with_local_results() {
+        let f = fixture();
+        let mut provider = ProviderMetadata::default();
+        provider.add(
+            f.roots[0].clone(),
+            true,
+            vec![
+                provider_image(&f, &f.roots[0].join("a.jpg"), 1),
+                provider_image(&f, &f.roots[0].join("new.jpg"), 5),
+                provider_image(&f, &f.hidden[0].join("hidden.jpg"), 5),
+            ],
+        );
+        let mut args = LocalSearchArgs { size: 1, ..Default::default() };
+        args.filters.min_rating = 4;
+        let run = |args: &LocalSearchArgs, provider: &ProviderMetadata| {
+            retrieve_with_provider(&f.cache, args, &f.roots, &f.hidden, None, provider, || false)
+        };
+        let first = run(&args, &provider).unwrap();
+        assert_eq!(first.items[0].image.filename, "new.jpg");
+        assert!(first.items[0].variant_id.is_none());
+        args.next = first.next;
+        let second = run(&args, &provider).unwrap();
+        assert_eq!(second.items[0].image.filename, "e.jpg");
+        assert!(second.next.is_none());
+
+        let mut changed = ProviderMetadata::default();
+        changed.add(f.roots[0].clone(), true, Vec::new());
+        assert!(run(&args, &changed).err().unwrap().contains(INDEX_CHANGED));
+        assert!(run(&args, &ProviderMetadata::default()).err().unwrap().contains(INDEX_CHANGED));
+        args.next = None;
+        assert_eq!(run(&args, &changed).unwrap().items[0].image.filename, "e.jpg");
+    }
+
+    #[test]
+    fn provider_filters_rank_existing_embeddings_by_path_and_version() {
+        let f = fixture();
+        let mut provider = ProviderMetadata::default();
+        provider.add(
+            f.roots[0].clone(),
+            true,
+            vec![
+                provider_image(&f, &f.roots[0].join("a.jpg"), 5),
+                provider_image(&f, &f.roots[0].join("b.jpg"), 1),
+                provider_image(&f, &f.roots[0].join("new.jpg"), 5),
+            ],
+        );
+        let mut args = LocalSearchArgs { text: "subject".into(), ..Default::default() };
+        args.filters.min_rating = 5;
+        let page = retrieve_with_provider(
+            &f.cache, &args, &f.roots, &f.hidden, Some(unit(1.0, 0.0)), &provider, || false,
+        ).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].variant_id, Some(f.a.id.to_string()));
+        assert_eq!(page.items[0].image.rating, 5);
+    }
+
     /// Synthetic vectors isolate retrieval; this does not measure CLIP inference.
     #[test]
     #[ignore = "manual retrieval benchmark"]
@@ -515,7 +696,7 @@ mod tests {
         );
         args.next = first.next;
         let second = run(&f, &args).unwrap();
-        assert_eq!(second.items[0].variant_id, f.copy.id.to_string());
+        assert_eq!(second.items[0].variant_id, Some(f.copy.id.to_string()));
         assert_eq!(second.items[1].image.filename, "c.jpg");
         args.next = second.next;
         let third = run(&f, &args).unwrap();
@@ -542,7 +723,7 @@ mod tests {
         assert!(page
             .items
             .iter()
-            .all(|i| i.asset_id != f.a.asset_id.to_string()));
+            .all(|i| i.asset_id != Some(f.a.asset_id.to_string())));
         f.cache
             .invalidate_edited(&f.roots[0].join("a.jpg").to_string_lossy(), "")
             .unwrap();
@@ -734,7 +915,7 @@ mod tests {
         args.filters.taken_from = "2025-01-01".into();
         let page = retrieve(&f.cache, &args, &f.roots, &f.hidden, None, || false).unwrap();
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].variant_id, f.copy.id.to_string());
+        assert_eq!(page.items[0].variant_id, Some(f.copy.id.to_string()));
         f.cache
             .upsert_variant(
                 &path.to_string_lossy(),
@@ -750,6 +931,6 @@ mod tests {
         args.filters.taken_to = "2024-12-31".into();
         let page = retrieve(&f.cache, &args, &f.roots, &f.hidden, None, || false).unwrap();
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].variant_id, f.a.id.to_string());
+        assert_eq!(page.items[0].variant_id, Some(f.a.id.to_string()));
     }
 }

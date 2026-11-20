@@ -286,6 +286,11 @@ export default function App() {
     setStatusRaw(s);
     setStatusStamp((n) => n + 1);
   }, []);
+  const [morfPhotoFallback, setMorfPhotoFallback] = useState<{ path: string } | null>(null);
+  useEffect(() => {
+    const off = listen<string>("morfphoto-fallback", ({ payload }) => setMorfPhotoFallback({ path: payload }));
+    return () => { void off.then(unlisten => unlisten()); };
+  }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
   // `known` are the photos the folder's last read found, shown until read
@@ -6912,6 +6917,11 @@ export default function App() {
             onClick={() => void openSupportBundleRef.current()}>{t("app.status.supportBundle")}</button>}</Notice>
           <div className="activities">
           {backgroundJobs.map((j) => <JobActivity key={j.id} job={j} />)}
+          {morfPhotoFallback && (
+            <Notice className="activity waiting" stamp={morfPhotoFallback} onDone={() => setMorfPhotoFallback(null)} role="status">
+              <span>{t("morfphoto.fallback", morfPhotoFallback)}</span>
+            </Notice>
+          )}
           {engineNotice?.kind === "slow" && (
             <div className="activity waiting" {...keepPointer}>
               <span>{t("app.status.engineNotAnswering")}</span>

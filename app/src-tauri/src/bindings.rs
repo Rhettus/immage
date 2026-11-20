@@ -198,6 +198,10 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::immich_cmds::immich_tags,
         crate::immich_cmds::immich_thumb,
         crate::immich_cmds::immich_resolve,
+        crate::morf_photo_cmds::morf_photo_status,
+        crate::morf_photo_cmds::morf_photo_save,
+        crate::morf_photo_cmds::morf_photo_test,
+        crate::morf_photo_cmds::morf_photo_forget,
         // Edit In plugins, backups and the support bundle
         crate::plugins::plugin_find_apps,
         crate::plugins::plugin_config,
@@ -286,7 +290,7 @@ pub struct MetaImage {
     pub metadata: MetaText,
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct Location {
     pub latitude: Number,
     pub longitude: Number,
@@ -298,7 +302,7 @@ fn zero() -> Number {
     Number::from(0)
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct MetaExif {
     pub maker: String,
     pub model: String,

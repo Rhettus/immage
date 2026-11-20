@@ -1,0 +1,42 @@
+# morfPhoto (Experimental)
+
+Immage 0.47.0 can use a morfPhoto server to browse and filter photos on a
+mounted network share. morfPhoto supplies the folder contents and indexed EXIF
+and XMP, including ratings, color labels, keywords, and virtual copies. Immage
+opens the originals through the mounted share, so keep that share connected
+when viewing, editing, or exporting photos.
+
+## Connect the server
+
+1. On the NAS, run a morfPhoto build with the Library API and Bearer-key
+   authentication, such as the `fork/nas` build. Enable `xmp.enabled` and set
+   `MORFPHOTO_API_KEY` or `api_key` on the server. Index the folders you want to
+   browse.
+2. In **Preferences → morfPhoto (Experimental)**, enter the server's base URL
+   and API key. Use HTTPS so the key travels encrypted. Immage stores the key
+   in the OS keychain when you save.
+3. Enter the mapped folder's absolute path as morfPhoto sees it, for example
+   `/photos`. Next to **Folder on this computer**, choose the mounted network
+   folder with the same contents, for example `/Volumes/photos`. A file at
+   `/photos/2026/example.raw` then opens from
+   `/Volumes/photos/2026/example.raw`. The mapping is saved separately from
+   your Immich settings.
+4. Select **Test**, enable **Use morfPhoto**, and select **Save**. Add the
+   mounted folder to your [Library](library.md) if it is not already there.
+
+Use **Replace** to enter a new key. **Forget** removes the stored key and
+disables the integration. To keep the key while using file-based browsing,
+turn off **Use morfPhoto** and save. Refresh the Library folders to apply the
+change to the current view.
+
+## Browse and search
+
+The folder tree shows folders that contain indexed photos or lead to them.
+Empty and unindexed folders stay out of the tree. Library filters and Find
+prefer the metadata from the current server index for mapped network shares.
+Photos, edits, and file moves can take until the next morfPhoto index update
+to appear.
+
+If Immage cannot read the API for a mapped folder, it shows a notice and uses
+its usual file-based workflow for that scope. Refresh to try morfPhoto again.
+Local similarity search still depends on Immage's local image analysis.
