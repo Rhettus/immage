@@ -65,7 +65,8 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                     }
                     Some((mapped, images))
                 }
-                Err(_) => {
+                Err(reason) => {
+                    eprintln!("morfPhoto catalog request failed: {reason}");
                     if !cancelled() {
                         let _ = handle.emit("morfphoto-fallback", mapped.to_string_lossy());
                     }
@@ -908,22 +909,6 @@ fn visible_morf_path(path: &Path, root: &Path, skip: &HashSet<PathBuf>) -> bool 
     })
 }
 
-fn indexed_subfolders<'a>(root: &Path, paths: impl IntoIterator<Item = &'a Path>) -> Vec<SubFolder> {
-    let mut children = std::collections::BTreeMap::<PathBuf, bool>::new();
-    let skip = HashSet::new();
-    for photo in paths {
-        if !visible_morf_path(photo, root, &skip) { continue; }
-        let Some(parent) = photo.parent() else { continue; };
-        let Ok(relative) = parent.strip_prefix(root) else { continue; };
-        let mut components = relative.components();
-        if let Some(first) = components.next() {
-            let child = root.join(first.as_os_str());
-            *children.entry(child).or_default() |= components.next().is_some();
-        }
-    }
-    children.into_iter().map(|(p, has_children)| subfolder(&p, has_children)).collect()
-}
-
 fn subfolder(path: &Path, has_children: bool) -> SubFolder {
     SubFolder {
         name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
@@ -938,12 +923,16 @@ pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFold
     tauri::async_runtime::spawn_blocking(move || {
         let config = crate::morf_photo::load(&app.state::<AppState>().runtime);
         let path = Path::new(&path);
-        let indexed = |dir: &Path| {
+        let indexed = |dir: &Path| -> Option<Vec<SubFolder>> {
             if !config.covers(dir) { return None; }
-            match config.list(dir, true, || false) {
-                Ok(images) => Some(indexed_subfolders(dir, images.iter().map(|i| Path::new(&i.path)))),
-                Err(_) => {
-                    let _ = app.emit("morfphoto-fallback", dir.to_string_lossy());
+            let started = std::time::Instant::now();
+            match config.subfolders(dir) {
+                Ok(children) => Some(children.into_iter()
+                    .map(|(path, has_children)| subfolder(&path, has_children))
+                    .collect()),
+                Err(reason) => {
+                    eprintln!("morfPhoto folder tree request failed after {} ms: {reason}",
+                        started.elapsed().as_millis());
                     None
                 }
             }
@@ -1369,16 +1358,8 @@ mod tests {
     }
 
     #[test]
-    fn indexed_tree_uses_photo_ancestors_and_ignores_hidden_and_unrelated_paths() {
+    fn morfphoto_tree_excludes_skipped_paths() {
         let root = PathBuf::from("share");
-        let photos = ["direct.jpg", "leaf/one.raw", "nested/2026/a.raw", "nested/b.jpg", ".hidden/a.raw"]
-            .map(|name| root.join(name));
-        let unrelated = Path::new("share-other/other/photo.raw");
-        let paths = photos.iter().map(PathBuf::as_path).chain(std::iter::once(unrelated));
-        let children = indexed_subfolders(&root, paths);
-        assert_eq!(children.iter().map(|item| (item.name.as_str(), item.has_children))
-            .collect::<Vec<_>>(), vec![("leaf", false), ("nested", true)]);
-        assert!(indexed_subfolders(&root, []).is_empty());
         assert!(!visible_morf_path(&root.join("nested/2026/a.raw"), &root,
             &HashSet::from([root.join("nested")])));
     }

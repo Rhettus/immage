@@ -435,7 +435,8 @@ fn same_drive(a: &Path, b: &Path) -> bool {
 
 #[cfg(windows)]
 fn same_drive(a: &Path, b: &Path) -> bool {
-    volumes::volume(&text(a)).mount.eq_ignore_ascii_case(&volumes::volume(&text(b)).mount)
+    let a = volumes::volume(&text(a)).mount;
+    !a.is_empty() && a.eq_ignore_ascii_case(&volumes::volume(&text(b)).mount)
 }
 
 // the folder's own name, case and links resolved, to tell a photo already there

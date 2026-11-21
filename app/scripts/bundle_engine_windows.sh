@@ -20,6 +20,10 @@ cp "$src/bin/darktable-engine.exe" "$dst/bin/"
 cp "$src"/bin/*.dll "$dst/bin/" 2>/dev/null || true
 cp -r "$src/lib/darktable" "$dst/lib/darktable"
 cp -r "$src/share/darktable" "$dst/share/darktable"
+# darktable's libcurl setup looks for the CA bundle beside its data directory.
+# MSYS2's default certificate path is outside the installed Immage bundle.
+mkdir -p "$dst/share/curl"
+cp /ucrt64/etc/ssl/certs/ca-bundle.crt "$dst/share/curl/curl-ca-bundle.crt"
 # darktable falls back to share/lensfun beside its own data when lensfun's
 # built-in location (inside MSYS2) is missing, as on a user's machine. the
 # current snapshot from lensfun's site, not the package's from the 0.3.4

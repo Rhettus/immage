@@ -56,6 +56,13 @@ struct Tree {
     _reservation: Option<DestinationReservation>,
 }
 
+impl Tree {
+    fn can_rename(&self) -> bool {
+        !self.merge && self.links == 0
+            && same_drive(&self.source, self.target.parent().unwrap())
+    }
+}
+
 fn io_at<T>(operation: &str, path: &Path, result: io::Result<T>) -> Result<T, String> {
     result.map_err(|e| transfer_io_error(operation, path, e))
 }
@@ -268,7 +275,7 @@ fn plan(tree: Tree, ctx: &Ctx) -> Result<FolderMovePlan, String> {
         links: tree.links,
         identical: 0,
         merge: tree.merge,
-        instant: !tree.merge && tree.links == 0 && same_drive(&tree.source, parent),
+        instant: tree.can_rename(),
         network: volumes::on_network(parent),
         bytes: 0,
         free: free_space(parent),
@@ -435,7 +442,7 @@ fn transfer(
         skipped: tree.links,
     };
     let parent = tree.target.parent().unwrap();
-    if !copy && !tree.merge && tree.links == 0 {
+    if !copy && tree.can_rename() {
         let listed = rename_thumbnail_listing(&tree, ctx)?;
         tick(ctx)?;
         match rename_no_replace(&tree.source, &tree.target) {
@@ -1037,15 +1044,19 @@ mod tests {
     #[test]
     fn verified_move_between_filesystems() {
         let (_dir, mut req, caches) = fixture();
-        let other = tempfile::tempdir_in("/tmp").unwrap();
-        if same_drive(Path::new(&req.source), other.path()) {
+        let Some(other) = ["/tmp", "/dev/shm"].into_iter()
+            .filter_map(|path| tempfile::tempdir_in(path).ok())
+            .find(|dir| !same_drive(Path::new(&req.source), dir.path()))
+        else {
             return;
-        }
+        };
         req.dest = text(other.path());
         let source = PathBuf::from(&req.source);
         fs::write(source.join(".DS_Store"), b"finder").unwrap();
         let ctx = context();
-        let result = run(walk(req, true, &ctx).unwrap(), vec![], &ctx, &caches.thumbs).unwrap();
+        let tree = walk(req, true, &ctx).unwrap();
+        assert!(!tree.can_rename());
+        let result = run(tree, vec![], &ctx, &caches.thumbs).unwrap();
         assert!(result.source_removed);
         assert_eq!(
             fs::read(other.path().join("2026-05/.hidden")).unwrap(),
