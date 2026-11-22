@@ -34,7 +34,8 @@ globalThis.addEventListener ??= () => {};
 globalThis.requestAnimationFrame = f => setTimeout(() => f(performance.now()), 0);
 globalThis.cancelAnimationFrame = clearTimeout;
 const { Session } = await import('../app/src/session.ts');
-const { applyClip, pasteTargets, runPaste, restorePaste } = await import('../app/src/batchPaste.ts');
+const { applyClip, pasteTargets, runPaste, runReset, restorePaste } = await import('../app/src/batchPaste.ts');
+const { commands } = await import('../app/src/commands.ts');
 const { startEngine, stopEngine, request, requestTagged, sent } = await import('./shim.mjs');
 const batch = (action, token, imgids) => request({ cmd:'paste_batch', action, token, imgids });
 const view = () => ({ width:64,height:64 });
@@ -358,4 +359,43 @@ test('paste carries Advanced instances Simple cannot show, once', {timeout:12000
       assert.equal(got.velvia.enabled,true); assert.ok(Math.abs(got.velvia.params.strength-40)<1e-6);
     }
   }
+}));
+
+test('batch reset closes the active photo in the engine before discarding history, and supports undo/redo', {timeout:120000}, async () => fixture(async ({images}) => {
+  const targets = [images[1], images[2]];
+  // Edit both targets, leaving the second one open in the engine (as after editing
+  // two photos and switching to Grid mode).
+  for (const i of targets) {
+    const s = await open(i);
+    s.setMany([['exposure', 1.25]]);
+    await s.close();
+  }
+  // Session.close() only flushes saves; without closeImage(), discarding the open
+  // photo fails and rolls back the whole batch.
+  const withoutClose = await runReset(targets, () => {}, () => {});
+  assert.equal(withoutClose.token, null);
+  assert.match(withoutClose.error, /close the photo first/);
+  assert.match(withoutClose.error, /batch rolled back/);
+  for (const i of targets) assert.equal((await commands.meta(i.imgid)).image.edited, true);
+
+  // Closing the engine session (as pauseForPaste does) lets all targets reset cleanly,
+  // and calling closeImage() again when nothing is open is a no-op.
+  await commands.closeImage();
+  await commands.closeImage();
+  const saved = [];
+  const reset = await runReset(targets, () => {}, (u) => saved.push(u));
+  assert.equal(reset.error, null);
+  assert(reset.token > 0);
+  assert.deepEqual(saved, targets.map((i) => ({ imgid: i.imgid, edited: false, error: null })));
+  for (const i of targets) assert.equal((await commands.meta(i.imgid)).image.edited, false);
+
+  const undone = await restorePaste(reset.token, 'undo');
+  assert(undone.every((u) => !u.error));
+  for (const i of targets) assert.equal((await commands.meta(i.imgid)).image.edited, true);
+
+  const redone = await restorePaste(reset.token, 'redo');
+  assert(redone.every((u) => !u.error));
+  for (const i of targets) assert.equal((await commands.meta(i.imgid)).image.edited, false);
+
+  await batch('release', reset.token);
 }));

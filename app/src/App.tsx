@@ -4056,6 +4056,7 @@ export default function App() {
     const s = session.current;
     if (!s) return;
     await s.close(confirmSave);
+    await commands.closeImage().catch(() => {});
     session.current = null;
     currentRef.current = null;
     setCurrent(null);
@@ -4698,6 +4699,7 @@ export default function App() {
     setBaMode("off");
     setAmount(null);
     await session.current?.close();
+    await commands.closeImage();
     pasteUndoSession.current = session.current;
     session.current = null;
   };
@@ -4810,7 +4812,7 @@ export default function App() {
         kind: "warning",
         okLabel: t("app.resetPhotos.okLabel"),
       });
-      if (!ok) return;
+      if (!ok || croppingRef.current || pastingRef.current || aiBusy) return;
     }
     const active = currentRef.current;
     const hadSession = !!session.current && !!active;
@@ -4820,6 +4822,7 @@ export default function App() {
     let message = "";
     try {
       if (hadSession) await pauseForPaste();
+      else await commands.closeImage();
       const result = await runReset(targets, (done, total) => setPasting(t("app.status.resetProgress", { done, total })), pasteSaved);
       if (result.token !== null) {
         if (before) discardPastes(pushBatchStep(undo.current, before, { token: result.token, recovery: result.recovery }));

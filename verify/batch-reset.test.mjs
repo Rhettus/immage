@@ -180,3 +180,13 @@ test('runReset rolls back via abort and release on failure, and keeps token for 
     delete globalThis.resetInvoke;
   }
 });
+
+test('App closes the active engine session before resetting or discarding history', () => {
+  const app = readFileSync(new URL('../app/src/App.tsx', import.meta.url), 'utf8');
+  const pauseMatch = app.match(/const pauseForPaste = async \(\) => \{[\s\S]*?\n  \};/);
+  assert.ok(pauseMatch, 'pauseForPaste found in App.tsx');
+  assert.match(pauseMatch[0], /await session\.current\?\.close\(\);[\s\S]*await commands\.closeImage\(\);/);
+  const resetMatch = app.match(/const resetPhotos = async \([\s\S]*?\n  \};/);
+  assert.ok(resetMatch, 'resetPhotos found in App.tsx');
+  assert.match(resetMatch[0], /if \(hadSession\) await pauseForPaste\(\);\s*else await commands\.closeImage\(\);/);
+});

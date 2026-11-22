@@ -33,6 +33,19 @@ pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: 
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 
+// close the open photo in the engine so commands that refuse an open photo
+// (history_discard) or paths that leave no photo open (closePhoto) do not see
+// a stale session. idempotent when nothing is open
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn close_image(state: State<'_, AppState>) -> Result<(), String> {
+    match state.engine("close_image").request(json!({ "cmd": "close" })) {
+        Ok(_) => Ok(()),
+        Err(e) if e == "no image open" => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 // the open image's darktable history, oldest first; `saved`, as the last
 // save stored it, compressed
 #[tauri::command]

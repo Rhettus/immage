@@ -40,6 +40,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::map_tiles::map_tile,
         // the open-photo path
         crate::session_cmds::open_image,
+        crate::session_cmds::close_image,
         crate::session_cmds::history,
         crate::session_cmds::module_state,
         crate::session_cmds::get_params,

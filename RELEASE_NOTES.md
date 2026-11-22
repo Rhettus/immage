@@ -68,6 +68,10 @@ Bug fixes
   an unedited RAW photo with automatic defaults (such as AgX or a New Photos
   preset) no longer writes an XMP sidecar or triggers background Smart search
   re-analysis until you actually make an edit.
+- **Start Over and Grid reset on the open photo:** Closing the active photo
+  before discarding history now closes it in the engine as well, fixing **Start
+  Over** and Grid photo reset failing with "close the photo first" when the
+  currently open photo is included.
 
 ## 0.47.1
 

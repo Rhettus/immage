@@ -33,6 +33,7 @@ export const commands = {
 	about: () => __TAURI_INVOKE<AboutInfo>("about"),
 	mapTile: (z: number, x: number, y: number) => __TAURI_INVOKE<ArrayBuffer>("map_tile", { z, x, y }),
 	openImage: (path: string, imgid: number | null) => __TAURI_INVOKE<OpenReply>("open_image", { path, imgid }),
+	closeImage: () => __TAURI_INVOKE<null>("close_image"),
 	history: (saved: boolean | null) => __TAURI_INVOKE<HistoryItem[]>("history", { saved }),
 	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null, preset: string | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore, preset }),
 	getParams: (modules: { [key in string]: string[] }) => __TAURI_INVOKE<GetReply>("get_params", { modules }),
