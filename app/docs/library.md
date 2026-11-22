@@ -340,16 +340,21 @@ running finish before the newly visible photos use their slots.
 A photo counts as edited once you change something yourself. What Immage
 gives a photo the first time it opens (the **New Photos** settings in
 [Preferences](preferences.md)) doesn't count, and undoing every change
-makes it unedited again. darktable uses the same rule, and the sidecar
+makes it unedited again. Opening and viewing an unedited photo applies those
+defaults in memory without writing an XMP sidecar or re-queuing Smart search
+analysis until you make an edit. darktable uses the same rule, and the sidecar
 carries it, so its lighttable shows the same photos as altered. Photos
 opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
 Press G, or click **Library** on the rail at the right edge, below
-**Import**, for **Grid** view: the whole folder at once.
-Double-click a photo to open it and go back to the filmstrip. G, Esc or the
-**Library** button also goes back. The **Library** button is highlighted while
-the grid shows.
+**Import**, for **Grid** view: the whole folder at once. Clicking a photo or
+stepping with the Left/Right arrow keys in the grid selects it and updates
+Metadata and Keywording without decoding or rendering the full photo in the
+editor. Double-click a photo, or press Enter, to open it in the editor. G, Esc
+or the **Library** button also leaves the grid, opening the selected photo if
+it differs from the one already open. The **Library** button is highlighted
+while the grid shows.
 
 In the grid the right-hand panel is **Find** (see below), locked in place: it
 has the same width, resize handle, show and hide button, pin and auto-hide

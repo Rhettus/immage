@@ -23,6 +23,20 @@ Improvements
   **Previous** stay pinned at the bottom of the right panel below Find's filter
   footer in Library Grid view, matching the Adjustments panel.
 
+Performance
+
+- **Lightweight Grid browsing:** Clicking or stepping with arrow keys through
+  photos in Grid view selects them and updates Metadata and Keywording without
+  decoding full RAWs or rendering the hidden editor until you open a photo to
+  edit.
+
+Bug fixes
+
+- **No sidecar writes or Smart search re-analysis on unedited photos:** Viewing
+  an unedited RAW photo with automatic defaults (such as AgX or a New Photos
+  preset) no longer writes an XMP sidecar or triggers background Smart search
+  re-analysis until you actually make an edit.
+
 ## 0.47.1
 
 Improvements

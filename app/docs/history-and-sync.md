@@ -90,13 +90,13 @@ The buttons at the bottom of the right panel stay available in both the editor
 and Grid view (below Find's filter footer):
 
 - **Copy…** (⇧⌘C) opens **Copy Settings**: tick what to copy, then copy
-  it.
+  it from the open photo (or the selected photo in Grid view).
 - **Paste** (⇧⌘V) pastes those settings onto the selected photos in the
   grid or filmstrip. A single selection is also the target, even if another
   photo is open. Without a selection, Paste uses the open photo. The open
   photo and selection stay in place.
 - **Previous** (⌥⌘V) pastes the previous photo's settings, the parts ticked
-  in Copy Settings.
+  in Copy Settings, onto the open photo or the selected photo in Grid view.
 
 **Copy Settings** groups: **Profile**, **Treatment**, **White Balance**,
 **Tone**, **Presence**, **Tone Curve**, **HSL / Color**, **B&W Mix**, **Color

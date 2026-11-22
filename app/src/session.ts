@@ -665,6 +665,24 @@ export class Session {
     void this.pump();
   }
 
+  // Persist one-time automatic baseline adjustments (e.g. a plugin return)
+  // without marking the photo edited.
+  commitBaseline() {
+    if (this.dead) return;
+    this.unsaved = true;
+    this.scheduleSave();
+  }
+
+  // New-photo defaults (AgX, exposure compensation, profile, New Photos preset)
+  // are applied in memory while `baseline` is still true without writing an XMP
+  // sidecar or invalidating search analysis until the user actually edits the
+  // photo (or a background batch prepares its unedited undo snapshot).
+  private markUnsaved() {
+    if (this.baseline && !this.background) return;
+    this.unsaved = true;
+    this.scheduleSave();
+  }
+
   // nothing queued or in flight
   async settled() {
     while (!this.idle && !this.dead) {
@@ -2060,7 +2078,7 @@ export class Session {
           this.deleted.clear();
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2073,7 +2091,7 @@ export class Session {
           for (const op of ops) await this.pumpTyped("set_params", () => commands.setParams(this.moduleEdit(op)));
           this.changed();
           if (framing) this.reshape = true;
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2086,7 +2104,7 @@ export class Session {
           if (dirty || on !== this.spotsOn) await this.pumpTyped("spots_enable", () => commands.spotsEnable(on));
           this.spotsOn = on;
           this.changed();
-          if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (dirty && !this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2095,7 +2113,7 @@ export class Session {
           this.wantLookAmount = undefined;
           await this.pumpTyped("look_amount", () => commands.lookAmount(amount));
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2104,7 +2122,7 @@ export class Session {
           let sent: boolean;
           try { sent = await this.sendMasks(); } finally { perf.finish(task); }
           this.changed();
-          if (sent && !this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (sent && !this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2113,7 +2131,7 @@ export class Session {
           this.wantLook = undefined;
           await this.pumpTyped("look_apply", () => commands.lookApply(path));
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2122,7 +2140,7 @@ export class Session {
           await this.sendInstance(this.instancePending.shift()!);
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2202,7 +2220,7 @@ export class Session {
           this.instancesStale = true;
           this.maskCardsStale = true;
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2248,7 +2266,7 @@ export class Session {
           }
           if (this.advanced.has(key)) this.advancedStale.add(key);
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2296,7 +2314,7 @@ export class Session {
           }
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2400,7 +2418,7 @@ export class Session {
         });
         if (ops.length) this.changed();
         // the Before view and a peek are only for looking: nothing of it reaches the sidecar
-        if (ops.length && !this.viewing) { this.unsaved = true; this.scheduleSave(); }
+        if (ops.length && !this.viewing) this.markUnsaved();
         this.needRender = false;
         // Batch edits use the same module maps and mask transport, without
         // rendering previews for photos that are not on screen.

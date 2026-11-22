@@ -2816,7 +2816,7 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
       for(guint j = 0; j < k; j++) if(json_array_get_int_element(ids, j) == id)
       { *err = g_strdup("duplicate paste target"); return FALSE; }
     }
-    if(_s.open && _s.unsaved && !_s.before && !session_save(err)) return FALSE;
+    if(_s.open && _s.unsaved && !_s.before && !_s.baseline && !session_save(err)) return FALSE;
     batch = g_new0(paste_batch_t, 1);
     batch->images = g_array_new(FALSE, TRUE, sizeof(paste_image_t));
     for(guint k = 0; k < json_array_get_length(ids); k++)
@@ -2840,7 +2840,7 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
   if(!g_strcmp0(action, "commit"))
   {
     if(batch->committed) { *err = g_strdup("paste already committed"); return FALSE; }
-    if(_s.open && _s.unsaved && !_s.before && !session_save(err)) return FALSE;
+    if(_s.open && _s.unsaved && !_s.before && !_s.baseline && !session_save(err)) return FALSE;
     for(guint k = 0; k < batch->images->len; k++)
     {
       paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
@@ -2857,7 +2857,7 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
   if(!aborting && !batch->committed) { *err = g_strdup("paste is not committed"); return FALSE; }
   // Refuse stale undo/redo before changing any photo. Retrying a failed sidecar
   // write is allowed when the database already holds the requested state.
-  if(!aborting && _s.open && _s.unsaved && !_s.before && !session_save(err)) return FALSE;
+  if(!aborting && _s.open && _s.unsaved && !_s.before && !_s.baseline && !session_save(err)) return FALSE;
   for(guint k = 0; !aborting && k < batch->images->len; k++)
   {
     paste_image_t *i = &g_array_index(batch->images, paste_image_t, k);
@@ -2939,7 +2939,7 @@ gboolean session_history_discard(const dt_imgid_t imgid, JsonBuilder *b, char **
 // on the way out, the edits the client's own save has not reached yet
 void session_save_pending(void)
 {
-  if(!_s.open || !_s.unsaved || _s.before) return;
+  if(!_s.open || !_s.unsaved || _s.before || _s.baseline) return;
   char *err = NULL;
   if(!session_save(&err)) fprintf(stderr, "[engine] save on quit: %s\n", err);
   g_free(err);

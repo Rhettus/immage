@@ -112,6 +112,7 @@ import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
 import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
+import { gridActivePhoto, photoToOpenOnLeaveGrid, shouldOpenOnPick, stepGridSelection } from "./gridSelection";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
@@ -336,15 +337,17 @@ export default function App() {
     slide();
     setLayout((old) => ({ ...old, ...next }));
   };
+  const leaveGridRef = useRef<() => void>(() => setGrid(false));
+  const inspectedRef = useRef<ImageEntry | null>(null);
   // a rail button: switch the right-hand panel to its mode, or, already
   // showing it, slide the panel shut
   const showRight = (mode: RightMode) => {
     // leaving the crop tool for the mode it was opened over is not a second click
     const wasCropping = croppingRef.current;
     if (wasCropping) leaveCrop(true);
-    // in the grid, a tool other than Print leaves it for the open photo
+    // in the grid, a tool other than Print leaves it for the selected or open photo
     const leaving = gridRef.current && mode !== "print";
-    if (leaving) setGrid(false);
+    if (leaving) leaveGridRef.current();
     if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
     if (!layout.right && !(leaving && mode === "adjust")) toggleSide("right");
@@ -3636,11 +3639,17 @@ export default function App() {
     // Secondary-button clicks belong to the context menu and must not change
     // selection before showFileMenu captures its targets.
     if (e.button !== 0) return;
-    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
+    const baseAnchor = gridRef.current
+      ? (gridActivePhoto(shownRef.current, selectionRef.current, pickAnchor.current)?.imgid ?? listedEntry?.imgid ?? null)
+      : (listedEntry?.imgid ?? null);
+    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? baseAnchor) : null;
     if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
       setSelection((old) => {
-        const next = new Set(old.size ? old : listedEntry ? [listedEntry.imgid] : []);
+        const seed = old.size ? old
+          : gridRef.current ? (inspectedRef.current ? [inspectedRef.current.imgid] : [])
+          : listedEntry ? [listedEntry.imgid] : [];
+        const next = new Set(seed);
         if (next.has(i.imgid)) next.delete(i.imgid); else next.add(i.imgid);
         return next;
       });
@@ -3660,7 +3669,7 @@ export default function App() {
       return;
     }
     setSelection(new Set([i.imgid]));
-    void openEntry(i);
+    if (shouldOpenOnPick(gridRef.current)) void openEntry(i);
   };
   const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
     patchImage(imgid, fields);
@@ -4448,6 +4457,7 @@ export default function App() {
       if (back && plugin) {
         back.applied = true;
         void commands.pluginReturnApplied(path);
+        if (Object.keys(plugin.values).length) s.commitBaseline();
         if (plugin.labels.length) {
           const name = kindOf(back.plugin.split(":")[0])?.label ?? "plugin";
           base.push({ op: "plugin", name, label: `${name}: ${plugin.labels.join(", ")} off`, enabled: true });
@@ -4619,6 +4629,26 @@ export default function App() {
     if (!target.some((t) => t.name === maskSel)) setMaskSel(target[0]?.name ?? null);
   };
   const copySettings = async (on: Set<string>) => {
+    const gridSource = gridRef.current ? gridActivePhoto(shownRef.current, selectionRef.current, pickAnchor.current) : null;
+    if (gridSource && !isRemote(gridSource) && (!session.current || !isOpen(gridSource))) {
+      // Read the selected grid photo's settings in a background session without
+      // rendering it into the hidden viewer or writing any sidecar.
+      await closePhoto();
+      let s: Session | null = null;
+      try {
+        s = await Session.open(gridSource.path, gridSource.imgid, () => ({ width: 1, height: 1 }), () => {}, () => {}, true);
+        const advanced = on.has("advanced") ? await s.copyAdvanced() : undefined;
+        if (on.has("masks") && s.masks.length) await s.refreshMaskStates();
+        clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
+        setHasClip(true);
+        setStatus(t("app.status.settingsCopied"));
+      } catch (e) {
+        setStatus(t("app.status.copyError", { error: e }));
+      } finally {
+        s?.abandon();
+      }
+      return;
+    }
     const s = session.current;
     if (!s) return;
     let advanced;
@@ -4656,34 +4686,41 @@ export default function App() {
   };
   const pasteSettings = async (previousClip?: Clip) => {
     const c = previousClip ?? clip.current, active = currentRef.current;
-    if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
-    const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
+    if (!c || croppingRef.current || pastingRef.current || aiBusy) return;
+    const entry = gridRef.current
+      ? (inspectedRef.current ?? (active ? imagesRef.current.find(i => isOpen(i, active)) : null) ?? openCell)
+      : (imagesRef.current.find(i => isOpen(i, active)) ?? openCell);
     const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
     if (!targets.length) { setStatus(t("app.status.pasteNoLocalPhotos")); return; }
     const frozen = structuredClone(c);
     const defaults = newPhotoDefaults();
-    const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
+    const hadSession = !!session.current && !!active;
+    const before = hadSession ? snapshot(session.current!, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`) : null;
     pastingRef.current = true;
     setPasting(t("app.status.pastePreparing"));
     let message = "";
     try {
-      await pauseForPaste();
+      if (hadSession) await pauseForPaste();
       const result = await runPaste(targets, frozen,
         (done, total) => setPasting(t("app.status.pasteProgress", { done, total })), pasteSaved, s => preparePastePhoto(s, defaults));
       if (result.token !== null) {
-        discardPastes(undo.current.future);
-        undo.current.future = [];
-        undo.current.key = "";
-        before.batch = { token: result.token, recovery: result.recovery };
-        undo.current.past.push(before);
-        if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+        if (before) {
+          discardPastes(undo.current.future);
+          undo.current.future = [];
+          undo.current.key = "";
+          before.batch = { token: result.token, recovery: result.recovery };
+          undo.current.past.push(before);
+          if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+        } else {
+          void commands.pasteBatch("release", result.token, null).catch(() => {});
+        }
       }
       message = result.error ? t("app.status.pasteError", { error: result.error })
         : t("app.status.pasteSuccess", { count: targets.length, plural: targets.length === 1 ? "" : "s", skipped: skipped ? t("app.status.pasteSkipped", { count: skipped }) : "" });
     } catch (e) { message = t("app.status.pasteError", { error: e }); }
     finally {
       // No normal navigation: preserve selection and both undo stacks.
-      if (!session.current && !await openFile(active.path, active.imgid, true))
+      if (hadSession && !session.current && !await openFile(active.path, active.imgid, true))
         message += t("app.status.pasteReopenError");
       pastingRef.current = false;
       setPasting(null);
@@ -5419,6 +5456,14 @@ export default function App() {
       void openEntry(picked[0]);
       return;
     }
+    if (gridRef.current && picked.length === 1 && !isOpen(picked[0])) {
+      const idx = list.findIndex((i) => i.imgid === picked[0].imgid);
+      const pick = list.slice(idx + 1).find(local) ?? list.slice(0, idx).reverse().find(local);
+      if (!pick) { setStatus(t("app.status.compareNeedsPhoto")); return; }
+      setCompare(pick.imgid);
+      void openEntry(picked[0]);
+      return;
+    }
     const at = list.findIndex((i) => isOpen(i));
     if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
@@ -6101,7 +6146,9 @@ export default function App() {
       },
       "export": () => { setExporting(true); },
       "print": () => { showRightRef.current("print"); },
-      "copy-settings": () => { if (session.current) setCopying(true); },
+      "copy-settings": () => {
+        if (session.current || (gridRef.current && inspectedRef.current && !isRemote(inspectedRef.current))) setCopying(true);
+      },
       "paste-settings": () => { pasteSettingsRef.current(); },
       "paste-previous": () => { pastePreviousRef.current(); },
       "start-over": () => { startOverRef.current(); },
@@ -6148,7 +6195,7 @@ export default function App() {
         });
       },
       "hide-panels": () => { hidePanels(["left", rightPanelRef.current]); },
-      "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
+      "grid": () => { if (!croppingRef.current) { if (gridRef.current) leaveGridRef.current(); else setGrid(true); } },
       "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
       "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
       "wb-picker": () => {
@@ -6236,7 +6283,12 @@ export default function App() {
         return;
       }
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
-      if (e.key === "Escape" && gridRef.current) { setGrid(false); return; }
+      if (e.key === "Escape" && gridRef.current) { leaveGridRef.current(); return; }
+      if (e.key === "Enter" && gridRef.current && !(t instanceof HTMLElement && t.closest("button, a, select, input, textarea, [role='button']"))) {
+        e.preventDefault();
+        leaveGridRef.current();
+        return;
+      }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
       if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
       if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
@@ -6312,8 +6364,17 @@ export default function App() {
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         stepDir.current = e.key === "ArrowRight" ? 1 : -1;
-        const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
-        if (next) { e.preventDefault(); void openEntry(next); }
+        if (gridRef.current) {
+          const next = stepGridSelection(list, selectionRef.current, pickAnchor.current, currentRef.current?.imgid ?? null, stepDir.current);
+          if (next) {
+            e.preventDefault();
+            pickAnchor.current = next.imgid;
+            setSelection(new Set([next.imgid]));
+          }
+        } else {
+          const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
+          if (next) { e.preventDefault(); void openEntry(next); }
+        }
       }
       else if (!keyPhoto()) return;
       else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
@@ -6387,6 +6448,16 @@ export default function App() {
   // its entry whichever folder is shown
   const listedEntry = images.find((i) => isOpen(i, current)) ?? null;
   const currentEntry = listedEntry ?? (openCell && isOpen(openCell, current) ? openCell : null);
+  // in Grid view, clicking selects a photo without opening it in the darkroom;
+  // Metadata, Keywording, Export and the grid highlight follow this selection
+  const gridEntry = grid ? gridActivePhoto(shown, selection, pickAnchor.current) : null;
+  const inspectedEntry = gridEntry ?? currentEntry;
+  inspectedRef.current = inspectedEntry;
+  leaveGridRef.current = () => {
+    const target = photoToOpenOnLeaveGrid(gridRef.current, shownRef.current, selectionRef.current, pickAnchor.current, (i) => isOpen(i));
+    setGrid(false);
+    if (target) void openEntry(target);
+  };
   // the Print panel's Cells layout prints the photos selected, in the filmstrip's order, else the open one
   const sheetPhotos: SheetPhoto[] = (() => {
     if (!printOpen || printSettings.layout !== "cells") return [];
@@ -6422,15 +6493,15 @@ export default function App() {
        (shownView.y + shownView.height) / (shownView.scale * full.current.h)]
     : null;
 
-  // the open image's text fields come from the engine, which read them from
-  // the sidecar on import
-  const currentId = currentEntry?.imgid;
+  // the inspected image's text fields come from the engine, which read them from
+  // the sidecar on import (lightweight metadata read, no RAW decode)
+  const inspectedId = inspectedEntry && !isRemote(inspectedEntry) ? inspectedEntry.imgid : undefined;
   useEffect(() => {
     setMetaText(null);
     setKeywords(null);
-    if (currentId === undefined) return;
+    if (inspectedId === undefined) return;
     let stale = false;
-    commands.meta(currentId)
+    commands.meta(inspectedId)
       .then((r) => {
         if (stale) return;
         setMetaText(r.image.metadata);
@@ -6439,24 +6510,24 @@ export default function App() {
       .catch((e) => setStatus(t("app.status.error", { error: e })));
     commands.keywords().then((k) => { if (!stale) setKnownKeywords(k); }).catch(() => {});
     return () => { stale = true; };
-  }, [currentId]);
+  }, [inspectedId]);
   // keywords added by something other than the Keywording card: an export
   // that adds its keywords to the originals
   const reloadKeywords = () => {
-    if (currentId !== undefined)
-      commands.meta(currentId)
+    if (inspectedId !== undefined)
+      commands.meta(inspectedId)
         .then((r) => setKeywords(r.image.keywords)).catch(() => {});
     commands.keywords().then(setKnownKeywords).catch(() => {});
   };
-  // the open photo's keywords, for a save made after the render they came
+  // the inspected photo's keywords, for a save made after the render they came
   // from (Session.onSaved)
   const keywordsRef = useRef<{ imgid: number; list: string[] } | null>(null);
-  keywordsRef.current = keywords && currentId !== undefined ? { imgid: currentId, list: keywords } : null;
+  keywordsRef.current = keywords && inspectedId !== undefined ? { imgid: inspectedId, list: keywords } : null;
   // into the filmstrip's entry too, which the Filters popup reads
   useEffect(() => {
-    if (!keywords || currentId === undefined) return;
-    const e = imagesRef.current.find((i) => i.imgid === currentId);
-    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(currentId, { keywords });
+    if (!keywords || inspectedId === undefined) return;
+    const e = imagesRef.current.find((i) => i.imgid === inspectedId);
+    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(inspectedId, { keywords });
   }, [keywords]);
   // Preferences' keywords for edited photos: on once a save finds the photo
   // edited, off again once one finds it unedited
@@ -6478,9 +6549,9 @@ export default function App() {
       setStatus(t("app.status.error", { error: e }));
     }
   };
-  // the open photo's text fields, as keywordsRef
+  // the inspected photo's text fields, as keywordsRef
   const metaTextRef = useRef<{ imgid: number; text: TextFields } | null>(null);
-  metaTextRef.current = metaText && currentId !== undefined ? { imgid: currentId, text: metaText } : null;
+  metaTextRef.current = metaText && inspectedId !== undefined ? { imgid: inspectedId, text: metaText } : null;
   // Preferences' copyright and creator, into an edited photo's empty fields
   // only, so the camera's own copyright stays; a reset leaves them
   const fillEditedMeta = async (imgid: number) => {
@@ -6506,9 +6577,9 @@ export default function App() {
     }
   };
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
-    if (currentId === undefined || (!add.length && !remove.length)) return;
+    if (inspectedId === undefined || (!add.length && !remove.length)) return;
     try {
-      setKeywords(await commands.keywordsSet(currentId, add, remove));
+      setKeywords(await commands.keywordsSet(inspectedId, add, remove));
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       setStatus(t("app.status.error", { error: e }));
@@ -6558,7 +6629,7 @@ export default function App() {
   // arrow keys), and keeps to the photos still listed
   const currentImgid = currentEntry?.imgid;
   useEffect(() => {
-    if (currentImgid === undefined) return;
+    if (currentImgid === undefined || gridRef.current) return;
     setSelection((old) => (old.has(currentImgid) ? old : new Set([currentImgid])));
   }, [currentImgid]);
   useEffect(() => {
@@ -6605,7 +6676,7 @@ export default function App() {
       activeEditorId={session.current?.imgid}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
-      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
+      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === inspectedId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -6626,21 +6697,21 @@ export default function App() {
                      placeLayers();
                      if (done) { updatePlacement(); session.current?.requestRender(); }
                    }} />
-        <MetadataPanel image={currentEntry} text={metaText}
-                       onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
-                       onCaptureTime={() => { if (currentEntry) {
+        <MetadataPanel image={inspectedEntry} text={metaText}
+                       onLocationSaved={(location) => inspectedEntry && !isRemote(inspectedEntry) && patchImage(inspectedEntry.imgid, { location })}
+                       onCaptureTime={() => { if (inspectedEntry && !isRemote(inspectedEntry)) {
                          const sel = selectionRef.current;
-                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(currentEntry.imgid)
-                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [currentEntry]), currentEntry);
+                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(inspectedEntry.imgid)
+                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [inspectedEntry]), inspectedEntry);
                        } }}
                        open={leftOpen.has("metadata")} onToggle={(alt) => toggleLeft("metadata", alt)}
-                       onMeta={(fields) => currentEntry && setMeta(currentEntry.imgid, fields)}
+                       onMeta={(fields) => inspectedEntry && !isRemote(inspectedEntry) && setMeta(inspectedEntry.imgid, fields)}
                        onText={(field, value) => {
-                         if (!currentEntry) return;
+                         if (!inspectedEntry || isRemote(inspectedEntry)) return;
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
-                         void setMeta(currentEntry.imgid, { [field]: value });
+                         void setMeta(inspectedEntry.imgid, { [field]: value });
                        }} />
-        <KeywordingPanel keywords={currentEntry ? keywords : null} known={knownKeywords}
+        <KeywordingPanel keywords={inspectedId !== undefined ? keywords : null} known={knownKeywords}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />
@@ -7037,7 +7108,7 @@ export default function App() {
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
-                              : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
+                              : "add a folder to start"} current={inspectedEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
                        height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
                        onPress={(i, e) => pressPhoto(e, {
                          count: () => dragSet(i).length,
@@ -7556,11 +7627,11 @@ export default function App() {
         )}
         </div>
         <div className="right-foot">
-          <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
-          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping || !hasClip} onClick={() => void pasteSettings()}
                   data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
-          <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping || !previous.current} onClick={pastePrevious}
                   data-action="paste-previous" title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
       </aside>
@@ -7574,7 +7645,7 @@ export default function App() {
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
-                onClick={() => { if (!croppingRef.current) setGrid(!grid); }}>
+                onClick={() => { if (!croppingRef.current) { if (grid) leaveGridRef.current(); else setGrid(true); } }}>
           <LibraryIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
@@ -7781,7 +7852,7 @@ export default function App() {
         </div>
       </div>
     )}
-    {exporting && <ExportDialog current={currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
+    {exporting && <ExportDialog current={inspectedEntry && !isRemote(inspectedEntry) ? inspectedEntry : currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
     </div>

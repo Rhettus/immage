@@ -124,6 +124,7 @@ jobs:
             verify/front-logic.test.mjs \
             verify/gui-suites.test.mjs \
             verify/gpu-check.test.mjs \
+            verify/grid-browse.test.mjs \
             verify/grid-size.test.mjs \
             verify/menus.test.mjs \
             verify/mask-module-flags.test.mjs \
