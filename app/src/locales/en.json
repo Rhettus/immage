@@ -3459,6 +3459,8 @@
   "library.menu.rename": "Rename…",
   "library.menu.adjustCapture": "Adjust Capture Time…",
   "library.menu.undoCapture": "Undo Capture Time Adjustment…",
+  "library.menu.resetPhotoOne": "Reset Photo",
+  "library.menu.resetPhotosMany": "Reset {count} Photos…",
   "library.menu.createCopies": "Create {count} Virtual Copies",
   "library.menu.createCopy": "Create Virtual Copy",
   "library.menu.removeCopies": "Remove {count} Virtual Copies",
@@ -5224,5 +5226,12 @@
   "app.deleteRejected.moveLabel": "Move to {trash}",
   "app.deleteRejected.deleteLabel": "Delete",
   "app.status.deletedFromNetwork": "Deleted {items} from a network drive",
-  "app.status.deletedMixed": "Moved {moved} to the {trash} and deleted {deleted} from a network drive"
+  "app.status.deletedMixed": "Moved {moved} to the {trash} and deleted {deleted} from a network drive",
+  "app.resetPhotos.title": "Reset photos",
+  "app.resetPhotos.confirm": "Reset edits on {count} photos? Their edit history will be discarded and they will return to unedited.",
+  "app.resetPhotos.okLabel": "Reset",
+  "app.status.resetProgress": "resetting… {done}/{total}",
+  "app.status.resetSuccess_one": "reset {count} photo",
+  "app.status.resetSuccess_other": "reset {count} photos",
+  "app.status.resetError": "reset failed: {error}"
 }

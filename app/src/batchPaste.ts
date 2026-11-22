@@ -20,6 +20,14 @@ export function pasteTargets<T extends PasteTarget>(images: T[], selection: Set<
     skipped: chosen.filter(remote).length };
 }
 
+export function resetTargets<T extends PasteTarget & { edited: boolean }>(
+  targets: T[],
+  behindRaw: Set<number>,
+  remote: (image: T) => boolean,
+): T[] {
+  return [...new Map(targets.filter(i => !remote(i) && !behindRaw.has(i.imgid) && i.edited).map(i => [i.imgid, i])).values()];
+}
+
 export function replaceMasks(s: Session, target: Mask[]) {
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   for (const m of s.masks) if (!target.some(t => t.name === m.name)) s.deleteMask(m.name);
@@ -102,6 +110,19 @@ export async function restorePaste(token: number, action: "undo" | "redo" | "abo
   return r.updates ?? [];
 }
 
+async function rollbackBatch(token: number, e: unknown, saved: (update: PasteUpdate) => void) {
+  try {
+    const updates = await restorePaste(token, "abort");
+    updates.forEach(saved);
+    const failures = updates.filter(i => i.error);
+    if (failures.length) return { token, error: `${e}; recovery failed for ${failures.length} photo(s). Undo retries recovery.`, recovery: true };
+    await commands.pasteBatch("release", token, null);
+    return { token: null, error: `${e}; batch rolled back`, recovery: false };
+  } catch (recovery) {
+    return { token, error: `${e}; recovery failed: ${recovery}. Undo retries recovery.`, recovery: true };
+  }
+}
+
 // The caller must quiesce the viewer session, block editing/navigation, and
 // reopen it in finally. A failed batch rolls back all targets; failed recovery
 // writes retain their snapshots so Undo can retry instead of discarding edits.
@@ -152,15 +173,29 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
     progress(targets.length, targets.length);
     return { token, error: null as string | null, recovery: false };
   } catch (e) {
-    try {
-      const updates = await restorePaste(token, "abort");
-      updates.forEach(saved);
-      const failures = updates.filter(i => i.error);
-      if (failures.length) return { token, error: `${e}; recovery failed for ${failures.length} photo(s). Undo retries recovery.`, recovery: true };
-      await commands.pasteBatch("release", token, null);
-      return { token: null, error: `${e}; batch rolled back`, recovery: false };
-    } catch (recovery) {
-      return { token, error: `${e}; recovery failed: ${recovery}. Undo retries recovery.`, recovery: true };
+    return rollbackBatch(token, e, saved);
+  }
+}
+
+// Discards saved history for each target in a pasteBatch transaction without
+// running preparePastePhoto, leaving targets genuinely unedited until reopened.
+export async function runReset(
+  targets: PasteTarget[],
+  progress: (done: number, total: number) => void,
+  saved: (update: PasteUpdate) => void,
+) {
+  const { token } = await commands.pasteBatch("begin", null, targets.map(i => i.imgid));
+  if (token == null) throw Error("the engine gave no paste token");
+  try {
+    for (const [n, target] of targets.entries()) {
+      progress(n, targets.length);
+      const r = await commands.historyDiscard(target.imgid);
+      saved({ imgid: target.imgid, edited: r.edited, error: null });
     }
+    await commands.pasteBatch("commit", token, null);
+    progress(targets.length, targets.length);
+    return { token, error: null as string | null, recovery: false };
+  } catch (e) {
+    return rollbackBatch(token, e, saved);
   }
 }

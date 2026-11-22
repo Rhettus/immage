@@ -69,6 +69,13 @@ orientation, and modules added in darktable. It works the same on a
 virtual copy, so you can try a different approach on a copy. It is one
 step: ⌘Z brings the whole history back, and ⇧⌘Z discards it again.
 
+In Library Grid view, you can also right-click an edited photo (or a selection
+containing edited photos) and choose **Reset Photo** (or **Reset N Photos…**)
+to discard their edit history and return them to unedited. When multiple edited
+photos are included, Immage asks for confirmation first; unedited photos in a
+mixed selection are skipped. When a photo is open in the editor, ⌘Z undoes the
+reset as one step.
+
 ![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 

@@ -16,7 +16,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // Copyright (C) 2026 the Immage authors
 
 import { filterValuesForPhoto, newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
-import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
+import { pasteTargets, replaceMasks, resetTargets, restorePaste, runPaste, runReset, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
@@ -4779,6 +4779,41 @@ export default function App() {
       setStatus(message);
     }
   };
+  const resetPhotos = async (targets: ImageEntry[]) => {
+    if (!targets.length || croppingRef.current || pastingRef.current || aiBusy) return;
+    if (targets.length > 1) {
+      const ok = await ask(t("app.resetPhotos.confirm", { count: targets.length }), {
+        title: t("app.resetPhotos.title"),
+        kind: "warning",
+        okLabel: t("app.resetPhotos.okLabel"),
+      });
+      if (!ok) return;
+    }
+    const active = currentRef.current;
+    const hadSession = !!session.current && !!active;
+    const before = hadSession ? snapshot(session.current!, targets.length === 1 ? "Reset photo" : `Reset ${targets.length} photos`) : null;
+    pastingRef.current = true;
+    setPasting(t("app.status.resetProgress", { done: 0, total: targets.length }));
+    let message = "";
+    try {
+      if (hadSession) await pauseForPaste();
+      const result = await runReset(targets, (done, total) => setPasting(t("app.status.resetProgress", { done, total })), pasteSaved);
+      if (result.token !== null) {
+        if (before) discardPastes(pushBatchStep(undo.current, before, { token: result.token, recovery: result.recovery }));
+        else void commands.pasteBatch("release", result.token, null).catch(() => {});
+      }
+      message = result.error ? t("app.status.resetError", { error: result.error })
+        : t("app.status.resetSuccess", { n: targets.length, count: formatNumber(targets.length) });
+    } catch (e) { message = t("app.status.resetError", { error: e }); }
+    finally {
+      if (hadSession && !session.current && !await openFile(active.path, active.imgid, true))
+        message += t("app.status.pasteReopenPhotoError");
+      pastingRef.current = false;
+      setPasting(null);
+      setHistoryRev(n => n + 1);
+      setStatus(message);
+    }
+  };
   // `steps` at once, as a click in the History panel: only the state
   // arrived at is sent
   const stepHistory = async (back: boolean, steps = 1) => {
@@ -7697,6 +7732,7 @@ export default function App() {
       const behindRaw = new Set([...partners.values()].flat().map((p) => p.imgid));
       const sources = local.filter((i) => !behindRaw.has(i.imgid));
       const copies = local.filter((i) => i.copy);
+      const resettable = grid ? resetTargets(fileMenu.targets, behindRaw, isRemote) : [];
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
@@ -7715,6 +7751,8 @@ export default function App() {
                     ? () => startRename(local) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
+                  resetCount={resettable.length}
+                  onReset={resettable.length ? () => void resetPhotos(resettable) : undefined}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}

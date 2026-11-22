@@ -3459,6 +3459,8 @@
   "library.menu.rename": "Renommer…",
   "library.menu.adjustCapture": "Ajuster l’heure de capture…",
   "library.menu.undoCapture": "Annuler l’ajustement de l’heure de capture…",
+  "library.menu.resetPhotoOne": "Réinitialiser la photo",
+  "library.menu.resetPhotosMany": "Réinitialiser {count} photos…",
   "library.menu.createCopies": "Créer {count} copies virtuelles",
   "library.menu.createCopy": "Créer une copie virtuelle",
   "library.menu.removeCopies": "Supprimer {count} copies virtuelles",
@@ -5224,5 +5226,12 @@
   "app.deleteRejected.moveLabel": "Déplacer vers la {trash}",
   "app.deleteRejected.deleteLabel": "Supprimer",
   "app.status.deletedFromNetwork": "Suppression de {items} sur un lecteur réseau effectuée",
-  "app.status.deletedMixed": "{moved} déplacé(es) vers la {trash} et {deleted} supprimé(es) d’un lecteur réseau"
+  "app.status.deletedMixed": "{moved} déplacé(es) vers la {trash} et {deleted} supprimé(es) d’un lecteur réseau",
+  "app.resetPhotos.title": "Réinitialiser les photos",
+  "app.resetPhotos.confirm": "Réinitialiser les retouches de {count} photos ? Leur historique de retouches sera supprimé et elles reviendront à l’état non retouché.",
+  "app.resetPhotos.okLabel": "Réinitialiser",
+  "app.status.resetProgress": "réinitialisation… {done}/{total}",
+  "app.status.resetSuccess_one": "{count} photo réinitialisée",
+  "app.status.resetSuccess_other": "{count} photos réinitialisées",
+  "app.status.resetError": "échec de la réinitialisation : {error}"
 }

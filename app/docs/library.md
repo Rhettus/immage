@@ -699,6 +699,10 @@ Right-click a photo, or a selection, for:
 - **HDR Merge…**, for two raws or more
 - **Panorama Merge…**, for two photos or more
 - **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
+- **Reset Photo** / **Reset N Photos…**, in the grid when at least one selected
+  photo is edited: discards the edit history on the edited photos so they
+  return to unedited (multiple photos ask for confirmation first). Unedited
+  photos are ignored and the item does not appear when none are edited.
 - **Show in Finder**
 - **Import Parent Folder**, for an Immich result when Immich is configured in
   Preferences: add its locally mapped parent to Folders and browse its photos.

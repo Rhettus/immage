@@ -22,6 +22,11 @@ Improvements
 - **Copy and paste settings in Grid view:** **Copy…**, **Paste** and
   **Previous** stay pinned at the bottom of the right panel below Find's filter
   footer in Library Grid view, matching the Adjustments panel.
+- **Reset edited photos from Grid view:** Right-click an edited photo or a
+  selection in Grid view and choose **Reset Photo** (or **Reset N Photos…**) to
+  discard saved edits and return them to unedited. Multiple photos ask for
+  confirmation first, unedited photos in a mixed selection are skipped, and the
+  option is hidden when no selected photo is edited.
 
 Performance
 

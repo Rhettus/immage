@@ -50,7 +50,7 @@ export function useMenuClose(onClose: () => void) {
 // Delete, for rejected photos only; for Immich results, the photo or the
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
-export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
+export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, resetCount, onReset, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
                     onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
   onSimilar?: () => void;
   onKeywords?: () => void;
@@ -61,6 +61,7 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
           setRating: (n: number) => void; toggleLabel: (bit: number) => void; toggleReject: () => void } | null;
   captureCount: number; onCaptureTime: () => void;
   canUndoCapture: boolean; onUndoCapture: () => void;
+  resetCount?: number; onReset?: () => void;
   x: number; y: number;
   copyable: number;                       // how many photos a virtual copy can be made of
   mergeable: number;                      // how many raws an HDR merge would take
@@ -152,6 +153,8 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
       {onRename && <button onClick={() => { onClose(); onRename(); }}>{t("library.menu.rename")}</button>}
       {captureCount > 0 && <button onClick={() => { onClose(); onCaptureTime(); }}>{t("library.menu.adjustCapture")}</button>}
       {canUndoCapture && <button onClick={() => { onClose(); onUndoCapture(); }}>{t("library.menu.undoCapture")}</button>}
+      {!!resetCount && resetCount > 0 && onReset && <button onClick={() => { onClose(); onReset(); }}>
+        {resetCount > 1 ? t("library.menu.resetPhotosMany", { count: resetCount }) : t("library.menu.resetPhotoOne")}</button>}
       {copyable > 0 && <>
         <button onClick={() => { onClose(); onCopy(); }}>
           {copyable > 1 ? t("library.menu.createCopies", { count: copyable }) : t("library.menu.createCopy")}</button>
