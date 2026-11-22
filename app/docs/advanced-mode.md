@@ -179,6 +179,14 @@ Besides exposure, the Basic group has these darktable modules:
   none on, the card shows each tone mapper the photo has used. Add module lists
   them too, checked while the card shows one. Simple's tone mapper follows a
   switch made here.
+  - On already tone-mapped photos (JPEG, PNG, WebP, HEIC, 8/16-bit TIFF), tone
+    mappers are disabled in Add module, the module search and the card switch.
+    If an older sidecar already has a tone mapper enabled, you can still switch
+    it off.
+  - Enabling, editing or duplicating a second tone mapper while another is
+    already enabled (including from the History panel) opens a warning dialog
+    offering to **Switch to** the new tone mapper, **Enable anyway** or
+    **Cancel**.
   - AgX: tabs **Settings** (input exposure range, basic and advanced curve
     settings, look) and **Primaries** (before and after tone mapping). Its curve
     graph and pickers are not on the card yet.

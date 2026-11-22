@@ -329,6 +329,9 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
 // a raw gets the client's raw-only defaults, as Lightroom's do
   json_builder_set_member_name(b, "raw");
   json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
+// display-referred, already tone-mapped formats (JPEG, SDR PNG/WebP/HEIC/TIFF)
+  json_builder_set_member_name(b, "ldr");
+  json_builder_add_boolean_value(b, dt_image_is_ldr(&_s.dev.image_storage));
 // the sensor picks the demosaic methods that apply, as demosaic.c's
 // reload_defaults and commit_params tell them apart
   json_builder_set_member_name(b, "sensor");

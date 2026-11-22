@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire, registerHooks } from "node:module";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,13 +48,26 @@ const { startEngine, stopEngine, request } = await import("./shim.mjs");
 const view = () => ({ width: 128, height: 128 });
 const engine = process.env.IMMAGE_TEST_ENGINE ?? join(root, "build/bin/darktable-engine");
 
+// Minimal linear-float PFM (DT_IMAGE_HDR, non-LDR) so darktable allows AgX.
+function writeLinearPfm(file, w = 64, h = 64) {
+  const head = Buffer.from(`PF\n${w} ${h}\n-1.0\n`, "ascii");
+  const data = Buffer.alloc(w * h * 12);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = (y * w + x) * 12;
+    data.writeFloatLE(0.05 + (x / (w - 1)) * 0.9, o);
+    data.writeFloatLE(0.05 + (y / (h - 1)) * 0.9, o + 4);
+    data.writeFloatLE(0.15 + ((x + y) / (w + h - 2)) * 0.7, o + 8);
+  }
+  writeFileSync(file, Buffer.concat([head, data]));
+}
+
 test("Whites: Advanced's Highlight Brilliance", { timeout: 300000 }, async (t) => {
   if (!existsSync(engine)) { t.skip(`no engine at ${engine}`); return; }
   const dir = mkdtempSync(join(tmpdir(), "immage-whites-"));
   startEngine(engine, join(dir, "runtime"));
   try {
-    const path = join(dir, "photo.jpg");
-    copyFileSync(join(root, "app/sample/stairs-to-mountain.jpg"), path);
+    const path = join(dir, "photo.pfm");
+    writeLinearPfm(path);
     const { imgid } = await request({ cmd: "open", path });
     const open = async () => {
       const s = await Session.open(path, imgid, view, () => {}, () => {}, true);
@@ -93,6 +106,23 @@ test("Whites: Advanced's Highlight Brilliance", { timeout: 300000 }, async (t) =
     assert.equal(s.values.whites, 50);
     assert.equal(s.values.whites_brilliance, 0, "0% reads back while Whites is set");
     await s.close();
+
+    // On a JPEG (LDR), AgX and Sigmoid stay off and Whites maps directly to
+    // color balance rgb's highlights brilliance at mask scale (0.004).
+    const jpg = join(dir, "sample.jpg");
+    copyFileSync(join(root, "app/sample/stairs-to-mountain.jpg"), jpg);
+    const openedJpg = await request({ cmd: "open", path: jpg });
+    assert.equal(openedJpg.ldr, true, "JPEG is reported as LDR");
+    const sj = await Session.open(jpg, openedJpg.imgid, view, () => {}, () => {}, true);
+    await sj.settled();
+    sj.endBaseline();
+    sj.setMany([["whites", 50], ["contrast", 20], ["blacks", -10], ["saturation", 15]]);
+    await sj.settled();
+    const got = (await request({ cmd: "get", modules: { agx: [], sigmoid: [], colorbalancergb: ["brilliance_highlights", "contrast", "saturation_global"] } })).modules;
+    assert.equal(got.agx.enabled, false, "JPEG keeps AgX off");
+    assert.equal(got.sigmoid.enabled, false, "JPEG keeps Sigmoid off");
+    assert.ok(Math.abs(got.colorbalancergb.params.brilliance_highlights - 0.2) < 1e-4, "JPEG Whites uses mask scale 0.004");
+    await sj.close();
   } finally {
     await stopEngine();
     rmSync(dir, { recursive: true, force: true });

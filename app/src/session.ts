@@ -6,8 +6,9 @@
 // only mark their module dirty, and the next round sends the latest values once
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, turnOrientation, turnRect, type ImageContext,
-         MASK_MODULES, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
+         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, moduleName, NO_TM_CHOICES,
+         TM_AGX, TM_NONE, TM_SIGMOID, TONE_MAPPER_ALL_OPS, TONE_MAPPER_OPS, turnOrientation, turnRect, type ImageContext,
+         MASK_MODULES, type ModuleChoice, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
 import { planMerge, type MergePlan } from "./localMerge";
@@ -275,6 +276,85 @@ export class Session {
   }
   // a raw file rather than a JPEG, HEIC or other rendered one
   raw = true;
+  // a display-referred, already tone-mapped format (JPEG, SDR PNG/TIFF/WebP/HEIC)
+  ldr = false;
+  get toneMappable() { return !this.ldr; }
+  private skipToneMapper(op: string) {
+    return !this.toneMappable && TONE_MAPPER_OPS.has(op);
+  }
+  private get noToneMapper() {
+    return !this.toneMappable || (this.wasEdited && this.values.tm_mode === TM_NONE);
+  }
+  private resolveModuleChoice(c: ModuleChoice, pick: number) {
+    return this.noToneMapper && c.control in NO_TM_CHOICES && pick === 0 ? NO_TM_CHOICES[c.control] : pick;
+  }
+  // When no tone mapper is active, move any tool still pointing at the tone
+  // mapper to its non-tone-mapper default (same modules as masks).
+  private syncNoTmChoices() {
+    if (this.toneMappable && this.values.tm_mode !== TM_NONE) return;
+    for (const [control, fallback] of Object.entries(NO_TM_CHOICES)) {
+      if (this.values[control] === 0) this.values[control] = fallback;
+      if (this.neutral[control] === 0) this.neutral[control] = fallback;
+    }
+  }
+  // Currently enabled global (non-mask, non-look) tone mapper instances.
+  activeToneMappers(exclude?: { op: string; priority: number }): { op: string; priority: number; title: string }[] {
+    const out: { op: string; priority: number; title: string }[] = [];
+    const seen = new Set<string>();
+    const skip = (op: string, priority: number) =>
+      exclude?.op === op && exclude.priority === priority;
+    const isEnabled = (op: string, priority: number, fallback: boolean) => {
+      const key = `${op}#${priority}`;
+      if (this.deleted.has(key) || this.instancesDeleted.has(key)) return false;
+      const adv = this.advanced.get(key);
+      if (adv) return adv.enabled;
+      const st = this.moduleStates.get(key);
+      if (st) return st.enabled;
+      if (priority === 0 && TONE_MAPPER_OPS.has(op) && this.toneMappable && (op === "agx" || op === "sigmoid")) {
+        if (conversionsOn(this.values).some((c) => c.off.has(op))) return false;
+        return op === "agx" ? this.values.tm_mode === TM_AGX : this.values.tm_mode === TM_SIGMOID;
+      }
+      if (priority === 0 && this.info[op]) return this.info[op].enabled;
+      return fallback;
+    };
+    if (this.instances.length) {
+      for (const i of this.instances) {
+        if (i.owner !== null || !TONE_MAPPER_ALL_OPS.has(i.op) || skip(i.op, i.priority)) continue;
+        const key = `${i.op}#${i.priority}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (isEnabled(i.op, i.priority, i.enabled))
+          out.push({ op: i.op, priority: i.priority, title: moduleName(i.op) });
+      }
+      return out;
+    }
+    for (const op of ["agx", "sigmoid"] as const) {
+      if (skip(op, 0)) continue;
+      seen.add(`${op}#0`);
+      if (isEnabled(op, 0, false)) out.push({ op, priority: 0, title: moduleName(op) });
+    }
+    for (const h of this.history) {
+      if (h.priority == null || h.masked || !TONE_MAPPER_ALL_OPS.has(h.op) || skip(h.op, h.priority)) continue;
+      const key = `${h.op}#${h.priority}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (isEnabled(h.op, h.priority, h.enabled))
+        out.push({ op: h.op, priority: h.priority, title: h.name || moduleName(h.op) });
+    }
+    return out;
+  }
+  // Turn off every active global tone mapper other than `keep`.
+  disableOtherToneMappers(keep?: { op: string; priority: number }) {
+    for (const tm of this.activeToneMappers(keep)) {
+      const key = `${tm.op}#${tm.priority}`;
+      if (this.advanced.has(key)) this.setAdvancedEnabled(tm.op, tm.priority, false);
+      else if (tm.priority === 0 && (tm.op === "agx" || tm.op === "sigmoid")) {
+        if (keep?.op !== "agx" && keep?.op !== "sigmoid") this.set("tm_mode", TM_NONE);
+      } else {
+        this.setModuleState({ op: tm.op, priority: tm.priority }, { enabled: false });
+      }
+    }
+  }
   private spotsDirty = false;
   // whether the engine has them on: the Before view takes them off
   private spotsOn = true;
@@ -342,6 +422,7 @@ export class Session {
     s.wasEdited = !opened.fresh;
     s.baseline = opened.fresh;
     s.raw = opened.raw;
+    s.ldr = opened.ldr ?? !opened.raw;
     s.look = opened.look;
     s.lookAmount = opened.look_amount;
     const reply = await traced("get_params", () => commands.getParams(boundFields()));
@@ -368,12 +449,16 @@ export class Session {
     for (const m of modules) {
       const info = s.info[m.op];
       const fromDefaults = m.read(info.defaults, info.defaults, s.ctx);
-      const current = info.enabled ? m.read(info.params, info.defaults, s.ctx, s.values) : {};
+      // On LDR (already tone-mapped) photos, do not read agx/sigmoid into
+      // tm_mode or Basic sliders: legacy <=0.47.1 XMPs stay untouched and
+      // Simple controls map to non-tone-mapper modules (TM_NONE).
+      const current = info.enabled && !s.skipToneMapper(m.op)
+        ? m.read(info.params, info.defaults, s.ctx, s.values) : {};
       for (const id of m.controls) {
         const c = controlById.get(id)!;
         const neutral = c.neutral ?? fromDefaults[id];
         s.neutral[id] = neutral;
-        if (info.enabled && current[id] === undefined) s.foreign.add(m);
+        if (info.enabled && !s.skipToneMapper(m.op) && current[id] === undefined) s.foreign.add(m);
         // a control several maps share takes its value from the one whose
         // module is on
         if (current[id] !== undefined || s.values[id] === undefined)
@@ -406,15 +491,17 @@ export class Session {
   // read from the chosen module alone
   private chooseModules() {
     for (const c of MODULE_CHOICES) {
-      const pick = loadModuleChoice(c.id);
+      const pick = this.resolveModuleChoice(c, loadModuleChoice(c.id));
       this.neutral[c.control] = pick;
       const covers = choiceCovers(c);
       const reads = (m: ModuleMap) => {
+        if (this.skipToneMapper(m.op)) return null;
         const info = this.info[m.op];
         return info?.enabled && !this.foreign.has(m) ? m.read(info.params, info.defaults, this.ctx, this.values) : null;
       };
       const ofOption = (o: number) => modules.filter((m) => m.choice?.control === c.control && m.choice.value === o);
       const usedAll = c.options.filter((o) =>
+        !(this.noToneMapper && c.control in NO_TM_CHOICES && o.value === 0) &&
         ofOption(o.value).some((m) => {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
@@ -436,7 +523,7 @@ export class Session {
 
   // the modules Preferences picks for each tool, which Reset returns a photo to
   preferredModules(): [string, number][] {
-    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = loadModuleChoice(c.id)]);
+    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = this.resolveModuleChoice(c, loadModuleChoice(c.id))]);
   }
 
   // Refresh unused tools without replacing any current global or masked edits.
@@ -447,7 +534,7 @@ export class Session {
       const controls = c.covers ?? option?.controls ?? [];
       const used = modules.some((m) => m.choice?.control === c.control && this.foreign.has(m))
         || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6);
-      const pick = loadModuleChoice(c.id);
+      const pick = this.resolveModuleChoice(c, loadModuleChoice(c.id));
       this.neutral[c.control] = pick;
       if (!used && forcedChoice(this.values, c.control) === undefined) this.set(c.control, pick);
     }
@@ -477,6 +564,8 @@ export class Session {
 
   set(id: string, v: number, coalesce = false) {
     if (!mapOf.has(id) || this.values[id] === v) return;
+    if (id === "tm_mode" && !this.toneMappable && v !== TM_NONE) return;
+    if (id in NO_TM_CHOICES && v === 0 && (!this.toneMappable || this.values.tm_mode === TM_NONE)) return;
     perf.input(id);
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
@@ -484,9 +573,11 @@ export class Session {
     const was = choice?.options.find((o) => o.value === this.values[id]);
     if (was && !was.controls.length) this.sharedHolder[id] = was.value;
     this.values[id] = v;
+    if (id === "tm_mode" && v === TM_NONE) this.syncNoTmChoices();
     if (id === "orient") this.orient(v);
     this.conversionChanged(id);
     for (const m of mapsWith(id)) {
+      if (this.skipToneMapper(m.op)) continue;
       this.foreign.delete(m);
       this.dirty.add(m.op);
     }
@@ -522,8 +613,17 @@ export class Session {
     // switching it off would read, opened again, as one the conversion holds
     // and turned back would switch it on (open)
     const converting = this.values[id] === 1;
-    for (const op of conv.off)
-      if (mapsFor(op).some((m) => !this.foreign.has(m)) && (!converting || this.info[op]?.enabled)) this.dirty.add(op);
+    for (const op of conv.off) {
+      if (this.skipToneMapper(op)) continue;
+      const maps = mapsFor(op);
+      if (!maps.some((m) => !this.foreign.has(m))) continue;
+      const onNow = !!this.info[op]?.enabled
+        || (op === "agx" && this.values.tm_mode === TM_AGX)
+        || (op === "sigmoid" && this.values.tm_mode === TM_SIGMOID)
+        || maps.some((m) => choiceOn(m, this.values) && (m.enabled ? m.enabled(this.values)
+          : m.controls.some((cid) => this.values[cid] !== this.neutral[cid])));
+      if (!converting || onNow) this.dirty.add(op);
+    }
   }
 
   // the image's frame turned: modules after flip write their values for it
@@ -1115,7 +1215,7 @@ export class Session {
   async preview(size: number, values: Values, look?: string | null): Promise<Frame> {
     const changed = Object.keys(values).filter((id) => mapOf.has(id));
     const merged = { ...this.sent(), ...values };
-    const touched = new Set(changed.flatMap((id) => mapsWith(id)));
+    const touched = new Set(changed.flatMap((id) => mapsWith(id)).filter((m) => !this.skipToneMapper(m.op)));
     const ops = [...new Set([...touched].map((m) => m.op))];
     // a named instance is made and placed as for an edit, if the preview
     // switches it on
@@ -1134,7 +1234,7 @@ export class Session {
     // the look goes with the edit; without its file it cannot come back
     if (this.look && this.lookPath) this.wantLook = keep ? null : this.lookPath;
     for (const [name, ops] of this.maskOps) this.dirtyLocal.set(name, new Set(ops));
-    for (const m of modules) this.dirty.add(m.op);
+    for (const m of modules) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
     this.needRender = true;
     void this.pump();
   }
@@ -1146,7 +1246,7 @@ export class Session {
     if (!was && !ids) return;
     this.peeked = ids;
     for (const id of [...(was ?? []), ...(ids ?? [])])
-      for (const m of mapsWith(id)) this.dirty.add(m.op);
+      for (const m of mapsWith(id)) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
     this.needRender = true;
     void this.pump();
   }
@@ -1167,7 +1267,13 @@ export class Session {
 
   // several controls at once, as one round of edits (a point curve drag)
   setMany(entries: [string, number][], coalesce = false) {
-    entries = [...new Map(entries)].filter(([id, v]) => mapOf.has(id) && this.values[id] !== v);
+    const nextTm = entries.find(([id]) => id === "tm_mode")?.[1] ?? this.values.tm_mode;
+    entries = [...new Map(entries)].filter(([id, v]) => {
+      if (!mapOf.has(id) || this.values[id] === v) return false;
+      if (id === "tm_mode" && !this.toneMappable && v !== TM_NONE) return false;
+      if (id in NO_TM_CHOICES && v === 0 && (!this.toneMappable || nextTm === TM_NONE)) return false;
+      return true;
+    });
     if (!entries.length) return;
     perf.input(entries.map(([id]) => id));
     this.activeDetailControl = null;
@@ -1175,9 +1281,11 @@ export class Session {
     for (const [id, v] of entries) {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
+      if (id === "tm_mode" && v === TM_NONE) this.syncNoTmChoices();
       if (id === "orient") this.orient(v);
       this.conversionChanged(id);
       for (const m of mapsWith(id)) {
+        if (this.skipToneMapper(m.op)) continue;
         this.foreign.delete(m);
         this.dirty.add(m.op);
       }
@@ -1525,6 +1633,7 @@ export class Session {
     if (!fields) return;
     const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
+    if (this.skipToneMapper(op)) return;
     for (const m of mapsFor(op)) {
       // a tool's other module (Blacks on exposure while it runs on the tone
       // mapper) does not hold its sliders: read, it would claim the tool, as
@@ -1536,6 +1645,12 @@ export class Session {
         if (info.enabled && current[id] === undefined) this.foreign.add(m);
         this.values[id] = this.snap(id, current[id] ?? this.neutral[id], this.neutral[id]);
       }
+    }
+    if (op === "agx" || op === "sigmoid") {
+      const agxOn = this.advanced.get("agx#0")?.enabled ?? this.info.agx?.enabled ?? false;
+      const sigOn = this.advanced.get("sigmoid#0")?.enabled ?? this.info.sigmoid?.enabled ?? false;
+      this.values.tm_mode = agxOn ? TM_AGX : sigOn ? TM_SIGMOID : TM_NONE;
+      if (this.values.tm_mode === TM_NONE) this.syncNoTmChoices();
     }
   }
 
@@ -1941,7 +2056,7 @@ export class Session {
             this.moduleStates.set(key, r.now);
           }
           this.foreign.clear();
-          for (const m of modules) this.dirty.add(m.op);
+          for (const m of modules) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
           this.deleted.clear();
           this.changed();
           this.onModules?.();

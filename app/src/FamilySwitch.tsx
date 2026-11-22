@@ -11,7 +11,7 @@ import { menuKeys, useCardMenu } from "./cardMenu";
 import { t } from "./i18n";
 import { fieldText } from "./fieldText";
 
-export type FamilyOption = { op: string; title: string; applicable: boolean };
+export type FamilyOption = { op: string; title: string; applicable: boolean; reason?: string };
 
 export function FamilySwitch({ label, current, options, onPick }: {
   label: string; current: string; options: FamilyOption[]; onPick: (op: string) => void;
@@ -30,7 +30,7 @@ export function FamilySwitch({ label, current, options, onPick }: {
           {options.map((o) => (
             <button key={o.op} type="button" role="menuitemradio" aria-checked={o.op === current} data-family-option={o.op}
                     className={o.op === current ? "on" : ""} disabled={!o.applicable}
-                    title={o.applicable ? undefined : t("fields.advanced.notApplicable")}
+                    title={o.applicable ? undefined : (o.reason ?? t("fields.advanced.notApplicable"))}
                     onClick={(e) => { e.stopPropagation(); close(); if (o.op !== current) onPick(o.op); }}>
               <span className="check">{o.op === current ? "✓" : ""}</span><span className="name">{fieldText(o.title)}</span>
             </button>

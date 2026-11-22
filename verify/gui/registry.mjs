@@ -41,6 +41,7 @@ import { advancedInstances } from './specs/advanced-instances.mjs';
 import { advancedMaskCards } from './specs/advanced-mask-cards.mjs';
 import { advancedPresets } from './specs/advanced-presets.mjs';
 import { advancedTonemapper } from './specs/advanced-tonemapper.mjs';
+import { tonemapperLdr, tonemapperRawGuard } from './specs/tonemapper-guard.mjs';
 import { advancedGroups } from './specs/advanced-groups.mjs';
 import { advancedSearch } from './specs/advanced-search.mjs';
 import { advancedHidden } from './specs/advanced-hidden.mjs';
@@ -149,6 +150,8 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-mask-cards': advancedMaskCards,
   'advanced-presets': advancedPresets,
   'advanced-tonemapper': advancedTonemapper,
+  'tonemapper-ldr': tonemapperLdr,
+  'tonemapper-raw-guard': tonemapperRawGuard,
   'advanced-groups': advancedGroups,
   'advanced-search': advancedSearch,
   'advanced-hidden': advancedHidden,

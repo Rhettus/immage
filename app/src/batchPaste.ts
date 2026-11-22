@@ -2,7 +2,8 @@
 // Copyright (C) 2026 the Immage authors
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
-import { CONVERSIONS } from "./manifest";
+import { CONVERSIONS, TONE_MAPPER_ALL_OPS } from "./manifest";
+import { filterValuesForPhoto } from "./pasteDefaults";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
 import { commands, type PasteUpdate } from "./commands";
@@ -44,8 +45,9 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
   s.endBaseline();
   // a negative's conversion or a film simulation, pasted onto a photo
   // without it, turns off the modules it replaces that no slider covers
-  const converts = CONVERSIONS.filter((v) => c.values[v.flag] === 1 && s.values[v.flag] !== 1);
-  s.setMany(Object.entries(c.values));
+  const values = filterValuesForPhoto(c.values, s.toneMappable);
+  const converts = CONVERSIONS.filter((v) => values[v.flag] === 1 && s.values[v.flag] !== 1);
+  s.setMany(Object.entries(values));
   if (converts.length) {
     const done = new Set<string>();
     for (const h of s.history) {
@@ -131,7 +133,12 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
         if (failure) throw Error(failure);
         const calculated = await recalculateAiMasks(c).catch(e => { throw Error(`${target.path}: ${e}`); });
         if (calculated.masks) replaceMasks(s, calculated.masks);
-        if (c.advanced) await s.pasteAdvanced(c.advanced);
+        if (c.advanced) {
+          const filtered = s.toneMappable ? c.advanced : c.advanced.filter((a) => !TONE_MAPPER_ALL_OPS.has(a.op));
+          const pastedTm = filtered.find((a) => TONE_MAPPER_ALL_OPS.has(a.op) && a.state.enabled);
+          if (pastedTm) s.disableOtherToneMappers({ op: pastedTm.op, priority: pastedTm.priority });
+          if (filtered.length) await s.pasteAdvanced(filtered);
+        }
       }
       finally { await s.settled(); }
       if (failure) throw Error(failure);

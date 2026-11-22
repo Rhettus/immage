@@ -6,6 +6,7 @@
    "fresh": true,
    "height": 48,
    "imgid": 1,
+   "ldr": true,
    "look": null,
    "look_amount": 100.0,
    "ms": 0.0,

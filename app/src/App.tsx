@@ -3,19 +3,19 @@ import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
 import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
-import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
+import { profileSelection, AGX_USER_FIRST, agxRuns, isAgxProfile, isColorBalanceProfile, TM_AGX, TONE_MAPPER_ALL_OPS, TONE_MAPPER_OPS } from "./manifest";
 
 
 
 import { CheckerViewer } from "./ModuleChecker";
-import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
+import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick, type ToneMapperGuardRequest } from "./AdvancedPanel";
 import { advancedEdits } from "./advancedEdits";
 import { fieldText } from "./fieldText";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
+import { filterValuesForPhoto, newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
@@ -1404,7 +1404,7 @@ export default function App() {
     showHover(!key ? null : "tiles", (s, size) => {
       if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
       if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
-      return p ? s.preview(size, p.values) : null;
+      return p ? s.preview(size, filterValuesForPhoto(presetValues(p), s.toneMappable)) : null;
     }, !!key && isStockKey(key));
   };
   const hoverValues = (values: Values | null) =>
@@ -1459,7 +1459,7 @@ export default function App() {
   const applyPreset = (preset: Preset) => {
     const s = session.current;
     if (!s) return;
-    const p = { ...preset, values: presetValues(preset) };
+    const p = { ...preset, values: filterValuesForPhoto(presetValues(preset), s.toneMappable) };
     const before = Object.fromEntries(Object.keys(p.values).map((id) => [id, s.values[id]]));
     changeMany(Object.entries(p.values), `Preset: ${p.name}`);
     setAmount({ name: p.name, value: 100, before, preset: p.values });
@@ -4397,8 +4397,9 @@ export default function App() {
       const stacked = !!back && !back.applied && !s.wasEdited && /\.dng$/i.test(path)
         && !!kindOf(back.plugin.split(":")[0])?.linearDng && backCfg?.send !== "tiff";
       const raw = s.raw || pano || stacked;
-      if (!s.wasEdited && s.values.tm_mode !== 1) {
-        s.setMany([["tm_mode", 1]]);
+      const toneMappable = s.toneMappable || pano || stacked;
+      if (!s.wasEdited && toneMappable && s.values.tm_mode !== TM_AGX) {
+        s.setMany([["tm_mode", TM_AGX]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
       // and a raw with Preferences' exposure compensation, on an instance of
@@ -4422,7 +4423,7 @@ export default function App() {
         : !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
       const presetVals = preset && (raw || !preset.rawOnly)
-        ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw()) : null;
+        ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw(), toneMappable) : null;
       if (preset && presetVals) {
         s.setMany(Object.entries({ ...presetVals, ...plugin?.values }));
         setStatus(t("app.status.newPhotoPreset", { name: preset.name }));
@@ -4433,9 +4434,9 @@ export default function App() {
       // and a raw with the profile chosen in Preferences, over the preset's
       // AgX Default (0) included: it puts back a profile the preset set
       const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && raw && s.values.profile !== profile) {
-        s.setMany(Object.entries(profileSelection(profile)));
-        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
+      if (!s.wasEdited && toneMappable && s.values.profile !== profile) {
+        s.setMany(Object.entries(profileSelection(profile, toneMappable)));
+        base.push({ op: "profile", name: profileLabel(profile, toneMappable).toLowerCase(),
                     label: "profile", enabled: true });
       }
       // and its lens correction method, once the preset has set the corrections
@@ -4849,9 +4850,37 @@ export default function App() {
       changeMany(ids.map((id) => [id, s.neutral[id]]), `Reset ${h.name}`);
       return;
     }
+    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
+    if (how === "toggle" && !on && TONE_MAPPER_ALL_OPS.has(h.op)) {
+      if (!s.toneMappable) { setStatus(t("fields.advanced.toneMapperNonRaw")); return; }
+      const others = s.activeToneMappers({ op: h.op, priority: h.priority! });
+      if (others.length) {
+        setTmWarning({
+          current: others.map((x) => fieldText(x.title)).join(", "),
+          next: fieldText(h.name),
+          onSwitch: () => {
+            leaveBefore();
+            setBaMode("off");
+            record([`history:${key}:switch`], `Switch tone mapper: ${h.name}`);
+            baseStale.current = true;
+            s.disableOtherToneMappers({ op: h.op, priority: h.priority! });
+            s.setModuleState(h, { enabled: true });
+            setHistoryRev((n) => n + 1);
+          },
+          onEnableAnyway: () => {
+            leaveBefore();
+            setBaMode("off");
+            record([`history:${key}`], `Switch on ${h.name}`);
+            baseStale.current = true;
+            s.setModuleState(h, { enabled: true });
+            setHistoryRev((n) => n + 1);
+          },
+        });
+        return;
+      }
+    }
     leaveBefore();
     setBaMode("off");
-    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
     record([`history:${key}`], how === "toggle" ? `${on ? "Switch off" : "Switch on"} ${h.name}`
       : how === "reset" ? `Reset ${h.name}` : `Delete ${h.name}`);
     baseStale.current = true;
@@ -5021,6 +5050,7 @@ export default function App() {
   sfStocksRef.current = sfStocks;
   const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
   const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
+  const [tmWarning, setTmWarning] = useState<ToneMapperGuardRequest | null>(null);
   const filmView = !!current && layout.right && rightMode === "film";
   useEffect(() => {
     if (!filmView || sfStocks?.pack) return;
@@ -5488,9 +5518,28 @@ export default function App() {
   };
 
   const change = (c: Control, v: number) => perf.time("slider.handler", () => {
-    if (c.id === "profile" && v >= AGX_USER_FIRST) {
-      changeMany(Object.entries(profileSelection(v)), "Profile");
-      return;
+    if (c.id === "profile") {
+      const s = session.current;
+      if (!s) return;
+      if (!s.toneMappable) {
+        const safe = isColorBalanceProfile(v) ? v : 0;
+        if (s.values.profile !== safe) changeMany([["profile", safe]], "Profile");
+        return;
+      }
+      const agxPick = v >= AGX_USER_FIRST || isAgxProfile(v) || (v === 0 && s.values.tm_mode !== TM_AGX);
+      if (agxPick) {
+        const sel = profileSelection(v, true);
+        const entries: [string, number][] = Object.entries(s.values.tm_mode === TM_AGX ? sel : { ...sel, tm_mode: TM_AGX });
+        leaveBefore();
+        setBaMode("off");
+        setAmount(null);
+        record(["profile"], "Profile");
+        baseStale.current = true;
+        s.disableOtherToneMappers({ op: "agx", priority: 0 });
+        setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
+        s.setMany(entries, dragging.current);
+        return;
+      }
     }
     if (session.current?.values[c.id] === v) return;
     leaveBefore();
@@ -7410,10 +7459,16 @@ export default function App() {
           )}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
             <AdvancedSearch photo={!!current} onPick={searchPick}
-                            applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
+                            applicable={(op) => {
+                              if (TONE_MAPPER_OPS.has(op) && !session.current?.toneMappable) return false;
+                              const i = session.current?.instances.find((x) => x.op === op && x.priority === 0);
+                              return !!i && i.switchable !== false;
+                            }}
+                            reasonFor={(op) => TONE_MAPPER_OPS.has(op) && session.current && !session.current.toneMappable
+                              ? t("fields.advanced.toneMapperNonRaw") : undefined} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onToneMapperGuard={setTmWarning} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -7705,6 +7760,23 @@ export default function App() {
             <button className="btn" onClick={() => setExclusive(null)}>{t("app.action.cancel")}</button>
             <button className="btn primary" autoFocus onClick={() => { const go = exclusive.go; setExclusive(null); go(); }}>
               {t("app.action.continue")}</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {tmWarning && (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t("app.tonemapper.warningTitle")} data-tonemapper-warning>
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>{t("app.tonemapper.warningTitle")}</h2></div>
+          <div className="modal-body">
+            <p>{t("app.tonemapper.warningBody", { current: tmWarning.current, next: tmWarning.next })}</p>
+          </div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setTmWarning(null)}>{t("app.action.cancel")}</button>
+            <button className="btn" onClick={() => { const go = tmWarning.onEnableAnyway; setTmWarning(null); go(); }}>
+              {t("app.tonemapper.enableAnyway")}</button>
+            <button className="btn primary" autoFocus onClick={() => { const go = tmWarning.onSwitch; setTmWarning(null); go(); }}>
+              {t("app.tonemapper.switchTo", { name: tmWarning.next })}</button>
           </div>
         </div>
       </div>

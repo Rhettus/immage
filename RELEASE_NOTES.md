@@ -3,6 +3,23 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.48.0
+
+Improvements
+
+- **No tone mapper on JPEGs and other non-RAW formats:** JPEGs, PNGs, WebP,
+  HEIC and 8/16-bit TIFFs no longer enable AgX or Sigmoid on open, Start Over,
+  paste or preset application. Their Basic controls remap to the same
+  non-tone-mapper modules as masks (**color balance rgb** for Contrast, Whites
+  and Saturation; **exposure** for Blacks), and Profile offers **None** and
+  Color Balance RGB looks only. Existing sidecars edited in earlier releases
+  keep their saved rendering untouched.
+- **Single tone mapper guard:** Simple mode keeps at most one tone mapper
+  active on RAW photos and never enables Sigmoid on photos without a tone
+  mapper. In Advanced mode and History, enabling or duplicating a second tone
+  mapper opens a warning dialog to switch cleanly, enable anyway or cancel,
+  and tone mappers are disabled on already tone-mapped formats.
+
 ## 0.47.1
 
 Improvements

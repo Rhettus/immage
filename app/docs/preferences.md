@@ -553,9 +553,10 @@ photo's starting point: they don't mark it as edited.
 
 - **Profile**: the color look a raw starts with: one of AgX's looks
   (**AgX Default**, the default) or one of color balance rgb's
-  (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
-  keep the camera's look. It takes precedence over a profile saved in the
-  **Apply preset** preset.
+  (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs,
+  PNGs, 8/16-bit TIFFs and other already tone-mapped formats keep the camera's
+  look with no tone mapper enabled. It takes precedence over a profile saved
+  in the **Apply preset** preset.
 - **Lens correction method**: where a new raw's lens corrections take their
   data from: the **Lensfun database** (the default) or the **Embedded
   metadata** in the raw file. It is set after the preset, so it wins over a

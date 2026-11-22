@@ -49,7 +49,14 @@ the tone curve: **AgX Default**, **Unmodified Primaries**, **Blender**,
 values. The second group is darktable's color balance rgb: **Standard**,
 **Natural Skin**, **Vibrant Colors** and **Legacy**, which add
 colorfulness on top of AgX Default. New raws get the profile set in
-Preferences (AgX Default unless you change it).
+Preferences (AgX Default unless you change it). Already tone-mapped photos
+such as JPEGs, PNGs and 8/16-bit TIFFs do not enable AgX or any other tone
+mapper: their Profile menu offers **None** and the Color Balance RGB looks
+only.
+
+In Simple mode, at most one tone mapper is active on a raw photo. Choosing
+an AgX profile on a raw that uses Sigmoid, Filmic rgb or Base curve switches
+to AgX and turns the previous tone mapper off.
 
 Choose **Load AgX Preset** below the spacer at the bottom of Profile to bring in your own AgX
 presets. Open a photo first. The dialog lists user presets from darktable's
@@ -117,9 +124,15 @@ for **B&W Mix**.
   AgX off.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
-  +100. Whites moves the top of the tone mapper's curve, and under AgX
-  also brightens or darkens the brightest tones ahead of it; Blacks moves
-  the black point, and works the same at any Exposure.
+  +100. On raw photos with a tone mapper, Whites moves the top of the tone
+  mapper's curve (and under AgX also brightens or darkens the brightest tones
+  ahead of it), and Blacks moves the black point, working the same at any
+  Exposure. On JPEGs, PNGs, 8/16-bit TIFFs and other photos without a tone
+  mapper, Basic remaps these controls to the same non-tone-mapper modules used
+  by masks: Contrast and Saturation use **color balance rgb** (with contrast
+  equalizer and saturation curve still available), Whites uses **color balance
+  rgb** highlights brilliance, and Blacks uses **exposure**. No Simple slider
+  enables a tone mapper on an already tone-mapped photo.
 - **Highlight Brilliance** (AgX only, among Basic's More controls),
   0% to 200%, sets how much of that brightening Whites adds; 100% is the
   usual amount.

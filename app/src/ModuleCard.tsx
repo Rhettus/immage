@@ -95,7 +95,7 @@ export function fieldControl(f: SchemaField, l: LayoutField, value: number): Con
 // `siblings` is how many instances of the module the group shows, `index`
 // this one's place among them (pipe order); `fresh`, a card just added;
 // `focus`, a number that changes each time the module search picks the card
-export function ModuleCard({ hidden, maskOwned = false, simple = false, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, wbLocked, trouble, onField, onFields, onEnabled, onReset, onInstance, loadPresets, importPreset, onPreset, onTurn }: {
+export function ModuleCard({ hidden, maskOwned = false, simple = false, blockEnable = false, blockReason, instance, layout, schema, state, siblings, index, fresh, focus, family, photo, photos, onSettled, settle, wbInModule, wbLocked, trouble, onField, onFields, onEnabled, onReset, onInstance, loadPresets, importPreset, onPreset, onTurn }: {
   instance: Instance; layout: ModuleLayout; schema: ModuleSchema; state: AdvancedState;
   // hidden in Preferences > Modules, yet shown as the photo uses it
   hidden?: boolean;
@@ -103,6 +103,10 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   maskOwned?: boolean;
   // a Simple mask adjustment also writes this module instance
   simple?: boolean;
+  // block turning the module on (e.g. tone mapper on an LDR photo), while
+  // still allowing an already-enabled legacy instance to be switched off
+  blockEnable?: boolean;
+  blockReason?: string;
   siblings: number; index: number; fresh?: boolean; focus?: number;
   // the open photo, which the lens picker lists lenses for
   photo?: object | null;
@@ -182,8 +186,9 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
   // darktable's notebook pages, in its order; the first is shown at first
   const tabs = [...new Set(layout.fields.flatMap((l) => l.tab ? [l.tab] : []))];
   const [tab, setTab] = useState(tabs[0]);
-  // a module darktable will not let you switch: off, it cannot apply here
-  const fixed = instance.switchable === false;
+  // a module darktable will not let you switch, or one blocked from turning
+  // on here (tone mapper on an LDR photo while currently off)
+  const fixed = instance.switchable === false || (blockEnable && !state.enabled);
   // a card just added is brought into view and flashes once
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => { if (fresh) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [fresh]);
@@ -210,6 +215,7 @@ export function ModuleCard({ hidden, maskOwned = false, simple = false, instance
     <div ref={card} className={`module-card${state.enabled ? "" : " off"}${fresh || flash ? " fresh" : ""}`} data-module={`${instance.op}#${instance.priority}`}>
       <div className="module-card-head" onClick={() => setFold(!open)}>
         <input type="checkbox" className="switch" checked={state.enabled} aria-label={tr("fields.module.onOff", { name })} disabled={fixed}
+               title={blockEnable && !state.enabled ? blockReason : undefined}
                onClick={(e) => e.stopPropagation()} onChange={(e) => onEnabled(e.target.checked)} />
         {renaming
           ? <input className="field module-card-rename" autoFocus defaultValue={instance.hand_edited ? instance.name : ""}
