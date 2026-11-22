@@ -25,7 +25,7 @@ const chevron = (
        strokeLinecap="round" strokeLinejoin="round"><path d="m9 5 7 7-7 7" /></svg>
 );
 
-export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, icon, driveIcon, networkIcon,
+export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, revealKey = 0, icon, driveIcon, networkIcon,
                              onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
@@ -36,6 +36,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   expanded: Set<string>;
   hidden: Set<string>;                 // subfolders taken off the tree
   refresh: number;                     // bumped to read every open folder again
+  revealKey?: number;
   icon: React.ReactNode;
   driveIcon: React.ReactNode;
   networkIcon: React.ReactNode;
@@ -102,12 +103,21 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
     return () => { stale = true; };
   }, [expanded, refresh, made]);
 
-  // the photo's folder is scrolled to once per photo folder, when its row
-  // first shows: its parents' subfolders are read after it opens
-  const revealed = useRef<string | null>(null);
-  const reveal = (el: HTMLDivElement | null) => {
-    if (!el || revealed.current === photo) return;
-    revealed.current = photo;
+  // the photo's folder or current reveal target is scrolled to once per trigger key
+  const revealedPhoto = useRef<string | null>(null);
+  const revealedCurrent = useRef<string | null>(null);
+  const revealPhoto = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const key = `${revealKey}:${photo}`;
+    if (revealedPhoto.current === key) return;
+    revealedPhoto.current = key;
+    el.scrollIntoView({ block: "nearest" });
+  };
+  const revealCurrent = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const key = `${revealKey}:${current}`;
+    if (revealedCurrent.current === key) return;
+    revealedCurrent.current = key;
     el.scrollIntoView({ block: "nearest" });
   };
 
@@ -126,7 +136,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                         + `${target ? ` drop-into${drag.copy ? " copy" : ""}` : ""}`}
              data-folder-path={path} data-folder-refuse={refuse ? "1" : undefined}
              title={busy ? t("dialogs.folderMove.busy") : offline ? t("library.folders.pathOffline", { path }) : path}
-             ref={path === photo ? reveal : undefined}
+             ref={path === photo ? revealPhoto : (revealKey > 0 && path === current ? revealCurrent : undefined)}
              style={{ paddingLeft: 8 + depth * 14 }} onClick={() => { if (!busy) onOpen(path); }}
              onPointerDown={(e) => {
                if (offline || transfer || (e.target as Element).closest("button, input")) return;

@@ -51,7 +51,7 @@ export function useMenuClose(onClose: () => void) {
 // whole search in Immich's web app. any click elsewhere, a scroll or Escape
 // closes it
 export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, onCaptureTime, canUndoCapture, onUndoCapture, resetCount, onReset, x, y, copyable, copies, mergeable, stitchable, reveal, rejected, photo, results, parentFolder, onImportParent, editIn, onCopy,
-                    onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onClose }: {
+                    onRemoveCopies, onMergeHdr, onMergePano, onDelete, onEditIn, onSetUpPlugins, onShowInLibrary, onClose }: {
   onSimilar?: () => void;
   onKeywords?: () => void;
   onRename?: () => void;
@@ -76,7 +76,7 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
   editIn: { cfg: PluginConfig; why: string | null }[] | null;  // the plugins, and why one cannot take the photos
   onEditIn: (cfg: PluginConfig) => void; onSetUpPlugins: () => void;
   onCopy: () => void; onRemoveCopies: () => void; onMergeHdr: () => void; onMergePano: () => void;
-  onDelete: () => void; onClose: () => void;
+  onDelete: () => void; onShowInLibrary?: () => void; onClose: () => void;
 }) {
   const ref = useMenuClose(onClose);
   const go = (url: string) => { onClose(); void openUrl(url); };
@@ -160,13 +160,14 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
           {copyable > 1 ? t("library.menu.createCopies", { count: copyable }) : t("library.menu.createCopy")}</button>
         {copies > 0 && <button onClick={() => { onClose(); onRemoveCopies(); }}>
           {copies > 1 ? t("library.menu.removeCopies", { count: copies }) : t("library.menu.removeCopy")}</button>}
-        {(reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
+        {(onShowInLibrary || reveal || photo || results || rejected !== null) && <div className="menu-sep" />}
       </>}
       {(mergeable > 1 || stitchable > 1) && <>
         {mergeable > 1 && <button onClick={() => { onClose(); onMergeHdr(); }}>{t("library.menu.hdr")}</button>}
         {stitchable > 1 && <button onClick={() => { onClose(); onMergePano(); }}>{t("library.menu.panorama")}</button>}
         <div className="menu-sep" />
       </>}
+      {onShowInLibrary && <button onClick={() => { onClose(); onShowInLibrary(); }}>{t("library.menu.showInLibrary")}</button>}
       {reveal && <button onClick={() => { onClose(); void revealItemInDir(reveal); }}>{t("library.menu.showIn", { manager: FILE_MANAGER })}</button>}
       {parentFolder !== undefined && <button disabled={!parentFolder}
         title={parentFolder ? parentDir(parentFolder) : t("library.menu.parentHint")}
@@ -174,7 +175,7 @@ export function FileMenu({ onSimilar, onKeywords, onRename, rate, captureCount, 
       {photo && <button onClick={() => go(photo)}>{t("library.menu.showImmich")}</button>}
       {results && <button onClick={() => go(results)}>{t("library.menu.showResults")}</button>}
       {rejected !== null && <>
-        {(reveal || photo || results) && <div className="menu-sep" />}
+        {(onShowInLibrary || reveal || photo || results) && <div className="menu-sep" />}
         <button className="danger" disabled={!rejected} title={rejected ? undefined : t("library.menu.deleteHint")}
                 onClick={() => { onClose(); onDelete(); }}>
           {rejected > 1 ? t("library.menu.deleteRejectedMany", { count: rejected }) : t("library.menu.deleteRejectedOne")}</button>

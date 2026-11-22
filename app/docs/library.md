@@ -715,11 +715,17 @@ Right-click a photo, or a selection, for:
   photo is edited: discards the edit history on the edited photos so they
   return to unedited (multiple photos ask for confirmation first). Unedited
   photos are ignored and the item does not appear when none are edited.
+- **Show in Library**: jumps to the photo's thumbnail in its folder view,
+  expanding and scrolling to its folder in the left panel; useful after
+  Smart/CLIP or **All folders** searches.
 - **Show in Finder**
-- **Import Parent Folder**, for an Immich result when Immich is configured in
-  Preferences: add its locally mapped parent to Folders and browse its photos.
-  Disabled when no local file is available. See [Immich](immich.md).
-- **Show in Immich**, for a photo from an Immich search
+- **Import Parent Folder**, for an Immich result when Immich is configured and
+  enabled in Preferences: add its locally mapped parent to Folders and browse
+  its photos. Disabled when no local file is available. See [Immich](immich.md).
+- **Show in Immich**, for a photo from an Immich search (hidden when Immich is
+  not configured or disabled)
+- **Show Results in Immich**, for searches that include Immich (hidden when
+  Immich is not configured or disabled, and on local-only searches)
 - **Delete Rejected Photo…**
 
 ## Metadata

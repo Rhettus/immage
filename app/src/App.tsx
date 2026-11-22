@@ -55,7 +55,7 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
-import { buildStackView, selectionAfterCollapse, toggleStackKey, type StackBadge } from "./stacking";
+import { buildStackView, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -135,6 +135,7 @@ import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { indexChanged, localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
+import { canShowResultsMenu, findTargetEntry, immichMenuState, showInLibraryTarget, type LibraryJumpTarget } from "./fileMenuModel";
 import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
@@ -198,6 +199,8 @@ export default function App() {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [folderRefresh, setFolderRefresh] = useState(0);
+  const [folderRevealKey, setFolderRevealKey] = useState(0);
+  const [thumbRevealKey, setThumbRevealKey] = useState(0);
   // subfolders taken off the tree; adding one again brings it back
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
   const hiddenRef = useRef(hidden);
@@ -595,7 +598,7 @@ export default function App() {
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
   const showResultsMenu = (e: React.MouseEvent) => {
-    if (!immichRef.current) return;
+    if (!canShowResultsMenu(immichBaseRef.current, immichRef.current?.search)) return;
     e.preventDefault();
     setFileMenu({ x: e.clientX, y: e.clientY, imgid: null, targets: [] });
   };
@@ -3348,6 +3351,50 @@ export default function App() {
     setLayout((old) => ({ ...old, left: true }));
     setGrid(true);
     void showFolder(dir);
+  };
+
+  const showInLibrary = (target: LibraryJumpTarget) => {
+    window.clearTimeout(immichTimer.current);
+    addPathToLibrary(target.dir);
+    const root = foldersRef.current.find((r) => within(target.dir, r));
+    const mount = root ? volumes.get(root)?.mount : undefined;
+    if (mount && foldedVolumes.has(mount)) {
+      const next = new Set(foldedVolumes);
+      next.delete(mount);
+      setFoldedVolumes(next);
+      saveLibrary({ foldedVolumes: [...next] });
+    }
+    setLeftOpen((old) => new Set([...old, "folders"]));
+    try { settings.set("immage.folders.open", "1"); } catch { /* not kept */ }
+    setLayout((old) => ({ ...old, left: true }));
+    setFolderRevealKey((k) => k + 1);
+    filterRef.current = NO_FILTER;
+    setFilter(NO_FILTER);
+    setGrid(true);
+
+    const wantGen = shownGen.current + 1;
+    const selectMatch = (list: ImageEntry[]) => {
+      if (shownGen.current !== wantGen || immichRef.current) return;
+      const match = findTargetEntry(list, target.path, target.version);
+      if (!match) return;
+      if (stackPairs) {
+        const listPartners = pairPartners(list);
+        const isStackedCompanion = [...listPartners.values()].some((companions) =>
+          companions.some((p) => p.imgid === match.imgid),
+        );
+        if (isStackedCompanion) {
+          const key = stackKey(match.path);
+          setExpandedStacks((prev) => (prev.has(key) ? prev : new Set([...prev, key])));
+        }
+      }
+      pickAnchor.current = match.imgid;
+      setSelection(new Set([match.imgid]));
+      setThumbRevealKey((k) => k + 1);
+    };
+
+    void showFolder(target.dir, false, (got) => selectMatch(got)).then((sorted) => {
+      if (sorted) selectMatch(sorted);
+    });
   };
 
   // the importer's Immich buttons open Preferences there; stable, as the
@@ -6811,7 +6858,7 @@ export default function App() {
               </label>
               <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
-                          refresh={folderRefresh} transfer={folderTransfer}
+                          refresh={folderRefresh} revealKey={folderRevealKey} transfer={folderTransfer}
                           onDropFolder={(source, dest, copy) => {
                             if (!folderMoveDialog && !moveDialog && !folderTransfer) askFolderMove(source, dest, copy);
                           }}
@@ -7182,6 +7229,7 @@ export default function App() {
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={inspectedEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
                        height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
+                       revealThumb={thumbRevealKey}
                        onPress={(i, e) => pressPhoto(e, {
                          count: () => dragSet(i).length,
                          from: () => [...new Set(dragSet(i).filter((p) => !isRemote(p)).map((p) => parentDir(p.path)))],
@@ -7204,7 +7252,7 @@ export default function App() {
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
-                 onFindMenu={immich ? showResultsMenu : undefined}
+                 onFindMenu={canShowResultsMenu(immichBase, immich?.search) ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
@@ -7770,6 +7818,8 @@ export default function App() {
       const sources = local.filter((i) => !behindRaw.has(i.imgid));
       const copies = local.filter((i) => i.copy);
       const resettable = grid ? resetTargets(fileMenu.targets, behindRaw, isRemote) : [];
+      const jumpTarget = showInLibraryTarget(hit, { activeSearch: !!immich, currentFolder: folder, grid, roots: folders });
+      const immichItems = immichMenuState({ immichBase, immichSearch: immich?.search, hit, photoUrl, searchUrl });
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
@@ -7794,11 +7844,12 @@ export default function App() {
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
                   stitchable={panoFrames(sources).length} onMergePano={() => setPanoMerging(panoFrames(sources))}
+                  onShowInLibrary={jumpTarget ? () => showInLibrary(jumpTarget) : undefined}
                   reveal={!hit ? null : hit.remote ? hit.remote.localPath ?? (isRemote(hit) ? null : hit.path) : hit.path}
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
-                  photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
-                  results={immichBase && immich ? searchUrl(immichBase, immich.search) : null}
-                  parentFolder={immichBase && hit?.remote ? hit.remote.localPath : undefined}
+                  photo={immichItems.photo}
+                  results={immichItems.results}
+                  parentFolder={immichItems.parentFolder}
                   onImportParent={importImmichParent}
                   onDelete={() => void deleteRejected(local.filter((i) => i.rejected))}
                   editIn={hit && !isRemote(hit) ? plugins.map((cfg) => ({ cfg, why: unfit(cfg, sources) })) : null}

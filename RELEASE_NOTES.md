@@ -43,6 +43,10 @@ Improvements
   using **morfPhoto → Immich → local** precedence, falls through immediately to
   the next provider if a server does not answer, and shows the active CLIP
   provider per folder in Preferences > Performance > Local photo cache.
+- **Show in Library from the right-click menu:** Right-click a photo in search
+  results, a subfolder view, or the filmstrip and choose **Show in Library** to
+  jump straight to its thumbnail in its folder view, expanding and scrolling to
+  its folder in the left panel.
 
 Performance
 
@@ -72,6 +76,10 @@ Bug fixes
   before discarding history now closes it in the engine as well, fixing **Start
   Over** and Grid photo reset failing with "close the photo first" when the
   currently open photo is included.
+- **Immich right-click menu gating:** Immich context menu items (**Import
+  Parent Folder**, **Show in Immich**, **Show Results in Immich**) no longer
+  appear when Immich is not configured or is disabled in Preferences, and
+  **Show Results in Immich** is hidden on local-only searches.
 
 ## 0.47.1
 

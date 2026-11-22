@@ -43,7 +43,7 @@ it only once.
 
 Open **Preferences** (⌘,) and the **Immich** tab.
 
-- **Use Immich**: turn on looking photos up during an import.
+- **Use Immich**: enable Immich integration, including import checks, search, and context menu actions.
 - **Server URL**: your server's address, for example
   `https://photos.example.com`. A plain `http` address works, but sends the
   key unencrypted.
@@ -197,8 +197,7 @@ To find the photos you have edited in Immage with Immich's Tags filter, set
 keyword once it reads the sidecar again, at its next library scan or
 metadata refresh.
 
-Right-click a result for **Show in Immich**, or **Show Results in Immich**
-to see the same search in Immich's web page.
+Right-click a result for **Show in Immich**, or **Show Results in Immich** (available for Immich and Both searches when Immich is configured and enabled in Preferences) to see the same search in Immich's web page. Immich context menu items are hidden when Immich is not configured or disabled.
 
 With a server URL and API key configured in Preferences, choose
 **Import Parent Folder** to add the result's containing folder to

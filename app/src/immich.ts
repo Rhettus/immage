@@ -94,11 +94,11 @@ export function planOpen(original: string, map: PathMap): OpenPlan {
   return { local: to.replace(/[\\/]+$/, "") + sep + o.parts.slice(from.parts.length).join(sep) };
 }
 
-// the server's URL when Immich is set up (a URL and a stored key), else null
+// the server's URL when Immich is enabled and set up (a URL and a stored key), else null
 export async function immichUrl(): Promise<string | null> {
   try {
     const s = await api.getImmichSettings();
-    return s.url.trim() && s.hasKey ? s.url.trim().replace(/\/+$/, "").replace(/\/api$/, "") : null;
+    return s.enabled && s.url.trim() && s.hasKey ? s.url.trim().replace(/\/+$/, "").replace(/\/api$/, "") : null;
   } catch { return null; }
 }
 

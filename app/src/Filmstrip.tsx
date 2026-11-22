@@ -22,7 +22,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 export function Filmstrip({ images, stackBadges, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack }: {
+                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack, revealThumb = 0 }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
@@ -42,6 +42,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   more?: () => void;                      // there are more results: called as the end scrolls into view
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
   onToggleStack?: (badge: StackBadge) => void; // expand or collapse stack
+  revealThumb?: number;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   // the cell after the last, which asks for the next page of results
@@ -69,6 +70,25 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
     if (c.top < r.top) root.scrollTop -= r.top - c.top;
     else if (c.bottom > r.bottom) root.scrollTop += c.bottom - r.bottom;
   }, [current, grid]);
+  // explicit jump ("Show in Library"): center the active thumbnail inside the
+  // strip even if its numeric imgid did not change across folder reload
+  const lastReveal = useRef(0);
+  useEffect(() => {
+    if (!revealThumb || revealThumb === lastReveal.current || current === null) return;
+    const root = strip.current;
+    const cell = root?.querySelector(".thumb.active");
+    if (!root || !cell) return;
+    lastReveal.current = revealThumb;
+    const r = root.getBoundingClientRect();
+    const c = cell.getBoundingClientRect();
+    if (grid) {
+      const targetTop = root.scrollTop + (c.top + c.bottom) / 2 - (r.top + r.bottom) / 2;
+      root.scrollTop = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, targetTop));
+    } else {
+      if (c.left < r.left) root.scrollLeft -= r.left - c.left;
+      else if (c.right > r.right) root.scrollLeft += c.right - r.right;
+    }
+  }, [revealThumb, current, grid, images]);
   // a grid resized keeps one photo where it was: the one under the pointer
   // for a pinch, otherwise the open photo when it shows, or the top left one.
   // the column count changes as the size does, so without this the rows
