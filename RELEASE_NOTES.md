@@ -27,6 +27,10 @@ Improvements
   discard saved edits and return them to unedited. Multiple photos ask for
   confirmation first, unedited photos in a mixed selection are skipped, and the
   option is hidden when no selected photo is edited.
+- **Theme export and aligned actions in Preferences:** Preferences > General >
+  Theme aligns the active theme name with Import, Export, and Delete icon
+  buttons below the swatches, lets you export any theme as JSON, and keeps the
+  Delete button disabled for built-in themes.
 
 Performance
 

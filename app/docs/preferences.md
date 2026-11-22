@@ -70,15 +70,18 @@ starts with default settings. To start with defaults on purpose, see
   **Darktable Grey** (the `darktable-elegant-grey` palette),
   **Classic Grey Balanced**, **Soft Grey** and **Light**. Imported themes
   appear after the built-in themes.
-  The selected name and **Import theme…** action appear below the swatches;
-  **Remove theme** appears beside Import for custom themes. The
+  Below the swatches, the selected theme name sits alongside aligned icon
+  buttons for **Import theme…**, **Export**, and **Delete**. The
   interface changes immediately, including the cards around Texture, Clarity
   and Advanced modules, and remembers your choice. Editor dropdowns such as
   Profile and White Balance use the theme’s inset color. **Import theme…**
   loads a JSON theme and selects it after it is saved. An imported theme with
-  the same name as an existing one is given a numbered name. **Remove theme**
-  appears for the selected imported theme; removing it returns the interface
-  to Dark. Built-in themes cannot be removed.
+  the same name as an existing one is given a numbered name. **Export**
+  saves the active theme (built-in or custom) as a JSON file, so you can back
+  up a theme or use any built-in theme as a starting point. **Delete** removes
+  the selected imported theme and returns the interface to Dark; for built-in
+  themes, the delete button remains visible but disabled, as built-in themes
+  cannot be deleted.
 
   A theme file is UTF-8 JSON no larger than 64 KiB. It must contain exactly
   these top-level fields: `version` (the number `1`), `name` (1–80 printable
