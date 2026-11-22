@@ -7554,14 +7554,14 @@ export default function App() {
                           turnOffLabel={t("app.film.turnOff")}
                           turnOffTitle={t("app.film.turnOffTitle")} />
         )}
+        </div>
         <div className="right-foot">
           <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
                   data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
           <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
                   data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
           <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
-                  title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
-        </div>
+                  data-action="paste-previous" title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
       </aside>
       </div>

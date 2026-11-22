@@ -19,6 +19,9 @@ Improvements
   mapper. In Advanced mode and History, enabling or duplicating a second tone
   mapper opens a warning dialog to switch cleanly, enable anyway or cancel,
   and tone mappers are disabled on already tone-mapped formats.
+- **Copy and paste settings in Grid view:** **Copy…**, **Paste** and
+  **Previous** stay pinned at the bottom of the right panel below Find's filter
+  footer in Library Grid view, matching the Adjustments panel.
 
 ## 0.47.1
 

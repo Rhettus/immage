@@ -86,7 +86,8 @@ orientation, and modules added in darktable. To remove those too, use
 
 ## Copying settings to other photos
 
-The buttons at the bottom of the right panel:
+The buttons at the bottom of the right panel stay available in both the editor
+and Grid view (below Find's filter footer):
 
 - **Copy…** (⇧⌘C) opens **Copy Settings**: tick what to copy, then copy
   it.

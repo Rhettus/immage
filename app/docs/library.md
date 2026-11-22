@@ -509,7 +509,9 @@ Each list counts only the photos your other choices leave: tick a camera, and
 
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. The footer is always visible below the list:
-it shows how many photos match, **Load** (saved filters) and **Save filter…**. Esc
+it shows how many photos match, **Load** (saved filters) and **Save filter…**,
+with **Copy…**, **Paste** and **Previous** pinned below it at the bottom of the
+right panel just like in Adjustments. Esc
 folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder sets **Search in** to **This folder** and clears the

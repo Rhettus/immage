@@ -222,7 +222,7 @@ button { font: inherit; color: inherit; }
 /* ------------------------------------------------------------ right */
 
 .right .panels { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
-.right-foot { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border, var(--border, #333)); }
+.right-foot { flex: none; display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border, #333); }
 .right-foot .btn { flex: 1; }
 .copy-groups { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 
