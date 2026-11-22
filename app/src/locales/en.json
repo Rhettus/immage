@@ -4218,6 +4218,8 @@
   "dialogs.shortcuts.healandclone.entry5": "Remove the selected spot",
   "dialogs.shortcuts.healandclone.entry6": "Deselect the spot",
   "dialogs.shortcuts.title": "Keyboard Shortcuts",
+  "dialogs.shortcuts.searchPlaceholder": "Search shortcuts…",
+  "dialogs.shortcuts.noMatches": "No matching shortcuts.",
   "dialogs.tuner.title": "Performance tuner",
   "dialogs.tuner.prepare": "1. Prepare",
   "dialogs.tuner.targets": "2. Set targets",

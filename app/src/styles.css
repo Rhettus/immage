@@ -935,7 +935,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .modal-body .row input[type="range"] { flex: 1; }
 .modal-body .num { width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
 .modal-body .folder { width: 100%; margin: 0; }
-.modal-body .field, .modal-body select, .prefs-scroll .field, .prefs-scroll select {
+.modal-body .field, .modal-body select, .prefs-scroll .field, .prefs-scroll select, .shortcuts-search .field {
   padding: 6px 9px;
   background: var(--inset);
   border: 1px solid transparent;
@@ -947,7 +947,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 }
 .modal-body .field { flex: 1; min-width: 0; }
 .modal-body .field:focus, .modal-body select:focus,
-.prefs-scroll .field:focus, .prefs-scroll select:focus { border-color: var(--focus, #555); }
+.prefs-scroll .field:focus, .prefs-scroll select:focus, .shortcuts-search .field:focus { border-color: var(--focus, #555); }
 .modal-body .field:disabled { opacity: 0.4; }
 .modal-body .num-field { flex: 0 0 90px; }
 .modal-body select { flex: 1; }
@@ -1408,12 +1408,16 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .window.preview .viewer.canvas-white { background: #fff; }
 
 /* the keyboard shortcuts sheet */
-.modal.shortcuts { width: min(760px, calc(100vw - 32px)); }
+.modal.shortcuts { width: min(760px, calc(100vw - 32px)); height: min(760px, calc(100vh - 80px)); }
+.modal.shortcuts .modal-body { flex: 1; min-height: 0; }
+.shortcuts-search { flex: none; padding-block: 4px 10px; padding-inline: 18px; }
+.shortcuts-search .field { width: 100%; box-sizing: border-box; }
+.shortcuts-empty { column-span: all; margin: 24px 0; text-align: center; color: var(--text-3); }
 .shortcut-groups { columns: 2 300px; column-gap: 28px; }
 .shortcut-groups section { break-inside: avoid; padding-bottom: 6px; }
 .shortcut-groups dl { margin: 0; }
 .shortcut-groups dl > div { display: flex; align-items: baseline; gap: 10px; margin: 5px 0; }
-.shortcut-groups dt { flex: 0 0 96px; text-align: right; }
+.shortcut-groups dt { flex: 0 0 96px; text-align: end; }
 .shortcut-groups dd { margin: 0; color: var(--text-2); }
 .shortcut-groups kbd {
   display: inline-block;

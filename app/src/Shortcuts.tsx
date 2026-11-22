@@ -4,13 +4,12 @@
 // Lightroom's Keyboard Shortcuts sheet (⌘/): every key the app answers,
 // by where it works. the handlers live in App.tsx; keep this list with them
 // (the menus in menu.ts list these shortcuts too)
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cmd, keys } from "./keys";
 import { t } from "./i18n";
+import { filterShortcutGroups, type ShortcutGroup } from "./shortcutsSearch";
 
-type Group = { title: string; keys: [string, string][] };
-
-const GROUPS: Group[] = [
+const GROUPS: ShortcutGroup[] = [
   {
     title: t("dialogs.shortcuts.group.general"),
     keys: [
@@ -125,32 +124,74 @@ const GROUPS: Group[] = [
 ];
 
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || (cmd(e) && e.code === "Slash")) {
+      if (cmd(e) && e.code === "Slash") {
         e.preventDefault();
         onClose();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        if (queryRef.current) {
+          setQuery("");
+          inputRef.current?.focus();
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const filtered = useMemo(() => filterShortcutGroups(GROUPS, query), [query]);
+
   return (
     <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal shortcuts">
-        <div className="modal-head"><h2>{t("dialogs.shortcuts.title")}</h2></div>
+      <div className="modal shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div className="modal-head"><h2 id="shortcuts-title">{t("dialogs.shortcuts.title")}</h2></div>
+        <div className="shortcuts-search">
+          <input
+            ref={inputRef}
+            type="search"
+            className="field"
+            spellCheck={false}
+            value={query}
+            placeholder={t("dialogs.shortcuts.searchPlaceholder")}
+            aria-label={t("dialogs.shortcuts.searchPlaceholder")}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && query) {
+                e.preventDefault();
+                e.stopPropagation();
+                setQuery("");
+              }
+            }}
+          />
+        </div>
         <div className="modal-body shortcut-groups">
-          {GROUPS.map((g) => (
-            <section key={g.title}>
-              <h3>{g.title}</h3>
-              <dl>
-                {g.keys.map(([k, what], i) => (
-                  <div key={i}><dt><kbd>{keys(k)}</kbd></dt><dd>{keys(what)}</dd></div>
-                ))}
-              </dl>
-            </section>
-          ))}
+          {filtered.length > 0 ? (
+            filtered.map((g) => (
+              <section key={g.title}>
+                <h3>{g.title}</h3>
+                <dl>
+                  {g.keys.map(([k, what], i) => (
+                    <div key={i}><dt><kbd>{keys(k)}</kbd></dt><dd>{keys(what)}</dd></div>
+                  ))}
+                </dl>
+              </section>
+            ))
+          ) : (
+            <p className="shortcuts-empty" role="status">{t("dialogs.shortcuts.noMatches")}</p>
+          )}
         </div>
         <div className="modal-foot"><button className="btn primary" onClick={onClose}>{t("dialogs.common.done")}</button></div>
       </div>

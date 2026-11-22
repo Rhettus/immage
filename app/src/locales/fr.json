@@ -4218,6 +4218,8 @@
   "dialogs.shortcuts.healandclone.entry5": "Supprimer la tache sélectionnée",
   "dialogs.shortcuts.healandclone.entry6": "Désélectionner la tache",
   "dialogs.shortcuts.title": "Raccourcis clavier",
+  "dialogs.shortcuts.searchPlaceholder": "Rechercher un raccourci…",
+  "dialogs.shortcuts.noMatches": "Aucun raccourci correspondant.",
   "dialogs.tuner.title": "Optimiseur de performances",
   "dialogs.tuner.prepare": "1. Préparation",
   "dialogs.tuner.targets": "2. Définir les objectifs",

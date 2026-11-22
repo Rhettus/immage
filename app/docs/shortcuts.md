@@ -1,7 +1,10 @@
 # Keyboard shortcuts
 
 Press ⌘/ in Immage for this list. On Windows and Linux, ⌘ is Ctrl, ⌥ is Alt
-and ⇧ is Shift. Most keys are the ones mainstream editors use.
+and ⇧ is Shift. Most keys are the ones mainstream editors use. The sheet
+includes a search box at the top: start typing to filter to partial matches
+across actions, keys, and sections, clear it (or press Esc once) to return to
+the full list, and press Esc again (or ⌘/) to close.
 
 The File, Edit, Photo, View and Help menus show each command's shortcut
 beside it, so the menus are another place to find a key. See

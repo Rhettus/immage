@@ -150,6 +150,7 @@ jobs:
             verify/combined-search.test.mjs \
             verify/local-search-ui.test.mjs \
             verify/search-prefs.test.mjs \
+            verify/shortcuts-search.test.mjs \
             verify/typed-commands.test.mjs \
             verify/undo-stack.test.mjs \
             verify/ui-updates.test.mjs \

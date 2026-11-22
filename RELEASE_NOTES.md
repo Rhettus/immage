@@ -47,6 +47,10 @@ Improvements
   results, a subfolder view, or the filmstrip and choose **Show in Library** to
   jump straight to its thumbnail in its folder view, expanding and scrolling to
   its folder in the left panel.
+- **Search in Keyboard Shortcuts:** The Keyboard Shortcuts window now has a
+  search box at the top that filters shortcuts by partial matches across
+  actions, keys, and sections as you type, returning to the full list when
+  cleared.
 
 Performance
 
