@@ -165,8 +165,9 @@ starts with default settings. To start with defaults on purpose, see
 **Library**
 
 - **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM
-  System .ORI of the same name show as one, and a rating, reject or delete
-  takes them all.
+  System .ORI of the same name show as one. Stacked thumbnails can be
+  expanded and collapsed from their format badge in Grid view or the filmstrip
+  to inspect or edit either file.
 
 **Smart search (CLIP)** (below Library)
 

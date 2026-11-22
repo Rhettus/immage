@@ -120,6 +120,7 @@ jobs:
             verify/filter-rejected.test.mjs \
             verify/find-model.test.mjs \
             verify/saved-filters.test.mjs \
+            verify/stacking.test.mjs \
             verify/folder-edits.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \

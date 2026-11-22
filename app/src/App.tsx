@@ -55,6 +55,7 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { buildStackView, selectionAfterCollapse, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -613,6 +614,7 @@ export default function App() {
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
   const [stackPairs, setStackPairs] = useState(loadStackPairs);
+  const [expandedStacks, setExpandedStacks] = useState<Set<string>>(() => new Set());
   // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- and
   // a pinch or ⌘ wheel in the grid), any size in its range. a key step eases
   // there over 150 ms, as the photo's zoom does; a pinch follows the fingers.
@@ -3115,6 +3117,7 @@ export default function App() {
     if (!again) {
       shownGen.current++;
       loader.current!.clear();
+      setExpandedStacks(new Set());
       // Return to browsing this folder with the current filters.
       const fs = folderSearch(immichFormRef.current);
       immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
@@ -6436,12 +6439,10 @@ export default function App() {
   }, []);
 
   // stacked pairs: a raw's JPEG or HEIF hides behind it, unless the
-  // filters leave the raw out
-  const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
-  partnersRef.current = partners;
+  // filters leave the raw out or the stack is expanded
+  const allPartners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   // results show through the filter their search used: an Immich-only search hides the folder lists
   const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
-  const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
   // folder is listed, those no longer in it go
@@ -6454,7 +6455,16 @@ export default function App() {
   const stackRaw = (i: Known) => !i.copy && isPrimaryRaw(i.filename);
   const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
   const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
-  const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const { shown, collapsedPartners: partners, badges: stackBadges } = buildStackView(passing, allPartners, expandedStacks, stacked);
+  partnersRef.current = partners;
+  const toggleStack = (badge: StackBadge) => {
+    if (badge.expanded) {
+      const next = selectionAfterCollapse(selectionRef.current, pickAnchor.current, badge.memberIds, badge.headId);
+      pickAnchor.current = next.anchor;
+      setSelection(next.selection);
+    }
+    setExpandedStacks((prev) => toggleStackKey(prev, badge.key));
+  };
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
@@ -7138,7 +7148,7 @@ export default function App() {
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
-            <Filmstrip images={cells} partners={partners} pending={pending}
+            <Filmstrip images={cells} stackBadges={stackBadges} onToggleStack={toggleStack} pending={pending}
                        empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
@@ -7783,7 +7793,7 @@ export default function App() {
                          editMode={editMode} onEditMode={chooseEditMode}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
-                         stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}
+                         stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); if (!on) setExpandedStacks(new Set()); }}
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);

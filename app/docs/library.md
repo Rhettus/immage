@@ -563,9 +563,17 @@ this computer only and says that Immich was skipped.
 ## RAW+JPEG pairs
 
 Turn on **Stack RAW+JPEG pairs as one photo** in **Preferences › General**
-to show a raw and the JPEG, HEIF or OM System .ORI of the same name as a
-single photo. Its thumbnail reads, for example, **ARW+JPG**. A rating,
-reject or delete takes them all.
+to show a raw and the JPEG, HEIF or OM System `.ORI` of the same name as a
+single stacked thumbnail with a layered shadow behind it and a clickable
+format badge (for example, **ARW+JPG ▸**) in both Grid view and the
+filmstrip.
+
+Click the badge to expand the stack in place and show the raw alongside its
+companion JPEG, HEIF or `.ORI` so you can select, rate, reject or open either
+file for editing. Click the badge on any expanded photo (for example,
+**ARW ▾** or **JPG ▾**) to collapse the stack back into a single thumbnail.
+While collapsed, rating, rejecting, labeling, moving, renaming or deleting
+takes the whole pair; while expanded, each visible file acts independently.
 
 ## Virtual copies
 

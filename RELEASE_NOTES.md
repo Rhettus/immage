@@ -31,6 +31,11 @@ Improvements
   Theme aligns the active theme name with Import, Export, and Delete icon
   buttons below the swatches, lets you export any theme as JSON, and keeps the
   Delete button disabled for built-in themes.
+- **Expandable RAW+JPEG stacks:** Stacked RAW+JPEG (and HEIF / `.ORI`) pairs
+  now show a layered thumbnail with a drop shadow in Grid view and the
+  filmstrip. Click the format badge (for example, **ARW+JPG ▸**) to expand the
+  pair side by side and select or edit either the RAW or the JPEG independently,
+  and click either badge again to collapse the stack back together.
 
 Performance
 

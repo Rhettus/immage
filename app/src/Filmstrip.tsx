@@ -3,6 +3,7 @@
 
 import { ActivityBar } from "./ActivityBar";
 import { type ImageEntry, type Known, LABEL_COLORS, ThumbLoader, fetchThumb, isPrimaryRaw, knownKey, pairKey } from "./library";
+import { type StackBadge } from "./stacking";
 import { CullingIcon, SlidersIcon } from "./icons";
 import { baseName } from "./paths";
 import { captureDate, known, shutter } from "./MetadataPanel";
@@ -20,12 +21,12 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // the folder's images along the bottom, as Lightroom's filmstrip: a cell
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
-export function Filmstrip({ images, partners, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu }: {
+export function Filmstrip({ images, stackBadges, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
+                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
-  partners: Map<number, ImageEntry[]>;    // a stacked raw's JPEG or HEIF, by its imgid
+  stackBadges: Map<number, StackBadge>;   // a stacked raw's stack badge info, by its imgid
   empty: string;                          // what an empty grid says
   grid: boolean;                          // spread over the editing area, in rows
   gridSize?: number;                      // the grid's cell height, CSS pixels
@@ -40,6 +41,7 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   onPress?: (i: ImageEntry, e: React.PointerEvent<HTMLElement>) => void; // may become a drag (photoDrag.ts)
   more?: () => void;                      // there are more results: called as the end scrolls into view
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
+  onToggleStack?: (badge: StackBadge) => void; // expand or collapse stack
 }) {
   const strip = useRef<HTMLDivElement>(null);
   // the cell after the last, which asks for the next page of results
@@ -155,8 +157,8 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
-  const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress });
-  on.current = { onPick, onDouble, onMenu, onMeta, onPress };
+  const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress, onToggleStack });
+  on.current = { onPick, onDouble, onMenu, onMeta, onPress, onToggleStack };
   const openKnown = useRef(onOpenKnown);
   openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
@@ -172,11 +174,16 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
       {images.map((i) => !("imgid" in i)
         ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid} />
         : (
-        <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
-                  types={[i, ...(partners.get(i.imgid) ?? [])]
-                    .map((f) => (f.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()).join("+")}
-                  active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
-                  candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null} />
+        (() => {
+          const stack = stackBadges.get(i.imgid);
+          const types = stack ? stack.types : (i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase();
+          return (
+            <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
+                      stack={stack} types={types}
+                      active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
+                      candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null} />
+          );
+        })()
       ))}
       {pending.map((p) => <GhostCell key={p} path={p} cell={cell} />)}
       {more && <div ref={end} className="thumb ghost more" style={cell} />}
@@ -187,26 +194,29 @@ export function Filmstrip({ images, partners, pending, empty, current, loader, h
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress">;
+export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress" | "onToggleStack">;
 
 // one photo's filmstrip cell
-export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, types, active, selected, candidate, doubleOpens }: {
+export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, stack, types, active, selected, candidate, doubleOpens }: {
   entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
-  types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
+  stack?: StackBadge; types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
 }) {
   const clickGuard = useRef(new SecondaryClickGuard());
   return (
     <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
                     + `${i.rating || i.rejected ? " rated" : ""}${selected ? " selected" : ""}`
-                    + `${candidate ? " candidate" : ""}`}
+                    + `${candidate ? " candidate" : ""}`
+                    + `${stack ? (stack.expanded ? ` stack-expanded stack-${stack.position}` : " stack-collapsed") : ""}`}
          style={cell}
-         title={i.filename} data-imgid={i.imgid} onClick={(e) => {
+         title={i.filename} data-imgid={i.imgid}
+         data-stack-count={stack && !stack.expanded ? (stack.count >= 3 ? "3" : "2") : undefined}
+         onClick={(e) => {
            if (clickGuard.current.click(e.detail)) return;
            on.current!.onPick(i, e);
          }}
          onPointerDown={(e) => {
            if (clickGuard.current.pointerDown(e.button)) return;
-           if (!(e.target as Element).closest(".thumb-foot")) on.current!.onPress?.(i, e);
+           if (!(e.target as Element).closest(".thumb-foot, .thumb-stack-toggle")) on.current!.onPress?.(i, e);
          }}
          onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
          onContextMenu={(e) => { clickGuard.current.contextMenu(e.button); e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
@@ -214,7 +224,18 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, typ
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
         {/* altered, as darktable counts it, so its lighttable agrees */}
         {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
-        <span className="thumb-type">{types}{copyName(i)}</span>
+        {stack ? (
+          <button type="button" className="thumb-type thumb-stack-toggle"
+                  aria-expanded={stack.expanded}
+                  title={stack.expanded ? t("library.filmstrip.collapseStack") : t("library.filmstrip.expandStack", { types: stack.types })}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); on.current!.onToggleStack?.(stack); }}>
+            {types}{copyName(i)}<span className="thumb-stack-chevron" aria-hidden="true">{stack.expanded ? "▾" : "▸"}</span>
+          </button>
+        ) : (
+          <span className="thumb-type">{types}{copyName(i)}</span>
+        )}
       </div>
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;

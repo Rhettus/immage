@@ -639,6 +639,57 @@ input.switch:disabled { cursor: default; opacity: 0.4; }
 .thumb-foot .labels { display: flex; gap: 3px; margin-left: auto; }
 .thumb-foot .dot { width: 7px; height: 7px; border-radius: 50%; }
 
+/* stacked pairs: layered backing card and shadow, and expanded stack grouping */
+.thumb.stack-collapsed .thumb-image { padding-block: 4px 8px; padding-inline: 8px 14px; }
+.thumb.stack-collapsed .thumb-image canvas,
+.thumb.stack-collapsed .thumb-image .placeholder {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 4px 4px 0 0 var(--card, #2c2e30), 4px 4px 0 1px var(--border, #494d50), 6px 7px 10px rgba(0, 0, 0, 0.45);
+}
+.thumb.stack-collapsed[data-stack-count="3"] .thumb-image canvas,
+.thumb.stack-collapsed[data-stack-count="3"] .thumb-image .placeholder {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.55), 3px 3px 0 0 var(--card, #2c2e30), 3px 3px 0 1px var(--border, #494d50), 6px 6px 0 0 var(--inset, #262626), 6px 6px 0 1px var(--border, #494d50), 8px 9px 11px rgba(0, 0, 0, 0.48);
+}
+.filmstrip:not(.grid) .thumb.stack-collapsed .thumb-image { padding-block: 3px 6px; padding-inline: 7px 11px; }
+.filmstrip:not(.grid) .thumb.stack-collapsed .thumb-image canvas,
+.filmstrip:not(.grid) .thumb.stack-collapsed .thumb-image .placeholder {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 3px 3px 0 0 var(--card, #2c2e30), 3px 3px 0 1px var(--border, #494d50), 4px 5px 7px rgba(0, 0, 0, 0.45);
+}
+.filmstrip:not(.grid) .thumb.stack-collapsed[data-stack-count="3"] .thumb-image canvas,
+.filmstrip:not(.grid) .thumb.stack-collapsed[data-stack-count="3"] .thumb-image .placeholder {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 2px 2px 0 0 var(--card, #2c2e30), 2px 2px 0 1px var(--border, #494d50), 4px 4px 0 0 var(--inset, #262626), 4px 4px 0 1px var(--border, #494d50), 6px 6px 8px rgba(0, 0, 0, 0.48);
+}
+[dir="rtl"] .thumb.stack-collapsed .thumb-image canvas,
+[dir="rtl"] .thumb.stack-collapsed .thumb-image .placeholder {
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), -4px 4px 0 0 var(--card, #2c2e30), -4px 4px 0 1px var(--border, #494d50), -6px 7px 10px rgba(0, 0, 0, 0.45);
+}
+[dir="rtl"] .thumb.stack-collapsed[data-stack-count="3"] .thumb-image canvas,
+[dir="rtl"] .thumb.stack-collapsed[data-stack-count="3"] .thumb-image .placeholder {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.55), -3px 3px 0 0 var(--card, #2c2e30), -3px 3px 0 1px var(--border, #494d50), -6px 6px 0 0 var(--inset, #262626), -6px 6px 0 1px var(--border, #494d50), -8px 9px 11px rgba(0, 0, 0, 0.48);
+}
+[dir="rtl"] .filmstrip:not(.grid) .thumb.stack-collapsed .thumb-image canvas,
+[dir="rtl"] .filmstrip:not(.grid) .thumb.stack-collapsed .thumb-image .placeholder {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), -3px 3px 0 0 var(--card, #2c2e30), -3px 3px 0 1px var(--border, #494d50), -4px 5px 7px rgba(0, 0, 0, 0.45);
+}
+[dir="rtl"] .filmstrip:not(.grid) .thumb.stack-collapsed[data-stack-count="3"] .thumb-image canvas,
+[dir="rtl"] .filmstrip:not(.grid) .thumb.stack-collapsed[data-stack-count="3"] .thumb-image .placeholder {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), -2px 2px 0 0 var(--card, #2c2e30), -2px 2px 0 1px var(--border, #494d50), -4px 4px 0 0 var(--inset, #262626), -4px 4px 0 1px var(--border, #494d50), -6px 6px 8px rgba(0, 0, 0, 0.48);
+}
+button.thumb-type.thumb-stack-toggle {
+  display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--border, #3e3e3e);
+  font-family: inherit; line-height: 1; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+button.thumb-type.thumb-stack-toggle:hover,
+button.thumb-type.thumb-stack-toggle:focus-visible {
+  background: var(--inset, #36393b); border-color: var(--focus, #bfc2c4); color: var(--text); outline: none;
+}
+.thumb-stack-chevron { font-size: 9px; opacity: 0.85; }
+.thumb.stack-expanded { box-shadow: inset 0 2px 0 0 var(--border, #494d50); }
+.thumb.stack-expanded.stack-head { border-inline-start: 2px solid var(--border, #494d50); }
+.thumb.stack-expanded.stack-tail { border-inline-end: 2px solid var(--border, #494d50); }
+.thumb.stack-expanded.selected {
+  box-shadow: inset 0 2px 0 0 var(--border, #494d50), inset 0 0 0 1px var(--ui-border-4a4a4a, #4a4a4a);
+}
+
 /* the bar under the filmstrip */
 .toolbar {
   flex: none;

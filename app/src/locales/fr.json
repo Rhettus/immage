@@ -3401,6 +3401,8 @@
   "library.filmstrip.immichRating": "Note Immich : ouvrez la photo pour la modifier",
   "library.filmstrip.stars": "{count} étoiles",
   "library.filmstrip.loading": "Chargement des miniatures",
+  "library.filmstrip.expandStack": "Déplier la pile ({types})",
+  "library.filmstrip.collapseStack": "Replier la pile",
   "library.location.tileUnavailable": "tuile cartographique indisponible",
   "library.location.offline": "Carte indisponible. La modification des coordonnées reste possible hors ligne.",
   "library.location.noneFound": "Aucun lieu trouvé.",

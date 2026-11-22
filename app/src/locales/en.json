@@ -3401,6 +3401,8 @@
   "library.filmstrip.immichRating": "Immich's rating: open the photo to change it",
   "library.filmstrip.stars": "{count} stars",
   "library.filmstrip.loading": "Loading thumbnails",
+  "library.filmstrip.expandStack": "Expand stack ({types})",
+  "library.filmstrip.collapseStack": "Collapse stack",
   "library.location.tileUnavailable": "map tile unavailable",
   "library.location.offline": "Map unavailable. Coordinate editing still works offline.",
   "library.location.noneFound": "No places found.",
