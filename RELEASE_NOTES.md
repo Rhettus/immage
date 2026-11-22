@@ -3,6 +3,19 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- Enable PhotoCraft in Preferences › Plugins to open selected photos as full-size,
+  editable 16-bit ProPhoto RGB layers with Immage edits applied. Immage
+  saves a layered TIFF beside the first photo for smaller stacks and a PSB
+  for larger stacks. You can continue editing the TIFF composite in Immage.
+  The handoff shows render progress and prevents duplicate jobs.
+- On Windows and macOS, enable Helicon Focus in Preferences › Plugins to open
+  RAWs or 16-bit TIFFs and choose the stacking settings. Auto DNG stacks RAWs
+  in the background. The composite appears in Immage and can be sent to PhotoCraft.
+
 ## 0.47.1
 
 Improvements

@@ -15,17 +15,22 @@ export function PluginPrefs({ plugins, onPlugins }: {
   onPlugins: (list: PluginConfig[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [findingApp, setFindingApp] = useState(false);
+  const integrations = KINDS.filter((kind) => kind.handoff === "photocraft" || kind.handoff === "helicon");
+  const addable = KINDS.filter((kind) => kind.handoff === "files" || kind.handoff === "macrostudio");
   const update = (id: string, patch: Partial<PluginConfig>) =>
     onPlugins(plugins.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const add = async (kind: PluginKind) => {
     setAdding(false);
+    setFindingApp(true);
     const plugin = newPlugin(kind, "");
-    onPlugins([...plugins, plugin]);
-    // the plugin has to be stored before its application can be set
-    const [app] = await findApps(kind);
-    const saved = await storePlugins([...plugins, plugin]);
-    const set = saved && app ? await setPluginApp(plugin.id, app) : null;
-    if (set) onPlugins(set);
+    try {
+      const [app] = await findApps(kind);
+      const saved = await storePlugins([...plugins, plugin]);
+      if (saved) onPlugins((app && await setPluginApp(plugin.id, app)) || saved);
+    } finally {
+      setFindingApp(false);
+    }
   };
   const chooseApp = async (id: string) => {
     const set = await choosePluginApp(id);
@@ -37,18 +42,32 @@ export function PluginPrefs({ plugins, onPlugins }: {
   };
 
   return (
-    <>
+    <div inert={findingApp}>
       <p className="prefs-lead">{t("plugins.lead")}</p>
+      {integrations.length > 0 && (
+        <PrefCard title={t("plugins.editIn")}>
+          {integrations.map((kind) => (
+            <PrefRow key={kind.id} id={kind.label} label={t(`plugins.kind.${kind.id}`)} hint={t(`plugins.kind.${kind.id}.note`)}>
+              <PrefSwitch checked={plugins.some((p) => p.kind === kind.id)} aria-label={t(`plugins.kind.${kind.id}`)}
+                          onChange={(enabled) => {
+                if (enabled) void add(kind);
+                else onPlugins(plugins.filter((p) => p.kind !== kind.id));
+              }} />
+            </PrefRow>
+          ))}
+        </PrefCard>
+      )}
       {plugins.map((p) => {
         const kind = kindOf(p.kind)!;
         const kindLabel = t(`plugins.kind.${kind.id}`);
+        const integrated = kind.handoff === "helicon" || kind.handoff === "photocraft";
         return (
           <PrefCard key={p.id} title={kindLabel}>
-            <PrefRow id="Name" label={t("plugins.row.name")} hint={t("plugins.row.name.hint")}>
+            {!integrated && <PrefRow id="Name" label={t("plugins.row.name")} hint={t("plugins.row.name.hint")}>
               <input className="field" value={p.name} spellCheck={false}
                      onChange={(e) => update(p.id, { name: e.target.value })}
                      onBlur={() => { if (!p.name.trim()) update(p.id, { name: kind.label }); }} />
-            </PrefRow>
+            </PrefRow>}
             <PrefRow id="Application" label={t("plugins.row.app")} hint={p.app ? p.app : t("plugins.notfound", { name: kindLabel })}>
               <div className="pref-inline">
                 <span className="pref-value">{p.app ? appName(p.app) : t("plugins.none")}</span>
@@ -79,7 +98,7 @@ export function PluginPrefs({ plugins, onPlugins }: {
                 </div>
               </PrefRow>
             )}
-            {kind.handoff !== "macrostudio" && <PrefRow id="Results folder" label={t("plugins.row.results")} summary={t("plugins.row.results.summary")}
+            {kind.handoff === "files" && <PrefRow id="Results folder" label={t("plugins.row.results")} summary={t("plugins.row.results.summary")}
                      hint={t("plugins.results.hint", { app: appName(p.app || kind.label), list: kind.returns.subfolders
                        .map((s) => (s ? t("plugins.results.sub", { name: s }) : t("plugins.results.beside"))).join(t("plugins.results.or")) })}>
               <div className="pref-inline">
@@ -96,13 +115,11 @@ export function PluginPrefs({ plugins, onPlugins }: {
                             onChange={(on) => update(p.id, { onReturn: { ...p.onReturn, [o.id]: on } })} />
               </PrefRow>
             ))}
-            <PrefRow label="" summary={kind.id === "dxo-pureraw"
-              ? t("plugins.pureraw")
-              : t("plugins.bracket")}
+            {!integrated && <PrefRow label="" summary={t(kind.handoff === "files" ? "plugins.pureraw" : "plugins.bracket")}
               hint={t(`plugins.kind.${kind.id}.note`)}>
               <button className="btn small danger" onClick={() => onPlugins(plugins.filter((q) => q.id !== p.id))}>
                 {t("plugins.remove")}</button>
-            </PrefRow>
+            </PrefRow>}
           </PrefCard>
         );
       })}
@@ -111,10 +128,10 @@ export function PluginPrefs({ plugins, onPlugins }: {
         <button className="btn small" onClick={() => setAdding(!adding)}>{t("plugins.add")} {adding ? "▴" : "▾"}</button>
         {adding && (
           <div className="context-menu plugin-kinds">
-            {KINDS.map((k) => <button key={k.id} onClick={() => void add(k)}>{t(`plugins.kind.${k.id}`)}</button>)}
+            {addable.map((k) => <button key={k.id} onClick={() => void add(k)}>{t(`plugins.kind.${k.id}`)}</button>)}
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

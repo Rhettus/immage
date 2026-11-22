@@ -35,7 +35,7 @@ sha1 = "0.11"
 trash = "5"
 # the thumbnail cache (cache.rs): JPEG encoding, and the disk's free space;
 # the versions the importer uses (already in the tree)
-image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "tiff"] }
 sysinfo = "0.39.6"
 # the support bundle scrubber (scrub.rs); already in the tree via other crates
 regex = "1"
@@ -55,6 +55,7 @@ zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2
 # the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 tokenizers = { version = "=0.23.2", default-features = false, features = ["fancy-regex"] }
+tempfile = "3"
 
 # the main dispatch queue, to act after tao's own work there (preview_fullscreen;
 # already in the tree, via tao)
@@ -85,7 +86,6 @@ webview2-com = "0.39"
 windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
-tempfile = "3"
 mockito = "1.7.2"
 
 # the importer's decoding and hashing crawl unoptimized; keep dependencies fast in dev

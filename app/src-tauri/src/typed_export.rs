@@ -13,7 +13,7 @@ use specta::Type;
 
 // one image of an export: its file name without extension, already expanded
 // from any template
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Default, Serialize, Deserialize, Type)]
 pub struct ExportItem {
     pub imgid: i64,
     pub stem: String,
@@ -31,7 +31,7 @@ pub struct ExportItem {
     pub frame: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
     pub dir: String,

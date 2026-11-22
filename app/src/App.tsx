@@ -61,7 +61,7 @@ import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { nextJobId, runInBackground, runMerge, runMove, useJobs } from "./background";
+import { nextJobId, runInBackground, runMerge, runMove, runRenderedEditIn, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
 import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
@@ -80,7 +80,7 @@ import { autoCheck, relaunch } from "./updates";
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
 import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type PanelPins, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
-         type PluginReturn } from "./plugins";
+         type PluginReturn, type EditInAction } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
@@ -4047,14 +4047,78 @@ export default function App() {
   const [waiting, setWaiting] = useState<Waiting[]>([]);
   const waitingRef = useRef(waiting);
   waitingRef.current = waiting;
-  const editIn = async (cfg: PluginConfig, targets: ImageEntry[]) => {
+  const [photoCraftBusy, setPhotoCraftBusy] = useState(false);
+  const [heliconBusy, setHeliconBusy] = useState(false);
+  const editIn = async ({ cfg, mode }: EditInAction, targets: ImageEntry[]) => {
     const kind = kindOf(cfg.kind);
     if (!kind) return;
-    // a virtual copy sends its file, once
-    const photos = [...new Map(targets.map((t) => [t.remote?.localPath ?? t.path, t])).entries()];
-    const originals = photos.map(([path]) => path);
-    let send = originals;
+    const settleSelectedEdit = async () => {
+      const s = session.current;
+      if (s && targets.some((photo) => photo.imgid === s.imgid)) {
+        s.flushEdits();
+        await s.settled();
+      }
+    };
     try {
+      if (kind.handoff === "photocraft") {
+        if (photoCraftBusy) return;
+        setPhotoCraftBusy(true);
+        try {
+          const path = await runRenderedEditIn(t("app.status.pluginRendering", { name: cfg.name }), targets.length,
+            t("app.status.pluginPreparingLayers", { name: cfg.name }), async (job) => {
+              await settleSelectedEdit();
+              return commands.pluginPhotoCraft(cfg.id, job, targets.map((photo) => photo.imgid));
+            }, (result) => ({
+              text: t("app.status.pluginSentItems", { items: baseName(result), name: cfg.name }),
+              ok: true,
+            }), cfg.name);
+          const folder = folderRef.current;
+          if (path?.endsWith(".tif") && folder && !immichRef.current &&
+              (parentDir(path) === folder || (includeSubRef.current && within(path, folder)))) {
+            void showFolder(folder, true);
+          }
+        } finally {
+          setPhotoCraftBusy(false);
+        }
+        return;
+      }
+      if (kind.handoff === "helicon") {
+        if (!mode || heliconBusy) return;
+        setHeliconBusy(true);
+        try {
+          const rendered = mode === "tiff";
+          const manual = mode !== "auto-dng";
+          const stacking = manual ? t("app.status.pluginFinishInHelicon") : t("app.status.pluginStacking", { name: cfg.name });
+          const run = async (job: number) => {
+            if (rendered) await settleSelectedEdit();
+            const result = await commands.pluginHeliconFocus(cfg.id, job, targets.map((photo) => photo.imgid), mode);
+            if (result) {
+              returns.current.set(result.result, result);
+              if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === result.original))
+                await showFolder(folderRef.current, true);
+            }
+            return result;
+          };
+          const summarize = (result: PluginReturn | null) => result && ({
+            text: t("app.status.pluginStackSaved", { name: cfg.name, file: baseName(result.result) }),
+            ok: true,
+            action: generatedAction(result.result),
+          });
+          if (rendered) {
+            await runRenderedEditIn(t("app.status.pluginRendering", { name: cfg.name }), targets.length,
+              stacking, run, summarize, cfg.name);
+          } else {
+            await runInBackground(stacking, () => run(nextJobId()), summarize, cfg.name);
+          }
+        } finally {
+          setHeliconBusy(false);
+        }
+        return;
+      }
+      // a virtual copy sends its file, once
+      const photos = [...new Map(targets.map((t) => [t.remote?.localPath ?? t.path, t])).entries()];
+      const originals = photos.map(([path]) => path);
+      let send = originals;
       // TIFFs with the edit, beside each photo as Lightroom's "-Edit" files;
       // a result named from one is still named from its photo
       if (kind.send === "tiff" || (kind.send === "choice" && cfg.send === "tiff")) {
@@ -4110,8 +4174,9 @@ export default function App() {
     setWaiting(waitingRef.current);
     if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === r.original))
       await showFolder(folderRef.current, true);
-    void runInBackground(`${w?.name ?? "Plugin"}: result`, async () => r, () => ({
-      text: `${w?.name ?? "Plugin"}: ${baseName(r.result)} is back`, ok: true,
+    const name = w?.name ?? plugins.find((cfg) => cfg.id === r.plugin)?.name ?? "Plugin";
+    void runInBackground(`${name}: result`, async () => r, () => ({
+      text: `${name}: ${baseName(r.result)} is back`, ok: true,
       action: generatedAction(r.result, undefined, !!w && !w.opened),
     }), "Plugin result");
   };
@@ -4392,10 +4457,11 @@ export default function App() {
       // darktable it is a demosaiced raw (sraw), which the engine does not
       // call raw, as it has no mosaic for capture sharpening or hot pixels
       const pano = back?.plugin === "panorama" && !back.applied && !s.wasEdited;
-      // and so does a stack Macro Studio made from raws
+      // and so does a focus stack made from raws
       const backCfg = back && plugins.find((p) => p.id === back.plugin);
+      const backKind = back && kindOf(back.plugin.split(":")[0]);
       const stacked = !!back && !back.applied && !s.wasEdited && /\.dng$/i.test(path)
-        && !!kindOf(back.plugin.split(":")[0])?.linearDng && backCfg?.send !== "tiff";
+        && !!backKind?.linearDng && (backKind.handoff === "helicon" || backCfg?.send !== "tiff");
       const raw = s.raw || pano || stacked;
       if (!s.wasEdited && s.values.tm_mode !== 1) {
         s.setMany([["tm_mode", 1]]);
@@ -7600,8 +7666,20 @@ export default function App() {
                   parentFolder={immichBase && hit?.remote ? hit.remote.localPath : undefined}
                   onImportParent={importImmichParent}
                   onDelete={() => void deleteRejected(local.filter((i) => i.rejected))}
-                  editIn={hit && !isRemote(hit) ? plugins.map((cfg) => ({ cfg, why: unfit(cfg, sources) })) : null}
-                  onEditIn={(cfg) => void editIn(cfg, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
+                  editIn={hit && !isRemote(hit) ? plugins.flatMap((cfg) => {
+                    const kind = kindOf(cfg.kind);
+                    const choices: EditInAction[] = kind?.handoff === "helicon"
+                      ? [{ cfg, mode: "raw" }, { cfg, mode: "tiff" }, { cfg, mode: "auto-dng" }]
+                      : [{ cfg }];
+                    const busy = photoCraftBusy && kind?.handoff === "photocraft"
+                      || heliconBusy && kind?.handoff === "helicon";
+                    return choices.map((action) => ({
+                      action,
+                      label: action.mode ? t(`plugins.helicon.mode.${action.mode}`, { name: cfg.name }) : cfg.name,
+                      why: busy ? t("app.status.pluginBusy", { name: cfg.name }) : unfit(action, sources),
+                    }));
+                  }) : null}
+                  onEditIn={(action) => void editIn(action, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
                   onClose={() => setFileMenu(null)} />
       );
     })()}

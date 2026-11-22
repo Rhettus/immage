@@ -21,7 +21,7 @@ minutes.
 | Spot Removal | **Heal** (Q). See [Heal and clone](heal.md). |
 | Presets and Profiles | **Presets**, with live previews, plus 53 film looks. See [Presets and looks](presets-and-looks.md). |
 | Export | **Export** (⇧⌘E), to a folder or straight into an Immich album. See [Export](export.md). |
-| Edit In | Right-click › **Edit In**, for DxO PureRAW. See [Edit In](edit-in.md). |
+| Edit In | Right-click › **Edit In** to open photos in an external editor. See [Edit In](edit-in.md). |
 
 Most keyboard shortcuts are the familiar ones: G for grid, R for crop, W for the
 white balance picker, \ for before, Y for before / after, X to reject,
