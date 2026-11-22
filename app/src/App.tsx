@@ -7223,7 +7223,7 @@ export default function App() {
                                onFocusCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
                                onBlurCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}>
                           <Slider control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
-                                  values={selMask?.values ?? values} onChange={onChange} glow={glow}
+                                  values={selMask ? { ...values, ...selMask.values } : values} onChange={onChange} glow={glow}
                                   moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
                                   moduleScope="masks" /></div>
                         )}

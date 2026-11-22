@@ -40,6 +40,9 @@ Performance
 
 Bug fixes
 
+- **Mask and choice-aware module tooltips:** Hovering over a slider in the
+  Masks panel now shows the darktable module it drives, and sliders with
+  selectable modules report the active module for the photo or mask.
 - **No sidecar writes or Smart search re-analysis on unedited photos:** Viewing
   an unedited RAW photo with automatic defaults (such as AgX or a New Photos
   preset) no longer writes an XMP sidecar or triggers background Smart search

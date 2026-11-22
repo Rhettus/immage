@@ -2345,6 +2345,14 @@ export const localMaps: ModuleMap[] = [
 
 export const localControlById = new Map(LOCAL_CONTROLS.map((c) => [c.id, c]));
 export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) => [id, m] as const)));
+export const moduleOpFor = (id: string, values: Values, scope: "global" | "masks" = "global"): string | undefined => {
+  const primary = scope === "masks" ? localMaps : modules;
+  const fallback = scope === "masks" ? modules : localMaps;
+  const matching = primary.filter((m) => m.controls.includes(id));
+  const list = matching.length ? matching : fallback.filter((m) => m.controls.includes(id));
+  const found = list.find((m) => choiceOn(m, values)) ?? list[list.length - 1];
+  return found?.op;
+};
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
 

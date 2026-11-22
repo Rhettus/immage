@@ -155,7 +155,8 @@ In Simple mode, the selected mask's sliders sit below its settings, in six group
 - **Detail**: **Sharpening**, **Noise**, **Defringe**
 
 They work like the same sliders in [Adjustments](adjustments.md), only
-inside the mask. A new mask opens its **Tone** group.
+inside the mask. A new mask opens its **Tone** group. Hover over a slider's
+row to see which darktable module it drives ("darktable: …").
 
 Choose mask modules independently of global adjustments under
 [Preferences › Modules › Masks](preferences.md#modules). Alternatives are
