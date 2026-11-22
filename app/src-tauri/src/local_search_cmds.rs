@@ -201,12 +201,17 @@ pub async fn local_search(
                         if !config.covers(&scope) {
                             continue;
                         }
-                        let result = config.list(&scope, recursive, cancelled);
+                        let result = config.list_cached(Some(&runtime), &scope, recursive, cancelled);
                         if cancelled() {
                             return Err("Search cancelled".into());
                         }
                         match result {
-                            Ok(images) => provider.add(scope, recursive, images),
+                            Ok((images, cache_write)) => {
+                                provider.add(scope, recursive, images);
+                                if let Some(write) = cache_write {
+                                    tauri::async_runtime::spawn_blocking(move || write.persist());
+                                }
+                            }
                             Err(_) => {
                                 let _ = app.emit("morfphoto-fallback", scope.to_string_lossy().as_ref());
                             }

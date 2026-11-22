@@ -167,15 +167,31 @@ prefer the metadata from the current server index for mapped network shares.
 Photos, edits, and file moves can take until the next morfPhoto index update
 to appear.
 
+With morfPhoto v0.15.9+, Immage optimizes catalog and thumbnail loading while
+staying compatible with older morfPhoto servers:
+
+- **Progressive loading:** Immage shows the first page of photos immediately
+  while remaining pages load in the background.
+- **Compressed persistent connections:** API requests use gzip compression and
+  persistent Keep-Alive connections for smaller, faster syncs.
+- **Local catalog and subfolder caching:** Immage caches folder catalogs on
+  disk (up to 32 folders / 64 MiB) and subfolder listings in memory, validating
+  both with `ETag` / `304 Not Modified` checks so unchanged folders open with
+  zero catalog re-download. The catalog cache clears automatically when you
+  change the server URL or folder mapping, or when you select **Forget**.
+- **Local thumbnail caching:** For visible thumbnails of unedited originals,
+  Immage checks its own cache first, then checks its local morfPhoto thumbnail
+  cache (up to 256 MiB) and revalidates cached server previews via `ETag` /
+  `304 Not Modified` before downloading a new preview from morfPhoto. If no
+  server preview is available, Immage renders the thumbnail from the mounted
+  file. Edited photos and virtual copies always use Immage's rendered
+  thumbnails. Clearing **Library thumbnails** in **Preferences → Performance**
+  or selecting **Forget** in **Preferences → Immage Accelerator (Experimental)**
+  also clears the local morfPhoto thumbnail cache.
+
 If Immage cannot read the API for a mapped folder, it shows a notice and uses
 its usual file-based workflow for that scope. Refresh to try morfPhoto again.
 Local similarity search still depends on Immage's local image analysis.
-
-For visible thumbnails of unedited originals, Immage checks its own cache
-first and then can use an embedded camera preview from a morfPhoto server
-with its optional thumbnail cache enabled. If the preview is unavailable, Immage renders the
-thumbnail from the mounted file. Edited photos and virtual copies use
-Immage's rendered thumbnails.
 
 ## Smart Search on the NAS
 
@@ -190,7 +206,9 @@ indexed. On the NAS, inspect the `clip` section of the authenticated index
 status to see progress and preview failures. The worker can reuse thumbnails
 already cached by morfPhoto.
 
-Library-wide searches, image queries, and searches that require edits or copies
+Immage waits up to 22 seconds for NAS Smart Search responses so cold NAS disks
+have time to spin up and respond without falling back prematurely. Library-wide
+searches, image queries, and searches that require edits or copies
 use the existing desktop index. If the server cannot handle the search or an
 active filter, Immage falls back to desktop search, which uses its own CLIP
 model and can only rank photos it has analyzed.

@@ -350,11 +350,11 @@ pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &Analysis
                 config.mapped_root().filter(|mapped| mapped.starts_with(path))
             };
             if let Some(mapped) = mapped.filter(|mapped| !hidden.iter().any(|p| mapped.starts_with(p))) {
-                match config.list(&mapped, true, || job.cancelled()) {
+                match config.catalog_available(&mapped) {
                     // The remote catalog owns discovery in this subtree. Preserve the
                     // file-backed cache for fallback and existing similarity analyses.
-                    Ok(_) if mapped == path => return,
-                    Ok(_) => hidden.push(mapped),
+                    Ok(()) if mapped == path => return,
+                    Ok(()) => hidden.push(mapped),
                     Err(_) if job.cancelled() => return,
                     Err(reason) => { eprintln!("morfPhoto catalog request failed: {reason}"); let _ = app.emit("morfphoto-fallback", mapped.to_string_lossy()); }
                 }

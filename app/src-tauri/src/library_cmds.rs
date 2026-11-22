@@ -40,16 +40,38 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     state.tagged.mark_active();
     let recursive = recursive.unwrap_or(false);
     let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
+    let dir = PathBuf::from(&path);
+    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let known = {
         let snapshot = snapshot.clone();
-        tauri::async_runtime::spawn_blocking(move || read_snapshot(&snapshot)).await.map_err(|e| e.to_string())?
+        let runtime = state.runtime.clone();
+        let dir = dir.clone();
+        let skip = skip.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Some(known) = read_snapshot(&snapshot) {
+                return Some(known);
+            }
+            let config = crate::morf_photo::load(&runtime);
+            if config.covers(&dir) {
+                if let Some(mut images) = config.read_cached_listing(&runtime, &dir, recursive) {
+                    images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                    if let Ok(Value::Array(mut list)) = serde_json::to_value(images) {
+                        for item in &mut list {
+                            if let Some(obj) = item.as_object_mut() {
+                                obj.remove("imgid");
+                            }
+                        }
+                        return Some(Value::Array(list));
+                    }
+                }
+            }
+            None
+        }).await.map_err(|e| e.to_string())?
     };
     if let Some(known) = known {
         let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0, "images": [],
                                                     "known": known }));
     }
-    let dir = PathBuf::from(&path);
-    let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
     let supplied = {
         let (handle, dir, skip) = (app.clone(), dir.clone(), skip.clone());
         tauri::async_runtime::spawn_blocking(move || {
@@ -57,13 +79,56 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let config = crate::morf_photo::load(&state.runtime);
             let mapped = mapped_folder_scope(&config, &dir, recursive, &skip)?;
             let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
-            match config.list(&mapped, recursive, cancelled) {
-                Ok(mut images) => {
-                    images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
-                    if let Some(index) = state.search_cache.as_deref() {
-                        supplement_morf_folder_metadata(index, &mut images, cancelled);
+            let stream_emit = mapped == dir;
+            let mut emitted_pages = 0usize;
+            let mut streamed_images = Vec::new();
+            let mut streamed_files = Vec::new();
+            match config.list_streaming(
+                Some(&state.runtime),
+                &mapped,
+                recursive,
+                cancelled,
+                |mut page_images, seen_files, total_files| {
+                    if !stream_emit || cancelled() {
+                        return;
                     }
-                    Some((mapped, images))
+                    emitted_pages += 1;
+                    page_images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                    if let Some(index) = state.search_cache.as_deref() {
+                        supplement_morf_folder_metadata(index, &mut page_images, cancelled);
+                    }
+                    let mut batch = Vec::with_capacity(page_images.len());
+                    for mut image in page_images {
+                        image.imgid = state.tagged.cached_photo(&image.path, i64::from(image.version));
+                        streamed_files.push(image.path.clone());
+                        if let Ok(value) = serde_json::to_value(&image) {
+                            batch.push(value);
+                        }
+                        streamed_images.push(image);
+                    }
+                    if !batch.is_empty() && !cancelled() {
+                        let _ = handle.emit(
+                            "folder-progress",
+                            json!({
+                                "token": token,
+                                "done": seen_files,
+                                "total": total_files.unwrap_or(seen_files),
+                                "images": batch,
+                            }),
+                        );
+                    }
+                },
+            ) {
+                Ok((mut images, cache_write)) => {
+                    if stream_emit && emitted_pages > 0 {
+                        Some((mapped, streamed_images, Some(streamed_files), cache_write, true))
+                    } else {
+                        images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                        if let Some(index) = state.search_cache.as_deref() {
+                            supplement_morf_folder_metadata(index, &mut images, cancelled);
+                        }
+                        Some((mapped, images, None, cache_write, false))
+                    }
                 }
                 Err(reason) => {
                     eprintln!("morfPhoto catalog request failed: {reason}");
@@ -82,9 +147,23 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     let mut supplied_files = Vec::new();
     let mut skip = skip;
     let local_listing = supplied.is_none();
-    if let Some((mapped, images)) = supplied {
+    if let Some((mapped, images, streamed_files, cache_write, streamed)) = supplied {
         let complete = mapped == dir;
         skip.insert(mapped);
+        if streamed {
+            let mut files = streamed_files.unwrap_or_default();
+            files.sort();
+            files.dedup();
+            publish_listing(&app.state::<Caches>().listed, cache::Listed::default(),
+                || state.folder_token.load(Ordering::SeqCst) == token);
+            let count = files.len();
+            let _ = app.emit("folder-progress", json!({ "token": token, "done": count, "total": count,
+                "images": [], "files": files }));
+            if let Some(write) = cache_write {
+                tauri::async_runtime::spawn_blocking(move || write.persist());
+            }
+            return Ok(FolderReply { images, unanswered: Vec::new() });
+        }
         for mut image in images {
             image.imgid = state.tagged.cached_photo(&image.path, i64::from(image.version));
             supplied_files.push(image.path.clone());
@@ -98,11 +177,17 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let count = supplied_files.len();
             let _ = app.emit("folder-progress", json!({ "token": token, "done": count, "total": count,
                 "images": supplied_images, "files": supplied_files }));
+            if let Some(write) = cache_write {
+                tauri::async_runtime::spawn_blocking(move || write.persist());
+            }
             return serde_json::from_value(json!({ "images": supplied_images }))
                 .map_err(|e| format!("open_folder: unexpected reply: {e}"));
         }
         let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0,
             "images": supplied_images }));
+        if let Some(write) = cache_write {
+            tauri::async_runtime::spawn_blocking(move || write.persist());
+        }
     }
     let there = {
         let dir = dir.clone();
@@ -1163,7 +1248,13 @@ pub(crate) async fn cache_usage(caches: State<'_, Caches>) -> Result<cache::Limi
 #[specta::specta]
 pub(crate) async fn cache_clear(caches: State<'_, Caches>, which: String) -> Result<(), String> {
     let c = caches.by_name(&which).ok_or_else(|| format!("no cache {which}"))?.clone();
-    tauri::async_runtime::spawn_blocking(move || c.clear()).await.map_err(|e| e.to_string())
+    let morf = (which == "thumbs").then(|| caches.morfphoto_thumbs.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        c.clear();
+        if let Some(morf) = morf {
+            morf.clear();
+        }
+    }).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

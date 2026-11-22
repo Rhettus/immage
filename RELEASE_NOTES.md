@@ -29,6 +29,14 @@ Performance
   photos in Grid view selects them and updates Metadata and Keywording without
   decoding full RAWs or rendering the hidden editor until you open a photo to
   edit.
+- **Faster Immage Accelerator catalog and thumbnail loading:** With morfPhoto
+  v0.15.9+, Immage caches folder catalogs, subfolder listings, and server
+  thumbnails locally and revalidates them so unchanged folders open without
+  re-downloading, shows the first page of photos immediately while remaining
+  pages load in the background, uses gzip compression and persistent Keep-Alive
+  connections, and waits up to 22 seconds for NAS Smart Search responses so cold
+  disks can respond before falling back. Older morfPhoto servers remain
+  supported.
 
 Bug fixes
 

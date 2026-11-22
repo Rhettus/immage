@@ -604,6 +604,7 @@ pub struct Caches {
     pub listed: Arc<Mutex<Listed>>,
     pub immich_thumbs: Arc<DiskCache>,
     pub immich_originals: Arc<DiskCache>,
+    pub morfphoto_thumbs: Arc<DiskCache>,
 }
 
 // the limits until Preferences sends its own, the same as its defaults
@@ -625,6 +626,7 @@ impl Caches {
             listed: Arc::default(),
             immich_thumbs: DiskCache::new(root.join("immich-thumbs"), l.immich_thumbs, true),
             immich_originals: DiskCache::new(root.join("immich-originals"), l.immich_originals, false),
+            morfphoto_thumbs: DiskCache::new(root.join("morfphoto-thumbs"), 256 * MB, true),
         }
     }
 
@@ -923,5 +925,15 @@ mod tests {
     fn jpeg_round_trip() {
         let jpeg = encode_jpeg(&[200, 100, 50, 255].repeat(16 * 8), 16, 8).unwrap();
         assert_eq!(&jpeg[..2], &[0xff, 0xd8]);
+    }
+
+    #[test]
+    fn morfphoto_thumbs_cache_initializes_under_root() {
+        let dir = test_dir("cache-morfphoto-thumbs");
+        let caches = Caches::new(&dir);
+        assert_eq!(caches.morfphoto_thumbs.dir(), dir.join("morfphoto-thumbs"));
+        caches.morfphoto_thumbs.write("sample.jpg", b"\xff\xd8").unwrap();
+        assert_eq!(caches.morfphoto_thumbs.read("sample.jpg").as_deref(), Some(&b"\xff\xd8"[..]));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
