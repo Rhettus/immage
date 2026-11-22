@@ -680,6 +680,10 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
   importOpenRef.current = importOpen;
+  const openImport = () => {
+    if (importOpenRef.current) void import("@immporter/embed").then((m) => m.refreshImporter());
+    else setImportOpen(true);
+  };
   const endTour = () => setTouring(false);
   // the tour points at both side panels, the filmstrip and the Adjustments
   // panels, so they show while it runs
@@ -3483,7 +3487,7 @@ export default function App() {
       }
     }
     if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
-    if (importOpenRef.current && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
+    if (importOpenRef.current && !["import", "preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
     const last = lastKeyActionRef.current;
     if (last && last.id === id && performance.now() - last.t < 150) return;
     menuActionsRef.current[id]?.();
@@ -6279,7 +6283,7 @@ export default function App() {
         else setStatus(t("app.status.panoramaNeedsRaws"));
       },
       "preferences": () => { setPrefsOpen(true); },
-      "import": () => { setImportOpen(true); },
+      "import": openImport,
       "undo": () => { stepHistory(true); },
       "redo": () => { stepHistory(false); },
       // in the grid, the thumbnails' size rather than the photo hidden under it
@@ -7761,7 +7765,7 @@ export default function App() {
       <nav className="rail" ref={rail}>
         {/* in the order of the work: bring photos in, edit them, send them out */}
         <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
-                onClick={() => setImportOpen(true)}><ImportIcon /></button>
+                onClick={openImport}><ImportIcon /></button>
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}

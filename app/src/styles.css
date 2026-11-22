@@ -2320,9 +2320,18 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .import-view .immporter {
   --app-bg-primary: var(--window, rgb(24, 24, 24));
   --app-bg-secondary: var(--panel);
-  --app-accent: var(--accent);
+  --app-surface: var(--inset);
+  --app-card-active: var(--hover);
+  --app-button-text: var(--on-accent, #111);
   --app-text-primary: var(--text);
   --app-text-secondary: var(--text-2);
+  --app-accent: var(--accent);
+  --app-border-color: var(--border);
+  --app-hover-color: var(--text);
+  --app-success: var(--success);
+  --app-danger: var(--error);
+  --app-highlight: var(--hover);
+  --app-highlight-ring: var(--focus);
   font-family: inherit;
 }
 /* Immage's own element rules (button, section, h3, range inputs) are

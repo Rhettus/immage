@@ -203,7 +203,7 @@ export async function menus(t) {
   await pick(t, 'File', 'import');
   await until(() => t.driver.observe(() => !!document.querySelector('.import-view')), 'File > Import Photos opens the importer');
   await t.evidence('import-from-menu');
-  await textButton(t, '.import-head', 'Close');
+  await click(t, '.import-head button[aria-label="Close"]');
   await until(() => t.driver.observe(() => !document.querySelector('.import-view')), 'importer closed');
 
   // Undo and Redo step the photo's history

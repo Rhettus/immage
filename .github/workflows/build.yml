@@ -129,6 +129,7 @@ jobs:
             verify/gpu-check.test.mjs \
             verify/grid-browse.test.mjs \
             verify/grid-size.test.mjs \
+            verify/import-view.test.mjs \
             verify/menus.test.mjs \
             verify/mask-module-flags.test.mjs \
             verify/mask-modules.test.mjs \

@@ -80,6 +80,11 @@ Bug fixes
   Parent Folder**, **Show in Immich**, **Show Results in Immich**) no longer
   appear when Immich is not configured or is disabled in Preferences, and
   **Show Results in Immich** is hidden on local-only searches.
+- **Importer theme integration, close button, and refresh on reopen:** The
+  importer's dropdowns, overlays, and buttons now follow Immage's active theme
+  (including Light and Grey themes), its close button matches the culling
+  preview's **×** icon, and reopening Import refreshes the active card or folder
+  so newly added photos and thumbnails appear immediately.
 
 ## 0.47.1
 

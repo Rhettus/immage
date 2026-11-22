@@ -5,6 +5,7 @@
 // window, below the title strip. the editor stays mounted underneath, so
 // closing returns to it as it was. loaded on first use
 import { lazy, Suspense } from "react";
+import { X } from "lucide-react";
 import type { ImportResult } from "@immporter/embed";
 import { t } from "./i18n";
 
@@ -21,8 +22,11 @@ const CloseButton = lazy(async () => {
     default: ({ onClose }: { onClose: () => void }) => {
       const importing = m.useImporting();
       return (
-        <button className="btn small" disabled={importing} onClick={onClose}
-                title={importing ? t("library.import.running") : t("library.import.back")}>{t("library.import.close")}</button>
+        <button type="button" className="tool" disabled={importing} onClick={onClose}
+                aria-label={t("library.import.close")}
+                title={importing ? t("library.import.running") : t("library.import.back")}>
+          <X size={16} aria-hidden="true" />
+        </button>
       );
     },
   };
@@ -38,7 +42,13 @@ export function ImportView({ onClose, onImportDone, onShowImported, onOpenSettin
     <div className="import-view">
       <div className="import-head">
         <h1>{t("library.import.title")}</h1>
-        <Suspense fallback={null}><CloseButton onClose={onClose} /></Suspense>
+        <Suspense fallback={
+          <button type="button" className="tool" onClick={onClose}
+                  aria-label={t("library.import.close")}
+                  title={t("library.import.back")}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        }><CloseButton onClose={onClose} /></Suspense>
       </div>
       <div className="import-body">
         <Suspense fallback={<div className="note-plain">{t("library.import.loading")}</div>}>
