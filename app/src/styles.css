@@ -3072,6 +3072,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .cache-directory { display: flex; align-items: center; gap: 12px; height: 32px; }
 .cache-directory + .cache-directory { border-top: 1px solid var(--hover); }
 .cache-directory-path { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.cache-directory-provider { flex: none; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--hover); color: var(--text-2); }
+.cache-directory-provider.remote { color: var(--text-1); }
 .cache-directory-status { display: flex; justify-content: flex-end; flex: none; padding: 6px 2px; }
 .cache-directory-status .drive-dot { width: 6px; height: 6px; border-radius: 50%; background: #5fd068; }
 .cache-directory-status .drive-dot.off { background: #ff6b6b; }

@@ -174,6 +174,14 @@ source’s results if one fails. The status line reports each source’s error.
 Unknown local-only filter fields exclude remote results. Exact verified mapped
 local paths merge with primary local results; virtual copies remain separate.
 
+When a library folder is mapped under **Opening search results** (or via the
+importer's path settings) and Immich answers with Smart Search enabled, Immage
+routes **Smart** searches in **This folder** and **All folders** to Immich and
+skips local CLIP background analysis for all photos in that folder (while still
+caching local EXIF/XMP metadata for local filters). Precedence per folder is
+**morfPhoto**, then **Immich**, then **local CLIP**; if Immich does not answer
+or has Smart Search turned off, Immage falls through immediately to local CLIP.
+
 ## Opening a result
 
 Double-click a result to open it. If the file is in the folder set under

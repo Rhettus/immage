@@ -412,18 +412,21 @@ the filmstrip, opens it; the number on the button is how many filters are on.
 Searching the library and narrowing a folder both happen here.
 
 - **Search words**: type what to look for. **Smart** searches by what is in
-  the photo (it needs the optional model described above for photos on this
-  computer, and Immich's own machine learning for Immich); **Filename**
-  searches file names. Until the model is downloaded and Immich is not
-  connected, Smart cannot run: Find then shows Filename as the active choice and Smart
-  dimmed (hover it to see why; clicking does nothing), its box says it searches
-  file names, and it matches file names only. Your choice is
-  kept, so Smart returns by itself once the model is on this computer or Immich
-  is connected, even for a saved filter that asks for it. While the model is not
-  downloaded, a small tip under the search row says so, with **Set up in
-  Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
-  and a close button that dismisses the tip for good. The tip also goes away by
-  itself once the model is installed.
+  the photo using per-folder precedence (**morfPhoto**, then **Immich**, then
+  the optional local CLIP model on this computer); **Filename** searches file
+  names. If a server does not answer or has CLIP/Smart Search turned off,
+  Immage falls through immediately to the next provider in that order. Until a
+  local CLIP model is downloaded and neither morfPhoto CLIP nor Immich is
+  serving, Smart cannot run: Find then shows Filename as the active choice and
+  Smart dimmed (hover it to see why; clicking does nothing), its box says it
+  searches file names, and it matches file names only. Your choice is kept, so
+  Smart returns by itself once a provider is ready, even for a saved filter
+  that asks for it. While the local model is not downloaded and at least one
+  folder relies on local CLIP, a small tip under the search row says so, with
+  **Set up in Preferences**, which opens Preferences > General at the Smart
+  search (CLIP) card, and a close button that dismisses the tip for good. The
+  tip also goes away by itself once the model is installed or all folders are
+  served by morfPhoto or Immich.
 - **Analysis icon**: the icon at the end of the search box shows Smart
   search's background analysis of your photos, with the number of photos still
   waiting beside it (the exact number is in its tooltip; from 10,000 it is
@@ -431,15 +434,16 @@ Searching the library and narrowing a folder both happen here.
   A still arc means photos are waiting but nothing is running just now, for
   example while waiting for a quiet spell on a network drive or between batches.
   Find checks photo availability in batches, including while analysis is paused.
-  The count excludes photos as they are found missing or offline and includes
-  them again when they return. A pause symbol means analysis is paused, and a
+  The count excludes folders already served by morfPhoto or Immich CLIP as well
+  as photos found missing or offline, and includes them again if a server stops
+  answering or files return. A pause symbol means analysis is paused, and a
   green check means no photo is waiting. While the
   count is being worked out the tooltip says so. Click it to pause or resume,
   the same pause as **Pause / Resume** in Preferences > General > Background
   work. Before the model is downloaded the icon is dimmed and does nothing; its
   tooltip says the model is not installed.
   Browsing photos keeps their existing analysis. Saving edits queues fresh
-  analysis for the edited photo or virtual copy.
+  analysis for the edited photo or virtual copy in folders using local CLIP.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.

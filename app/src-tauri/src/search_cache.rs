@@ -816,13 +816,14 @@ impl SearchCache {
         rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
     }
 
-    /// The ids and paths of the next pending photos after `after`, by the same
-    /// conditions as `pending_analyses`; for counting the backlog.
-    pub fn pending_analysis_paths(&self, after: i64, limit: u32) -> Result<Vec<(i64, String)>, String> {
+    /// The ids, paths, and pending flags (`needs_metadata`, `needs_edited`) of
+    /// the next pending photos after `after`, by the same conditions as
+    /// `pending_analyses`; for counting the backlog and availability probing.
+    pub fn pending_analysis_paths(&self, after: i64, limit: u32) -> Result<Vec<(i64, String, bool, bool)>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
-        let mut query = db.prepare(concat!("SELECT v.id,a.path ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2"))
+        let mut query = db.prepare(concat!("SELECT v.id,a.path,v.metadata_json IS NULL,e.embedding IS NULL AND fe.owner_id IS NULL ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2"))
             .map_err(|e| e.to_string())?;
-        let rows = query.query_map(params![after,limit,crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows = query.query_map(params![after,limit,crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map_err(|e| e.to_string())?;
         rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())
     }

@@ -370,6 +370,8 @@ export type ChosenFile = {
 	hash: number | null,
 };
 
+export type ClipProvider = "morfPhoto" | "immich" | "local";
+
 export type ColorProfiles = {
 	input: ([string, number])[],
 	working: ([string, number])[],
@@ -698,6 +700,11 @@ export type LocalSearchArgs = {
 	remote?: SearchArgs,
 	next?: string | null,
 	size?: number,
+	/**
+	 *  Set by Find's "Both" mode when Immich is already queried in parallel,
+	 *  so `local_search` does not issue a duplicate Immich request.
+	 */
+	immichSearched?: boolean,
 };
 
 export type Location = {
@@ -1192,6 +1199,11 @@ export type ResourceLevels = {
 
 export type Restore = string | ModuleState;
 
+export type RootClipProvider = {
+	path: string,
+	provider: ClipProvider,
+};
+
 export type RootStatus = {
 	path: string,
 	mount: string | null,
@@ -1281,6 +1293,17 @@ export type SearchStatus = {
 	 *  search works without the Preferences check, which only sets `model.verified`.
 	 */
 	model_installed: boolean,
+	/**
+	 *  Whether morfPhoto CLIP or Immich Smart Search is actively serving CLIP
+	 *  for at least one mapped folder.
+	 */
+	remote_clip: boolean,
+	/**
+	 *  Effective CLIP provider (`morfPhoto`, `immich`, or `local`) per library
+	 *  root, using the cached probe state so this command never blocks on
+	 *  network timeouts.
+	 */
+	clip_providers: RootClipProvider[],
 };
 
 export type SharedImport = {

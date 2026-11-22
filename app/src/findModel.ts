@@ -52,19 +52,23 @@ export function reach(s: ImmichSearch, immichAvailable: boolean): Reach {
   return { local: wantsLocal, immich: wantsImmich, skipped: false };
 }
 
-// photo-content (Smart) search needs the local CLIP model or an Immich server.
-// Without either, Find searches file names only: the search that runs has mode
-// "filename" whatever the stored mode says, which is left alone so Smart comes
-// back by itself once one of them is ready. Everything that runs a search, or
-// compares the running one with the form, goes through this
-export const smartAvailable = (clipReady: boolean, immichAvailable: boolean) => clipReady || immichAvailable;
+// photo-content (Smart) search needs the local CLIP model, morfPhoto CLIP, or
+// an Immich server. Without any of them, Find searches file names only: the
+// search that runs has mode "filename" whatever the stored mode says, which is
+// left alone so Smart comes back by itself once one of them is ready.
+// Everything that runs a search, or compares the running one with the form,
+// goes through this
+export const smartAvailable = (clipReady: boolean, immichAvailable: boolean, remoteClip = false) =>
+  clipReady || immichAvailable || remoteClip;
 export const effectiveSearch = (s: ImmichSearch, smart: boolean): ImmichSearch =>
   smart || s.mode === "filename" ? s : { ...s, mode: "filename" };
 
 // Find's tip about the optional CLIP model: shown only once the status is
-// known (not before its first answer) to say the model is missing, and never
-// after the user dismissed it
-export const clipTipVisible = (known: boolean, installed: boolean, dismissed: boolean) => known && !installed && !dismissed;
+// known (not before its first answer) to say the model is missing, never after
+// the user dismissed it, and not when every configured folder is already served
+// by morfPhoto or Immich CLIP.
+export const clipTipVisible = (known: boolean, installed: boolean, dismissed: boolean, allRemote = false) =>
+  known && !installed && !dismissed && !allRemote;
 
 // whether the grid needs a search rather than the open folder filtered in
 // place: words to match, a place other than the open folder, or a server

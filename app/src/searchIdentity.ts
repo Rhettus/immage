@@ -7,7 +7,7 @@ import type { Filter } from "./filter";
 export function searchIdentity(source: "local" | "immich", image: ImageEntry): string | null {
   if (source === "immich") return image.remote?.localPath ? `path:${image.remote.localPath}`
     : image.remote ? `immich:${image.remote.assetId}` : null;
-  if (!image.localIndex) return null;
+  if (!image.localIndex) return image.morfphotoPreview && !image.copy ? `path:${image.path}` : null;
   return image.copy ? `variant:${image.localIndex.variantId}` : `path:${image.path}`;
 }
 export function remoteFieldsKnown(f: Filter): boolean {

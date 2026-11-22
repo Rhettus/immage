@@ -36,6 +36,13 @@ Improvements
   filmstrip. Click the format badge (for example, **ARW+JPG ▸**) to expand the
   pair side by side and select or edit either the RAW or the JPEG independently,
   and click either badge again to collapse the stack back together.
+- **CLIP provider precedence (morfPhoto → Immich → local):** When morfPhoto or
+  Immich is already serving CLIP for a mapped directory, Immage skips local CPU
+  CLIP analysis for all photos in that folder (and excludes them from Find's
+  analysis backlog), routes **This folder** and **All folders** Smart searches
+  using **morfPhoto → Immich → local** precedence, falls through immediately to
+  the next provider if a server does not answer, and shows the active CLIP
+  provider per folder in Preferences > Performance > Local photo cache.
 
 Performance
 

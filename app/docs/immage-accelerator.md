@@ -196,10 +196,17 @@ Local similarity search still depends on Immage's local image analysis.
 ## Smart Search on the NAS
 
 Enable the CLIP Compose override on the morfPhoto server and install its pinned
-model on NAS storage. In Immage, open a mapped folder and choose **Smart** and
-the current folder scope in Find. Enter a description such as “a dog on a beach”.
-morfPhoto ranks indexed, unedited originals, including photos Immage has never
-opened. The desktop CLIP model is optional for these searches.
+model on NAS storage. In Immage, open a mapped folder and choose **Smart** with
+**This folder** or **All folders** in Find. Enter a description such as “a dog
+on a beach”. morfPhoto ranks indexed, unedited originals, including photos
+Immage has never opened. The desktop CLIP model is optional for these searches.
+
+CLIP provider precedence per folder is **morfPhoto**, then **Immich**, then
+**local CLIP**. While morfPhoto answers with active CLIP indexing, Immage skips
+local CLIP analysis for all photos (originals, edited photos, and virtual
+copies) inside the mapped folder, and excludes them from Find's local analysis
+backlog. In **All folders** searches, Immage combines morfPhoto results for the
+mapped share with Immich or local CLIP results for other folders.
 
 While the NAS builds its index, Immage shows how many matching originals are
 indexed. On the NAS, inspect the `clip` section of the authenticated index
@@ -207,11 +214,11 @@ status to see progress and preview failures. The worker can reuse thumbnails
 already cached by morfPhoto.
 
 Immage waits up to 22 seconds for NAS Smart Search responses so cold NAS disks
-have time to spin up and respond without falling back prematurely. Library-wide
-searches, image queries, and searches that require edits or copies
-use the existing desktop index. If the server cannot handle the search or an
-active filter, Immage falls back to desktop search, which uses its own CLIP
-model and can only rank photos it has analyzed.
+have time to spin up and respond without falling back prematurely. Image queries
+and searches filtered to edited photos use the desktop index. If the server does
+not answer, has CLIP disabled, or cannot handle an active filter, Immage falls
+through immediately to the next available provider (Immich if mapped for that
+folder, otherwise local CLIP) and shows a notice.
 
 ## Monitor NAS activity
 

@@ -33,6 +33,9 @@ pub struct LocalSearchArgs {
     pub remote: SearchArgs,
     pub next: Option<String>,
     pub size: u32,
+    /// Set by Find's "Both" mode when Immich is already queried in parallel,
+    /// so `local_search` does not issue a duplicate Immich request.
+    pub immich_searched: bool,
 }
 impl Default for LocalSearchArgs {
     fn default() -> Self {
@@ -48,6 +51,7 @@ impl Default for LocalSearchArgs {
             remote: SearchArgs::default(),
             next: None,
             size: 100,
+            immich_searched: false,
         }
     }
 }
@@ -146,7 +150,7 @@ fn validate_vector(values: &[f32]) -> Result<(), String> {
     }
     Ok(())
 }
-fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
+pub(crate) fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
     let mut value: serde_json::Value = serde_json::from_str(raw).ok()?;
     value.as_object_mut()?.insert("imgid".into(), serde_json::json!(0));
     let image: LibraryImage = serde_json::from_value(value).ok()?;
@@ -172,10 +176,13 @@ fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[Pa
 }
 /// Complete morfPhoto scopes replace their local metadata candidates for one
 /// query. Local cache IDs and embeddings still belong to the local index.
+/// `excluded_vector_scopes` lists subtrees handled by higher-precedence remote
+/// CLIP providers (morfPhoto / Immich) for the current semantic query.
 #[derive(Default)]
 pub struct ProviderMetadata {
     scopes: Vec<(PathBuf, bool)>,
     images: BTreeMap<(String, u32), LibraryImage>,
+    excluded_vector_scopes: Vec<PathBuf>,
 }
 impl ProviderMetadata {
     pub fn add(&mut self, scope: PathBuf, recursive: bool, images: Vec<LibraryImage>) {
@@ -183,6 +190,12 @@ impl ProviderMetadata {
         for image in images {
             self.images.insert((image.path.clone(), image.version), image);
         }
+    }
+
+    pub fn exclude_vector_scopes(&mut self, scopes: Vec<PathBuf>) {
+        self.excluded_vector_scopes = scopes;
+        self.excluded_vector_scopes.sort();
+        self.excluded_vector_scopes.dedup();
     }
 
     fn covers(&self, path: &Path) -> bool {
@@ -195,8 +208,15 @@ impl ProviderMetadata {
         })
     }
 
+    fn vector_excluded(&self, path: &Path) -> bool {
+        self.excluded_vector_scopes
+            .iter()
+            .any(|scope| path.starts_with(scope))
+    }
+
     fn hash(&self, hash: &mut Sha256, cancelled: &impl Fn() -> bool) -> Result<(), String> {
         hash.update(serde_json::to_vec(&self.scopes).map_err(|e| e.to_string())?);
+        hash.update(serde_json::to_vec(&self.excluded_vector_scopes).map_err(|e| e.to_string())?);
         for image in self.images.values() {
             if cancelled() {
                 return Err("Search cancelled".into());
@@ -349,7 +369,9 @@ pub fn retrieve_with_provider(
             if cancelled() {
                 return Err("Search cancelled".into());
             }
-            if exclude == Some(row.asset_id) || !in_scope(Path::new(&row.path), args, roots, hidden)
+            if exclude == Some(row.asset_id)
+                || !in_scope(Path::new(&row.path), args, roots, hidden)
+                || (vector.is_some() && provider.vector_excluded(Path::new(&row.path)))
             {
                 continue;
             }

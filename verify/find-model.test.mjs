@@ -208,11 +208,12 @@ test('normalizeFind', () => {
   assert.deepEqual(n, { search: { ...NO_SEARCH, text: 'x' }, filter: NO_FILTER });
 });
 
-test('smartAvailable needs the CLIP model or Immich', () => {
+test('smartAvailable needs the CLIP model, morfPhoto CLIP, or Immich', () => {
   assert.equal(M.smartAvailable(false, false), false);
   assert.equal(M.smartAvailable(true, false), true);
   assert.equal(M.smartAvailable(false, true), true);
   assert.equal(M.smartAvailable(true, true), true);
+  assert.equal(M.smartAvailable(false, false, true), true);
 });
 
 test('effectiveSearch searches file names only while Smart is unavailable, without rewriting the stored mode', () => {
@@ -232,11 +233,12 @@ test('effectiveSearch searches file names only while Smart is unavailable, witho
   assert.deepEqual(chips({ ...saved, search: M.effectiveSearch(saved.search, false) }, false), chips(saved, false));
 });
 
-test('clipTipVisible: only once known, missing and not dismissed', () => {
+test('clipTipVisible: only once known, missing, not dismissed, and not all remote', () => {
   assert.equal(M.clipTipVisible(false, false, false), false, 'not before the first status answer');
   assert.equal(M.clipTipVisible(true, false, false), true);
   assert.equal(M.clipTipVisible(true, true, false), false, 'gone once the model is installed');
   assert.equal(M.clipTipVisible(true, false, true), false, 'never again after dismissing');
+  assert.equal(M.clipTipVisible(true, false, false, true), false, 'hidden when remote CLIP covers every folder');
 });
 
 test('File type ticks: All RAW, one raw extension, legacy kinds', async () => {

@@ -177,11 +177,22 @@ pub fn settings_all(settings: State<'_, Settings>) -> Map {
 // validated there and read before the page exists)
 #[tauri::command]
 #[specta::specta]
-pub async fn settings_set(settings: State<'_, Settings>, changes: HashMap<String, Option<String>>) -> Result<(), String> {
+pub async fn settings_set(
+    app: tauri::AppHandle,
+    settings: State<'_, Settings>,
+    changes: HashMap<String, Option<String>>,
+) -> Result<(), String> {
     if let Some(key) = changes.keys().find(|k| k.starts_with(NATIVE)) {
         return Err(format!("settings: {key} is set by the app, not the page"));
     }
-    settings.apply(changes)
+    let immich_map_changed = changes.contains_key("immage.immichPathMap");
+    settings.apply(changes)?;
+    if immich_map_changed {
+        if let Some(state) = tauri::Manager::try_state::<crate::AppState>(&app) {
+            state.clip_providers.invalidate_immich();
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

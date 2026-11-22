@@ -177,14 +177,19 @@ The optional CLIP model that lets Find search by what is in a photo.
   files from Hugging Face only when you press **Download or repair**. Valid local
   files are checked and reused. **Cancel** stops further download work after the
   current network read returns; a stalled read times out after a minute.
-  Until the model is downloaded (and without an Immich connection), Find searches
-  file names only and **Show more like this** is not offered; both appear when the
-  download finishes or Preferences is closed.
+  Until the model is downloaded (and without morfPhoto CLIP or an Immich
+  connection), Find searches file names only and **Show more like this** is not
+  offered; both appear when the download finishes or Preferences is closed.
 - **Model check** tests both CPU inference towers using a test prompt and a
   synthetic image, with the time including model loading. It requires verified
   model files and resumed background work. It does not upload photos or test
   the relevance of search results. Model downloads have their own Cancel button
   and are independent of Pause.
+
+Per-folder CLIP precedence is **morfPhoto**, then **Immich**, then **local CLIP**.
+Folders already served by morfPhoto or Immich CLIP skip local CLIP background
+analysis (including edited photos and virtual copies) and fall through
+automatically if a server stops answering.
 
 While CLIP analyses your photos in the background, Immage's performance is
 impacted because the analysis uses the CPU. Pause background work under
@@ -491,16 +496,19 @@ photos analysed and the total analyses. A photo counts once however many
 analyses it has (older cache entries may include original analyses, which
 Find no longer uses). Directory
 status appears below in a fixed-height
-scrollable box, with one row per path and a right-aligned green (connected) or
-red (offline) dot. Hover a truncated path to see it in full; hover its dot for
-connection details or an error. The list can also be focused and scrolled with
-the keyboard.
+scrollable box, with one row per path, a badge showing the active CLIP provider
+(**morfPhoto**, **Immich**, or **Local**), and a right-aligned green (connected)
+or red (offline) dot. Hover a truncated path to see it in full; hover its badge
+or dot for CLIP provider or connection details. The list can also be focused
+and scrolled with the keyboard.
 
 After downloading the optional CLIP package, background CPU analysis fills
-an embedding of each photo as edited. Reconciled paths receive bounded metadata imports
-before analysis, including folders you have not browsed. Pause stops new jobs;
-active jobs can finish. Clear cancels old jobs and removes their cached output.
-Rebuild checks your saved folders again before backfilling metadata and analysis.
+an embedding of each photo as edited in folders using local CLIP (folders served
+by morfPhoto or Immich CLIP skip local CLIP analysis). Reconciled paths receive
+bounded metadata imports before analysis, including folders you have not browsed.
+Pause stops new jobs; active jobs can finish. Clear cancels old jobs and removes
+their cached output. Rebuild checks your saved folders again before backfilling
+metadata and analysis.
 
 **Measuring**
 

@@ -16,6 +16,8 @@ test('merge exact mapped primary paths while retaining copies and unmapped asset
  assert.notEqual(searchIdentity('local',local),searchIdentity('immich',{remote:{assetId:'a',localPath:'/photos2/a.jpg'}}));
  assert.notEqual(searchIdentity('local',local),searchIdentity('immich',{remote:{assetId:'a',localPath:'/photos/../photos/a.jpg'}}));
  assert.equal(searchIdentity('local',{path:'/photos/a.jpg'}),null);
+ assert.equal(searchIdentity('local',{path:'/photos/a.jpg',copy:false,morfphotoPreview:true}),searchIdentity('immich',remote));
+ assert.equal(searchIdentity('local',{path:'/photos/a.jpg',copy:true,morfphotoPreview:true}),null);
 });
 test('unknown remote placeholder fields cannot satisfy selected filters',()=>{
  const f={rejected:'all',edited:'all',labels:0,unlabeled:false,bodies:[],keywords:[]};

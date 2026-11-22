@@ -72,7 +72,9 @@ test('local adapter carries filters, scope and cache identities',async()=>{
  const calls=[];globalThis.__searchUI={commands:{async localSearch(...args){calls.push(args);return{items:[{asset_id:'12',variant_id:'23',subject:'original',image:{imgid:42,path:'/photos/a.jpg'}},{asset_id:null,variant_id:null,subject:'original',image:{imgid:43,path:'/photos/b.jpg'}}],next:'more'};}}};
  const signal=new AbortController().signal;
  const result=await localSearch({...NO_SEARCH,scope:'folder'}, {minRating:3},'/photos',true,null,signal);
- assert.equal(calls[0][0].folder,'/photos');assert.equal(calls[0][0].recursive,true);assert.deepEqual(calls[0][0].filters,{minRating:3});
+ assert.equal(calls[0][0].folder,'/photos');assert.equal(calls[0][0].recursive,true);assert.deepEqual(calls[0][0].filters,{minRating:3});assert.equal(calls[0][0].immichSearched,false);
+ await localSearch({...NO_SEARCH,source:'both',scope:'library'}, {},'/photos',true,null,signal);
+ assert.equal(calls[1][0].immichSearched,true);
  assert.deepEqual(result.items[0].localIndex,{assetId:'12',variantId:'23',subject:'original'});
  assert.equal(result.items[1].localIndex,undefined);
  assert.equal(result.items[1].path,'/photos/b.jpg');

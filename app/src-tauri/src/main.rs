@@ -12,6 +12,7 @@ mod library_ids;
 mod analysis_queue;
 mod search_reconcile;
 mod clip_models;
+mod clip_providers;
 mod clip_text;
 mod clip_image;
 mod clip_infer;
@@ -81,6 +82,7 @@ struct AppState {
     search_clear_lock: Mutex<()>,
     local_search_requests: Arc<local_search_cmds::Requests>,
     clip_models: Arc<clip_models::Models>,
+    clip_providers: Arc<clip_providers::ProbeCache>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
@@ -272,7 +274,17 @@ fn main() {
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
-            let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
+            let clip_providers = Arc::new(clip_providers::ProbeCache::new());
+            let search_analysis = search_analysis::start(
+                app.handle().clone(),
+                search_cache.clone(),
+                clip_models.clone(),
+                clip_providers.clone(),
+                analysis_queue.clone(),
+                engine.tagged(),
+                frame_output.clone(),
+                runtime.clone(),
+            );
             app.manage(AppState {
                 search_analysis,
                 search_cache,
@@ -280,6 +292,7 @@ fn main() {
                 search_clear_lock: Mutex::new(()),
                 local_search_requests: Arc::new(local_search_cmds::Requests::default()),
                 clip_models,
+                clip_providers,
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),

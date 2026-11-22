@@ -288,7 +288,9 @@ export default function App() {
     setStatusRaw(s);
     setStatusStamp((n) => n + 1);
   }, []);
-  const [morfPhotoFallback, setMorfPhotoFallback] = useState<{ path: string } | null>(null);
+  const [morfPhotoFallback, setMorfPhotoFallback] = useState<
+    { path: string } | { reason: string; fallback?: "immich" | "local" } | { immichReason: string } | null
+  >(null);
   const [morfPhotoCoverage, setMorfPhotoCoverage] = useState<{ indexed: number; eligible: number } | null>(null);
   useEffect(() => {
     const off = listen<{ indexed: number; eligible: number }>("morfphoto-coverage", ({ payload }) => setMorfPhotoCoverage(payload));
@@ -296,7 +298,15 @@ export default function App() {
   }, []);
   useEffect(() => {
     const off = listen<string>("morfphoto-fallback", ({ payload }) => setMorfPhotoFallback({ path: payload }));
-    return () => { void off.then(unlisten => unlisten()); };
+    const offSemantic = listen<string | { reason: string; fallback?: "immich" | "local" }>("morfphoto-semantic-fallback", ({ payload }) =>
+      setMorfPhotoFallback(typeof payload === "string" ? { reason: payload, fallback: "local" } : payload));
+    const offImmich = listen<string | { reason: string }>("immich-semantic-fallback", ({ payload }) =>
+      setMorfPhotoFallback({ immichReason: typeof payload === "string" ? payload : payload.reason }));
+    return () => {
+      void off.then(unlisten => unlisten());
+      void offSemantic.then(unlisten => unlisten());
+      void offImmich.then(unlisten => unlisten());
+    };
   }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
@@ -392,19 +402,29 @@ export default function App() {
       }
     });
   }, [prefsOpen]);
-  // the local CLIP package, for Smart search and similar photos: asked after the
-  // first paint and again as Preferences closes, then while a download runs
+  // the local CLIP package and remote CLIP providers (morfPhoto / Immich): asked
+  // after the first paint and again as Preferences closes, then while a download runs
   const [clipReady, setClipReady] = useState(false);
+  const [remoteClip, setRemoteClip] = useState(false);
+  const [allRemoteClip, setAllRemoteClip] = useState(false);
   // not shown before the first status answer, so the tip never flashes for an installed model
   const [clipKnown, setClipKnown] = useState(false);
   const [clipTipGone, setClipTipGone] = useState(() => { try { return settings.get("immage.findClipTipDismissed") === "1"; } catch { return false; } });
   const clipReadyRef = useRef(false);
+  const remoteClipRef = useRef(false);
   useEffect(() => {
     if (prefsOpen) return;
     let alive = true, timer = 0;
     const ask = () => void loadClipState().then((c) => {
       if (!alive) return;
-      if (c.known) { clipReadyRef.current = c.installed; setClipReady(c.installed); setClipKnown(true); }
+      if (c.known) {
+        clipReadyRef.current = c.installed;
+        remoteClipRef.current = c.remoteClip;
+        setClipReady(c.installed);
+        setRemoteClip(c.remoteClip);
+        setAllRemoteClip(c.allRemote);
+        setClipKnown(true);
+      }
       if (c.downloading) timer = window.setTimeout(ask, 2000);
     });
     timer = window.setTimeout(ask, 0);
@@ -441,7 +461,7 @@ export default function App() {
     const avail = !!immichBaseRef.current;
     // the query now running, not the form: keystrokes have already changed the form
     const running = combined.current?.getState().query as SearchQuery | null;
-    const smart = smartAvailable(clipReadyRef.current, avail);
+    const smart = smartAvailable(clipReadyRef.current, avail, remoteClipRef.current);
     const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(effectiveSearch(next.search, smart));
     showSkip(restored && reach(next.search, avail).skipped);
     window.clearTimeout(immichTimer.current);
@@ -3219,7 +3239,7 @@ export default function App() {
     const enabled: ("local" | "immich")[] = !avail || q.source === "local" ? ["local"]
       : q.source === "immich" ? ["immich"] : ["local", "immich"];
     const f = filters ?? filterRef.current;
-    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
+    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail, remoteClipRef.current)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
   };
 
   const showSimilar = async (hit: ImageEntry) => {
@@ -6652,8 +6672,8 @@ export default function App() {
   useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
   const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-              smart={smartAvailable(clipReady, !!immichBase)}
-              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
+              smart={smartAvailable(clipReady, !!immichBase, remoteClip)}
+              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone, allRemoteClip) ? {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
               } : undefined}
@@ -7097,7 +7117,11 @@ export default function App() {
           )}
           {morfPhotoFallback && (
             <Notice className="activity waiting" stamp={morfPhotoFallback} onDone={() => setMorfPhotoFallback(null)} role="status">
-              <span>{t("morfphoto.fallback", morfPhotoFallback)}</span>
+              <span>{"immichReason" in morfPhotoFallback
+                ? t("immich.semanticFallback", { reason: morfPhotoFallback.immichReason })
+                : "reason" in morfPhotoFallback
+                ? t(morfPhotoFallback.fallback === "immich" ? "morfphoto.semanticFallbackImmich" : "morfphoto.semanticFallback", morfPhotoFallback)
+                : t("morfphoto.fallback", morfPhotoFallback)}</span>
             </Notice>
           )}
           {engineNotice?.kind === "slow" && (

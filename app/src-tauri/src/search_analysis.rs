@@ -3,6 +3,7 @@
 use crate::{
     analysis_queue::{AnalysisQueue, Job},
     clip_models::Models,
+    clip_providers::{ActiveProviders, ClipProvider, ProbeCache},
     engine::Tagged,
     frame_output::FrameOutput,
     search_cache::{PendingAnalysis, SearchCache},
@@ -18,6 +19,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use tauri::AppHandle;
 
 /// How Find's indicator sees the analysis backlog. The status command, a sync
 /// one, reads the atomics only, so it never waits on the service, the queue or
@@ -144,8 +146,10 @@ impl Drop for Control {
     }
 }
 struct Service {
+    app: Option<AppHandle>,
     cache: Arc<SearchCache>,
     models: Arc<Models>,
+    providers: Arc<ProbeCache>,
     queue: Arc<AnalysisQueue>,
     engine: Tagged,
     output: Arc<FrameOutput>,
@@ -154,9 +158,31 @@ struct Service {
     stop: Arc<AtomicBool>,
     progress: Arc<Progress>,
 }
+
+/// Decide what local background work a cached variant needs under the active
+/// CLIP provider precedence (`morfPhoto -> Immich -> local`):
+/// - `morfPhoto`: skip both local metadata backfill and local CLIP analysis.
+/// - `Immich`: skip local CLIP analysis (all variants), keep local metadata backfill.
+/// - `Local`: run both as needed.
+fn row_needs_local_work(
+    path: &Path,
+    needs_metadata: bool,
+    needs_edited: bool,
+    providers: &ActiveProviders,
+) -> (bool, bool) {
+    match providers.for_path(path) {
+        ClipProvider::MorfPhoto => (false, false),
+        ClipProvider::Immich => (needs_metadata, false),
+        ClipProvider::Local => (needs_metadata, needs_edited),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn start(
+    app: AppHandle,
     cache: Option<Arc<SearchCache>>,
     models: Arc<Models>,
+    providers: Arc<ProbeCache>,
     queue: Arc<AnalysisQueue>,
     engine: Tagged,
     output: Arc<FrameOutput>,
@@ -166,8 +192,10 @@ pub fn start(
     let progress = Arc::new(Progress::new());
     if let Some(cache) = cache {
         let service = Arc::new(Service {
+            app: Some(app),
             cache,
             models,
+            providers,
             queue,
             engine,
             output,
@@ -187,6 +215,7 @@ pub fn start(
                 let installed = service.models.installed();
                 let p = &service.progress;
                 p.installed.store(installed, Ordering::Release);
+                let active_providers = service.active_providers();
                 if installed {
                     let availability_changed = availability.collect(p);
                     if last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY) {
@@ -206,11 +235,12 @@ pub fn start(
                             let selection = library_selection(&service.runtime);
                             if count_due {
                                 last_count = Some(Instant::now());
-                                availability.start(&service, &selection);
+                                availability.start(&service, &selection, &active_providers);
                             }
                             if let Some(n) = count_backlog(
                                 &service.cache,
                                 &selection,
+                                &active_providers,
                                 &service.stop,
                                 &p.unavailable,
                                 COUNT_PAGE,
@@ -239,6 +269,13 @@ pub fn start(
 const SHARE_QUIET: Duration = Duration::from_secs(120);
 
 impl Service {
+    fn active_providers(&self) -> ActiveProviders {
+        match &self.app {
+            Some(app) => self.providers.resolve(app, &self.runtime),
+            None => self.providers.cached(),
+        }
+    }
+
     // whether work on this photo waits for a quiet spell (SHARE_QUIET). the
     // row stays pending and a later scan offers it again
     fn deferred(&self, path: &str) -> bool {
@@ -253,13 +290,14 @@ impl Service {
         }
         let mut after = self.after.load(Ordering::Acquire);
         let selection = library_selection(&self.runtime);
+        let active_providers = self.active_providers();
         let quiet = self.engine.quiet_for();
         // Without recent Find polling, retry previously marked paths through
         // the normal analysis budget so a restored photo can still be analysed.
         let availability_is_checked = self.progress.count_requested();
         let mut shares = HashMap::<PathBuf, bool>::new();
-        // Pass over pages of deferred or unavailable photos so local work
-        // can still be offered when it follows them in the index.
+        // Pass over pages of deferred, delegated, or unavailable photos so
+        // local work can still be offered when it follows them in the index.
         for _ in 0..64 {
             if job.cancelled() || self.stop.load(Ordering::Acquire) {
                 return Ok(());
@@ -285,6 +323,11 @@ impl Service {
                 {
                     continue;
                 }
+                let (run_metadata, run_clip) =
+                    row_needs_local_work(path, row.needs_metadata, row.needs_edited, &active_providers);
+                if !run_metadata && !run_clip {
+                    continue;
+                }
                 let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
                 if quiet < SHARE_QUIET
                     && *shares
@@ -294,7 +337,7 @@ impl Service {
                     continue;
                 }
                 offered = true;
-                if row.needs_metadata {
+                if run_metadata {
                     let service = self.clone();
                     self.queue
                         .submit(format!("clip:metadata:{}", row.variant_id), move |job| {
@@ -305,7 +348,7 @@ impl Service {
                     continue;
                 }
                 // only edited analyses are queued: Find no longer reads original ones
-                if row.needs_edited {
+                if run_clip {
                     let service = self.clone();
                     let row = row.clone();
                     self.queue
@@ -326,7 +369,9 @@ impl Service {
         if job.cancelled() || self.stop.load(Ordering::Acquire) {
             return Ok(());
         }
-        if !selected(Path::new(&row.path), &library_selection(&self.runtime))
+        let path = Path::new(&row.path);
+        if !selected(path, &library_selection(&self.runtime))
+            || self.providers.cached().for_path(path) == ClipProvider::MorfPhoto
             || self.deferred(&row.path)
         {
             return Ok(());
@@ -374,7 +419,9 @@ impl Service {
         if job.cancelled() || self.stop.load(Ordering::Acquire) {
             return Ok(());
         }
-        if !selected(Path::new(&row.path), &library_selection(&self.runtime))
+        let path = Path::new(&row.path);
+        if !selected(path, &library_selection(&self.runtime))
+            || self.providers.cached().for_path(path) != ClipProvider::Local
             || self.deferred(&row.path)
         {
             return Ok(());
@@ -490,13 +537,18 @@ impl AvailabilityProbe {
         false
     }
 
-    fn start(&mut self, service: &Service, selection: &serde_json::Value) {
+    fn start(
+        &mut self,
+        service: &Service,
+        selection: &serde_json::Value,
+        providers: &ActiveProviders,
+    ) {
         // A filesystem call can stall even after the drive answered. Keep at
         // most one such batch outstanding, without using a queue worker.
         if self.running.is_some() {
             return;
         }
-        let Ok(mut rows) = service
+        let Ok(rows) = service
             .cache
             .pending_analysis_paths(self.after, AVAILABILITY_PAGE)
         else {
@@ -507,7 +559,18 @@ impl AvailabilityProbe {
         } else {
             0
         };
-        rows.retain(|(_, path)| selected(Path::new(path), selection));
+        let rows: Vec<(i64, String)> = rows
+            .into_iter()
+            .filter(|(_, path, needs_meta, needs_edit)| {
+                let p = Path::new(path);
+                if !selected(p, selection) {
+                    return false;
+                }
+                let (m, e) = row_needs_local_work(p, *needs_meta, *needs_edit, providers);
+                m || e
+            })
+            .map(|(id, path, _, _)| (id, path))
+            .collect();
         if !rows.is_empty() {
             let stop = service.stop.clone();
             self.running = Some(std::thread::spawn(move || probe_availability(rows, &stop)));
@@ -537,12 +600,13 @@ fn probe_availability(rows: Vec<(i64, String)>, stop: &AtomicBool) -> Availabili
 }
 
 /// Photos waiting for metadata or an edited analysis in the selected folders,
-/// leaving out those the probe found missing or offline. Pages by id with the
-/// cache lock held for one page at a time; None when stopped or on an error,
-/// so a partial count is never stored.
+/// leaving out delegated CLIP providers and those the probe found missing or
+/// offline. Pages by id with the cache lock held for one page at a time; None
+/// when stopped or on an error, so a partial count is never stored.
 fn count_backlog(
     cache: &SearchCache,
     selection: &serde_json::Value,
+    providers: &ActiveProviders,
     stop: &AtomicBool,
     unavailable: &Mutex<HashMap<i64, String>>,
     page: u32,
@@ -556,10 +620,17 @@ fn count_backlog(
         let mut rows = cache.pending_analysis_paths(after, page).ok()?;
         let end = (rows.len() as u32) < page;
         after = rows.last().map_or(0, |row| row.0);
-        rows.retain(|(_, path)| selected(Path::new(path), selection));
+        rows.retain(|(_, path, needs_meta, needs_edit)| {
+            let p = Path::new(path);
+            if !selected(p, selection) {
+                return false;
+            }
+            let (m, e) = row_needs_local_work(p, *needs_meta, *needs_edit, providers);
+            m || e
+        });
         {
             let gone = unavailable.lock().unwrap_or_else(|e| e.into_inner());
-            for (id, path) in rows {
+            for (id, path, _, _) in rows {
                 if gone.get(&id) == Some(&path) {
                     still_unavailable.insert(id);
                 } else {
@@ -651,13 +722,64 @@ mod tests {
             .unwrap();
         let config = json!({"folders":["/photos"],"hidden":["/photos/hidden"]});
         let stop = AtomicBool::new(false);
+        let local_only = ActiveProviders::default();
         // page sizes smaller than, equal to and larger than the backlog agree
         for page in [1, 2, 7, 8, 1024] {
-            assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), page), Some(5), "page {page}");
+            assert_eq!(count_backlog(&cache, &config, &local_only, &stop, &Mutex::default(), page), Some(5), "page {page}");
         }
-        assert_eq!(count_backlog(&cache, &json!({"folders":[]}), &stop, &Mutex::default(), 2), Some(0));
+        assert_eq!(count_backlog(&cache, &json!({"folders":[]}), &local_only, &stop, &Mutex::default(), 2), Some(0));
         stop.store(true, Ordering::Release);
-        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 2), None);
+        assert_eq!(count_backlog(&cache, &config, &local_only, &stop, &Mutex::default(), 2), None);
+    }
+
+    #[test]
+    fn backlog_excludes_morfphoto_and_immich_delegated_clip_variants() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        // morfPhoto folder: both metadata-missing and metadata-ready variants skipped
+        cache.upsert_variant("/nas/morf/raw.orf", "", "s", "e", None, None, None).unwrap();
+        let m_edit = cache.upsert_variant("/nas/morf/edited.orf", "", "s", "e", None, None, None).unwrap();
+        cache.store_metadata(m_edit.id, "{}").unwrap();
+        let m_copy = cache.upsert_variant("/nas/morf/edited.orf", "version:1", "s", "c", None, None, None).unwrap();
+        cache.store_metadata(m_copy.id, "{}").unwrap();
+
+        // Immich folder: metadata-missing row still counts for metadata backfill;
+        // metadata-ready original & virtual copy are skipped for local CLIP.
+        cache.upsert_variant("/nas/immich/needs-meta.jpg", "", "s", "e", None, None, None).unwrap();
+        let i_orig = cache.upsert_variant("/nas/immich/done-meta.jpg", "", "s", "e", None, None, None).unwrap();
+        cache.store_metadata(i_orig.id, "{}").unwrap();
+        let i_copy = cache.upsert_variant("/nas/immich/done-meta.jpg", "version:1", "s", "c", None, None, None).unwrap();
+        cache.store_metadata(i_copy.id, "{}").unwrap();
+
+        // Local folder: counts for local CLIP
+        let loc = cache.upsert_variant("/local/a.jpg", "", "s", "e", None, None, None).unwrap();
+        cache.store_metadata(loc.id, "{}").unwrap();
+
+        let config = json!({"folders":["/nas/morf","/nas/immich","/local"]});
+        let stop = AtomicBool::new(false);
+        let providers = ActiveProviders {
+            morfphoto_root: Some(PathBuf::from("/nas/morf")),
+            immich: Some(crate::clip_providers::ImmichCoverage {
+                local_root: PathBuf::from("/nas/immich"),
+                canonical_root: None,
+                server_root: "/mnt/immich".into(),
+            }),
+        };
+        // Only /nas/immich/needs-meta.jpg (metadata backfill) + /local/a.jpg (local CLIP) = 2
+        assert_eq!(count_backlog(&cache, &config, &providers, &stop, &Mutex::default(), 8), Some(2));
+
+        // Immediate fallthrough when morfPhoto goes offline: all 3 /nas/morf variants count again
+        let immich_only = ActiveProviders {
+            morfphoto_root: None,
+            immich: providers.immich.clone(),
+        };
+        assert_eq!(count_backlog(&cache, &config, &immich_only, &stop, &Mutex::default(), 8), Some(5));
+
+        // Immediate fallthrough when both servers go offline: all 7 variants count
+        assert_eq!(
+            count_backlog(&cache, &config, &ActiveProviders::default(), &stop, &Mutex::default(), 8),
+            Some(7)
+        );
     }
 
     #[test]
@@ -670,7 +792,8 @@ mod tests {
         cache.store_metadata(v.id, "{}").unwrap();
         let config = json!({"folders":["/photos"]});
         let stop = AtomicBool::new(false);
-        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 8), Some(1));
+        let local_only = ActiveProviders::default();
+        assert_eq!(count_backlog(&cache, &config, &local_only, &stop, &Mutex::default(), 8), Some(1));
         let row = cache.pending_analyses(0, 8).unwrap().remove(0);
         cache
             .put_analysis(
@@ -682,7 +805,7 @@ mod tests {
                 &[0u8; 4],
             )
             .unwrap();
-        assert_eq!(count_backlog(&cache, &config, &stop, &Mutex::default(), 8), Some(0));
+        assert_eq!(count_backlog(&cache, &config, &local_only, &stop, &Mutex::default(), 8), Some(0));
     }
 
     #[test]
@@ -728,21 +851,25 @@ mod tests {
 
         // The status probe needs no analysis queue or idle engine, so the
         // same missing and restored files are detected while analysis is paused.
+        let local_only = ActiveProviders::default();
+        let pairs = |rows: Vec<(i64, String, bool, bool)>| -> Vec<(i64, String)> {
+            rows.into_iter().map(|(id, p, _, _)| (id, p)).collect()
+        };
         progress.update_availability(probe_availability(
-            cache.pending_analysis_paths(0, 8).unwrap(),
+            pairs(cache.pending_analysis_paths(0, 8).unwrap()),
             &stop,
         ));
         assert_eq!(
-            count_backlog(&cache, &config, &stop, &progress.unavailable, 8),
+            count_backlog(&cache, &config, &local_only, &stop, &progress.unavailable, 8),
             Some(1)
         );
         std::fs::write(a_path, b"restored photo").unwrap();
         progress.update_availability(probe_availability(
-            cache.pending_analysis_paths(0, 8).unwrap(),
+            pairs(cache.pending_analysis_paths(0, 8).unwrap()),
             &stop,
         ));
         assert_eq!(
-            count_backlog(&cache, &config, &stop, &progress.unavailable, 8),
+            count_backlog(&cache, &config, &local_only, &stop, &progress.unavailable, 8),
             Some(2)
         );
     }
@@ -1055,8 +1182,10 @@ for line in sys.stdin:
         let mut engine = crate::engine::Engine::spawn(&bin, &runtime, &runtime).unwrap();
         engine.set_search_cache(Some(cache.clone()));
         let service = Arc::new(Service {
+            app: None,
             cache: cache.clone(),
             models: Arc::new(Models::new(dir.path().join("no-models"))),
+            providers: Arc::new(ProbeCache::new()),
             queue: Arc::new(AnalysisQueue::new(1, 8)),
             engine: engine.tagged(),
             output: Arc::new(FrameOutput::new(&runtime)),

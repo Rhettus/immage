@@ -128,6 +128,7 @@ pub(crate) async fn morf_photo_save(
             if mapping_changed {
                 morf_photo::clear_caches(Some(&runtime));
             }
+            app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
             return Ok(());
         }
         if settings.enabled {
@@ -142,6 +143,7 @@ pub(crate) async fn morf_photo_save(
         if mapping_changed {
             morf_photo::clear_caches(Some(&runtime));
         }
+        app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
         Ok(())
     })
     .await
@@ -170,6 +172,7 @@ pub(crate) async fn morf_photo_forget(
             .set(SETTINGS, &saved)?;
         morf_photo::clear_caches(Some(&runtime));
         thumbs.clear();
+        app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
         match morf_photo::entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err("Could not remove morfPhoto API key".into()),
