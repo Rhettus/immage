@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Edited photo previews kept longest:** When the thumbnail cache is full,
+  previews of edited photos are trimmed last, up to half the limit, and
+  Preferences > Cache shows how much of the Library thumbnails they take.
 - **Zoom out past Fit:** The mouse wheel, pinch, **⌘-** and the zoom slider
   now zoom out to half the size of Fit, leaving empty canvas around the photo.
   The Navigator has a new **1:2** (50%) button, and the wheel pauses at Fit
@@ -58,6 +61,10 @@ Improvements
 
 Performance
 
+- **Edited photos open faster in culling:** After you edit a RAW photo and move
+  on, Immage prepares its culling preview in the background, once the grid's
+  thumbnails have loaded, so culling it afterwards no longer waits for a fresh
+  render.
 - **Lightweight Grid browsing:** Clicking or stepping with arrow keys through
   photos in Grid view selects them and updates Metadata and Keywording without
   decoding full RAWs or rendering the hidden editor until you open a photo to

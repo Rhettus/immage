@@ -41,6 +41,8 @@ struct Entry {
     time: SystemTime,
     // a sidecar holds the user's edit of a downloaded original: never evicted
     keep: bool,
+    // a rendered preview of an edited photo (edit- name): evicted last
+    edited: bool,
 }
 
 impl DiskCache {
@@ -156,7 +158,22 @@ impl DiskCache {
         let mut total: u64 = list.iter().map(|e| e.size).sum();
         list.retain(|e| !e.keep && Some(e.path.as_path()) != spare);
         list.sort_by_key(|e| e.time);
+        // edited previews are kept longest, but only up to half the limit:
+        // the oldest beyond that share are evicted with the ordinary entries
+        let mut share: u64 = list.iter().filter(|e| e.edited).map(|e| e.size).sum();
+        let protected = self.limit.load(Ordering::Relaxed) / 2;
+        let (mut first, mut last) = (Vec::new(), Vec::new());
         for e in list {
+            if e.edited && share <= protected {
+                last.push(e);
+            } else {
+                if e.edited {
+                    share -= e.size;
+                }
+                first.push(e);
+            }
+        }
+        for e in first.into_iter().chain(last) {
             if total <= target {
                 break;
             }
@@ -183,6 +200,14 @@ impl DiskCache {
         let total = scan(&self.dir).iter().map(|e| e.size).sum();
         *used = Some(total);
         total
+    }
+
+    // the folder's size, and the part of it that is edited-photo previews
+    pub fn usage_split(&self) -> (u64, u64) {
+        let list = scan(&self.dir);
+        let total = list.iter().map(|e| e.size).sum();
+        *self.used.lock().unwrap() = Some(total);
+        (total, list.iter().filter(|e| e.edited).map(|e| e.size).sum())
     }
 
     // everything but edited originals
@@ -231,9 +256,10 @@ fn remove(path: &Path) -> std::io::Result<()> {
 fn entry(path: &Path) -> Option<Entry> {
     let meta = std::fs::metadata(path).ok()?;
     if meta.is_file() {
-        return Some(Entry { path: path.into(), size: meta.len(), time: meta.modified().ok()?, keep: false });
+        let edited = path.file_name().is_some_and(|n| n.to_string_lossy().starts_with("edit-"));
+        return Some(Entry { path: path.into(), size: meta.len(), time: meta.modified().ok()?, keep: false, edited });
     }
-    let mut e = Entry { path: path.into(), size: 0, time: UNIX_EPOCH, keep: false };
+    let mut e = Entry { path: path.into(), size: 0, time: UNIX_EPOCH, keep: false, edited: false };
     for f in std::fs::read_dir(path).ok()?.flatten() {
         let Ok(m) = f.metadata() else { continue };
         if !m.is_file() {
@@ -618,6 +644,16 @@ pub struct Limits {
     pub immich_originals: u64,
 }
 
+// how much the caches hold, in bytes; the edited share is part of thumbs
+#[derive(Clone, Copy, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    pub thumbs: u64,
+    pub thumbs_edited: u64,
+    pub immich_thumbs: u64,
+    pub immich_originals: u64,
+}
+
 impl Caches {
     pub fn new(root: &Path) -> Self {
         let l = DEFAULT_LIMITS;
@@ -745,6 +781,77 @@ mod tests {
         assert!(dir.join("x1").exists() && !dir.join("x2").exists() && dir.join("x3").exists());
         c.clear();
         assert!(dir.join("x1").exists() && !dir.join("x3").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn put(c: &DiskCache, dir: &Path, name: &str, len: usize, secs: u64) {
+        c.write(name, &vec![0; len]).unwrap();
+        age(&dir.join(name), secs);
+    }
+
+    #[test]
+    fn ordinary_entries_go_before_edited_previews() {
+        let dir = test_dir("cache-edited-first");
+        let c = DiskCache::new(dir.clone(), 1000, false);
+        put(&c, &dir, "edit-old", 300, 500);
+        put(&c, &dir, "plain-a", 300, 300);
+        put(&c, &dir, "plain-b", 300, 200);
+        // 1200 over 1000, target 900: the oldest ordinary goes, not the older edited
+        c.write("plain-c", &[0; 300]).unwrap();
+        assert!(dir.join("edit-old").exists() && !dir.join("plain-a").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edited_previews_go_when_nothing_else_is_left() {
+        let dir = test_dir("cache-edited-last");
+        let c = DiskCache::new(dir.clone(), 1000, false);
+        put(&c, &dir, "edit-a", 250, 300);
+        put(&c, &dir, "edit-b", 250, 200);
+        put(&c, &dir, "plain", 100, 100);
+        c.write("new", &[0; 450]).unwrap();
+        // 1050: plain goes (950), still over 900, so the oldest edited too
+        assert!(!dir.join("plain").exists() && !dir.join("edit-a").exists());
+        assert!(dir.join("edit-b").exists() && dir.join("new").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edited_previews_are_protected_only_up_to_half_the_limit() {
+        let dir = test_dir("cache-edited-half");
+        let c = DiskCache::new(dir.clone(), 1000, false);
+        put(&c, &dir, "edit-a", 400, 500);
+        put(&c, &dir, "edit-b", 400, 400);
+        put(&c, &dir, "edit-c", 400, 300);
+        put(&c, &dir, "plain", 100, 100);
+        c.added("plain");
+        // 1300 over 1000, target 900. edited 1200 > 500: the two oldest join
+        // the ordinary entries; the oldest goes (900) and the rest holds
+        assert!(!dir.join("edit-a").exists() && dir.join("edit-b").exists());
+        assert!(dir.join("edit-c").exists() && dir.join("plain").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_spare_entry_survives_eviction() {
+        let dir = test_dir("cache-edited-spare");
+        let c = DiskCache::new(dir.clone(), 1000, false);
+        put(&c, &dir, "plain", 600, 100);
+        c.write("edit-new", &[0; 600]).unwrap();
+        assert!(dir.join("edit-new").exists() && !dir.join("plain").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn usage_split_counts_edited_previews() {
+        let dir = test_dir("cache-usage-split");
+        let c = DiskCache::new(dir.clone(), 1 << 20, false);
+        c.write("edit-a", &[0; 100]).unwrap();
+        c.write("camera-b", &[0; 50]).unwrap();
+        c.write("plain", &[0; 20]).unwrap();
+        assert_eq!(c.usage_split(), (170, 100));
+        c.clear();
+        assert_eq!(c.usage_split(), (0, 0));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

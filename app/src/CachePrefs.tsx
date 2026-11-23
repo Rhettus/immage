@@ -5,7 +5,7 @@
 // may take (src-tauri/src/cache.rs), a bar of what each holds, and
 // emptying one
 import { useEffect, useState } from "react";
-import { commands, type Limits } from "./commands";
+import { commands, type Limits, type Usage } from "./commands";
 import { Trash } from "lucide-react";
 import { PrefCard, PrefRow } from "./PrefsUI";
 import { settings } from "./settings";
@@ -50,18 +50,23 @@ const size = (n: number) => (n >= GB ? `${+(n / GB).toFixed(1)} ${t("unit.gb")}`
 // make room: cache.rs evicts down to that, so one in use sits above it
 const FULL = 0.9;
 
-function UsageBar({ used, limit, title }: { used: number | null; limit: number; title: string }) {
+// `edited` is the part of `used` that is edited photos' previews, drawn as
+// a second segment at the start of the bar
+function UsageBar({ used, limit, title, edited = 0 }: { used: number | null; limit: number; title: string; edited?: number }) {
   const part = used === null ? 0 : Math.min(1, used / limit);
+  const share = used ? Math.min(1, edited / used) : 0;
   return (
     <span className={`cache-bar${used !== null && used >= FULL * limit ? " full" : ""}`} title={title}>
-      <span style={{ width: `${part * 100}%` }} />
+      <span style={{ width: `${part * 100}%` }}>
+        {share > 0 && <span className="cache-edited" style={{ width: `${share * 100}%` }} />}
+      </span>
     </span>
   );
 }
 
 export function CachePrefs() {
   const [limits, setLimits] = useState(loadLimits);
-  const [usage, setUsage] = useState<Limits | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const measure = () => commands.cacheUsage().then(setUsage).catch(() => {});
   useEffect(() => { void measure(); }, []);
   const choose = (which: Which, v: number) => {
@@ -79,7 +84,8 @@ export function CachePrefs() {
       <div className="cache-rows">
         {ROWS.map(([which, id, label, hint]) => (
           <PrefRow key={which} id={id} label={label} summary={usage ? t("cache.usage", { used: size(usage[which]), limit: size(limits[which]) }) : t("cache.measuring")} hint={hint}>
-            <UsageBar used={usage?.[which] ?? null} limit={limits[which]} title={tip(which, hint)} />
+            <UsageBar used={usage?.[which] ?? null} limit={limits[which]} title={tip(which, hint)}
+                      edited={which === "thumbs" ? usage?.thumbsEdited : 0} />
             <select className="field cache-size" value={limits[which]} onChange={(e) => choose(which, Number(e.target.value))}>
               {[...new Set([...SIZES[which], limits[which]])].sort((a, b) => a - b)
                 .map((v) => <option key={v} value={v}>{size(v)}</option>)}
@@ -89,6 +95,11 @@ export function CachePrefs() {
               <Trash className="icon" strokeWidth={1.8} /></button>
           </PrefRow>
         ))}
+        {usage && usage.thumbsEdited > 0 && (
+          <div className="cache-edited-note" title={t("cache.edited.hint")}>
+            <span className="cache-edited-swatch" />{t("cache.edited", { size: size(usage.thumbsEdited) })}
+          </div>
+        )}
       </div>
     </PrefCard>
   );

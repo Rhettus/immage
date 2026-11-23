@@ -1106,6 +1106,16 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
     state.engine("thumb_threads").request(json!({ "cmd": "thumb_threads", "threads": threads })).map(|_| ())
 }
 
+// which kind of culling preview a thumb asks for (see preview_cache_name); one
+// argument, as a command takes at most ten
+#[derive(Default, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct PreviewKinds {
+    prefer_source: Option<bool>,
+    camera_preview: Option<bool>,
+    edited_preview: Option<bool>,
+}
+
 // the lighttable thumbnail of an image: little-endian u32 width and height,
 // then RGBA. given the photo's file, it is also kept in the thumbnail cache.
 // the engine builds it on a thread of its own, beside any edit or render,
@@ -1115,17 +1125,19 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>, proof: Option<bool>,
-               foreground: Option<bool>, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
+               foreground: Option<bool>, preview: Option<PreviewKinds>) -> Result<bindings::Frame, String> {
+    let PreviewKinds { prefer_source, camera_preview, edited_preview } = preview.unwrap_or_default();
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
     // thumbnail, and is not kept
     let proof = proof.unwrap_or(false);
     let prefer_source = size > 0 && !proof && prefer_source.unwrap_or(false);
     let camera_preview = size > 0 && !proof && camera_preview.unwrap_or(false);
+    let edited_preview = size > 0 && !proof && edited_preview.unwrap_or(false);
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
-    let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview)));
+    let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview, edited_preview)));
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
@@ -1163,7 +1175,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {
-                if thumbs.write(&name, &jpeg).is_ok() && size > 0 && !prefer_source && !camera_preview {
+                if thumbs.write(&name, &jpeg).is_ok() && size > 0 && !prefer_source && !camera_preview && !edited_preview {
                     thumbs.set_known(Path::new(&photo), version.unwrap_or(0), size, &name);
                 }
             }
@@ -1172,12 +1184,16 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     Ok(bindings::Frame(Response::new(out)))
 }
 
-// Keep source-based Fit previews distinct from ordinary rendered thumbnails.
-fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool) -> String {
+// Keep source-based Fit previews distinct from ordinary rendered thumbnails,
+// and rendered previews of edited photos (edit-) apart for the cache's
+// eviction order. Only a plain rendered preview can be an edit- one.
+fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool, edited_preview: bool) -> String {
     if camera_preview {
         format!("camera-{name}")
     } else if prefer_source {
         format!("fit-{name}")
+    } else if edited_preview {
+        format!("edit-{name}")
     } else {
         name
     }
@@ -1186,22 +1202,25 @@ fn preview_cache_name(name: String, prefer_source: bool, camera_preview: bool) -
 // a library thumbnail from the cache, as JPEG, or nothing when it has none
 // for the photo as it is now: as the open folder's listing found it, else
 // as a stat finds it. the engine is not asked
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn thumb_cached(state: State<'_, AppState>, caches: State<'_, Caches>, path: String, version: i64,
-                                 size: u32, prefer_source: Option<bool>, camera_preview: Option<bool>) -> Result<bindings::Frame, String> {
+                                 size: u32, prefer_source: Option<bool>, camera_preview: Option<bool>,
+                                 edited_preview: Option<bool>) -> Result<bindings::Frame, String> {
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
     let (thumbs, listed) = (caches.thumbs.clone(), caches.listed.clone());
     let prefer_source = size > 0 && prefer_source.unwrap_or(false);
     let camera_preview = size > 0 && camera_preview.unwrap_or(false);
+    let edited_preview = size > 0 && edited_preview.unwrap_or(false);
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         let photo = Path::new(&path);
         let name = cache::listed_thumb_name(&listed, photo, version, size)?;
-        let name = preview_cache_name(name, prefer_source, camera_preview);
+        let name = preview_cache_name(name, prefer_source, camera_preview, edited_preview);
         let bytes = thumbs.read(&name)?;
         // a cache from before known thumbnails learns them as it is read
-        if size > 0 && !prefer_source && !camera_preview { thumbs.set_known(photo, version, size, &name); }
+        if size > 0 && !prefer_source && !camera_preview && !edited_preview { thumbs.set_known(photo, version, size, &name); }
         Some(bytes)
     }).await.map_err(|e| e.to_string())?;
     Ok(bindings::Frame(Response::new(bytes.unwrap_or_default())))
@@ -1235,10 +1254,11 @@ pub(crate) async fn cache_limits(caches: State<'_, Caches>, limits: cache::Limit
 // how much each cache holds, in bytes
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn cache_usage(caches: State<'_, Caches>) -> Result<cache::Limits, String> {
+pub(crate) async fn cache_usage(caches: State<'_, Caches>) -> Result<cache::Usage, String> {
     let (a, b, c) = (caches.thumbs.clone(), caches.immich_thumbs.clone(), caches.immich_originals.clone());
-    tauri::async_runtime::spawn_blocking(move || cache::Limits {
-        thumbs: a.usage(), immich_thumbs: b.usage(), immich_originals: c.usage(),
+    tauri::async_runtime::spawn_blocking(move || {
+        let (thumbs, thumbs_edited) = a.usage_split();
+        cache::Usage { thumbs, thumbs_edited, immich_thumbs: b.usage(), immich_originals: c.usage() }
     }).await.map_err(|e| e.to_string())
 }
 
@@ -1366,6 +1386,16 @@ pub(crate) fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_names_tell_the_kinds_apart() {
+        let n = |s, c, e| preview_cache_name("t".into(), s, c, e);
+        assert_eq!(n(false, false, true), "edit-t");
+        assert_eq!(n(false, false, false), "t");
+        // a source or camera preview is never an edit- one
+        assert_eq!(n(true, false, true), "fit-t");
+        assert_eq!(n(false, true, true), "camera-t");
+    }
 
     #[test]
     fn create_folder_makes_one_new_folder() {

@@ -466,6 +466,11 @@ empties one.
 
 - **Library thumbnails**: so a folder seen before opens at once. 1 GB by
   default.
+- **Library thumbnails** also shows, as a second segment on its bar and a
+  caption below the rows, how much of it is previews of edited photos. Those
+  are kept longest when the cache is trimmed, up to half the limit; beyond that
+  they go with the other thumbnails, oldest first. Raise the limit to keep more.
+  **Clear** empties them too.
 - **Immich thumbnails**: search results scrolled through. 512 MB by
   default.
 - **Immich originals**: photos opened from Immich. One you have edited is

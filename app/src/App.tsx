@@ -54,7 +54,8 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
-import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
+import { fetchCachedThumb, fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
 import { buildStackView, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
@@ -266,6 +267,21 @@ export default function App() {
                                        setStatus(t("app.status.immichThumbnails", { error: e }));
                                      });
   const thumbError = useRef(false);
+  // renders edited photos' culling previews ahead (editedPreviews.ts); it waits
+  // while the grid's thumbnails are still loading
+  useEffect(() => {
+    editedPreviews.configure({
+      // a photo left without new edits may already have its preview on disk
+      fetch: async (entry, size) => (await fetchCachedThumb(entry, size, false, false, true))
+        ?? fetchThumb(entry.imgid, size, entry, false, false, false, false, true),
+      idle: () => { const p = loader.current!.progress(); return p.done >= p.total; },
+      loadSize: () => { try { return Number(settings.get(PREVIEW_SIZE_KEY)) || 0; } catch { return 0; } },
+      kind: fileKind,
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (h) => window.clearTimeout(h as number),
+    });
+    return () => editedPreviews.clear();
+  }, []);
   const [current, setCurrent] = useState<Opened | null>(null);
   // the open photo's filmstrip cell, kept while the filmstrip shows another
   // folder or an Immich search, so the tools and panels that need it still work
@@ -3150,6 +3166,7 @@ export default function App() {
     if (!again) {
       shownGen.current++;
       loader.current!.clear();
+      editedPreviews.clear();
       setExpandedStacks(new Set());
       // Return to browsing this folder with the current filters.
       const fs = folderSearch(immichFormRef.current);
@@ -3245,6 +3262,7 @@ export default function App() {
     }
     thumbError.current = false;
     loader.current!.clear();
+    editedPreviews.clear();
     setReading(null);
     setGrid(true);
     // Immich not available: the local part only (reach.skipped)
@@ -4306,6 +4324,7 @@ export default function App() {
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
     }
+    if (id !== null) editedPreviews.cancel(id);
     const old = session.current;
     let closed = false;
     // the new session once opened, until session.current adopts it
@@ -4321,6 +4340,9 @@ export default function App() {
                              masks: structuredClone(o.masks), advanced };
         await o.close();
         closed = true;
+        // the save is on disk: render its culling preview ahead, behind everything else
+        const left = imagesRef.current.find((i) => i.imgid === o.imgid);
+        if (left) editedPreviews.schedule(left);
       }
       setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";

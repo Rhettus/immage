@@ -54,9 +54,9 @@ export const commands = {
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
 	createFolder: (parent: string, name: string) => __TAURI_INVOKE<string>("create_folder", { parent, name }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
-	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground, preferSource, cameraPreview }),
+	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null, preview: PreviewKinds | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground, preview }),
 	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),
-	thumbCached: (path: string, version: number, size: number, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size, preferSource, cameraPreview }),
+	thumbCached: (path: string, version: number, size: number, preferSource: boolean | null, cameraPreview: boolean | null, editedPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size, preferSource, cameraPreview, editedPreview }),
 	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
 	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),
 	keywords: () => __TAURI_INVOKE<string[]>("keywords"),
@@ -69,7 +69,7 @@ export const commands = {
 	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
 	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
 	cacheLimits: (limits: Limits) => __TAURI_INVOKE<null>("cache_limits", { limits }),
-	cacheUsage: () => __TAURI_INVOKE<Limits>("cache_usage"),
+	cacheUsage: () => __TAURI_INVOKE<Usage>("cache_usage"),
 	cacheClear: (which: string) => __TAURI_INVOKE<null>("cache_clear", { which }),
 	launchFile: () => __TAURI_INVOKE<string | null>("launch_file"),
 	displayScale: () => __TAURI_INVOKE<number | null>("display_scale"),
@@ -1091,6 +1091,12 @@ export type PresetsReply = {
 	presets: DtPreset[],
 };
 
+export type PreviewKinds = {
+	preferSource?: boolean | null,
+	cameraPreview?: boolean | null,
+	editedPreview?: boolean | null,
+};
+
 export type PrintProfile = {
 	name: string,
 	file: string,
@@ -1355,6 +1361,13 @@ export type UprightReply = {
 	lensshift_v: number,
 	lensshift_h: number,
 	fit?: string | null,
+};
+
+export type Usage = {
+	thumbs: number,
+	thumbsEdited: number,
+	immichThumbs: number,
+	immichOriginals: number,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

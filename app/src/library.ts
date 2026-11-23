@@ -172,8 +172,8 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 // cached size next up from this one. given its entry, the thumbnail is also
 // kept on disk for fetchCachedThumb()
 export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false,
-  foreground = false, preferSource = false, cameraPreview = false): Promise<ImageBitmap> {
-  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, preferSource, cameraPreview);
+  foreground = false, preferSource = false, cameraPreview = false, editedPreview = false): Promise<ImageBitmap> {
+  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, { preferSource, cameraPreview, editedPreview });
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));
@@ -181,8 +181,8 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 
 // the thumbnail kept on disk for the file as it is now (its sidecar too),
 // without the engine; null when there is none
-export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSource = false, cameraPreview = false): Promise<ImageBitmap | null> {
-  const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size, preferSource, cameraPreview);
+export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSource = false, cameraPreview = false, editedPreview = false): Promise<ImageBitmap | null> {
+  const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size, preferSource, cameraPreview, editedPreview);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 

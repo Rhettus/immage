@@ -10,6 +10,8 @@ import { LABEL_COLORS, fetchCachedThumb, fetchThumb, fileKind, type ImageEntry }
 import { KeywordingPanel, parseKeyword } from "./Keywording";
 import { ZoomBar } from "./Toolbar";
 import { formatNumber, t } from "./i18n";
+import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
+import { settings } from "./settings";
 
 export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
@@ -55,6 +57,9 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   const detailed = zoom !== null;
   const cameraFit = cameraPreviews && !detailed;
   const current = images.find(i => i.imgid === photo);
+  // opening culling drops the render-ahead queue: culling fetches its own previews
+  useEffect(() => { editedPreviews.culling(photo !== null, cameraPreviews); }, [photo, cameraPreviews]);
+  useEffect(() => () => editedPreviews.culling(false, false), []);
   // The frame is fixed for the window size, independent of photo or preview
   // dimensions, so swapping photos and zooming never moves the toolbar.
   const fitted = fitLightbox(windowSize.width, windowSize.height);
@@ -238,6 +243,10 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
     const size = detailed ? 0 : Math.ceil(Math.max(box?.clientWidth ?? window.innerWidth * .86,
       box?.clientHeight ?? window.innerHeight * .86) * devicePixelRatio);
 
+    // what render-ahead uses after an edit, so it matches what culling asks for
+    if (!detailed && size > 0) {
+      try { if (settings.get(PREVIEW_SIZE_KEY) !== String(size)) settings.set(PREVIEW_SIZE_KEY, String(size)); } catch { /* not kept */ }
+    }
     const draw = (bitmap: ImageBitmap) => {
       if (!stale && canvas.current) {
         if (!detailed && viewport.current && canvas.current) {
@@ -265,8 +274,11 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
     }
     const cameraPreviewFor = (entry: ImageEntry, requested: number) =>
       cameraFit && requested > 0 && entry.edited && fileKind(entry.filename) === "RAW";
+    // the rendered preview of an edited photo is kept longest (an edit- cache entry)
+    const editedPreviewFor = (entry: ImageEntry, requested: number) =>
+      requested > 0 && entry.edited && !cameraPreviewFor(entry, requested);
     const key = (entry: ImageEntry, requested: number) =>
-      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested, cameraPreviewFor(entry, requested)]);
+      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested, cameraPreviewFor(entry, requested), editedPreviewFor(entry, requested)]);
     const load = async (entry: ImageEntry, requested: number, foreground = false) => {
       const id = key(entry, requested);
       const cached = previews.current.get(id);
@@ -283,8 +295,9 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
         const kind = fileKind(entry.filename);
         const preferSource = requested > 0 && !entry.edited && (kind === "RAW" || kind === "JPEG");
         const cameraPreview = cameraPreviewFor(entry, requested);
-        const disk = await fetchCachedThumb(entry, requested, preferSource, cameraPreview);
-        const bitmap = disk ?? await fetchThumb(entry.imgid, requested, entry, false, foreground, preferSource, cameraPreview);
+        const editedPreview = editedPreviewFor(entry, requested);
+        const disk = await fetchCachedThumb(entry, requested, preferSource, cameraPreview, editedPreview);
+        const bitmap = disk ?? await fetchThumb(entry.imgid, requested, entry, false, foreground, preferSource, cameraPreview, editedPreview);
         if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
         if (requested === 0) return bitmap;
         // In the active editor case an independent load may already have

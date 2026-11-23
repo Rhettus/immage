@@ -114,6 +114,7 @@ jobs:
             verify/demosaic-options.test.mjs \
             verify/curves.test.mjs \
             verify/detail-preview.test.mjs \
+            verify/edited-previews.test.mjs \
             verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
             verify/export-format.test.mjs \

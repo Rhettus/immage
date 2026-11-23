@@ -2300,6 +2300,10 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .cache-bar { flex: 1; align-self: center; height: 6px; margin-right: 12px; background: var(--inset); border-radius: 3px; overflow: hidden; }
 .cache-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .cache-bar.full > span { background: #e5484d; }
+.cache-bar > span { display: flex; }
+.cache-bar .cache-edited { height: 100%; background: color-mix(in srgb, var(--accent) 55%, var(--text)); }
+.cache-edited-note { display: flex; align-items: center; gap: 6px; margin-inline-start: 2px; font-size: 11px; color: var(--text-2); }
+.cache-edited-swatch { width: 8px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 55%, var(--text)); }
 /* the size menus a fixed width, so the bars and trash cans line up down the card */
 .pref-control > select.cache-size { flex: 0 0 104px; width: 104px; }
 /* the names' column only as wide as the longest, "Immich thumbnails", so the bars have the room */

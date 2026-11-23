@@ -324,6 +324,8 @@
   "cache.usage": "{used} sur {limit}",
   "cache.measuring": "Mesure…",
   "cache.clear": "Vider : {name}",
+  "cache.edited": "Aperçus des photos retouchées : {size}",
+  "cache.edited.hint": "conservés le plus longtemps, jusqu’à la moitié de la limite, pour que le tri d’une photo retouchée s’ouvre aussitôt. un aperçu est refait après une retouche",
   "cache.title": "Cache",
   "modules.global": "Global",
   "modules.masks": "Masques",
