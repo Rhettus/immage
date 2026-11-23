@@ -190,6 +190,12 @@ pub async fn settings_set(
     if immich_map_changed {
         if let Some(state) = tauri::Manager::try_state::<crate::AppState>(&app) {
             state.clip_providers.invalidate_immich();
+            // the importer's SQLite is read: not on this task's thread
+            let (runtime, app) = (state.runtime.clone(), app.clone());
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                crate::clip_providers::refresh_share_roots(&app, &runtime)
+            })
+            .await;
         }
     }
     Ok(())

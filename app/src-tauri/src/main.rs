@@ -321,6 +321,10 @@ fn main() {
             let handle = app.handle().clone();
             std::thread::spawn(move || supervise(handle));
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
+            // the share roots, for telling an unmounted share from an empty
+            // folder; reads the importer's SQLite, so off the event loop
+            let (handle, root_runtime) = (app.handle().clone(), runtime.clone());
+            std::thread::spawn(move || clip_providers::refresh_share_roots(&handle, &root_runtime));
             // stacks saved in Macro Studio while Immage was closed
             let handle = app.handle().clone();
             std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());

@@ -302,6 +302,26 @@ pub fn effective_immich_path_map(app: &AppHandle, runtime: &Path) -> PathMap {
     PathMap { immich, local }
 }
 
+/// Recompute the configured share roots (the effective Immich local root and
+/// an enabled, valid morfPhoto local path) for `volumes`. Reads settings and the
+/// importer's SQLite: call off the event loop. Takes only volumes' leaf lock.
+pub fn refresh_share_roots(app: &AppHandle, runtime: &Path) {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    // both sides, as build_immich_coverage: the importer's destination alone
+    // (no Immich server path) may be an ordinary local folder
+    let map = effective_immich_path_map(app, runtime);
+    let local = map.local.trim();
+    if !map.immich.trim().is_empty() && !local.is_empty() && Path::new(local).is_absolute() {
+        roots.push(PathBuf::from(local));
+    }
+    let morf = morf_photo::load(runtime);
+    if morf.enabled && morf.validate_mapping().is_ok() {
+        roots.push(PathBuf::from(morf.local_path.trim()));
+    }
+    roots.dedup();
+    crate::volumes::set_share_roots(roots);
+}
+
 fn read_importer_path_defaults(catalog_path: &Path) -> Option<(String, String)> {
     if !catalog_path.is_file() {
         return None;

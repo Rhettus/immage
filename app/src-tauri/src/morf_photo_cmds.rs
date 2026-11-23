@@ -129,6 +129,7 @@ pub(crate) async fn morf_photo_save(
                 morf_photo::clear_caches(Some(&runtime));
             }
             app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+            crate::clip_providers::refresh_share_roots(&app, &runtime);
             return Ok(());
         }
         if settings.enabled {
@@ -144,6 +145,7 @@ pub(crate) async fn morf_photo_save(
             morf_photo::clear_caches(Some(&runtime));
         }
         app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+        crate::clip_providers::refresh_share_roots(&app, &runtime);
         Ok(())
     })
     .await
@@ -173,6 +175,7 @@ pub(crate) async fn morf_photo_forget(
         morf_photo::clear_caches(Some(&runtime));
         thumbs.clear();
         app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+        crate::clip_providers::refresh_share_roots(&app, &runtime);
         match morf_photo::entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err("Could not remove morfPhoto API key".into()),

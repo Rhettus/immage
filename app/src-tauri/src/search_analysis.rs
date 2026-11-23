@@ -559,11 +559,12 @@ impl AvailabilityProbe {
         } else {
             0
         };
+        let unmounted = crate::volumes::unmounted_roots();
         let rows: Vec<(i64, String)> = rows
             .into_iter()
             .filter(|(_, path, needs_meta, needs_edit)| {
                 let p = Path::new(path);
-                if !selected(p, selection) {
+                if !selected(p, selection) || crate::volumes::under_any(&unmounted, p) {
                     return false;
                 }
                 let (m, e) = row_needs_local_work(p, *needs_meta, *needs_edit, providers);
@@ -581,11 +582,16 @@ impl AvailabilityProbe {
 fn probe_availability(rows: Vec<(i64, String)>, stop: &AtomicBool) -> AvailabilityObservations {
     let mut answers = HashMap::new();
     let mut observations = Vec::new();
+    let unmounted = crate::volumes::unmounted_roots();
     for (id, path) in rows {
         if stop.load(Ordering::Acquire) {
             break;
         }
         let photo = Path::new(&path);
+        // an unmounted share is neither probed nor counted (count_backlog)
+        if crate::volumes::under_any(&unmounted, photo) {
+            continue;
+        }
         let mount = crate::volumes::mount_identity(photo);
         let answering = *answers
             .entry(mount)
@@ -611,6 +617,21 @@ fn count_backlog(
     unavailable: &Mutex<HashMap<i64, String>>,
     page: u32,
 ) -> Option<u32> {
+    // one snapshot of the share roots and the mount table for the whole count
+    let unmounted = crate::volumes::unmounted_roots();
+    count_backlog_without(cache, selection, providers, stop, unavailable, &unmounted, page)
+}
+
+/// count_backlog leaving out rows under the given unmounted share roots.
+fn count_backlog_without(
+    cache: &SearchCache,
+    selection: &serde_json::Value,
+    providers: &ActiveProviders,
+    stop: &AtomicBool,
+    unavailable: &Mutex<HashMap<i64, String>>,
+    unmounted: &[PathBuf],
+    page: u32,
+) -> Option<u32> {
     let (mut after, mut total) = (0i64, 0u32);
     let mut still_unavailable = HashSet::new();
     loop {
@@ -622,7 +643,7 @@ fn count_backlog(
         after = rows.last().map_or(0, |row| row.0);
         rows.retain(|(_, path, needs_meta, needs_edit)| {
             let p = Path::new(path);
-            if !selected(p, selection) {
+            if !selected(p, selection) || crate::volumes::under_any(unmounted, p) {
                 return false;
             }
             let (m, e) = row_needs_local_work(p, *needs_meta, *needs_edit, providers);
@@ -780,6 +801,25 @@ mod tests {
             count_backlog(&cache, &config, &ActiveProviders::default(), &stop, &Mutex::default(), 8),
             Some(7)
         );
+    }
+
+    #[test]
+    fn backlog_leaves_out_unmounted_share_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        for p in ["/mnt/nas/a.jpg", "/mnt/nas/b/c.jpg", "/mnt/nas2/d.jpg", "/local/e.jpg"] {
+            cache.upsert_variant(p, "", "s", "e", None, None, None).unwrap();
+        }
+        let config = json!({"folders":["/mnt","/local"]});
+        let stop = AtomicBool::new(false);
+        let local_only = ActiveProviders::default();
+        let count = |unmounted: &[PathBuf], page| {
+            count_backlog_without(&cache, &config, &local_only, &stop, &Mutex::default(), unmounted, page)
+        };
+        for page in [1, 2, 8] {
+            assert_eq!(count(&[], page), Some(4), "page {page}");
+            assert_eq!(count(&[PathBuf::from("/mnt/nas")], page), Some(2), "page {page}");
+        }
     }
 
     #[test]

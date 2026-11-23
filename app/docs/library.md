@@ -50,6 +50,11 @@ Open the **Folders** card in the **Library** panel.
   connected by address; double-click the name or address to give it a
   name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
+  A folder inside the local folder set up for Immich or morfPhoto is always
+  treated as a network share. If that share isn't mounted, its drive heading
+  gets a red dot and its folders can't be opened or browsed, and nothing in
+  them is changed. The dot turns green and the folders are read again once the
+  share is mounted.
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
   after the file it is on. Photos you opened before appear straight away from
@@ -435,9 +440,10 @@ Searching the library and narrowing a folder both happen here.
   example while waiting for a quiet spell on a network drive or between batches.
   Find checks photo availability in batches, including while analysis is paused.
   The count excludes folders already served by morfPhoto or Immich CLIP as well
-  as photos found missing or offline, and includes them again if a server stops
-  answering or files return. A pause symbol means analysis is paused, and a
-  green check means no photo is waiting. While the
+  as photos found missing or offline, and photos in a folder on an unmounted
+  share (see [Folders](#folders)) until it is mounted again. It includes them
+  again if a server stops answering or files return. A pause symbol means
+  analysis is paused, and a green check means no photo is waiting. While the
   count is being worked out the tooltip says so. Click it to pause or resume,
   the same pause as **Pause / Resume** in Preferences > General > Background
   work. Before the model is downloaded the icon is dimmed and does nothing; its

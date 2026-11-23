@@ -149,7 +149,10 @@ The worker starts from the saved catalog and reuses thumbnails when available.
    Set **Folder on this computer** to the mounted share with the same
    contents, for example `/Volumes/photos`. A file listed as
    `/photos/2026/example.raw` then opens from
-   `/Volumes/photos/2026/example.raw`.
+   `/Volumes/photos/2026/example.raw`. Folders inside that folder are always
+   treated as network shares: when the share isn't mounted, Library shows them
+   as offline (a red dot on the drive heading) and they can't be opened until
+   it is mounted again.
 3. Select **Test**, turn on **Enable Immage Accelerator**, and select **Save**.
    Add the mounted folder to your [Library](library.md).
 

@@ -93,6 +93,13 @@ Bug fixes
   (including Light and Grey themes), its close button matches the culling
   preview's **×** icon, and reopening Import refreshes the active card or folder
   so newly added photos and thumbnails appear immediately.
+- **Offline shares for Immich and morfPhoto folders:** A folder inside the local
+  folder set up for Immich or morfPhoto is always treated as a network share.
+  When that share isn't mounted, its drive heading in Folders gets a red dot
+  and its folders can't be opened, instead of showing an empty folder. Its
+  photos are left out of Find's analysis count until the share is mounted
+  again, and nothing in the folder is changed. When the share returns, the dot
+  turns green and the folders are read again.
 
 ## 0.47.1
 

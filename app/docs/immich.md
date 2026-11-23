@@ -106,7 +106,9 @@ download.
   server, for example `/mnt/photos`, as listed in Immich under
   Administration › External Libraries.
 - **Folder on this computer**: the same photos here: a network share, or a
-  local or external drive. Click **Choose…**.
+  local or external drive. Click **Choose…**. Folders inside it are always
+  treated as network shares: when the share isn't mounted, Library shows them
+  as offline (a red dot on the drive heading) instead of as empty folders.
 
 For example, with **External library path** `/mnt/photos` and **Folder on this computer** `/Volumes/photos`:
 
