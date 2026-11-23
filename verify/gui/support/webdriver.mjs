@@ -179,6 +179,11 @@ export class AppDriver {
     const png = await this.command('GET', '/screenshot');
     await writeFile(path, Buffer.from(png, 'base64'));
   }
+  // the page as a PNG buffer, for a case to read its pixels
+  async capture() {
+    await this.guard();
+    return Buffer.from(await this.command('GET', '/screenshot'), 'base64');
+  }
   async screenshotElement(path, selector) {
     await this.guard();
     const element = await this.command('POST', '/element', { using: 'css selector', value: selector });

@@ -77,10 +77,12 @@ import { localSearch } from './specs/local-search.mjs';
 import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
 import { findLive, findNoClip, findPanelMemory, findSizes, findSaved } from './specs/find.mjs';
 import { wheelUndo } from './specs/wheel-undo.mjs';
+import { historyPaint } from './specs/history-paint.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'left-scroll': leftScroll,
+  'history-paint': historyPaint,
   'panel-peek': panelPeek,
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,
