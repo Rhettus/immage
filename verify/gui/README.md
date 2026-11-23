@@ -533,7 +533,9 @@ launching with `ecp-a`. The case opens culling once (which stores the preview
 size), edits `ecp-a`'s Exposure in the editor, moves to `ecp-b`, and polls this
 run's `cache/app.immage/thumbs` folder, read from the Node runner, for a new
 `edit-` file (up to 30 s). It then culls `ecp-a` from the grid and requires a
-non-blank preview within 3 s and no further `edit-` file. Timings are recorded.
+non-blank preview within 3 s and no further `edit-` file. Last it edits `ecp-b`,
+presses G before the autosave (the photo stays open behind the grid), and
+requires `ecp-b`'s `edit-` file and the same quick cull. Timings are recorded.
 It runs alone, after startup, and is left out of `all`:
 `node verify/gui/run.mjs --config verify/gui/local.json --case edited-culling-preview`.
 

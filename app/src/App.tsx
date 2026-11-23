@@ -1946,6 +1946,19 @@ export default function App() {
   };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
+  // the grid keeps the edited photo open, so no close queues its culling
+  // preview: queue it here once its edits are saved (editedPreviews.ts)
+  useEffect(() => {
+    const s = session.current;
+    if (!grid || !s) return;
+    let left = false;
+    void s.saveForPreview().then(() => {
+      if (left || session.current !== s) return;
+      const entry = imagesRef.current.find((i) => i.imgid === s.imgid);
+      if (entry) editedPreviews.schedule(entry);
+    }).catch(() => {});
+    return () => { left = true; };
+  }, [grid]);
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewer = useRef<HTMLDivElement>(null);
   // the edit's pane: the whole viewer, or its half beside the before

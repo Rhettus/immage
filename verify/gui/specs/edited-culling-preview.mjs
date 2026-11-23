@@ -45,6 +45,58 @@ const tile = (t, prefix) => until(() => t.driver.observe(p => {
 const activeTitle = () => document.querySelector('.filmstrip .thumb.active')?.title ?? null;
 const edits = async t => (await t.thumbCacheNames()).filter(n => n.startsWith('edit-'));
 
+// drags Exposure to +1 (or -1 when already positive) in the open editor and
+// waits for the changed frame; `saved` ms are then left for the autosave
+async function editExposure(t, saved) {
+  await settledPhoto(t);
+  await panel(t, 'basic');
+  await reveal(t, '[data-control-id="exposure"] label');
+  await reveal(t, rangeSelector('exposure'));
+  const slider = await until(async () => { const s = await t.driver.observe(read.exposure); return s?.visible && s.hit && !s.disabled && s; }, 'visible Exposure slider');
+  const baseline = await settledPhoto(t);
+  const target = slider.value > 0 ? -1 : 1;
+  const { x, y, width, height } = slider.bounds;
+  const at = v => ({ x: x + 8 + (width - 16) * (v - slider.min) / (slider.max - slider.min), y: y + height / 2 });
+  await t.driver.drag(at(slider.value), at(target));
+  const changed = await until(async () => { const s = await t.driver.observe(read.exposure); return Math.abs(s.value - target) < .3 && s; }, `Exposure near ${target}`);
+  await settledPhoto(t, p => p.hash !== baseline.hash);
+  await pause(saved);
+  return changed.value;
+}
+
+// culls `name` from the grid: drawn within the limit, not blank, no new edit- file
+async function cullFromGrid(t, name, settled) {
+  const cell = await tile(t, name);
+  await t.driver.point(cell.x, cell.y);
+  // a single selection is the active photo (Filmstrip marks .selected only for several)
+  await until(async () => (await t.driver.observe(activeTitle)) === cell.title, `${name} selected`);
+  await t.driver.move(cell.x, cell.y);
+  const opened = Date.now();
+  await t.driver.keys('f');
+  const drawn = await until(() => t.driver.observe(lightboxDrawn, name), `${name} culling preview drawn`, 60000);
+  const drawMs = Date.now() - opened;
+  assert(!drawn.error, `preview shows no error (${drawn.error})`);
+  const pixels = await t.driver.observe(lightboxPixels);
+  await t.evidence(`culling-${name}`);
+  const after = await edits(t);
+  assert(pixels && pixels.alpha > 250 && pixels.luma > 1 && pixels.spread > 8, `culling preview is not blank (${JSON.stringify(pixels)})`);
+  assert.deepEqual(after, settled, `culling ${name} created no further edit- file`);
+  assert(drawMs <= DRAW_LIMIT_MS, `${name} culling preview drawn in ${drawMs} ms, limit ${DRAW_LIMIT_MS} ms`);
+  await t.driver.keys('\uE00C');
+  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'culling preview closes');
+  return { drawMs, pixels, canvas: [drawn.width, drawn.height], after };
+}
+
+// waits for an edit- file not in `known`
+async function newEditFile(t, known, what) {
+  const watch = Date.now();
+  const fresh = await until(async () => {
+    const f = (await edits(t)).filter(n => !known.includes(n));
+    return f.length ? f : null;
+  }, what, APPEAR_LIMIT_MS);
+  return { fresh, ms: Date.now() - watch };
+}
+
 export async function editedCullingPreview(t) {
   const files = await t.fixtureFiles();
   if (!t.fixture.raw || !ECP_NAMES.every(n => files.some(f => f.startsWith(n + '.'))))
@@ -72,20 +124,8 @@ export async function editedCullingPreview(t) {
   await t.driver.point(a.x, a.y, 2);
   await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'double-click opens the editor');
   await until(() => t.driver.observe(n => document.querySelector('.filmstrip .thumb.active')?.title === n, a.title), 'ecp-a active');
-  await settledPhoto(t);
-  await panel(t, 'basic');
-  await reveal(t, '[data-control-id="exposure"] label');
-  await reveal(t, rangeSelector('exposure'));
-  let slider = await until(async () => { const s = await t.driver.observe(read.exposure); return s?.visible && s.hit && !s.disabled && s; }, 'visible Exposure slider');
-  const baseline = await settledPhoto(t);
-  const target = slider.value > 0 ? -1 : 1;
-  const { x, y, width, height } = slider.bounds;
-  const at = v => ({ x: x + 8 + (width - 16) * (v - slider.min) / (slider.max - slider.min), y: y + height / 2 });
-  await t.driver.drag(at(slider.value), at(target));
-  const changed = await until(async () => { const s = await t.driver.observe(read.exposure); return Math.abs(s.value - target) < .3 && s; }, `Exposure near ${target}`);
-  await settledPhoto(t, p => p.hash !== baseline.hash);
-  await pause(1800); // autosave of the sidecar
-  t.measure({ name: 'edited', exposure: changed.value });
+  const exposure = await editExposure(t, 1800);
+  t.measure({ name: 'edited', exposure });
 
   // 3. move to ecp-b in the editor
   const next = await tile(t, 'ecp-b');
@@ -96,15 +136,8 @@ export async function editedCullingPreview(t) {
   const firstFrameMs = Date.now() - moved;
 
   // 4. the edit- entry appears in the thumbnail cache
-  const watch = Date.now();
-  const created = await until(async () => {
-    const now = await edits(t);
-    const fresh = now.filter(n => !before.includes(n));
-    return fresh.length ? { fresh, now } : null;
-  }, 'an edit- preview in the thumbnail cache', APPEAR_LIMIT_MS);
-  const appearMs = Date.now() - watch;
-  assert(created.fresh.length >= 1, 'a new edit- cache file exists');
-  t.measure({ name: 'edit-preview-appeared', afterFirstFrameMs: appearMs, sinceMoveMs: Date.now() - moved, firstFrameMs, files: created.fresh });
+  const created = await newEditFile(t, before, 'an edit- preview of ecp-a in the thumbnail cache');
+  t.measure({ name: 'edit-preview-appeared', afterFirstFrameMs: created.ms, sinceMoveMs: Date.now() - moved, firstFrameMs, files: created.fresh });
   await pause(1500); // let a second, unwanted, write show up
   const settled = await edits(t);
 
@@ -112,24 +145,25 @@ export async function editedCullingPreview(t) {
   await t.driver.keys('g');
   await until(() => t.driver.observe(inGrid), 'grid view again');
   await pause(1000);
-  const cell = await tile(t, 'ecp-a');
-  await t.driver.point(cell.x, cell.y);
-  // a single selection is the active photo (Filmstrip marks .selected only for several)
-  await until(async () => (await t.driver.observe(activeTitle)) === cell.title, 'ecp-a selected');
-  await t.driver.move(cell.x, cell.y);
-  const opened = Date.now();
-  await t.driver.keys('f');
-  const drawn = await until(() => t.driver.observe(lightboxDrawn, 'ecp-a'), 'edited culling preview drawn', 60000);
-  const drawMs = Date.now() - opened;
-  assert(!drawn.error, `preview shows no error (${drawn.error})`);
-  const pixels = await t.driver.observe(lightboxPixels);
-  await t.evidence('edited-culling-preview');
-  const after = await edits(t);
-  t.measure({ name: 'edited-culling-preview', drawMs, limitMs: DRAW_LIMIT_MS, pixels, canvas: [drawn.width, drawn.height],
-    appearMs, firstFrameMs, editFilesBefore: before, editFilesSettled: settled, editFilesAfter: after });
-  assert(pixels && pixels.alpha > 250 && pixels.luma > 1 && pixels.spread > 8, `culling preview is not blank (${JSON.stringify(pixels)})`);
-  assert.deepEqual(after, settled, 'culling the edited RAW created no further edit- file');
-  assert(drawMs <= DRAW_LIMIT_MS, `edited culling preview drawn in ${drawMs} ms, limit ${DRAW_LIMIT_MS} ms`);
-  await t.driver.keys('');
-  await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'culling preview closes');
+  const first = await cullFromGrid(t, 'ecp-a', settled);
+  t.measure({ name: 'edited-culling-preview', limitMs: DRAW_LIMIT_MS, ...first, appearMs: created.ms, firstFrameMs,
+    editFilesBefore: before, editFilesSettled: settled });
+
+  // 6. back to the grid with the edited photo still open: edit ecp-b (open in
+  // the editor since step 3), press G before its autosave, and its preview is
+  // prepared too (the grid saves it first)
+  const bCell = await tile(t, 'ecp-b');
+  await t.driver.point(bCell.x, bCell.y, 2);
+  await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), 'double-click returns to the editor');
+  await until(async () => (await t.driver.observe(activeTitle)) === bCell.title, 'ecp-b active');
+  const exposureB = await editExposure(t, 100);
+  const left = Date.now();
+  await t.driver.keys('g');
+  await until(() => t.driver.observe(inGrid), 'grid view with ecp-b open');
+  const createdB = await newEditFile(t, first.after, 'an edit- preview of ecp-b after returning to the grid');
+  t.measure({ name: 'grid-edit-preview-appeared', exposure: exposureB, sinceGridMs: Date.now() - left, files: createdB.fresh });
+  await pause(1500);
+  const settledB = await edits(t);
+  const second = await cullFromGrid(t, 'ecp-b', settledB);
+  t.measure({ name: 'grid-edited-culling-preview', limitMs: DRAW_LIMIT_MS, ...second, editFilesSettled: settledB });
 }

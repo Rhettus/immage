@@ -822,11 +822,13 @@ The toolbar magnifier and the menu use the photo under the pointer, else the
 selected photo, else the first photo in the grid; the thumbnail icon opens
 that thumbnail's photo.
 
-When you leave an edited RAW photo after editing, Immage prepares its culling
-preview in the background, once the grid's thumbnails have finished loading
-and the photo you open next has appeared, and while culling is closed, so culling it next opens at once instead of
-rendering the edits again. This starts after you have opened culling at least
-once (so the size is known), and is skipped while **Camera previews** is on.
+When you leave an edited RAW photo, for another photo or for the grid, Immage
+prepares its culling preview in the background, so culling it next opens at
+once instead of rendering the edits again. It waits until the grid's
+thumbnails have finished loading and the photo you open next has appeared,
+and does not run while culling is open. This starts after you have opened
+culling at least once (so the size is known), and is skipped while **Camera
+previews** is on.
 Opening culling or another folder cancels what is still waiting.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
