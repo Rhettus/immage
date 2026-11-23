@@ -3,6 +3,7 @@ import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
 import { colorProfiles } from "./specs/color-profiles.mjs";
 import { maskFold } from './specs/mask-fold.mjs';
+import { overlayOvershoot } from './specs/overlay-overshoot.mjs';
 import { maskHiddenEdit } from './specs/mask-hidden-edit.mjs';
 import { maskMenu } from './specs/mask-menu.mjs';
 import { maskInvertRange } from './specs/mask-invert-range.mjs';
@@ -116,6 +117,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'mask-fold': maskFold,
   'mask-hidden-edit': maskHiddenEdit,
   'mask-menu': maskMenu,
+  'overlay-overshoot': overlayOvershoot,
   'mask-invert-range': maskInvertRange,
   'negative-profile-memory': negativeProfileMemory,
   'gui-benchmark': guiBenchmark,
