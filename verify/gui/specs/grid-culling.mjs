@@ -510,7 +510,7 @@ const PRIORITY_LIMIT_MS = 8000;
 // The lightbox is drawn when its canvas has pixels and the status line has
 // stopped saying "Loading preview…" (GridCulling's busy flag), on the photo
 // named in the title row.
-const lightboxDrawn = (expectName) => {
+export const lightboxDrawn = (expectName) => {
   const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
   const box = root?.querySelector('.culling-lightbox'), canvas = root?.querySelector('canvas');
   if (!box || !canvas?.width) return null;

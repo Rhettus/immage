@@ -163,6 +163,21 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  // edited-culling-preview: the feature is RAW-only, so two copies of a corpus
+  // RAW (never the configured fixture, which may be a JPEG) are the launch photo
+  // and its neighbour. It needs the launch file to itself: run it alone.
+  if (selectedCases.includes('edited-culling-preview')) {
+    if (selectedCases.some(n => !['startup', 'edited-culling-preview'].includes(n)))
+      throw Error('edited-culling-preview launches with its own RAW copies and must run alone (after startup)');
+    const corpus = join(root, 'benchmarking/corpus');
+    const names = await readdir(corpus).catch(() => []);
+    const source = names.includes('P6060404.ORF') ? 'P6060404.ORF' : names.find(n => /\.(orf|arw|cr2|rw2)$/i.test(n));
+    if (!source) throw new Blocked('edited-culling-preview needs a RAW (*.ORF, *.ARW, *.CR2 or *.RW2) in the local benchmarking/corpus/');
+    const ext = source.match(/\.[^.]+$/)[0];
+    for (const stem of ['ecp-a', 'ecp-b']) await copyFile(join(corpus, source), join(fixtures, stem + ext));
+    copiedFixture = join(fixtures, 'ecp-a' + ext);
+    report.editedCullingPreviewFixture = { source, copies: ['ecp-a' + ext, 'ecp-b' + ext] };
+  }
   if (selectedCases.includes('advanced-presets')) {
     await copyFile(join(root, 'verify/gui/support/exposure.dtpreset'), join(fixtures, 'exposure.dtpreset'));
     report.modulePresetFixture = 'Exposure preset from the darktable exporter';
@@ -527,6 +542,8 @@ try {
       // this run's own copied fixture folder and darktable config folder, for cases that add files to them
       fixtureDir: fixtures, crossFolderTarget, configDir: join(profile, 'data', 'app.immage', 'config'),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
+      // names in this run's own thumbnail cache folder (cache.rs, XDG_CACHE_HOME/app.immage/thumbs); empty before it exists
+      thumbCacheNames: () => readdir(join(profile, 'cache', 'app.immage', 'thumbs')).catch(() => []),
       thumbnailCacheEntry: async (path, version) => {
         if (!path.startsWith(fixtures + '/')) throw Error('Thumbnail probe must use a disposable fixture');
         const cache = join(profile, 'cache', 'app.immage', 'thumbs');

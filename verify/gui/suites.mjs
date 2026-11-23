@@ -61,6 +61,8 @@ export const cases = {
     limitation: 'Not yet run live. The 8 s bound is generous and the pending-thumbnail load depends on fixture decode cost (a JPEG may finish its thumbnails before the lightbox opens); the signal is the lightbox canvas drawn with an empty culling-status.' },
   'new-photo-defaults': { scope: 'a new raw: Preferences Profile (Standard) over the New photos preset\'s AgX Default, Lensfun correction method and its history step, opening a photo from a non-Basic panel or from Presets leaves Adjust with only Basic open, and a crop in progress is applied to the photo left', fixture: 'a Sony ARW (embedded lens data) as the config fixture; a second copy added by the runner', liveValidated: true,
     limitation: 'Passed live on 33c9949 with DSC07636.ARW. Needs a raw with embedded lens correction data whose lens Lensfun knows; runs at the small darktable memory level, as two 24 MP raws at the default level ran the runner into its memory guard.' },
+  'edited-culling-preview': { scope: 'after culling was opened once, leaving an edited RAW for another photo in the editor renders its culling preview into the thumbnail disk cache (a new edit- file within 30 s of the next photo\'s first frame); culling that RAW from the grid then draws a non-blank preview within 3 s and creates no further edit- file; timings are recorded', fixture: 'a RAW from the local benchmarking/corpus (P6060404.ORF, else any ORF/ARW/CR2/RW2); copied twice as ecp-a and ecp-b, ecp-a is the launch file; blocked when none exists; runs alone', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK, P6060404.ORF copies; empty workspace 9 floating/maximized, viewport 1706x907, original workspace 2 restored. Run 2026-11-23T11-33-42.425Z_9c5c24e_bc60cd9b: edit- file 3.1 s after the next photo\'s first frame, culling preview drawn in 226 ms, no second edit- file.',
+    limitation: 'Reads the run profile\'s thumbs cache folder from the Node runner for the edit- file names; does not prove the drawn pixels came from the file rather than a fresh render (the 3 s bound and the absence of a second edit- file are the signals). The configured fixture is ignored.' },
   'open-failure-recovery': { scope: 'a photo opened, Exposure moved, then a truncated file opened shows "could not open <file>" and never "no image open"; a good photo opened afterwards takes an Exposure edit and renders with no "no image open"; two quick opens leave only the last photo active', fixture: 'any (two good copies and a truncated copy made as open-b, open-c, open-bad)', liveValidated: false,
     limitation: 'Not yet run live. Assumes the truncated file fails to decode in the engine; a JPEG cut to 2 KB is expected to, which the case reports as blocked if it opens.' },
   'photo-filter': { scope: 'a folder containing one photo and non-photo text, sidecar, partial-transfer and PDF files shows only the photo in the grid', fixture: 'any (decoy files added)', liveValidated: true,
@@ -286,6 +288,8 @@ export function resolveCases(name) {
   // These two cases seed their own launch state and deliberately validate the
   // initial grid/thumbnail before a full-resolution editor frame exists.
   const startupless = new Set(['startup-restore', 'dng-thumbnail']);
+  // launches with its own RAW copies: left out of 'all', and not mixed with other cases
+  const alone = 'edited-culling-preview';
   // a comma list runs several cases in one launch: startup,masks,heal
   if (name.includes(',')) {
     const names = name.split(',').map(s => s.trim()).filter(Boolean);
@@ -293,9 +297,11 @@ export function resolveCases(name) {
     const onlyStartupless = names.length === 1 && startupless.has(names[0]);
     if (names.some(n => startupless.has(n)) && !onlyStartupless)
       throw Error('startup-restore and dng-thumbnail must run alone without the smoke startup prerequisite');
+    if (names.includes(alone) && names.some(n => n !== alone && n !== 'startup'))
+      throw Error(`${alone} must run alone: it launches with its own RAW copies`);
     return onlyStartupless ? names : [...new Set(['startup', ...names])];
   }
-  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup'&&!startupless.has(c))];
+  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup'&&c!==alone&&!startupless.has(c))];
   if (Object.hasOwn(suites, name)) return suites[name];
   if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);
   return name === 'startup' || startupless.has(name) ? [name] : ['startup', name];

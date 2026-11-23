@@ -65,6 +65,7 @@ import { immichPrefs } from './specs/immich-prefs.mjs';
 import { morfphotoPrefs } from './specs/morfphoto-prefs.mjs';
 import { detailGroup } from './specs/detail-group.mjs';
 import { gridCulling, gridCullingControls, gridCullingPriority, virtualCopyKeywords } from './specs/grid-culling.mjs';
+import { editedCullingPreview } from './specs/edited-culling-preview.mjs';
 import { openFailureRecovery } from './specs/open-failure.mjs';
 import { photoFilter } from './specs/photo-filter.mjs';
 import { startupRestore } from './specs/startup-restore.mjs';
@@ -85,6 +86,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'grid-culling-controls': gridCullingControls,
   'grid-culling-priority': gridCullingPriority,
   'virtual-copy-keywords': virtualCopyKeywords,
+  'edited-culling-preview': editedCullingPreview,
   'open-failure-recovery': openFailureRecovery,
   'photo-filter': photoFilter,
   'startup-restore': startupRestore,

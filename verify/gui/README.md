@@ -525,6 +525,18 @@ the system WebKit driver. `library-workers` checks the 2-worker default, saves
 The headless DNG verifier covers all EXIF orientations and edited-photo
 behavior; the GUI DNG case verifies the visible fallback thumbnail only.
 
+`edited-culling-preview` checks the render-ahead of an edited RAW's culling
+preview. The feature is RAW-only, so the runner ignores the configured fixture
+and copies a RAW from the local `benchmarking/corpus/` (`P6060404.ORF`, else any
+ORF/ARW/CR2/RW2; the case is blocked when there is none) as `ecp-a` and `ecp-b`,
+launching with `ecp-a`. The case opens culling once (which stores the preview
+size), edits `ecp-a`'s Exposure in the editor, moves to `ecp-b`, and polls this
+run's `cache/app.immage/thumbs` folder, read from the Node runner, for a new
+`edit-` file (up to 30 s). It then culls `ecp-a` from the grid and requires a
+non-blank preview within 3 s and no further `edit-` file. Timings are recorded.
+It runs alone, after startup, and is left out of `all`:
+`node verify/gui/run.mjs --config verify/gui/local.json --case edited-culling-preview`.
+
 For a floating Hyprland test window, maximize each newly opened ws9 app window
 only when its client is not already maximized. The maximize dispatch is a
 toggle; do not send it repeatedly to an already maximized window. Confirm the

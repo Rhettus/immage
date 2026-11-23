@@ -15,9 +15,10 @@ const temp=()=>mkdtempSync(join(tmpdir(),'immage-gui-unit-'));
 test('every declared GUI case resolves to an implementation, without executing it',()=>{
  for(const name of Object.keys(cases))assert.equal(typeof implementationFor(name),'function',name);
  // 'all' leaves out the cases that must run alone, without the startup prerequisite
- const alone=['dng-thumbnail','startup-restore'];
+ const alone=['dng-thumbnail','edited-culling-preview','startup-restore'];
  assert.deepEqual(Object.keys(cases).filter(n=>!resolveCases('all').includes(n)).sort(),alone);
- for(const name of alone)assert.deepEqual(resolveCases(name),[name]);
+ for(const name of alone)assert.deepEqual(resolveCases(name),name==='edited-culling-preview'?['startup',name]:[name]);
+ assert.throws(()=>resolveCases('edited-culling-preview,exposure'));
  for(const name of ['toString','__proto__','missing'])assert.throws(()=>resolveCases(name));
 });
 test('hidden panels have no generated control cases; each names its written case',()=>{
