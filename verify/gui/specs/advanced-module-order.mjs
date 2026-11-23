@@ -48,7 +48,7 @@ async function readOrder(t) {
 // focus a row and press Alt+Arrow on it; the page moves focus back to the row afterwards
 async function altKey(t, key, arrow) {
   await t.driver.observe((sel, k) => document.querySelector(`${sel} .order-row[data-key="${CSS.escape(k)}"]`)?.focus(), DIALOG, key);
-  await t.driver.keys(ALT, arrow);
+  await t.driver.chord(ALT, arrow);
 }
 
 export async function advancedModuleOrder(t) {

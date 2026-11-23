@@ -35,7 +35,7 @@ const count = (t, selector) => t.driver.observe(s => document.querySelectorAll(s
 
 // the scratch folders sit beside the run's fixture folder, inside the run folder
 export const sharePaths = fixtureDir => {
-  const root = join(dirname(fixtureDir), 'unmounted-share');
+  const root = join(dirname(fixtureDir), 'unmounted-share-fixtures');
   return { root, nas: join(root, 'nas'), local: join(root, 'local') };
 };
 
