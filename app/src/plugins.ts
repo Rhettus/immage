@@ -87,7 +87,7 @@ const kinds: PluginKind[] = [
     sendDefault: "original",
     handoff: "helicon",
     linearDng: true,
-    appHints: { mac: ["HeliconFocus.app", "Helicon Focus*.app"], win: ["Helicon Focus/HeliconFocus.exe"] },
+    appHints: { mac: ["HeliconFocus.app", "Helicon Focus*.app"], win: ["Helicon Software/Helicon Focus*/HeliconFocus.exe", "Helicon Focus/HeliconFocus.exe"] },
     onReturn: [],
     note: "Choose RAW, 16-bit TIFFs, or Auto DNG from Edit In.",
   },
