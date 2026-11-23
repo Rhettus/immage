@@ -129,6 +129,8 @@ Install Helicon Focus on Windows or macOS. [Download Helicon Focus](https://www.
 3. For either interactive option, Helicon Focus defaults to saving in the
    first photo's folder. Immage lists the composite when you save it.
    Quit the Helicon Focus session when you are ready to send another bracket.
+   If you save the composite next to the 16-bit TIFFs instead, Immage moves
+   it to the first photo's folder when you quit Helicon Focus.
 
 DNG output requires Helicon Focus Pro, Adobe DNG Converter, and the
 Raw-in-DNG-out loader. [Helicon Focus RAW requirements](https://www.heliconsoft.com/focus/help9/english/HeliconFocus.html#processing-of-raw-files)

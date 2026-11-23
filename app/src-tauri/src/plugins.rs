@@ -654,6 +654,15 @@ pub async fn plugin_helicon_focus(
                 .arg("--preferred-output-path").arg(&folder)
                 .spawn().map_err(|e| format!("Could not open Helicon Focus: {e}"))?;
             let mut reported = HashSet::new();
+            let send_back = |result: String| {
+                let r = Return { original: original.clone(), result, plugin: id.clone(), applied: false };
+                if let Err(e) = plugins.record_new(r.clone()) {
+                    eprintln!("{e}");
+                }
+                let _ = app.emit("plugin-returned", json!({
+                    "token": job, "plugin": r.plugin, "original": r.original, "result": r.result,
+                }));
+            };
             loop {
                 let status = child.try_wait().map_err(|e| format!("Could not wait for Helicon Focus: {e}"))?;
                 if let Ok(saved) = std::fs::read_to_string(&report) {
@@ -661,22 +670,29 @@ pub async fn plugin_helicon_focus(
                     for result in saved.split_inclusive('\n').filter_map(|line| {
                         line.strip_suffix('\n').map(|path| path.strip_suffix('\r').unwrap_or(path))
                     }) {
+                        // a save into the staging folder, beside the rendered
+                        // TIFFs, is moved out once Helicon has quit
                         let path = Path::new(result);
                         if !path.is_absolute() || path.starts_with(staging.path())
                             || inputs.iter().any(|input| input == result)
                             || photo_file(result).is_err() || !reported.insert(result.to_owned()) {
                             continue;
                         }
-                        let r = Return { original: original.clone(), result: result.to_owned(), plugin: id.clone(), applied: false };
-                        if let Err(e) = plugins.record_new(r.clone()) {
-                            eprintln!("{e}");
-                        }
-                        let _ = app.emit("plugin-returned", json!({
-                            "token": job, "plugin": r.plugin, "original": r.original, "result": r.result,
-                        }));
+                        send_back(result.to_owned());
                     }
                 }
                 if let Some(status) = status {
+                    let (moved, kept) = rescue_staged(staging.path(), &inputs, &folder);
+                    for path in moved {
+                        reported.insert(path.clone());
+                        send_back(path);
+                    }
+                    if let Some(e) = kept {
+                        // the folder is kept, so what could not be moved is not lost
+                        let left = staging.keep();
+                        return Err(format!("Helicon Focus saved into {}, and Immage could not move it beside the photos: {e}",
+                                           left.display()));
+                    }
                     // Helicon, and `open -W` with it, can quit nonzero after
                     // saving; a session that sent a result back succeeded
                     return if status.success() || !reported.is_empty() {
@@ -707,6 +723,27 @@ pub async fn plugin_helicon_focus(
         plugins.record(result.clone())?;
         Ok(Some(result))
     }).await.map_err(|e| e.to_string())?
+}
+
+// the photos Helicon saved into a hand-off's staging folder, moved beside
+// the source photos under their own names. what could not be moved stays,
+// with the first error
+fn rescue_staged(staging: &Path, inputs: &[String], folder: &Path) -> (Vec<String>, Option<String>) {
+    let (mut moved, mut kept) = (Vec::new(), None);
+    let Ok(entries) = std::fs::read_dir(staging) else { return (moved, kept) };
+    let mut saved: Vec<PathBuf> = entries.flatten().map(|e| e.path())
+        .filter(|p| !inputs.iter().any(|input| Path::new(input) == p))
+        .filter(|p| photo_file(&p.to_string_lossy()).is_ok())
+        .collect();
+    saved.sort();
+    for path in saved {
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        match publish_stack(&path, folder, &stem) {
+            Ok(target) => moved.push(target.to_string_lossy().into_owned()),
+            Err(e) => { kept.get_or_insert_with(|| e.to_string()); }
+        }
+    }
+    (moved, kept)
 }
 
 fn photocraft_tiff_fits(dimensions: Vec<(u32, u32)>) -> bool {
@@ -1277,6 +1314,23 @@ mod tests {
         let mut out = Vec::new();
         linux_apps(&["sh".into(), "*".into(), "../bin/sh".into()], &mut out);
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn rescue_staged_moves_saved_photos_but_not_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = root.path().join(".immage-helicon-x");
+        std::fs::create_dir(&staging).unwrap();
+        let input = staging.join("a.CR3.tif");
+        for f in [&input, &staging.join("a(B,R8,S4).tif"), &staging.join("inputs.txt")] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        std::fs::write(root.path().join("a(B,R8,S4).tif"), b"earlier").unwrap();
+        let (moved, kept) = rescue_staged(&staging, &[input.to_string_lossy().into_owned()], root.path());
+        assert_eq!(kept, None);
+        assert_eq!(moved, vec![root.path().join("a(B,R8,S4)-1.tif").to_string_lossy().into_owned()]);
+        assert!(input.is_file());
+        assert_eq!(std::fs::read(root.path().join("a(B,R8,S4).tif")).unwrap(), b"earlier");
     }
 
     #[test]
