@@ -67,6 +67,16 @@ Improvements
   runs them. Drag a module, or select it and press **Alt+Up** or **Alt+Down**,
   to change that photo's order. Locked modules stay put, and **Reset to default**
   restores darktable's order.
+- **PhotoCraft in Edit In:** Enable PhotoCraft in Preferences › Plugins to
+  open selected photos as full-size, editable 16-bit ProPhoto RGB layers with
+  Immage edits applied. Immage saves a layered TIFF beside the first photo for
+  smaller stacks and a PSB for larger stacks, and you can continue editing the
+  TIFF composite in Immage. The handoff shows render progress and prevents
+  duplicate jobs.
+- **Helicon Focus in Edit In:** On Windows and macOS, enable Helicon Focus in
+  Preferences › Plugins to open RAWs or 16-bit TIFFs and choose the stacking
+  settings. Auto DNG stacks RAWs in the background. The composite appears in
+  Immage and can be sent to PhotoCraft.
 
 Performance
 

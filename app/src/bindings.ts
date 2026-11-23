@@ -202,6 +202,8 @@ export const commands = {
 	pluginSetApp: (id: string, path: string) => __TAURI_INVOKE<PluginConfig[]>("plugin_set_app", { id, path }),
 	pluginChooseApp: (id: string) => __TAURI_INVOKE<PluginConfig[] | null>("plugin_choose_app", { id }),
 	pluginLaunch: (id: string, files: string[]) => __TAURI_INVOKE<null>("plugin_launch", { id, files }),
+	pluginPhotoCraft: (id: string, job: number, imgids: number[]) => __TAURI_INVOKE<string>("plugin_photo_craft", { id, job, imgids }),
+	pluginHeliconFocus: (id: string, job: number, imgids: number[], mode: HeliconMode) => __TAURI_INVOKE<PluginReturn | null>("plugin_helicon_focus", { id, job, imgids, mode }),
 	pluginWatch: (watch: PluginWatch) => __TAURI_INVOKE<null>("plugin_watch", { watch }),
 	pluginCancel: (token: number) => __TAURI_INVOKE<void>("plugin_cancel", { token }),
 	pluginJob: (job: PluginJob) => __TAURI_INVOKE<null>("plugin_job", { job }),
@@ -599,6 +601,8 @@ export type HdrReply = {
 	path: string,
 	image: LibraryImage,
 };
+
+export type HeliconMode = "raw" | "tiff" | "auto-dng";
 
 export type HistoryItem = {
 	op: string,

@@ -77,16 +77,35 @@ const track = async <R,>(id: number, run: () => Promise<R>, summarize: (r: R) =>
 };
 
 let progress: Promise<unknown> | null = null;
+const afterRender = new Map<number, string>();
+
+const listenForExports = () => progress ??= listen<{ job: number; done: number; total: number }>(
+  "export-progress", ({ payload: { job, done, total } }) => {
+    const finishing = afterRender.get(job);
+    update(job, finishing && done === total ? { what: finishing, done, total: 0 } : { done });
+  });
 
 // runs `run`, which starts export_images under the job number it is given,
 // as job `what` of `total` images, and returns its result; `summarize` says
 // what it did
 export async function runExport(what: string, total: number, run: (job: number) => Promise<ExportReply>,
                                 summarize: (r: ExportReply) => Outcome): Promise<ExportReply | null> {
-  progress ??= listen<{ job: number; done: number }>("export-progress", (e) => update(e.payload.job, { done: e.payload.done }));
-  await progress;
+  await listenForExports();
   const id = start(what, total, "export");
   return track(id, () => run(id), summarize, "Export failed");
+}
+
+export async function runRenderedEditIn<R>(what: string, total: number, finishing: string,
+                                           run: (job: number) => Promise<R>,
+                                           summarize: (r: R) => Outcome | null, failed: string): Promise<R | null> {
+  await listenForExports();
+  const id = start(what, total, null);
+  afterRender.set(id, finishing);
+  try {
+    return await track(id, () => run(id), summarize, failed);
+  } finally {
+    afterRender.delete(id);
+  }
 }
 
 let merging: Promise<unknown> | null = null;
@@ -140,7 +159,7 @@ export async function runMove<R>(what: string, total: number, run: (job: number)
 }
 
 // `run` as job `what`, which cannot be stopped; `failed` heads its error
-export function runInBackground<R>(what: string, run: () => Promise<R>, summarize: (r: R) => Outcome,
+export function runInBackground<R>(what: string, run: () => Promise<R>, summarize: (r: R) => Outcome | null,
                                    failed: string): Promise<R | null> {
   return track(start(what, 0, null), run, summarize, failed);
 }

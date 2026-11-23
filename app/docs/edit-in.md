@@ -1,10 +1,10 @@
 # Edit In
 
-**Edit In** sends photos to another application for something Immage
-doesn't do itself, and brings back the file it saves, ready to edit. It
-works with **DxO PureRAW**, for its noise reduction and lens sharpening on
-raws, and **Macro Studio**, for focus stacking
-([below](#macro-studio-focus-stacking)).
+**Edit In** sends photos to another application. Use **DxO PureRAW** for
+noise reduction and lens sharpening on raw photos, **Macro Studio** for
+[focus stacking](#macro-studio-focus-stacking), **Helicon Focus** for
+[focus stacking on Windows and macOS](#stack-a-focus-bracket-in-helicon-focus), or
+**PhotoCraft** for [layered editing](#open-photos-as-layers-in-photocraft).
 
 **If you've used another editor:** this is the usual Edit In command and
 PureRAW's own plugin in one. The returned file appears beside its original,
@@ -54,9 +54,10 @@ waiting**, or after three hours.
 
 | Reason shown | Why |
 | --- | --- |
-| **choose its application in Preferences** | PureRAW wasn't found; set **Application**. |
-| **raw files only** | PureRAW only takes raws, and so does Macro Studio set to send **Raws**. |
-| **select at least 2 photos** | Macro Studio stacks two or more. |
+| **choose its application in Preferences** | Immage couldn't find the editor. Set **Application**. |
+| **raw files only** | PureRAW, Macro Studio's **Raws**, and Helicon Focus's **RAWs** and **Auto DNG** take RAW files. |
+| **select at least 2 photos** | Macro Studio and Helicon Focus stack two or more photos. |
+| **select distinct RAW files, not virtual copies** | Helicon Focus's **RAWs** and **Auto DNG** take each RAW file once. Select the originals, or use **16-bit TIFFs** to stack virtual copies. |
 | **only photos on this computer** | An Immich result that hasn't been opened or downloaded yet. |
 
 ## Macro Studio: focus stacking
@@ -107,3 +108,65 @@ waiting**, or if Macro Studio doesn't start or stops responding.
 The first returned result opens automatically when **Open generated photos**
 is enabled in Preferences › General › Workspace. Turn it off to keep editing
 the current photo and open the result from its completion notification.
+
+## Stack a focus bracket in Helicon Focus
+
+Install Helicon Focus on Windows or macOS. [Download Helicon Focus](https://www.heliconsoft.com/software-downloads/)
+
+1. In **Preferences › Plugins › Edit In**, turn on **Helicon Focus**.
+   If Immage doesn't find it, use **Choose…** beside **Application** to select
+   the app on macOS or `HeliconFocus.exe` on Windows.
+2. Select at least two photos from one focus bracket. Right-click and choose
+   an option under **Edit In**.
+   - **Helicon Focus (RAWs)** opens the original RAW files in Helicon Focus.
+     Choose a rendering method and adjust the stack there. Save as DNG to
+     develop the composite as a RAW in Immage.
+   - **Helicon Focus (16-bit TIFFs)** renders the photos in Linear ProPhoto
+     RGB with their Immage edits and opens those TIFFs in Helicon Focus.
+     Choose your rendering settings and save the composite as a TIFF.
+   - **Helicon Focus (Auto DNG)** uses Helicon Focus's current settings to
+     stack the original RAW files in the background. Immage saves the
+     result beside the first photo with `-Helicon.dng` in its name.
+3. For either interactive option, Helicon Focus defaults to saving in the
+   first photo's folder. Immage lists the composite when you save it.
+   Quit the Helicon Focus session when you are ready to send another bracket.
+   If you save the composite next to the 16-bit TIFFs instead, Immage moves
+   it to the first photo's folder when you quit Helicon Focus.
+
+DNG output requires Helicon Focus Pro, Adobe DNG Converter, and the
+Raw-in-DNG-out loader. [Helicon Focus RAW requirements](https://www.heliconsoft.com/focus/help9/english/HeliconFocus.html#processing-of-raw-files)
+
+Select the composite in Immage and choose **Edit In › PhotoCraft** to continue
+editing it there.
+
+## Open photos as layers in PhotoCraft
+
+Install a version of PhotoCraft that includes `photocraft-cli` and supports
+**Load Files into Stack**.
+[PhotoCraft downloads](https://github.com/storytold/photocraft/releases)
+
+1. In **Preferences › Plugins › Edit In**, turn on **PhotoCraft**.
+2. If Immage doesn't find PhotoCraft, click **Choose…** beside **Application**.
+   On macOS, select **PhotoCraft.app**. On Windows, select `photocraft.exe`
+   in the same folder as `photocraft-cli.exe`. On Linux, select the executable
+   AppImage with the bundled CLI, or select `photocraft` in the same folder
+   as `photocraft-cli`.
+3. Select one or more photos in the filmstrip or Library grid.
+4. Right-click the selection and choose **Edit In › PhotoCraft**.
+
+Immage renders each selected photo with its current edits at full resolution
+in 16-bit linear ProPhoto RGB. Each photo or virtual copy gets its own editable
+pixel layer in one PhotoCraft document.
+
+The progress bar counts the rendered photos, then shows when PhotoCraft is
+preparing the layers. You can start another PhotoCraft handoff once the
+current document opens.
+
+Immage saves a ZIP-compressed layered TIFF beside the first photo when the
+estimated uncompressed layers and composite fit under 2 GiB. Larger stacks use
+PSB. If PhotoCraft cannot write the layered TIFF, Immage tries PSB.
+
+Use **Save** in PhotoCraft to update the document. Immage shows the TIFF beside
+the source photos and edits its composite through an XMP sidecar. Use PhotoCraft
+to edit individual layers. If you are working on a PSB, save a flattened
+16-bit TIFF copy beside the photos to continue editing the composite in Immage.

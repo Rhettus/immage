@@ -6,10 +6,14 @@
 // writes comes back to be edited, as with Lightroom's plug-ins. a kind says
 // what an application takes and gives back; a plugin is one the user set up
 // in Preferences, with its application and choices
-import { commands, type PluginConfig as StoredPlugin, type PluginReturn } from "./commands";
+import { commands, type PluginConfig as StoredPlugin, type PluginReturn, type HeliconMode } from "./commands";
 import type { Values } from "./manifest";
 import { fileKind, type ImageEntry } from "./library";
 import { settings } from "./settings";
+import { IS_MAC } from "./keys";
+import { t } from "./i18n";
+
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
 export type PluginKind = {
   id: string;
@@ -23,26 +27,22 @@ export type PluginKind = {
   sendDefault: "original" | "tiff";
   // originals it takes only as raws, though a TIFF can be of any photo
   rawOriginals?: boolean;
-  // how the photos go: "files" starts the application with them and looks
-  // for what it writes (plugins.rs, plugin_watch); "macrostudio" hands it a
-  // job and reads its receipt (plugin_job)
-  handoff?: "files" | "macrostudio";
   // what comes back from raws is a demosaiced raw, a linear DNG, and starts
   // with a raw's new-photo defaults, as a panorama does
   linearDng?: boolean;
-  // where the application is installed, as patterns with * under
-  // /Applications or Program Files (plugins.rs, plugin_find_apps)
-  appHints: { mac: string[]; win: string[] };
-  // what it writes: "prefix" is one file per photo named from it, "any" one
-  // file for the lot; looked for beside each photo, in these subfolders
-  returns: { exts: string[]; match: "prefix" | "any"; subfolders: string[] };
+  appHints: { mac: string[]; win: string[]; linux?: string[] };
   // settings a returned file starts with, the first time it is opened
   onReturn: { id: string; label: string; hint: string; values: Values; default: boolean }[];
   // what Preferences says about using it
   note: string;
-};
+} & (
+  | { handoff: "files"; returns: { exts: string[]; match: "prefix" | "any"; subfolders: string[] } }
+  | { handoff: "macrostudio" }
+  | { handoff: "photocraft" }
+  | { handoff: "helicon" }
+);
 
-export const KINDS: PluginKind[] = [
+const kinds: PluginKind[] = [
   {
     id: "dxo-pureraw",
     label: "DxO PureRAW",
@@ -50,6 +50,7 @@ export const KINDS: PluginKind[] = [
     minPhotos: 1,
     send: "original",
     sendDefault: "original",
+    handoff: "files",
     appHints: { mac: ["DxO PureRAW*.app"], win: ["DxO/DxO PureRAW*/*PureRaw*.exe"] },
     // PureRAW names its DNG after the raw with a suffix of the user's
     // choosing, in a "DxO" folder beside it unless told otherwise
@@ -75,13 +76,37 @@ export const KINDS: PluginKind[] = [
     handoff: "macrostudio",
     linearDng: true,
     appHints: { mac: ["Macro Studio.app"], win: ["Macro Studio/MacroStudio.exe"] },
-    // the stack is saved beside the first photo, as <its name>-stacked; the
-    // receipt says where, so these are only what the filmstrip shows
-    returns: { exts: ["dng", "tif"], match: "any", subfolders: [""] },
     onReturn: [],
     note: "select a focus bracket. Each stack opens in Macro Studio to check and retouch, and comes back here when it is saved there, as a DNG for the most latitude",
   },
+  {
+    id: "helicon-focus",
+    label: "Helicon Focus",
+    accepts: "any",
+    minPhotos: 2,
+    send: "original",
+    sendDefault: "original",
+    handoff: "helicon",
+    linearDng: true,
+    appHints: { mac: ["HeliconFocus.app", "Helicon Focus*.app"], win: ["Helicon Software/Helicon Focus*/HeliconFocus.exe", "Helicon Focus/HeliconFocus.exe"] },
+    onReturn: [],
+    note: "Choose RAW, 16-bit TIFFs, or Auto DNG from Edit In.",
+  },
+  {
+    id: "photocraft",
+    label: "PhotoCraft",
+    accepts: "any",
+    minPhotos: 1,
+    send: "tiff",
+    sendDefault: "tiff",
+    handoff: "photocraft",
+    appHints: { mac: ["PhotoCraft.app"], win: ["PhotoCraft/photocraft.exe"], linux: ["photocraft"] },
+    onReturn: [],
+    note: "Each selected photo opens as a 16-bit ProPhoto RGB layer in a TIFF or PSB beside the first photo.",
+  },
 ];
+
+export const KINDS = kinds.filter((kind) => kind.handoff !== "helicon" || IS_MAC || IS_WINDOWS);
 
 export const kindOf = (id: string) => KINDS.find((k) => k.id === id);
 
@@ -132,21 +157,27 @@ export function newPlugin(kind: PluginKind, app: string): PluginConfig {
 }
 
 export const findApps = (kind: PluginKind) =>
-  commands.pluginFindApps(navigator.userAgent.includes("Windows") ? kind.appHints.win : kind.appHints.mac)
+  commands.pluginFindApps(IS_MAC ? kind.appHints.mac : IS_WINDOWS ? kind.appHints.win : kind.appHints.linux ?? [])
     .catch(() => [] as string[]);
 
 // an application's name from its path: "DxO PureRAW 4"
-export const appName = (path: string) => path.split(/[\\/]/).pop()?.replace(/\.(app|exe)$/i, "") ?? path;
+export const appName = (path: string) => path.split(/[\\/]/).pop()?.replace(/\.(app|exe|appimage)$/i, "") ?? path;
 
-// why a plugin cannot take these photos, or null when it can
-export function unfit(cfg: PluginConfig, targets: ImageEntry[]): string | null {
+export type EditInAction = { cfg: PluginConfig; mode?: HeliconMode };
+
+export function unfit({ cfg, mode }: EditInAction, targets: ImageEntry[]): string | null {
   const kind = kindOf(cfg.kind);
   if (!kind) return "unknown plugin";
   if (!cfg.app) return "choose its application in Preferences";
   const local = targets.filter((t) => !t.remote || t.remote.localPath);
   if (local.length < targets.length) return "only photos on this computer";
-  const rawOnly = kind.accepts === "raw" || (kind.rawOriginals && cfg.send === "original");
+  const rawOnly = mode === "raw" || mode === "auto-dng"
+    || kind.accepts === "raw" || (kind.rawOriginals && cfg.send === "original");
   if (rawOnly && targets.some((t) => fileKind(t.filename) !== "RAW")) return "raw files only";
+  // Helicon is handed the raw files themselves, so a virtual copy adds nothing
+  if ((mode === "raw" || mode === "auto-dng")
+      && new Set(targets.map((p) => p.remote?.localPath ?? p.path)).size < targets.length)
+    return t("plugins.helicon.distinctRaws");
   if (targets.length < kind.minPhotos) return kind.minPhotos > 1 ? `select at least ${kind.minPhotos} photos` : "no photo";
   if (kind.maxPhotos && targets.length > kind.maxPhotos) return `at most ${kind.maxPhotos} photos`;
   return null;

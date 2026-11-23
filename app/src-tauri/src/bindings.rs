@@ -214,6 +214,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::plugins::plugin_set_app,
         crate::plugins::plugin_choose_app,
         crate::plugins::plugin_launch,
+        crate::plugins::plugin_photo_craft,
+        crate::plugins::plugin_helicon_focus,
         crate::plugins::plugin_watch,
         crate::plugins::plugin_cancel,
         crate::plugins::plugin_job,
