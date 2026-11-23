@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Drags can overshoot the photo's edge:** Mask shapes and handles, object
+  and picker boxes, Heal spots and Upright guide lines follow the pointer past
+  the photo into the empty canvas; on release a center, end or box corner left
+  off the photo snaps back to its edge.
 - **Edited photo previews kept longest:** When the thumbnail cache is full,
   previews of edited photos are trimmed last, up to half the limit, and
   Preferences > Cache shows how much of the Library thumbnails they take.

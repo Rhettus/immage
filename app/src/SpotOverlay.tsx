@@ -199,9 +199,17 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
              drag.current = null;
              setStroke(null);
              if (!d) return;
-             if (d.kind !== "new") { onChange(spots.slice(), true); return; }
+             // a drag may overshoot the photo; what is released off it snaps back to its edge
+             const on = (v: number) => Math.min(1, Math.max(0, v));
+             if (d.kind !== "new") {
+               const done = spots.slice();
+               const m = done[d.k];
+               if (m) done[d.k] = { ...(m.type === "circle" ? { ...m, x: on(m.x), y: on(m.y) } : m), sx: on(m.sx), sy: on(m.sy) };
+               onChange(done, true);
+               return;
+             }
              const { mode, feather, opacity, size } = tool;
-             if (d.points.length < 2) onCreate({ type: "circle", x: d.start[0], y: d.start[1], r: size / 2, mode, feather, opacity });
+             if (d.points.length < 2) onCreate({ type: "circle", x: on(d.start[0]), y: on(d.start[1]), r: size / 2, mode, feather, opacity });
              else onCreate({ type: "brush", points: d.points, size, mode, feather, opacity });
            }}
            onPointerCancel={() => { drag.current = null; setStroke(null); }}

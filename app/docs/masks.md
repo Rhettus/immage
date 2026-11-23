@@ -75,7 +75,10 @@ Each part of the mask is listed under it, with a **+** / **−** switch and
 On the photo, drag a shape's handles: the center moves it, the edges size
 it, the arrow rotates it, and the outer ring sets its feather. The
 handles show while the pointer is over the photo, and step aside while it
-is over the panels, so the adjustment can be seen.
+is over the panels, so the adjustment can be seen. A drag may run past the
+photo's edge into the empty canvas; on release a center or an end left off the
+photo snaps back to the nearest point on it. Drawing a shape or boxing an object
+works the same way.
 
 ## The mask list
 

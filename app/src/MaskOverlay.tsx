@@ -139,6 +139,10 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
     return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
   };
 
+  // a drag may overshoot the photo into the blank space; on release what
+  // must stay on the photo snaps back to its nearest point
+  const onPhoto = ([x, y]: [number, number]): [number, number] => [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
+
   // a new shape from a drag between two points
   const fromDrag = (t: MaskTool, [x0, y0]: [number, number], [x1, y1]: [number, number]): Shape | null => {
     if (t === "ellipse") {
@@ -276,6 +280,8 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
              }
              if (boxing) {
                const p = at(e);
+               // the pointer may run on past the photo's edge
+               (e.target as Element).setPointerCapture(e.pointerId);
                drag.current = { kind: "box", k: -1, start: p, shape: shapes[0] };
                setBox([p[0], p[1], p[0], p[1]]);
                return;
@@ -325,7 +331,7 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
              setPressed(false);
              if (!d) return;
              if (d.kind === "box") {
-               const [x0, y0] = d.start, [x1, y1] = at(e);
+               const [x0, y0] = onPhoto(d.start), [x1, y1] = onPhoto(at(e));
                setBox(null);
                // a click picks what is under it, a drag what is inside
                const click = Math.abs(x1 - x0) * W + Math.abs(y1 - y0) * H < 8 * unit;
@@ -338,12 +344,22 @@ export function MaskOverlay({ boxRef, image, region, mask, peek, ranges, final, 
                return;
              }
              if (d.kind === "create") {
-               const s = painting ? d.shape : fromDrag(tool!, d.start, at(e));
+               // only the center snaps back: the far end may set a radius or
+               // a gradient's angle and width from off the photo
+               const f = painting ? null : fromDrag(tool!, d.start, at(e));
+               const c = f && (f.type === "ellipse" || f.type === "gradient") ? onPhoto([f.x, f.y]) : null;
+               const s = painting ? d.shape : f && c ? { ...f, x: c[0], y: c[1] } : f;
                setDraft(null);
                if (s) onCreate(s);
                return;
              }
-             onChange(shapes.slice(), true);
+             const done = shapes.slice();
+             const m = done[d.k];
+             if (d.kind === "move" && m && m.type !== "brush" && !isRange(m) && m.type !== "object") {
+               const [x, y] = onPhoto([m.x, m.y]);
+               done[d.k] = { ...m, x, y };
+             }
+             onChange(done, true);
            }}
            onPointerLeave={() => setCursor(null)}>
         {tool && <rect className="mask-catch" x={0} y={0} width={W} height={H} />}

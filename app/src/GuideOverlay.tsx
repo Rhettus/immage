@@ -82,7 +82,9 @@ export function GuideOverlay({ image, guides, guided, grid, onCommit, onDelete }
     drag.current = null;
     setDraft(null);
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y) >= MIN_DRAG;
-    const g = d.guide;
+    // an end dragged past the photo snaps back to its edge on release
+    const on = (v: number) => Math.min(1, Math.max(0, v));
+    const g = d.guide.map(on) as Guide;
     const long = Math.hypot((g[2] - g[0]) * cssWidth, ((g[3] - g[1]) * cssWidth * H) / W) >= MIN_DRAG;
     if (moved && long) onCommit(d.index, g);
   };
