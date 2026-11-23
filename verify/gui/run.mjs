@@ -274,6 +274,17 @@ try {
       report.folderMoveCrossFilesystem = crossFolderTarget;
     }
   }
+  // unmounted-share: nas and local scratch folders beside the fixtures, both
+  // seeded as library folders (no Immich mapping: the case sets it live)
+  if (selectedCases.includes('unmounted-share')) {
+    const { unmountedShareFixtures } = await import('./specs/unmounted-share.mjs');
+    const share = await unmountedShareFixtures(fixtures, copiedFixture);
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.library': JSON.stringify({ folders: [fixtures, share.nas, share.local], expanded: [] }) }, null, 2));
+    report.unmountedShareFixtures = share;
+  }
   if (selectedCases.includes('rename-photos')) {
     const { renameFixtures } = await import('./specs/rename-photos.mjs');
     report.renameFixtures = await renameFixtures(fixtures, copiedFixture);
