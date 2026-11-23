@@ -11,6 +11,7 @@ import type { Values } from "./manifest";
 import { fileKind, type ImageEntry } from "./library";
 import { settings } from "./settings";
 import { IS_MAC } from "./keys";
+import { t } from "./i18n";
 
 const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
@@ -173,6 +174,10 @@ export function unfit({ cfg, mode }: EditInAction, targets: ImageEntry[]): strin
   const rawOnly = mode === "raw" || mode === "auto-dng"
     || kind.accepts === "raw" || (kind.rawOriginals && cfg.send === "original");
   if (rawOnly && targets.some((t) => fileKind(t.filename) !== "RAW")) return "raw files only";
+  // Helicon is handed the raw files themselves, so a virtual copy adds nothing
+  if ((mode === "raw" || mode === "auto-dng")
+      && new Set(targets.map((p) => p.remote?.localPath ?? p.path)).size < targets.length)
+    return t("plugins.helicon.distinctRaws");
   if (targets.length < kind.minPhotos) return kind.minPhotos > 1 ? `select at least ${kind.minPhotos} photos` : "no photo";
   if (kind.maxPhotos && targets.length > kind.maxPhotos) return `at most ${kind.maxPhotos} photos`;
   return null;

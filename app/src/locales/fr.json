@@ -477,6 +477,7 @@
   "plugins.helicon.mode.auto-dng": "{name} (DNG auto)",
   "plugins.helicon.mode.tiff": "{name} (TIFF 16 bits)",
   "plugins.helicon.mode.raw": "{name} (RAW)",
+  "plugins.helicon.distinctRaws": "sélectionnez des fichiers RAW distincts, pas des copies virtuelles",
   "plugins.remove": "Retirer",
   "plugins.empty": "Aucun plugin pour l’instant.",
   "plugins.add": "Ajouter un plugin",

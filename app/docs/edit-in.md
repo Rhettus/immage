@@ -57,6 +57,7 @@ waiting**, or after three hours.
 | **choose its application in Preferences** | Immage couldn't find the editor. Set **Application**. |
 | **raw files only** | PureRAW, Macro Studio's **Raws**, and Helicon Focus's **RAWs** and **Auto DNG** take RAW files. |
 | **select at least 2 photos** | Macro Studio and Helicon Focus stack two or more photos. |
+| **select distinct RAW files, not virtual copies** | Helicon Focus's **RAWs** and **Auto DNG** take each RAW file once. Select the originals, or use **16-bit TIFFs** to stack virtual copies. |
 | **only photos on this computer** | An Immich result that hasn't been opened or downloaded yet. |
 
 ## Macro Studio: focus stacking
