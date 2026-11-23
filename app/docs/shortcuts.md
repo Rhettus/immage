@@ -43,7 +43,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | Tab | Hide or show the side panels |
 | ⇧Tab | Hide or show the side panels and filmstrip |
 | Z | Fit or the navigator's zoom (100% until another is picked) |
-| ⌘= ⌘- | Zoom in or out: fit, fill, 1:1, 2:1, 3:1, 4:1 |
+| ⌘= ⌘- | Zoom in or out, in order of size: half of fit, 1:2 (50%), fit, fill, 1:1, 2:1, 3:1, 4:1 |
 | Click | Zoom to 100% there, or back to fit |
 | Scroll | Zoom around the pointer (a brush in hand: its size) |
 | Space-drag | Pan a zoomed-in photo, in any tool |

@@ -11,7 +11,8 @@ export function Navigator({ thumb, zoom, placement: p, disabled, onZoom, onPan }
   disabled: boolean; onZoom: (z: Zoom) => void; onPan: (x: number, y: number, done: boolean) => void;
 }) {
   const [live, setLive] = useState<{ x: number; y: number } | null>(null);
-  const zoomed = zoom !== "fit" && p && p.scale > 0;
+  const zoomed = zoom !== "fit" && zoom !== "half" && p && p.scale > 0
+    && (p.width < p.fullWidth * p.scale || p.height < p.fullHeight * p.scale);
   // the visible window as fractions of the image
   const rect = zoomed ? {
     w: Math.min(1, p.width / (p.fullWidth * p.scale)),

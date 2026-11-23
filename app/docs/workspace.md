@@ -74,17 +74,20 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 
 - Click the photo to zoom to 100% at that point; click again to fit.
 - Scroll, or pinch on a touchpad, to zoom the photo around the pointer, from
-  fit up to 400%. The zoom pauses at 100% on the way. Pinching zooms only
-  the photo, never the rest of the window.
+  half of fit up to 400%. The zoom pauses at fit, 50% and 100% on the way.
+  Below fit the photo stays centered in empty canvas, with room around it for
+  adjustments that reach past the frame, and cannot be panned; click it to
+  return to fit. Pinching zooms only the photo, never the rest of the window.
 - Z switches between fit and 100%.
 - Quality and Balanced process settled Fit views at up to 3072 pixels on the
   long edge to preserve fine detail when displayed smaller. Performance uses
   viewer-sized previews. The screen-scale preference can reduce the processing
   size; use 100% to judge detail at native resolution.
-- The **Navigator** has **FIT**, **FILL**, **1:1** and **2:1**. When you
-  are zoomed in it shows the visible part as a rectangle; drag it to pan.
-- The zoom slider in the toolbar below the filmstrip zooms from a quarter
-  of fit to 400%. Double-click it for fit or 100%.
+- The **Navigator** has **1:2** (50%), **FIT**, **FILL**,
+  **1:1** and **2:1**. When you are zoomed in it shows the visible part as a
+  rectangle; drag it to pan.
+- The zoom slider in the toolbar below the filmstrip zooms from half of fit
+  to 400%. Double-click it for fit or 100%.
 - Drag the photo to pan.
 - Hold Space and drag to pan a zoomed-in photo in any tool, without changing
   spots or masks. Space does nothing at fit, so it does nothing in Crop, which

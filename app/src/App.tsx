@@ -1143,7 +1143,7 @@ export default function App() {
   // window, or of the photo
   const viewCenter = () => {
     const p = placementRef.current;
-    if (zoom === "fit" || !p || p.scale <= 0) return { u: 0.5, v: 0.5 };
+    if (centeredZoom(zoom) || !p || p.scale <= 0) return { u: 0.5, v: 0.5 };
     return { u: clamp01((p.x + p.width / 2) / (p.fullWidth * p.scale)),
              v: clamp01((p.y + p.height / 2) / (p.fullHeight * p.scale)) };
   };
@@ -2167,7 +2167,7 @@ export default function App() {
       const s = session.current, f = full.current;
       if (!s || !f || anim.current.raf) return;
       if (!s.idle) { scheduleCopy(400); return; }
-      if (zoomRef.current === "fit") {
+      if (centeredZoom(zoomRef.current)) {
         // a photo that fits at 100% already shows every pixel
         if (fitScale() < 1) s.requestCopy(1, f);
         return;
@@ -2233,9 +2233,15 @@ export default function App() {
     return Math.min(1, (w - m) / f.w, (h - m) / f.h);
   };
 
+  // a view smaller than fit: half of fit, or any scale below fit. it is centered
+  // and cannot be panned
+  const belowFit = (z: Zoom) => z === "half" || (typeof z === "number" && z < fitScale() * 0.999);
+  const centeredZoom = (z: Zoom) => z === "fit" || belowFit(z);
+
   const scaleFor = (z: Zoom): number => {
     const f = full.current;
     if (z === "fit" || !f) return fitScale();
+    if (z === "half") return fitScale() * 0.5;
     const { w, h } = viewport();
     return z === "fill" ? Math.max(w / f.w, h / f.h) : z;
   };
@@ -2520,7 +2526,7 @@ export default function App() {
       const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
       placeCanvas(bcv, bm.width, bm.height, { x: sx, y: sy, k: (z * k) / bm.scale }, dpr);
     }
-    zoomShow.current?.(z, zoomRef.current === "fit");
+    zoomShow.current?.(z, Math.abs(z / fitScale() - 1) < 0.001);
     const hc = hoverCanvas.current;
     if (hc) {
       layerStyle(hc, "left", `${ox / dpr}px`);
@@ -3015,7 +3021,7 @@ export default function App() {
     a.zoom = z;
     a.anchor = anchor;
     a.settleAt = performance.now() + settleDelay;
-    a.end = !ahead ? null : z === "fit" ? { x: 0.5, y: 0.5 }
+    a.end = !ahead ? null : centeredZoom(z) ? { x: 0.5, y: 0.5 }
           : anchor ? anchoredCenter(anchor, a.target) : { ...center.current };
     a.asked = null;
     const running = !!a.raf;
@@ -3029,7 +3035,7 @@ export default function App() {
     const step = () => {
       const zz = easeZoom(viewZ.current, a.target);
       viewZ.current = zz;
-      if (a.zoom === "fit") {
+      if (centeredZoom(a.zoom)) {
         center.current = { x: center.current.x + (0.5 - center.current.x) * ZOOM_EASE,
                            y: center.current.y + (0.5 - center.current.y) * ZOOM_EASE };
       } else if (a.anchor) {
@@ -3038,7 +3044,7 @@ export default function App() {
       placeLayers();
       if (zz === a.target && performance.now() >= a.settleAt) {
         a.raf = null;
-        if (a.zoom === "fit") center.current = { x: 0.5, y: 0.5 };
+        if (centeredZoom(a.zoom)) center.current = { x: 0.5, y: 0.5 };
         placeLayers();
         zoomRef.current = a.zoom;
         setZoomState(a.zoom);
@@ -5909,7 +5915,7 @@ export default function App() {
   };
   // Space held on a zoomed photo: pan, before any overlay or tool sees the press
   const onSpacePanDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (!spaceHeldRef.current || !current || zoomRef.current === "fit" || !viewZ.current || e.button !== 0) return false;
+    if (!spaceHeldRef.current || !current || centeredZoom(zoomRef.current) || !viewZ.current || e.button !== 0) return false;
     if ((e.target as Element).closest(".cand-pane")) return false;
     e.stopPropagation();
     e.preventDefault();
@@ -5955,7 +5961,7 @@ export default function App() {
       return;
     }
     const d = drag.current, f = full.current;
-    if (!d || !f || zoomRef.current === "fit") return;
+    if (!d || !f || centeredZoom(zoomRef.current)) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     if (!d.moved) return;
@@ -6019,7 +6025,14 @@ export default function App() {
       let to = Math.min(MAX_SCALE, from * Math.exp(-delta * (e.ctrlKey ? 0.006 : 0.0008)));
       // a detent at 100%: crossing it stops there, the next notch moves on
       if ((from < 1 && to > 1) || (from > 1 && to < 1)) to = 1;
-      if (to <= fitScale() * 1.001) { animateTo("fit", null, 150, false); return; }
+      // and at 50%, the navigator's 1:2
+      if ((from < .5 && to > .5) || (from > .5 && to < .5)) to = .5;
+      // the same at fit; below it the photo floats centered, down to half of fit
+      const F = fitScale(), atFit = Math.abs(from - F) <= F * 0.001;
+      if (to <= F * 0.5 * 1.001) { animateTo("half", null, 150, false); return; }
+      if ((from > F * 1.001 && to <= F * 1.001) || (from < F / 1.001 && to >= F / 1.001)
+          || (atFit && Math.abs(to - F) <= F * 0.001)) { animateTo("fit", null, 150, false); return; }
+      if (to < F) { animateTo(to, null, 150, false); return; }
       const { sx, sy } = paneXY(e.clientX, e.clientY);
       animateTo(to, { ...imageAt(sx, sy), sx, sy }, 150, false);
     };
@@ -6501,7 +6514,7 @@ export default function App() {
   useEffect(() => {
     let t: number | undefined;
     const ro = new ResizeObserver(() => {
-      if (zoomRef.current === "fit" && full.current) { viewZ.current = fitScale(); placeLayers(); }
+      if ((zoomRef.current === "fit" || zoomRef.current === "half") && full.current) { viewZ.current = scaleFor(zoomRef.current); placeLayers(); }
       window.clearTimeout(t);
       t = window.setTimeout(() => {
         baseStale.current = true;
@@ -6810,7 +6823,7 @@ export default function App() {
       <aside className="left" ref={leftAside} style={{ width: layout.leftWidth }}>
         <div className="panel-head"><h1>{t("app.library.title")}</h1>{pinButton("left")}</div>
         <Navigator thumb={navThumb} zoom={zoom} placement={placement} disabled={!current}
-                   onZoom={(z) => { if (z !== "fit") navZoom.current = z; setZoom(z); }}
+                   onZoom={(z) => { if (z !== "fit" && z !== "half") navZoom.current = z; setZoom(z); }}
                    onPan={(x, y, done) => {
                      center.current = { x: clamp01(x), y: clamp01(y) };
                      placeLayers();
@@ -6911,7 +6924,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${centeredZoom(zoom) ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && !centeredZoom(zoom) ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!(e.target as Element).closest(".checker-corner") && !onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>

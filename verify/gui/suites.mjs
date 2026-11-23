@@ -134,6 +134,8 @@ export const cases = {
   'zoom-ready': {scope:'fitted, the 100% copy renders in the background and the first click zoom shows its frame within 1.5 s; zoomed in after an Exposure edit, the fitted view renders ahead and the zoom out does too',liveValidated:true,
     verification:'Linux ARM64 VM without GPU, system WebKitGTK 2.54.2, Wayland, DPR 2, viewport 1706x915, fixture 2EM10375.ORF; zoom in 521 ms, zoom out 1395 ms, neither rendered on the main pipe (engine.log); run 2026-11-05T01-06-33.818Z_a8204e5_40ae4cc9.',
     limitation:'Times through WebDriver polling, not compositor presentation; reads readiness from the copy layer, not from engine traces.'},
+  'zoom-below-fit': {scope:'wheel out from fit stops at half of fit, centered, unpannable, no Navigator rectangle; the wheel pauses at fit coming back in; Ctrl/Cmd+- reaches the same floor; Navigator 1:2 is exactly half of 1:1 and reads 50%, centered only when below the photo\'s fit; a click returns to fit',liveValidated:false,
+    limitation:'Not yet run. Which 1:2 branch runs (below or above fit) depends on the fixture size and display scale. The 50% wheel detent is not asserted separately.'},
   'native-reset': {scope:'native Contrast edit, Reset All and undo with sidecar evidence',commits:['b1d7c4c'],liveValidated:false,limitation:'Does not seed hidden nondefault native parameters; original trigger remains incompletely covered.'},
   curves:{scope:'point curve: add/lift/double-click removal per channel with distinct photos, black point lift and corner clamp, 20-point limit, drag-off removal, Reset All, parametric switch',liveValidated:true},
   wheels:{scope:'3-way/global wheel changes, reset and slider view',liveValidated:false},

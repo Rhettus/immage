@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Zoom out past Fit:** The mouse wheel, pinch, **⌘-** and the zoom slider
+  now zoom out to half the size of Fit, leaving empty canvas around the photo.
+  The Navigator has a new **1:2** (50%) button, and the wheel pauses at Fit
+  and 50% on the way. Below Fit the photo stays centered and cannot be panned.
 - **No tone mapper on JPEGs and other non-RAW formats:** JPEGs, PNGs, WebP,
   HEIC and 8/16-bit TIFFs no longer enable AgX or Sigmoid on open, Start Over,
   paste or preset application. Their Basic controls remap to the same
