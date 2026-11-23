@@ -677,7 +677,13 @@ pub async fn plugin_helicon_focus(
                     }
                 }
                 if let Some(status) = status {
-                    return if status.success() { Ok(None) } else { Err(format!("Could not open Helicon Focus ({status})")) };
+                    // Helicon, and `open -W` with it, can quit nonzero after
+                    // saving; a session that sent a result back succeeded
+                    return if status.success() || !reported.is_empty() {
+                        Ok(None)
+                    } else {
+                        Err(format!("Could not open Helicon Focus ({status})"))
+                    };
                 }
                 std::thread::sleep(POLL);
             }
