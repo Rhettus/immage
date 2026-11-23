@@ -654,13 +654,18 @@ pub async fn plugin_helicon_focus(
                 .arg("--preferred-output-path").arg(&folder)
                 .spawn().map_err(|e| format!("Could not open Helicon Focus: {e}"))?;
             let mut reported = HashSet::new();
+            // a stack of rendered TIFFs is no raw, whatever it is saved as:
+            // marked applied, as a positive is, it opens without a stacked
+            // raw's new-photo defaults
+            let rendered = matches!(mode, HeliconMode::Tiff);
             let send_back = |result: String| {
-                let r = Return { original: original.clone(), result, plugin: id.clone(), applied: false };
+                let r = Return { original: original.clone(), result, plugin: id.clone(), applied: rendered };
                 if let Err(e) = plugins.record_new(r.clone()) {
                     eprintln!("{e}");
                 }
                 let _ = app.emit("plugin-returned", json!({
                     "token": job, "plugin": r.plugin, "original": r.original, "result": r.result,
+                    "applied": r.applied,
                 }));
             };
             loop {

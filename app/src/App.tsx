@@ -4166,7 +4166,7 @@ export default function App() {
   // the hand-off's first opened
   const pluginReturned = useRef<(r: PluginReturn & { token: number }) => void>(() => {});
   pluginReturned.current = async (r) => {
-    returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: false });
+    returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: r.applied ?? false });
     const w = waitingRef.current.find((x) => x.token === r.token);
     // Claim the first result before awaiting the folder refresh or another return.
     waitingRef.current = waitingRef.current.map((x) =>
