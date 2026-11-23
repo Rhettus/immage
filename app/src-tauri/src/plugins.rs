@@ -438,6 +438,7 @@ pub async fn plugin_photo_craft(
     let cli = photocraft_cli(&editor)?;
 
     let photos = plugin_photos(&state, imgids)?;
+    folders_answering(&photos).await?;
     let (_, first) = photos.first().ok_or("Select at least one photo")?;
     let source = Path::new(&first.path);
     let folder = source.parent().ok_or("The first photo has no folder")?.to_path_buf();
@@ -538,6 +539,21 @@ fn plugin_photos(state: &AppState, imgids: Vec<i64>) -> Result<Vec<(i64, Photo)>
     }).collect()
 }
 
+// the photos' folders, touched (canonicalized, staged in) only once each
+// one's drive answers, so a share whose server has gone does not hang
+// the hand-off
+async fn folders_answering(photos: &[(i64, Photo)]) -> Result<(), String> {
+    let folders: HashSet<PathBuf> = photos.iter()
+        .filter_map(|(_, photo)| Path::new(&photo.path).parent().map(Path::to_path_buf)).collect();
+    let silent = tauri::async_runtime::spawn_blocking(move || {
+        folders.into_iter().find(|folder| !crate::volumes::answering(folder))
+    }).await.map_err(|e| e.to_string())?;
+    match silent {
+        Some(folder) => Err(format!("{} is not answering", folder.display())),
+        None => Ok(()),
+    }
+}
+
 async fn stack_staging(folder: &Path, prefix: &'static str) -> Result<tempfile::TempDir, String> {
     let folder = folder.to_path_buf();
     tauri::async_runtime::spawn_blocking(move || tempfile::Builder::new().prefix(prefix).tempdir_in(folder))
@@ -606,6 +622,7 @@ pub async fn plugin_helicon_focus(
     }
 
     let photos = plugin_photos(&state, imgids)?;
+    folders_answering(&photos).await?;
     if photos.len() < 2 {
         return Err("Select at least two photos".into());
     }
