@@ -37,7 +37,14 @@ pub fn volume(path: &str) -> Volume {
 static SHARE_ROOTS: LazyLock<Mutex<Vec<PathBuf>>> = LazyLock::new(Default::default);
 
 pub fn set_share_roots(roots: Vec<PathBuf>) {
+    let roots = share_roots_kept(roots);
     *SHARE_ROOTS.lock().unwrap_or_else(|e| e.into_inner()) = roots;
+}
+
+// a file system root (/, C:\) is never a share root: it would put every
+// folder on the computer offline
+fn share_roots_kept(roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    roots.into_iter().filter(|r| r.parent().is_some()).collect()
 }
 
 fn share_roots() -> Vec<PathBuf> { SHARE_ROOTS.lock().unwrap_or_else(|e| e.into_inner()).clone() }
@@ -463,6 +470,12 @@ nas:/export/photos /mnt/My\\040Photos nfs4 rw 0 0
         assert_eq!(unmounted_in(&nas, Path::new("/home/me/a.jpg"), at(bare)), None);
         assert_eq!(unmounted_in(&nas, Path::new("/mnt/nas2/a.jpg"), at(bare)), None);
         assert!(under_any(&nas, Path::new("/mnt/nas/a")) && !under_any(&nas, Path::new("/mnt/nas2/a")));
+    }
+
+    #[test]
+    fn a_file_system_root_is_never_a_share_root() {
+        let kept = share_roots_kept(vec![PathBuf::from("/"), PathBuf::from("/mnt/nas")]);
+        assert_eq!(kept, vec![PathBuf::from("/mnt/nas")]);
     }
 
     #[test]
