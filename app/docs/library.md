@@ -824,7 +824,7 @@ that thumbnail's photo.
 
 When you leave an edited RAW photo after editing, Immage prepares its culling
 preview in the background, once the grid's thumbnails have finished loading
-and while culling is closed, so culling it next opens at once instead of
+and the photo you open next has appeared, and while culling is closed, so culling it next opens at once instead of
 rendering the edits again. This starts after you have opened culling at least
 once (so the size is known), and is skipped while **Camera previews** is on.
 Opening culling or another folder cancels what is still waiting.

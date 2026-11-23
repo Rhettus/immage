@@ -4325,6 +4325,8 @@ export default function App() {
       return false;
     }
     if (id !== null) editedPreviews.cancel(id);
+    // render-ahead waits for this photo's first frame
+    editedPreviews.hold();
     const old = session.current;
     let closed = false;
     // the new session once opened, until session.current adopts it
@@ -4371,6 +4373,7 @@ export default function App() {
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
         if (frameOwner.current !== token) return;
         drawFrame(f);
+        editedPreviews.release();
         const ready = onFirstFrame;
         onFirstFrame = undefined;
         ready?.();
@@ -4585,6 +4588,7 @@ export default function App() {
       // it, stopping its save timer and render loop. not close(): that asks
       // for one more render of the photo that failed, and nothing was edited
       if (fresh && session.current !== fresh) fresh.abandon();
+      editedPreviews.release();
       // the engine closes the old photo before it opens the next, so a failed
       // open leaves none: drop the old session rather than send it edits
       if (closed && old && session.current === old) {

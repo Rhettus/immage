@@ -40,7 +40,7 @@ test('scheduling the same photo again coalesces to one pending job', () => {
   assert.equal(state.fetched.length, 0);
 });
 
-test('reopening a photo cancels its pending job, and the running one is dropped', async () => {
+test('reopening a photo drops its pending job; a running one finishes', async () => {
   const { q, state, finish } = rig();
   q.schedule(entry(1)); q.schedule(entry(2)); q.schedule(entry(3));
   q.cancel(3);
@@ -119,4 +119,20 @@ test('a failed render is dropped and the next job runs', async () => {
   q.schedule(entry(1)); q.schedule(entry(2));
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(state.calls, [1, 2]);
+});
+
+test('a held queue waits for release, and an open that never paints times out', () => {
+  const { q, state, tick } = rig();
+  q.hold();
+  q.schedule(entry(1));
+  assert.equal(state.fetched.length, 0);
+  q.release();
+  assert.deepEqual(state.fetched, [[1, 3000]]);
+  const r = rig();
+  r.q.hold();
+  r.q.schedule(entry(2));
+  // the recheck and the hold's time limit both fire; the limit releases it
+  r.tick();
+  assert.deepEqual(r.state.fetched, [[2, 3000]]);
+  assert.equal(r.state.timers.filter(Boolean).length, 0);
 });
