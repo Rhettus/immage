@@ -2226,8 +2226,11 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .folders-body .folder.add { margin: 4px 12px 0; width: calc(100% - 24px); }
 
 /* the History panel: newest step at the top; those above the current one
-   are undone, and come back with Redo or a click */
-.history-list { list-style: none; margin: 0; padding: 0 8px 10px; max-height: 260px; overflow-y: auto; }
+   are undone, and come back with Redo or a click. every step is shown and
+   the Library column scrolls them: a list scrolling inside the scrolling
+   column was painted by WebKitGTK with its rows piled on one line below the
+   card (#41) */
+.history-list { list-style: none; margin: 0; padding: 0 8px 10px; }
 .history-list button {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: none; border-radius: 8px;
   background: none; color: var(--text); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer;

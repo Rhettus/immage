@@ -89,6 +89,10 @@ Performance
 
 Bug fixes
 
+- **History rows no longer pile up below the card:** The History card now
+  shows every step and the Library panel scrolls as a whole, instead of the
+  card scrolling on its own. On Linux its rows could be drawn stacked on one
+  line in the blank space below the card.
 - **Mask and choice-aware module tooltips:** Hovering over a slider in the
   Masks panel now shows the darktable module it drives, and sliders with
   selectable modules report the active module for the photo or mask.

@@ -16,7 +16,8 @@ continuous slider drag counts as one step.
 ## The History card
 
 The **History** card in the Library panel lists the edit, newest at the
-top:
+top. Every step is shown at once; a long history extends the Library
+panel, which scrolls as a whole:
 
 - this session's steps, named after what changed, such as
   **Exposure** or **New mask**. Click one to go back to it; steps above it
