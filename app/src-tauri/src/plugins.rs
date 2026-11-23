@@ -291,10 +291,20 @@ fn app_folders() -> Vec<PathBuf> {
         if let Some(p) = std::env::var_os("LOCALAPPDATA") {
             v.push(PathBuf::from(p).join("Programs"));
         }
-    } else if cfg!(target_os = "linux") {
-        v.extend(["/usr/local/bin", "/usr/bin"].map(PathBuf::from));
     }
     v
+}
+
+// on Linux an application is a program on the system's path, beside every
+// other program there, so only these names are looked for. a pattern from
+// the page is never matched against those folders
+const LINUX_APPS: &[&str] = &["photocraft"];
+const LINUX_BIN: &[&str] = &["/usr/local/bin", "/usr/bin"];
+
+fn linux_apps(names: &[String], out: &mut Vec<PathBuf>) {
+    for name in names.iter().filter(|n| LINUX_APPS.contains(&n.as_str())) {
+        out.extend(LINUX_BIN.iter().map(|dir| Path::new(dir).join(name)).filter(|p| p.is_file()));
+    }
 }
 
 // the installed applications a plugin kind can use, newest version first
@@ -308,6 +318,9 @@ pub fn plugin_find_apps(state: State<'_, Plugins>, patterns: Vec<String>) -> Vec
             let parts: Vec<&str> = p.split(['/', '\\']).filter(|s| !s.is_empty()).collect();
             find(&base, &parts, &mut out);
         }
+    }
+    if cfg!(target_os = "linux") {
+        linux_apps(&patterns, &mut out);
     }
     let mut out: Vec<String> = out.into_iter().map(|p| p.to_string_lossy().into_owned()).collect();
     out.sort_by_key(|a| std::cmp::Reverse(a.to_lowercase()));
@@ -1252,6 +1265,13 @@ pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_discovery_takes_only_known_names() {
+        let mut out = Vec::new();
+        linux_apps(&["sh".into(), "*".into(), "../bin/sh".into()], &mut out);
+        assert!(out.is_empty());
+    }
 
     #[test]
     fn photocraft_budgets_layers_and_the_full_composite_for_tiff() {
