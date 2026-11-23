@@ -9,6 +9,7 @@
 // it beside that photo wherever the application put it
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -37,8 +38,11 @@ pub struct Plugins {
     jobs_dir: PathBuf,
     // the hand-offs still waiting, by token; a cancelled one leaves
     live: Mutex<HashSet<u64>>,
-    photo_craft_handoff: tauri::async_runtime::Mutex<()>,
-    helicon_handoff: tauri::async_runtime::Mutex<()>,
+    // set while a PhotoCraft or Helicon Focus hand-off runs, so a second
+    // one is refused. flags, not locks: nothing waits on them, and a
+    // hand-off holds one through its renders and the editor's whole session
+    photo_craft_busy: AtomicBool,
+    helicon_busy: AtomicBool,
     // one reader or writer of the returns file at a time
     io: Mutex<()>,
     // and of the ledger
@@ -50,8 +54,8 @@ impl Plugins {
         let jobs_dir = returns_path.with_file_name("plugin-jobs");
         let config_path = returns_path.with_file_name("plugins.json");
         Plugins { returns_path, config_path, offered: Mutex::new(HashSet::new()), config_io: Mutex::new(()),
-                  jobs_dir, live: Mutex::new(HashSet::new()), photo_craft_handoff: tauri::async_runtime::Mutex::new(()),
-                  helicon_handoff: tauri::async_runtime::Mutex::new(()),
+                  jobs_dir, live: Mutex::new(HashSet::new()), photo_craft_busy: AtomicBool::new(false),
+                  helicon_busy: AtomicBool::new(false),
                   io: Mutex::new(()), jobs_io: Mutex::new(()) }
     }
 
@@ -416,7 +420,7 @@ pub async fn plugin_photo_craft(
     if plugin.kind != "photocraft" {
         return Err("Choose PhotoCraft in Preferences".into());
     }
-    let _handoff = plugins.photo_craft_handoff.try_lock().map_err(|_| "A PhotoCraft handoff is already running")?;
+    let _handoff = Busy::claim(&plugins.photo_craft_busy).ok_or("A PhotoCraft handoff is already running")?;
     let editor = PathBuf::from(plugin.app);
     let cli = photocraft_cli(&editor)?;
 
@@ -440,6 +444,21 @@ pub async fn plugin_photo_craft(
             .map_err(|e| format!("Saved {}, but PhotoCraft did not open it: {e}", document.display()))?;
         Ok(document.to_string_lossy().into_owned())
     }).await.map_err(|e| e.to_string())?
+}
+
+// a hand-off's busy flag, cleared when the hand-off ends however it ends
+struct Busy<'a>(&'a AtomicBool);
+
+impl<'a> Busy<'a> {
+    fn claim(flag: &'a AtomicBool) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok().map(|_| Busy(flag))
+    }
+}
+
+impl Drop for Busy<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 fn editor_command(executable: &Path, headless: bool) -> std::process::Command {
@@ -563,7 +582,7 @@ pub async fn plugin_helicon_focus(
     if plugin.kind != "helicon-focus" {
         return Err("Choose Helicon Focus in Preferences".into());
     }
-    let _handoff = plugins.helicon_handoff.try_lock().map_err(|_| "A Helicon Focus stack is already running")?;
+    let _handoff = Busy::claim(&plugins.helicon_busy).ok_or("A Helicon Focus stack is already running")?;
     let cli = if cfg!(target_os = "macos") {
         Path::new(&plugin.app).join("Contents/MacOS/HeliconFocus")
     } else {
