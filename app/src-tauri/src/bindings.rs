@@ -163,6 +163,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::presets,
         crate::edit_cmds::module_preset_import,
         crate::edit_cmds::instance,
+        crate::edit_cmds::order_info,
+        crate::edit_cmds::order_set,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,
         crate::app_cmds::darktable_resources_set,
@@ -465,6 +467,8 @@ mod tests {
         ("instances", reads::<InstancesReply>),
         ("presets", reads::<PresetsReply>),
         ("instance", reads::<InstanceReply>),
+        ("order_info", reads::<OrderInfoReply>),
+        ("order", reads::<OrderReply>),
         ("ai_accel", reads::<AiAccelReply>),
         ("look", reads::<LookReply>),
         ("agx_presets", reads::<AgxPresetsReply>),

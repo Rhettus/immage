@@ -119,3 +119,9 @@ export const AnalysisCheckIcon = () => (
     <path d="M4.3 7.2l1.9 1.9 3.5-3.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+// a vertical double arrow beside list lines: the order modules run in
+export const ModuleOrderIcon = () => icon(<><path d="M7 4v16M4 7l3-3 3 3M4 17l3 3 3-3" /><path d="M14 8h7M14 12h7M14 16h7" /></>);
+export const LockIcon = () => icon(<><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>);
+export const GripIcon = () => icon(<><circle cx="9" cy="6" r="1" fill="currentColor" /><circle cx="15" cy="6" r="1" fill="currentColor" />
+  <circle cx="9" cy="12" r="1" fill="currentColor" /><circle cx="15" cy="12" r="1" fill="currentColor" />
+  <circle cx="9" cy="18" r="1" fill="currentColor" /><circle cx="15" cy="18" r="1" fill="currentColor" /></>);

@@ -48,6 +48,26 @@ card switches to the one you picked.
 A module darktable cannot apply to this photo is greyed out and cannot be
 picked, as in Add module. With no photo open, every row is greyed out.
 
+## Module order
+
+The **Module order** button (up and down arrows) at the end of the module search
+box opens the order the photo's enabled modules run in, from the top down. Each
+row shows its position number. darktable runs the modules in this order, so
+moving one can change the result; the order is saved with the photo, in its
+sidecar like other edits.
+
+Drag a module by its grip to move it. While you drag, a line shows where it can
+go, and rows it cannot pass are dimmed. Or select a row and press **Alt+Up** or
+**Alt+Down** to move it one place. Locked rows, marked with a lock icon, cannot
+move. darktable keeps some modules in place, and mask and look adjustments are
+placed by the Masks and Looks tools, so their rows say which one manages them.
+
+**Apply** sets the new order for this photo only, and is one step in Edit >
+Undo and History. **Cancel** discards the changes. **Reset to default** asks
+first, then puts every module back in darktable's default order for the photo.
+If darktable cannot use an order, the dialog says so and shows the current
+order again.
+
 ## Hiding modules
 
 **Preferences > Modules > Advanced modules** lists every Advanced module by

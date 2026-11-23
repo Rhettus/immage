@@ -19,14 +19,18 @@ import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import { advancedCopies, pasteTarget, type AdvancedCopy } from "./advancedEdits";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type Value } from "./commands";
+import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type OrderEntry, type OrderModule, type Value } from "./commands";
 
 // one Advanced card's instance: its darktable fields as the client has them
 export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
 // a card instance menu action (engine session_instance()); `other` and
 // `after` place a move, `name` is a rename's ("" for darktable's own)
-export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore";
-                               op: string; priority: number; name?: string; other?: number; after?: boolean; mask?: string };
+// "order" sets the whole pipe order (Module order dialog): `order` is the full
+// live list or "reset", `layout` an undo's recorded instances, placed against
+// the live list when the action runs; `done` gets the engine's refusal, if any
+export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore" | "order";
+                               op: string; priority: number; name?: string; other?: number; after?: boolean; mask?: string;
+                               order?: OrderEntry[] | "reset"; layout?: InstanceEntry[]; done?: (error: string | null) => void };
 export type InstanceEntry = { op: string; priority: number; name: string; mask?: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
@@ -1527,6 +1531,7 @@ export class Session {
   instanceLayout(): InstanceEntry[] | null {
     if (!this.instancesLoad) return null;
     return this.instances.filter((i) => i.owner === null || i.owner === "mask")
+      .sort((a, b) => a.iop_order - b.iop_order)
       .map((i) => ({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "",
         ...(i.owner === "mask" && i.mask ? { mask: i.mask } : {}) }));
   }
@@ -1557,9 +1562,58 @@ export class Session {
       if (t.length < 2 || (t.length === n.length && t.every((p, k) => p === n[k]))) continue;
       for (let k = 1; k < t.length; k++) this.instanceAction({ action: "move", op, priority: t[k], other: t[k - 1], after: true });
     }
+    // the order across modules: when the instances both have run in another
+    // order, the engine's live list is rearranged when the action runs
+    const common = target.filter((i) => !i.mask && have.has(key(i))).map(key);
+    const inNow = new Set(common);
+    const current = now.filter((i) => !i.mask && inNow.has(key(i))).map(key);
+    if (common.some((k, n) => k !== current[n]))
+      this.instanceAction({ action: "order", op: "", priority: 0, layout: target });
+  }
+
+  // the modules in pipe order, for the Module order dialog, once the queued
+  // edits have reached the engine
+  async moduleOrder(): Promise<OrderModule[]> {
+    await this.settled();
+    return (await commands.orderInfo()).modules;
+  }
+
+  // sets the pipe order through the pump, one engine request at a time with
+  // the renders. resolves to null, or the engine's refusal (nothing changed)
+  setModuleOrder(target: OrderEntry[] | "reset"): Promise<string | null> {
+    return new Promise((done) => this.instanceAction({ action: "order", op: "", priority: 0, order: target, done }));
+  }
+
+  // an undo's order: the live list with the layout's modules in its order,
+  // each in a slot a layout module held (others, owned ones too, stay put)
+  private async layoutOrder(layout: InstanceEntry[]): Promise<OrderEntry[] | null> {
+    const live = (await commands.orderInfo()).modules;
+    const key = (i: { op: string; priority: number }) => `${i.op}#${i.priority}`;
+    const here = new Map(live.map((m) => [key(m), m]));
+    const want = layout.filter((i) => !i.mask && here.get(key(i))?.owner === null).map(key);
+    const set = new Set(want);
+    const current = live.filter((m) => set.has(key(m))).map(key);
+    if (want.every((k, n) => k === current[n])) return null;
+    let next = 0;
+    return live.map((m) => set.has(key(m)) ? here.get(want[next++])! : m).map((m) => ({ op: m.op, priority: m.priority }));
   }
 
   private async sendInstance(a: InstanceAction) {
+    if (a.action === "order") {
+      try {
+        const order = a.order ?? (a.layout ? await this.layoutOrder(a.layout) : null);
+        if (order) {
+          const r = await this.pumpTyped("order_set", () =>
+            commands.orderSet(order === "reset" ? null : order, order === "reset" ? true : null));
+          this.instances = r.instances;
+        }
+        a.done?.(null);
+      } catch (e) {
+        this.instances = (await commands.instances().catch(() => this.instances));
+        if (a.done) a.done(String(e)); else this.onError(String(e));
+      }
+      return;
+    }
     let r: InstanceReply;
     try {
       r = await this.pumpTyped("instance", () =>

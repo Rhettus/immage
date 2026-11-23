@@ -58,6 +58,11 @@ Improvements
   search box at the top that filters shortcuts by partial matches across
   actions, keys, and sections as you type, returning to the full list when
   cleared.
+- **Module order in Advanced mode:** The **Module order** button at the end of
+  the module search box lists a photo's enabled modules in the order darktable
+  runs them. Drag a module, or select it and press **Alt+Up** or **Alt+Down**,
+  to change that photo's order. Locked modules stay put, and **Reset to default**
+  restores darktable's order.
 
 Performance
 

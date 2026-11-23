@@ -2047,6 +2047,281 @@ gboolean session_instance(const char *action, const char *op, const int priority
   return TRUE;
 }
 
+// the open photo's live modules (not deleted ones) in pipe order
+static GPtrArray *_live_modules(void)
+{
+  GPtrArray *a = g_ptr_array_new();
+  for(GList *l = _s.dev.iop; l; l = g_list_next(l))
+    if(!g_list_find(_s.deleted, l->data)) g_ptr_array_add(a, l->data);
+  return a;
+}
+
+// `order_info`'s list: one entry per live module in pipe order, with the
+// inclusive range of indices (in this same list) it may be moved to. the
+// check functions refuse at the first fence or rule that the move would pass,
+// and passing more modules only adds blockers, so testing neighbours outward
+// until one is refused gives a contiguous range. they must not be asked to
+// move a module before the one that already follows it (they dereference a
+// module that does not exist then), so the first step outward is a move
+// before the neighbour behind it, or after the neighbour ahead of it, never
+// next to itself. the last module cannot be passed: "after" needs a module
+// behind the target. an Immage-owned instance stays where its tool put it
+static void _order_modules(JsonBuilder *b)
+{
+  GPtrArray *live = _live_modules();
+  const int n = live->len;
+  json_builder_set_member_name(b, "modules");
+  json_builder_begin_array(b);
+  for(int i = 0; i < n; i++)
+  {
+    dt_iop_module_t *m = live->pdata[i];
+    const char *owner = masks_instance_owner(m);
+    int lo = i, hi = i;
+    if(!owner)
+    {
+      for(int k = i - 1; k >= 0 && dt_ioppr_check_can_move_before_iop(_s.dev.iop, m, live->pdata[k]); k--)
+        lo = k;
+      for(int k = i + 1; k < n - 1 && dt_ioppr_check_can_move_after_iop(_s.dev.iop, m, live->pdata[k]); k++)
+        hi = k;
+    }
+    json_builder_begin_object(b);
+    engine_add_string(b, "op", m->op);
+    engine_add_int(b, "priority", m->multi_priority);
+    engine_add_string(b, "name", m->multi_name_hand_edited ? m->multi_name : "");
+    const gboolean labeled = m->multi_name[0] && g_strcmp0(m->multi_name, "0");
+    gchar *label = !labeled ? g_strdup("") : m->multi_name_hand_edited ? g_strdup(m->multi_name)
+                   : dt_util_localize_segmented_name(m->multi_name, FALSE);
+    engine_add_string(b, "label", label);
+    g_free(label);
+    engine_add_bool(b, "enabled", m->enabled);
+    engine_add_int(b, "iop_order", m->iop_order);
+    json_builder_set_member_name(b, "owner");
+    if(owner) json_builder_add_string_value(b, owner); else json_builder_add_null_value(b);
+    engine_add_int(b, "lo", lo);
+    engine_add_int(b, "hi", hi);
+    json_builder_set_member_name(b, "locked");
+    if(owner) json_builder_add_string_value(b, "owner");
+    else if(lo == hi) json_builder_add_string_value(b, "pipe");
+    else json_builder_add_null_value(b);
+    json_builder_end_object(b);
+  }
+  json_builder_end_array(b);
+  g_ptr_array_free(live, TRUE);
+}
+
+void session_order_info(JsonBuilder *b)
+{
+  _order_modules(b);
+}
+
+static void _order_restore(GList *saved)
+{
+  g_list_free_full(_s.dev.iop_order_list, free);
+  _s.dev.iop_order_list = saved;
+  dt_ioppr_resync_modules_order(&_s.dev);
+}
+
+// each of `moved` gets a history item carrying its new iop_order, as
+// darktable's own drag does (imageop.c), and the pipes are told once
+static void _order_commit(GList *moved)
+{
+  for(GList *l = moved; l; l = g_list_next(l))
+  {
+    dt_iop_module_t *m = l->data;
+    dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+  }
+  if(!moved) return;
+  _s.iop_gen++;
+  session_changed(DT_DEV_PIPE_REMOVE);
+}
+
+// the order `reset` wants: darktable's default list for this photo merged
+// with the current multi-instances, as dt_ioppr_change_iop_order() builds it
+// (libs/ioporder.c, gui_reset), as a module array over every module of the
+// pipe, deleted ones too. what the default list does not know follows the
+// module it follows now. an Immage-owned instance goes back behind the module
+// it follows now: its tool places it relative to others (masks_named_instance,
+// _place) and those placements are not re-run here
+static GPtrArray *_order_default_target(void)
+{
+  GList *def = dt_ioppr_get_iop_order_list_version(
+    dt_image_is_ldr(&_s.dev.image_storage) ? DT_DEFAULT_IOP_ORDER_JPG : DT_DEFAULT_IOP_ORDER_RAW);
+  GList *mi = dt_ioppr_extract_multi_instances_list(_s.dev.iop_order_list);
+  if(mi) def = dt_ioppr_merge_multi_instance_iop_order_list(def, mi);
+  g_list_free_full(mi, g_free);
+  GPtrArray *t = g_ptr_array_new();
+  for(const GList *l = def; l; l = g_list_next(l))
+  {
+    const dt_iop_order_entry_t *e = l->data;
+    dt_iop_module_t *m = dt_iop_get_module_by_op_priority(_s.dev.iop, e->operation, e->instance);
+    if(m && !g_ptr_array_find(t, m, NULL)) g_ptr_array_add(t, m);
+  }
+  g_list_free_full(def, g_free);
+  const dt_iop_module_t *prev = NULL;
+  for(GList *l = _s.dev.iop; l; prev = l->data, l = g_list_next(l))
+  {
+    dt_iop_module_t *m = l->data;
+    guint at;
+    if(!g_ptr_array_find(t, m, &at))
+    {
+      guint p = 0;
+      if(prev && g_ptr_array_find(t, prev, &p)) p++;
+      g_ptr_array_insert(t, p, m);
+    }
+  }
+  prev = NULL;
+  for(GList *l = _s.dev.iop; l; prev = l->data, l = g_list_next(l))
+  {
+    dt_iop_module_t *m = l->data;
+    if(!masks_instance_owner(m) || g_list_find(_s.deleted, m)) continue;
+    guint at;
+    if(g_ptr_array_find(t, m, &at)) g_ptr_array_remove_index(t, at);
+    guint p = 0;
+    if(prev && g_ptr_array_find(t, prev, &p)) p++;
+    g_ptr_array_insert(t, p, m);
+  }
+  return t;
+}
+
+// `order`: the open photo's pipe order set to `modules` ([{op, priority}],
+// every live module once, in the wanted order) or, with `reset`, to
+// darktable's default. an Immage-owned instance is never moved itself; the
+// others move around it, and a target that would need it moved is refused.
+// the moves are darktable's own (dt_ioppr_check_can_move_* and
+// dt_ioppr_move_iop_*), module after its predecessor in the target. any
+// refusal restores the order and adds no history. the reply is `instances`
+// and `modules`, as `order_info` lists them. a target equal to the current
+// order succeeds and changes nothing
+gboolean session_order(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const gboolean reset = json_object_get_boolean_member_with_default(req, "reset", FALSE);
+  JsonArray *want = !reset && json_object_has_member(req, "modules")
+    && JSON_NODE_HOLDS_ARRAY(json_object_get_member(req, "modules"))
+    ? json_object_get_array_member(req, "modules") : NULL;
+  if(!reset && !want)
+  {
+    *err = g_strdup("order needs modules or reset");
+    return FALSE;
+  }
+  GPtrArray *live = _live_modules();
+  GPtrArray *target = NULL;
+  if(want)
+  {
+    target = g_ptr_array_new();
+    gchar *bad = NULL;
+    if(json_array_get_length(want) != live->len)
+      bad = g_strdup_printf("modules must list all %u modules once", live->len);
+    for(guint i = 0; !bad && i < json_array_get_length(want); i++)
+    {
+      JsonNode *node = json_array_get_element(want, i);
+      JsonObject *o = JSON_NODE_HOLDS_OBJECT(node) ? json_node_get_object(node) : NULL;
+      const char *op = o ? json_object_get_string_member_with_default(o, "op", NULL) : NULL;
+      const int priority = o ? json_object_get_int_member_with_default(o, "priority", 0) : 0;
+      dt_iop_module_t *m = op ? dt_iop_get_module_by_op_priority(_s.dev.iop, op, priority) : NULL;
+      if(!m || g_list_find(_s.deleted, m)) bad = g_strdup_printf("no module %d of '%s'", priority, op ? op : "(none)");
+      else if(g_ptr_array_find(target, m, NULL)) bad = g_strdup_printf("'%s' %d listed twice", op, priority);
+      else g_ptr_array_add(target, m);
+    }
+    if(bad)
+    {
+      *err = bad;
+      g_ptr_array_free(target, TRUE);
+      g_ptr_array_free(live, TRUE);
+      return FALSE;
+    }
+  }
+  GList *saved = dt_ioppr_iop_order_copy_deep(_s.dev.iop_order_list);
+  GList *moved = NULL;
+  if(reset)
+  {
+    // the live neighbour each module has now, to find the ones that move
+    GPtrArray *full = _order_default_target();
+    GList *entries = NULL, *stale = _s.dev.iop_order_list;
+    for(guint i = 0; i < full->len; i++)
+    {
+      const dt_iop_module_t *m = full->pdata[i];
+      GList *e = dt_ioppr_get_iop_order_link(stale, m->op, m->multi_priority);
+      if(e) entries = g_list_append(entries, e->data);
+    }
+    for(GList *l = stale; l; l = g_list_next(l))
+      if(!g_list_find(entries, l->data)) entries = g_list_append(entries, l->data);
+    g_list_free(stale);
+    _s.dev.iop_order_list = entries;
+    dt_ioppr_resync_modules_order(&_s.dev);
+    // `saved` is a deep copy, so entries are not shared with it.
+    // darktable's reset adds no history item: it reloads the history, whose
+    // items then all take the new order (dt_ioppr_migrate_iop_order). the
+    // same here, in memory, so stepping back through history keeps it
+    for(GList *h = _s.dev.history; h; h = g_list_next(h))
+    {
+      dt_dev_history_item_t *hist = h->data;
+      if(hist->module && hist->module->iop_order != INT_MAX) hist->iop_order = hist->module->iop_order;
+    }
+    GPtrArray *after = _live_modules();
+    gboolean changed = after->len != live->len;
+    for(guint i = 0; !changed && i < after->len; i++) changed = after->pdata[i] != live->pdata[i];
+    g_ptr_array_free(after, TRUE);
+    g_ptr_array_free(full, TRUE);
+    if(changed)
+    {
+      _s.iop_gen++;
+      session_changed(DT_DEV_PIPE_REMOVE);
+    }
+  }
+  else
+  {
+    gchar *fail = NULL;
+    for(guint t = 0; !fail && t < target->len; t++)
+    {
+      dt_iop_module_t *m = target->pdata[t];
+      GPtrArray *cur = _live_modules();
+      const gboolean in_place = cur->pdata[t] == m;
+      const gboolean owned = masks_instance_owner(m) != NULL;
+      dt_iop_module_t *first = cur->pdata[0];
+      dt_iop_module_t *prev = t ? target->pdata[t - 1] : NULL;
+      g_ptr_array_free(cur, TRUE);
+      if(in_place || owned) continue;
+      gboolean ok;
+      if(!prev)
+        ok = dt_ioppr_check_can_move_before_iop(_s.dev.iop, m, first)
+             && dt_ioppr_move_iop_before(&_s.dev, m, first);
+      else
+        ok = dt_ioppr_check_can_move_after_iop(_s.dev.iop, m, prev)
+             && dt_ioppr_move_iop_after(&_s.dev, m, prev);
+      if(!ok) fail = g_strdup_printf("cannot move '%s' %s", m->op, prev ? "there" : "to the start");
+      else if(!g_list_find(moved, m)) moved = g_list_append(moved, m);
+    }
+    if(!fail)
+    {
+      GPtrArray *cur = _live_modules();
+      for(guint t = 0; !fail && t < target->len; t++)
+        if(cur->pdata[t] != target->pdata[t])
+          fail = g_strdup_printf("'%s' would have to move a module an Immage tool keeps in place",
+                                 ((dt_iop_module_t *)target->pdata[t])->op);
+      g_ptr_array_free(cur, TRUE);
+    }
+    if(fail)
+    {
+      _order_restore(saved);
+      saved = NULL;
+      g_list_free(moved);
+      moved = NULL;
+      *err = fail;
+      g_ptr_array_free(target, TRUE);
+      g_ptr_array_free(live, TRUE);
+      return FALSE;
+    }
+  }
+  g_list_free_full(saved, free);
+  _order_commit(moved);
+  g_list_free(moved);
+  if(target) g_ptr_array_free(target, TRUE);
+  g_ptr_array_free(live, TRUE);
+  session_instances(b);
+  _order_modules(b);
+  return TRUE;
+}
+
 static const char *_type_name(const dt_introspection_type_t t)
 {
   switch(t)

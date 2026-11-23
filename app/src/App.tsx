@@ -20,6 +20,7 @@ import { pasteTargets, replaceMasks, resetTargets, restorePaste, runPaste, runRe
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
+import { ModuleOrderDialog } from "./ModuleOrderDialog";
 import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -5245,6 +5246,9 @@ export default function App() {
   const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
   const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
   const [tmWarning, setTmWarning] = useState<ToneMapperGuardRequest | null>(null);
+  // Advanced mode's Module order dialog, closed with the photo it was opened on
+  const [orderOpen, setOrderOpen] = useState(false);
+  useEffect(() => { setOrderOpen(false); }, [current]);
   const filmView = !!current && layout.right && rightMode === "film";
   useEffect(() => {
     if (!filmView || sfStocks?.pack) return;
@@ -7705,7 +7709,7 @@ export default function App() {
             </div>
           )}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
-            <AdvancedSearch photo={!!current} onPick={searchPick}
+            <AdvancedSearch photo={!!current} onPick={searchPick} onOrder={() => setOrderOpen(true)}
                             applicable={(op) => {
                               if (TONE_MAPPER_OPS.has(op) && !session.current?.toneMappable) return false;
                               const i = session.current?.instances.find((x) => x.op === op && x.priority === 0);
@@ -7864,6 +7868,9 @@ export default function App() {
       onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
+    {orderOpen && current && session.current && <ModuleOrderDialog session={session.current}
+      onBeforeApply={() => record([`order:${performance.now()}`], t("dialogs.moduleOrder.title"))}
+      onClose={() => setOrderOpen(false)} />}
     {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {

@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, OrderEntry, OrderInfoReply, OrderReply, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -139,6 +139,28 @@ pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: Str
     if let Some(m) = mask { req["mask"] = json!(m); }
     let reply = state.engine("instance").request(req)?;
     serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
+}
+
+// the open photo's pipe order and what each module may move to, for Advanced
+// mode's order tools
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn order_info(state: State<'_, AppState>) -> Result<OrderInfoReply, String> {
+    let reply = state.engine("order_info").request(json!({ "cmd": "order_info" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("order_info: unexpected reply: {e}"))
+}
+
+// moves instances to the given priorities (`modules`), or restores the default
+// order (`reset`); the reply is the pipe order after the change
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn order_set(state: State<'_, AppState>, modules: Option<Vec<OrderEntry>>, reset: Option<bool>)
+    -> Result<OrderReply, String> {
+    let mut req = json!({ "cmd": "order" });
+    if let Some(m) = modules { req["modules"] = json!(m); }
+    if reset == Some(true) { req["reset"] = json!(true); }
+    let reply = state.engine("order").request(req)?;
+    serde_json::from_value(reply).map_err(|e| format!("order: unexpected reply: {e}"))
 }
 
 // the presets darktable's own menu lists for an instance of a module in the

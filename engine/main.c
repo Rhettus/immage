@@ -833,6 +833,17 @@ static gboolean _cmd_instance(JsonObject *req, JsonBuilder *b, char **err)
                           json_object_get_boolean_member_with_default(req, "after", FALSE), b, err);
 }
 
+static gboolean _cmd_order_info(JsonObject *req, JsonBuilder *b, char **err)
+{
+  session_order_info(b);
+  return TRUE;
+}
+
+static gboolean _cmd_order(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_order(req, b, err);
+}
+
 static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
 {
 // "draft": a slider drag's frame, on the drag pipe so the main pipe's
@@ -1385,6 +1396,8 @@ static const eng_cmd_t _commands[] =
   { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
   { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
   { "instance", _cmd_instance, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "order_info", _cmd_order_info, _CMD_NEEDS_OPEN },
+  { "order", _cmd_order, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "render", _cmd_render, _CMD_NEEDS_OPEN },
   { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },

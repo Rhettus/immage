@@ -58,7 +58,7 @@ ai_object analysis_preview baseline_end before cancel_base capture_times clip_em
 checker_analyze colormapping_acquire combine copy data_backup export export_hold export_release folder fonts forget forget_folder get
 hdr_merge history history_discard import instance instances keywords keywords_set lenses look lut_files lut_folder look_amount mask
 mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema module_state
-open opencl pano_merge pano_preview parity paste_batch points prefetch preview
+open opencl order order_info pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
 spektra_stocks spot_source spots spots_enable style_forget thumb thumb_threads tone_key watermarks wb_presets
@@ -230,6 +230,11 @@ def photo_edits(img):
         R('module_state', op='exposure', priority=0, preset='no such preset', label='module_state preset unknown'),
         R('module_state', op='exposure', priority=0, preset='_builtin_magic lantern defaults', reset=True, label='module_state preset and reset'),
         R('instance', label='instance none'),
+        R('order_info'),
+        R('order', label='order none'),
+        R('order', modules=[], label='order wrong count'),
+        R('order', modules=[{'op': 'nosuchmodule', 'priority': 0}], label='order unknown module'),
+        R('order', reset=True, label='order reset'),
         R('instance', action='new', op='exposure', priority=0, label='instance new'),
         R('instance', action='rename', op='exposure', priority=1, name='second', label='instance rename'),
         R('instance', action='move', op='exposure', priority=1, other=0, after=False, label='instance move'),
@@ -621,6 +626,53 @@ class Run:
         for req in reqs:
             self.run_one(name, req)
 
+    def order_cases(self, photo):
+        """A module's move, a refused one, the reset, and a custom order that
+        survives a save and reopen, each read back with `order_info`."""
+        def listing(label):
+            return self.run_one('3 open', R('order_info', label=label))[0]['modules']
+
+        def names(mods):
+            return [(m['op'], m['priority']) for m in mods]
+
+        def want(mods):
+            return [{'op': m['op'], 'priority': m['priority']} for m in mods]
+
+        start = listing('order_info before moves')
+        ops = names(start)
+        i = ops.index(('colorbalancergb', 0))
+        assert start[i]['hi'] > i and not start[i]['locked'], start[i]
+        # a legal swap with the module behind it
+        target = want(start)
+        target[i], target[i + 1] = target[i + 1], target[i]
+        reply = self.run_one('3 open', R('order', modules=target, label='order swap'))[0]
+        assert reply['ok'] and names(reply['modules']) == [(t['op'], t['priority']) for t in target], reply
+        assert 'instances' in reply
+        assert names(listing('order_info after swap')) == names(reply['modules'])
+        # the same target again changes nothing
+        again = self.run_one('3 open', R('order', modules=target, label='order same'))[0]
+        assert again['ok'] and names(again['modules']) == names(reply['modules']), again
+        # colorin may not go to the start: refused, order unchanged
+        moved = want(reply['modules'])
+        j = names(reply['modules']).index(('colorin', 0))
+        moved.insert(0, moved.pop(j))
+        refused = self.run_one('3 open', R('order', modules=moved, label='order refused'))[0]
+        assert not refused['ok'] and 'colorin' in refused['error'], refused
+        assert names(listing('order_info after refusal')) == names(reply['modules'])
+        # the custom order is saved and read back after a reopen
+        self.run_one('3 open', R('save', label='save custom order'))
+        self.run_one('3 open', R('close', label='close custom order'))
+        self.run_one('3 open', R('open', path=str(photo), label='open custom order'))
+        reopened = listing('order_info reopened')
+        assert names(reopened) == names(reply['modules']), 'custom order lost on reopen'
+        # reset returns to darktable's default
+        done = self.run_one('3 open', R('order', reset=True, label='order reset custom'))[0]
+        assert done['ok'] and names(done['modules']) == ops, done
+        # leave the photo as the other cases found it
+        self.run_one('3 open', R('close', label='close order'))
+        self.run_one('3 open', R('history_discard', imgid=1, label='history_discard order'))
+        self.run_one('3 open', R('open', path=str(photo), label='open after order'))
+
     def go(self, photos):
         a, b = photos
         self.out.mkdir()
@@ -655,6 +707,7 @@ class Run:
                               R('open', path='{tmp}/no-such.tif', label='open missing')])
         self.state('3 open', [R('open', path=str(a), label='open again'),
                               R('history_discard', imgid=1, label='history_discard open')])
+        self.order_cases(a)
         self.state('3 open', anywhere(1) + photo_files(1) + photo_edits(1) + tagged(1)
                    + malformed())
         # closed again

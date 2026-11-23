@@ -462,6 +462,43 @@ pub struct InstanceReply {
     pub instances: Vec<Instance>,
 }
 
+// one module of the open photo's pipe in order; `lo`..`hi` are the inclusive
+// indices it may move to; `locked` is "owner" (an Immage tool keeps it in
+// place) or "pipe" (darktable will not move it)
+#[derive(Serialize, Deserialize, Type)]
+pub struct OrderModule {
+    pub op: String,
+    pub priority: i64,
+    pub name: String,
+    pub label: String,
+    pub enabled: bool,
+    pub iop_order: i64,
+    pub owner: Option<String>,
+    pub lo: i64,
+    pub hi: i64,
+    pub locked: Option<String>,
+}
+
+// `order_info`'s reply: every module of the pipe in order
+#[derive(Serialize, Deserialize, Type)]
+pub struct OrderInfoReply {
+    pub modules: Vec<OrderModule>,
+}
+
+// `order`'s reply: the instance list and the pipe order after the change
+#[derive(Serialize, Deserialize, Type)]
+pub struct OrderReply {
+    pub instances: Vec<Instance>,
+    pub modules: Vec<OrderModule>,
+}
+
+// one entry of `order`'s request: an instance (`op@priority`) and its new position
+#[derive(Serialize, Deserialize, Type)]
+pub struct OrderEntry {
+    pub op: String,
+    pub priority: i64,
+}
+
 // `presets`' reply: darktable's preset menu for one instance, in its order.
 // `name` keeps the "|" levels of its submenus; `builtin` is darktable's own
 // (write-protected), `applicable` false for a preset of another module

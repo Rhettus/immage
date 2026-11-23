@@ -453,6 +453,8 @@ void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const
 gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
                           const char *mask,
                           const int other, const gboolean after, JsonBuilder *b, char **err);
+void session_order_info(JsonBuilder *b);
+gboolean session_order(JsonObject *req, JsonBuilder *b, char **err);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);

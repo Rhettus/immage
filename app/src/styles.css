@@ -3115,3 +3115,34 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .module-checker select { min-width: 0; }
 .checker-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .checker-matrix { font-variant-numeric: tabular-nums; text-align: end; }
+
+/* Module order dialog (ModuleOrderDialog.tsx) */
+.advanced-search { display: flex; align-items: center; gap: 6px; }
+.advanced-search .field { flex: 1; min-width: 0; width: auto; }
+.advanced-search .tool:disabled { opacity: 0.4; cursor: default; }
+.modal.module-order { width: min(420px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 80px)); outline: none; }
+.module-order .modal-body { min-height: 0; }
+.module-order .hint { margin: 2px 0 10px; }
+.order-list { height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding-inline-end: 4px; position: relative; }
+.order-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--card); border-radius: 8px; flex: none; position: relative; }
+.order-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.order-num { width: 20px; text-align: end; color: var(--text-3); font-variant-numeric: tabular-nums; font-size: var(--fs-small); flex: none; }
+.order-grip { width: 14px; height: 14px; color: var(--text-3); cursor: grab; flex: none; display: flex; touch-action: none; }
+.order-grip .icon { width: 13px; height: 13px; }
+.order-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-inst { color: var(--text-3); font-weight: 500; }
+.order-row.locked { color: var(--text-3); background: var(--ui-locked-row, #1a1a1a); }
+.order-row.locked .order-grip { cursor: default; }
+.order-row.dim { opacity: 0.38; background: repeating-linear-gradient(135deg, #1a1a1a 0 6px, #212121 6px 12px); }
+.order-row.ghost { opacity: 0.25; border: 1px dashed var(--text-3); background: transparent; }
+.order-row.lifted { background: var(--hover, #2a2a2a); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.25); z-index: 3; cursor: grabbing; }
+.order-row.lifted .order-num, .order-row.lifted .order-grip { color: var(--text); cursor: grabbing; }
+.order-float { position: absolute; inset-inline: 0; pointer-events: none; transform: translateX(6px) scale(1.02); }
+.order-drop { height: 0; margin-block: -2px; border-block-start: 2px solid var(--accent); position: relative; flex: none; box-shadow: 0 0 8px rgba(255, 255, 255, 0.5); }
+.order-drop::before { content: ""; position: absolute; inset-inline-start: -3px; inset-block-start: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.order-ends { display: flex; justify-content: space-between; color: var(--text-3); font-size: var(--fs-micro, 10px); margin-block-start: 4px; }
+.order-error { margin-block: 8px 0; color: var(--danger, #e5484d); font-size: var(--fs-small); }
+.order-confirm { margin: 0 18px 10px; padding: 10px 12px; background: var(--card); border-radius: var(--radius-card); display: flex; align-items: center; gap: 10px; font-size: var(--fs-small); }
+.order-confirm p { margin: 0; flex: 1; color: var(--text-2); }
+.order-foot { justify-content: flex-start; }
+.order-spacer { flex: 1; }

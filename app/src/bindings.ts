@@ -154,6 +154,8 @@ export const commands = {
 	presets: (op: string, priority: number, action: string | null, name: string | null, version: number | null, imgid: number | null) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority, action, name, version, imgid }),
 	modulePresetImport: (op: string, priority: number, imgid: number, xml: string) => __TAURI_INVOKE<PresetsReply>("module_preset_import", { op, priority, imgid, xml }),
 	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
+	orderInfo: () => __TAURI_INVOKE<OrderInfoReply>("order_info"),
+	orderSet: (modules: OrderEntry[] | null, reset: boolean | null) => __TAURI_INVOKE<OrderReply>("order_set", { modules, reset }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
@@ -938,6 +940,33 @@ export type OpenReply = {
 	ldr?: boolean,
 	sensor: string | null,
 	fresh: boolean,
+};
+
+export type OrderEntry = {
+	op: string,
+	priority: number,
+};
+
+export type OrderInfoReply = {
+	modules: OrderModule[],
+};
+
+export type OrderModule = {
+	op: string,
+	priority: number,
+	name: string,
+	label: string,
+	enabled: boolean,
+	iop_order: number,
+	owner: string | null,
+	lo: number,
+	hi: number,
+	locked: string | null,
+};
+
+export type OrderReply = {
+	instances: Instance[],
+	modules: OrderModule[],
 };
 
 export type PageValues = {

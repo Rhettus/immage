@@ -20,6 +20,7 @@ import { MAX_NODES } from "./tonecurve";
 import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 import type { ImageEntry } from "./library";
 import { t } from "./i18n";
+import { ModuleOrderIcon } from "./icons";
 import { fieldText } from "./fieldText";
 import { presetLabel } from "./presetName";
 
@@ -31,8 +32,9 @@ export const TECHNICAL_ID = "technical";
 // and settings (by label) it finds in every group. `applicable` says whether
 // darktable can apply a module to this photo; a module it cannot, or any with
 // no photo open, is greyed out
-export function AdvancedSearch({ photo, applicable, reasonFor, onPick }: {
+export function AdvancedSearch({ photo, applicable, reasonFor, onPick, onOrder }: {
   photo: boolean; applicable: (op: string) => boolean; reasonFor?: (op: string) => string | undefined; onPick: (hit: SearchHit) => void;
+  onOrder?: () => void;   // the Module order button beside the search
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -64,6 +66,8 @@ export function AdvancedSearch({ photo, applicable, reasonFor, onPick }: {
                else if (e.key === "Enter" && open && hits[active]) { e.preventDefault(); pick(hits[active]); }
                else if (e.key === "Escape") { e.stopPropagation(); close(); }
              }} />
+      {onOrder && <button type="button" className="tool" title={t("dialogs.moduleOrder.title")} aria-label={t("dialogs.moduleOrder.title")}
+                          disabled={!photo} onClick={onOrder}><ModuleOrderIcon /></button>}
       {open && hits.length > 0 && (
         <div id="advanced-search-results" className="context-menu module-menu advanced-search-results" role="listbox">
           {hits.map((h, i) => (

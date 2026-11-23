@@ -27,7 +27,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
   In Advanced mode, apply built-in presets, import darktable `.dtpreset`
-  files, and save or delete your own module presets, including within masks.
+  files, save or delete your own module presets, including within masks, and
+  change the order a photo's modules run in.
   Copied AI masks are recalculated for each destination photo.
 - Heal and clone, [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
