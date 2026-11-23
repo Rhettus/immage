@@ -238,7 +238,10 @@ export default function App() {
       for (const v of list) {
         const seen = volumesRef.current.get(v.path);
         if (v.online && seen?.online === false) back = true;
-        next.set(v.path, !v.online && seen ? { ...seen, online: false } : v);
+        // an offline drive keeps what was learned while it answered, unless
+        // the reply names another mount: an unmounted share's own root
+        const keep = !v.online && seen && (!v.mount || v.mount === seen.mount);
+        next.set(v.path, keep ? { ...seen, online: false } : v);
       }
       if (JSON.stringify([...next]) === JSON.stringify([...volumesRef.current])) return;
       setVolumes(next);
