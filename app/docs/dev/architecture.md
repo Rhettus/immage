@@ -549,7 +549,17 @@ Either metadata failure deletes the output.
 [`engine/pano.cc`](../../../engine/pano.cc) is Panorama Merge, which
 darktable doesn't have: OpenCV's stitching pipeline (`cv::detail`, as
 its `stitching_detailed.cpp` sample runs it), kept linear, with the
-blend log-encoded into the 15 bits OpenCV's blender takes. `_pano_frame`
+blend log-encoded into the 15 bits OpenCV's blender takes. Exposure is
+matched by Hugin's photometric model rather than OpenCV's one gain a frame
+(`_photo`): `_sample_pairs` picks flat, unclipped point pairs from each
+overlap of quarter-megapixel float copies, and `_fit` solves for three log
+gains a frame and one vignetting polynomial `1 + v0 r² + v1 r⁴ + v2 r⁶`
+shared by the frames (Levenberg-Marquardt, Huber loss). `_correct` divides
+each frame by its fit before the seams are found and before the blend.
+Fits with too few samples fall back to OpenCV's `GainCompensator`; an
+implausible vignetting fit falls back to gains alone.
+`python3 verify/pano-photometric.py` stitches synthetic frames with known
+exposures, tints and vignetting and checks the sky for bands. `_pano_frame`
 in export.c renders each raw through an export pipe with only the modules
 before `colorin` (`_pano_keep`) and its white balance divided out, so
 the panorama stays in the camera's color;

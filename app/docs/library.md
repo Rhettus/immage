@@ -679,6 +679,12 @@ format identification, camera color matrix and white balance when copying
 the source photo's EXIF. If an older RAW merge shows a **?** thumbnail and
 cannot open, merge the original photos again with the updated version.
 
+Before blending, Panorama Merge matches the photos' exposure and color, and
+evens out the lens's vignetting (corners darker than the middle), from
+the areas where the photos overlap. Photos shot at slightly different
+exposures or white balances blend into an even sky, without bands at the
+overlaps. The preview uses the same matching.
+
 The photos should overlap by a third or so. A photo that overlaps none of
 the others is left out, and the activity line says so. Stitching runs on OpenCV rather than darktable,
 which has no panorama tool. It takes from half a minute to a few

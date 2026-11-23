@@ -19,9 +19,10 @@
 
 // the stitch is OpenCV's cv::detail pipeline, as its
 // samples/cpp/stitching_detailed.cpp runs it, kept linear: features, the
-// cameras, seams and exposure gains come from small 8-bit copies; the
-// full-size frames are warped as floats and scaled by their gains in
-// linear. OpenCV's blender takes 16-bit integers only (blenders.cpp,
+// cameras and seams come from small 8-bit copies, and each frame's
+// exposure, color and vignetting from small float ones, fitted as Hugin's
+// photometric optimizer does (_photo); the full-size frames are corrected
+// and warped as floats in linear. OpenCV's blender takes 16-bit integers only (blenders.cpp,
 // CV_16SC3), so the warped frames go to it log-encoded into 15 bits and
 // come back decoded
 
@@ -30,6 +31,7 @@
 #include <algorithm>
 #include <climits>
 #include <cmath>
+#include <random>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -52,12 +54,15 @@ struct pano_t
 {
   std::vector<Mat> frames;  // CV_16FC3, linear
   std::vector<double> focals;  // each frame's focal length in its pixels, 0 if not known
+  std::vector<double> tops;    // each frame's brightest value, where it clips
   double vmax = 1.0;        // the brightest value of any frame
 };
 
 // features are found at 2 MP: OpenCV's sample uses 0.6, which leaves a
 // distant skyline a few pixels high. seams and gains need far less
 static const double _WORK_PIXELS = 2e6, _SEAM_PIXELS = 1e5;
+// the exposure and vignetting fit samples copies of a quarter megapixel
+static const double _PHOTO_PIXELS = 2.5e5;
 // past this the blend alone needs several GB (about 14 bytes a pixel)
 static const double _MAX_CANVAS = 250e6;
 
@@ -86,6 +91,7 @@ gboolean pano_add(pano_t *p, const float *rgba, const int width, const int heigh
     double lo, hi;
     minMaxLoc(rgb.reshape(1), &lo, &hi);
     p->vmax = std::max(p->vmax, hi);
+    p->tops.push_back(hi);
     rgb.convertTo(half, CV_16F);
     p->frames.push_back(half);
     p->focals.push_back(focal);
@@ -217,6 +223,269 @@ static Rect _auto_crop(const Mat &mask)
   return x1 > x0 && y1 > y0 ? Rect(x0, y0, x1 - x0, y1 - y0) : Rect(0, 0, mask.cols, mask.rows);
 }
 
+// the frames' exposures and the lens's vignetting, fitted as Hugin's
+// photometric optimizer fits them (PhotometricOptimizer.cpp, with the
+// points PointSampler.cpp picks), for linear frames and so without its
+// response curve: frame i shows the scene L as exp(e[i]) * V(r) * L, per
+// channel, V(r) = 1 + v0 r^2 + v1 r^4 + v2 r^6 the vignetting all frames
+// share, r from the frame's center, 1 at its corner. one gain a frame
+// leaves each frame's corners darker than its middle, which a sky shows as
+// a band at every overlap
+struct _photo
+{
+  std::vector<Vec3d> e;  // empty: not fitted
+  double v[3] = { 0.0, 0.0, 0.0 };
+};
+
+// a pair of points two frames show of the same part of the scene
+struct _sample
+{
+  int i, j;
+  float li[3], lj[3];  // the log values
+  float ti, tj;        // r^2
+};
+
+// up to this many points an overlap, as Hugin's default of a few hundred
+// an image pair, which is plenty for 3 gains a frame and 3 coefficients
+static const int _PAIR_SAMPLES = 2000;
+
+static inline double _vig(const double *v, const double t)
+{
+  return 1.0 + t * (v[0] + t * (v[1] + t * v[2]));
+}
+
+// r^2 from a frame's center, over its corner's, at each pixel
+static inline double _r2(const int x, const int y, const double cx, const double cy, const double k)
+{
+  const double dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+  return (dx * dx + dy * dy) * k;
+}
+
+static Mat _radius2(const Size s)
+{
+  Mat t(s, CV_32F);
+  const double cx = 0.5 * s.width, cy = 0.5 * s.height, k = 1.0 / (cx * cx + cy * cy);
+  for(int y = 0; y < s.height; y++)
+  {
+    float *row = t.ptr<float>(y);
+    for(int x = 0; x < s.width; x++) row[x] = (float)_r2(x, y, cx, cy, k);
+  }
+  return t;
+}
+
+// frame i, CV_32FC3 at any scale, divided by its exposure and vignetting
+static void _correct(Mat &f, const _photo &ph, const int i)
+{
+  const Vec3d g(std::exp(-ph.e[i][0]), std::exp(-ph.e[i][1]), std::exp(-ph.e[i][2]));
+  const double cx = 0.5 * f.cols, cy = 0.5 * f.rows, k = 1.0 / (cx * cx + cy * cy);
+  parallel_for_(Range(0, f.rows), [&](const Range &rows) {
+    for(int y = rows.start; y < rows.end; y++)
+    {
+      float *row = f.ptr<float>(y);
+      for(int x = 0; x < f.cols; x++)
+      {
+        const double inv = 1.0 / _vig(ph.v, _r2(x, y, cx, cy, k));
+        for(int c = 0; c < 3; c++) row[3 * x + c] = (float)(row[3 * x + c] * g[c] * inv);
+      }
+    }
+  });
+}
+
+// the points of each overlap, as PointSampler picks them: inside both
+// frames, every channel above the noise floor `lo` and below where either
+// frame clips, and among the flattest third of the overlap, where a small
+// misalignment changes no value. a fixed seed, so a merge repeats
+static std::vector<_sample> _sample_pairs(const std::vector<Mat> &img, const std::vector<Mat> &r2,
+                                          const std::vector<Mat> &mask, const std::vector<Point> &corners,
+                                          const std::vector<double> &tops, const double lo)
+{
+  const int m = (int)img.size();
+  std::vector<Mat> grad(m);
+  for(int i = 0; i < m; i++)
+  {
+    Mat y, l, dx, dy;
+    cv::transform(img[i], y, Matx13f(1.0f / 3, 1.0f / 3, 1.0f / 3));
+    log(max(y, lo), l);
+    Sobel(l, dx, CV_32F, 1, 0);
+    Sobel(l, dy, CV_32F, 0, 1);
+    magnitude(dx, dy, grad[i]);
+  }
+  std::mt19937 rng(1);
+  std::vector<_sample> out;
+  std::vector<std::pair<float, Point>> cand;
+  for(int i = 0; i < m; i++)
+    for(int j = i + 1; j < m; j++)
+    {
+      const Rect o = Rect(corners[i], img[i].size()) & Rect(corners[j], img[j].size());
+      if(o.empty()) continue;
+      const float hi_i = (float)(0.9 * tops[i]), hi_j = (float)(0.9 * tops[j]);
+      cand.clear();
+      for(int y = o.y; y < o.y + o.height; y++)
+        for(int x = o.x; x < o.x + o.width; x++)
+        {
+          const Point a(x - corners[i].x, y - corners[i].y), b(x - corners[j].x, y - corners[j].y);
+          if(!mask[i].at<uchar>(a) || !mask[j].at<uchar>(b)) continue;
+          const Vec3f &u = img[i].at<Vec3f>(a), &w = img[j].at<Vec3f>(b);
+          bool ok = true;
+          for(int c = 0; c < 3 && ok; c++) ok = u[c] > lo && w[c] > lo && u[c] < hi_i && w[c] < hi_j;
+          if(ok) cand.emplace_back(std::max(grad[i].at<float>(a), grad[j].at<float>(b)), Point(x, y));
+        }
+      if(cand.empty()) continue;
+      const size_t flat = std::max<size_t>(1, cand.size() * 3 / 10);
+      std::nth_element(cand.begin(), cand.begin() + (flat - 1), cand.end(),
+                       [](const auto &p, const auto &q) { return p.first < q.first; });
+      cand.resize(flat);
+      std::shuffle(cand.begin(), cand.end(), rng);
+      if(cand.size() > (size_t)_PAIR_SAMPLES) cand.resize(_PAIR_SAMPLES);
+      for(const auto &pt : cand)
+      {
+        const Point a = pt.second - corners[i], b = pt.second - corners[j];
+        const Vec3f &u = img[i].at<Vec3f>(a), &w = img[j].at<Vec3f>(b);
+        _sample s;
+        s.i = i;
+        s.j = j;
+        for(int c = 0; c < 3; c++)
+        {
+          s.li[c] = std::log(u[c]);
+          s.lj[c] = std::log(w[c]);
+        }
+        s.ti = r2[i].at<float>(a);
+        s.tj = r2[j].at<float>(b);
+        out.push_back(s);
+      }
+    }
+  return out;
+}
+
+// the fit, by Levenberg-Marquardt on a Huber loss of the log differences,
+// as Hugin's: the middle frame keeps its exposure, the others' and the
+// vignetting are pulled slightly towards none, since overlaps that sit at
+// the same radius in both frames cannot tell vignetting from exposure
+static bool _solve(const std::vector<_sample> &s, const int m, const bool vignetting, _photo *ph)
+{
+  const int ref = m / 2, ne = 3 * (m - 1), np = ne + (vignetting ? 3 : 0);
+  const auto slot = [ref](const int k) { return k < ref ? k : k - 1; };
+  const double sigma = 0.05, nres = 3.0 * s.size();
+  const double mu_e = 1e-6 * nres, mu_v = 1e-3 * nres;
+  const auto unpack = [&](const std::vector<double> &x, std::vector<Vec3d> &e, double *v) {
+    e.assign(m, Vec3d::all(0.0));
+    for(int k = 0; k < m; k++)
+      if(k != ref)
+        for(int c = 0; c < 3; c++) e[k][c] = x[3 * slot(k) + c];
+    for(int q = 0; q < 3; q++) v[q] = vignetting ? x[ne + q] : 0.0;
+  };
+  const auto cost = [&](const std::vector<double> &x) {
+    std::vector<Vec3d> e;
+    double v[3];
+    unpack(x, e, v);
+    double sum = 0.0;
+    for(const _sample &p : s)
+    {
+      const double vi = _vig(v, p.ti), vj = _vig(v, p.tj);
+      if(vi < 0.05 || vj < 0.05) return HUGE_VAL;
+      const double d = std::log(vj) - std::log(vi);
+      for(int c = 0; c < 3; c++)
+      {
+        const double r = std::fabs(p.li[c] - e[p.i][c] - p.lj[c] + e[p.j][c] + d);
+        sum += r <= sigma ? 0.5 * r * r : sigma * (r - 0.5 * sigma);
+      }
+    }
+    for(int k = 0; k < np; k++) sum += 0.5 * (k < ne ? mu_e : mu_v) * x[k] * x[k];
+    return sum;
+  };
+
+  std::vector<double> x(np, 0.0), trial(np);
+  double now = cost(x), lambda = 1e-3;
+  for(int it = 0; it < 50 && lambda < 1e10; it++)
+  {
+    std::vector<Vec3d> e;
+    double v[3];
+    unpack(x, e, v);
+    Mat H = Mat::zeros(np, np, CV_64F), g = Mat::zeros(np, 1, CV_64F);
+    double *hp = H.ptr<double>(), *gp = g.ptr<double>();
+    for(const _sample &p : s)
+    {
+      const double vi = _vig(v, p.ti), vj = _vig(v, p.tj), d = std::log(vj) - std::log(vi);
+      // the residual's derivatives: -1 by e[i], +1 by e[j], and by v[q]
+      // t_j^(q+1) / V(t_j) - t_i^(q+1) / V(t_i)
+      double dv[3];
+      for(int q = 0; q < 3; q++) dv[q] = std::pow(p.tj, q + 1) / vj - std::pow(p.ti, q + 1) / vi;
+      for(int c = 0; c < 3; c++)
+      {
+        const double r = p.li[c] - e[p.i][c] - p.lj[c] + e[p.j][c] + d;
+        const double w = std::fabs(r) <= sigma ? 1.0 : sigma / std::fabs(r);
+        int idx[5], n = 0;
+        double jac[5];
+        if(p.i != ref) idx[n] = 3 * slot(p.i) + c, jac[n++] = -1.0;
+        if(p.j != ref) idx[n] = 3 * slot(p.j) + c, jac[n++] = 1.0;
+        if(vignetting)
+          for(int q = 0; q < 3; q++) idx[n] = ne + q, jac[n++] = dv[q];
+        for(int a = 0; a < n; a++)
+        {
+          gp[idx[a]] += w * jac[a] * r;
+          for(int b = 0; b < n; b++) hp[idx[a] * np + idx[b]] += w * jac[a] * jac[b];
+        }
+      }
+    }
+    for(int k = 0; k < np; k++)
+    {
+      const double mu = k < ne ? mu_e : mu_v;
+      hp[k * np + k] += mu;
+      gp[k] += mu * x[k];
+    }
+    bool better = false;
+    while(!better && lambda < 1e10)
+    {
+      Mat D = H.clone(), step;
+      for(int k = 0; k < np; k++) D.at<double>(k, k) *= 1.0 + lambda;
+      if(!cv::solve(D, -g, step, DECOMP_CHOLESKY)) return false;
+      for(int k = 0; k < np; k++) trial[k] = x[k] + step.at<double>(k);
+      const double next = cost(trial);
+      if(next < now)
+      {
+        better = true;
+        const double gain = (now - next) / now;
+        x = trial;
+        now = next;
+        lambda = std::max(1e-9, lambda * 0.1);
+        if(gain < 1e-7) lambda = 1e10;
+      }
+      else
+        lambda *= 10.0;
+    }
+  }
+  unpack(x, ph->e, ph->v);
+  return true;
+}
+
+// the correction of each frame, or FALSE where the samples cannot give one
+// (overlaps of blown sky, or of night): too few, or a frame without any.
+// a vignetting fit that brightens towards the corners or darkens them past
+// any lens is dropped for exposures alone
+static bool _fit(const std::vector<_sample> &s, const int m, _photo *ph)
+{
+  std::vector<int> seen(m, 0);
+  for(const _sample &p : s) seen[p.i]++, seen[p.j]++;
+  if(s.size() < 200 || *std::min_element(seen.begin(), seen.end()) < 20) return false;
+  if(!_solve(s, m, true, ph)) return false;
+  bool plausible = true;
+  for(int k = 0; k <= 20 && plausible; k++)
+  {
+    const double t = k / 20.0, v = _vig(ph->v, t);
+    plausible = v >= 0.3 && v <= 1.0 + 1e-3 && (k == 0 || v <= _vig(ph->v, (k - 1) / 20.0) + 1e-3);
+  }
+  if(!plausible && !_solve(s, m, false, ph)) return false;
+  // the gains about their mean, so the panorama keeps the frames' average
+  // brightness and color
+  for(int c = 0; c < 3; c++)
+  {
+    double mean = 0.0;
+    for(int i = 0; i < m; i++) mean += ph->e[i][c] / m;
+    for(int i = 0; i < m; i++) ph->e[i][c] -= mean;
+  }
+  return true;
+}
+
 // a stage's step, as an exception once the caller stops the stitch
 struct _stopped {};
 static void _step(const pano_step_t step, void *data, const char *stage, const int done, const int total)
@@ -240,9 +509,10 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
     for(const Mat &f : p->frames) area = std::max(area, (double)f.size().area());
     const double work_scale = std::min(1.0, std::sqrt(_WORK_PIXELS / area));
     const double seam_scale = std::min(1.0, std::sqrt(_SEAM_PIXELS / area));
+    const double photo_scale = std::min(1.0, std::sqrt(_PHOTO_PIXELS / area));
 
     std::vector<ImageFeatures> features(n);
-    std::vector<Mat> seam8(n);
+    std::vector<Mat> seamf(n), photof(n);
     std::vector<Size> work_sizes(n);
     // a low contrast threshold (OpenCV's is 0.04): a sky and its water
     // give few features otherwise
@@ -256,8 +526,8 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
       computeImageFeatures(finder, _log8(w), features[i]);
       features[i].img_idx = i;
       work_sizes[i] = w.size();
-      resize(f, w, Size(), seam_scale, seam_scale, INTER_AREA);
-      seam8[i] = _gamma8(w);
+      resize(f, seamf[i], Size(), seam_scale, seam_scale, INTER_AREA);
+      resize(f, photof[i], Size(), photo_scale, photo_scale, INTER_AREA);
     }
 
     _step(step, data, "aligning", 0, 1);
@@ -274,13 +544,15 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
       *err = g_strdup("the photos do not overlap enough to be stitched");
       return NULL;
     }
-    std::vector<Mat> frames, seams;
+    std::vector<Mat> frames, seams, photos;
     std::vector<Size> sizes;
-    std::vector<double> lens;
+    std::vector<double> lens, tops;
     for(const int k : keep)
     {
       frames.push_back(p->frames[k]);
-      seams.push_back(seam8[k]);
+      seams.push_back(seamf[k]);
+      photos.push_back(photof[k]);
+      tops.push_back(p->tops[k]);
       sizes.push_back(work_sizes[k]);
       lens.push_back(p->focals[k] * work_scale);
     }
@@ -401,38 +673,81 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
       dst = resultRoi(corners, fsizes);
     }
 
-    // seams and gains, at the seam scale
+    // the exposures and the vignetting, fitted on copies at the photometric
+    // scale; then the seams, on corrected copies at the seam scale, so a cut
+    // follows the scene rather than an exposure step
     _step(step, data, "finding seams", 0, 1);
+    const auto scaled = [&](const int i, const double aspect) {
+      Mat K;
+      cams[i].K().convertTo(K, CV_32F);
+      K.at<float>(0, 0) *= (float)aspect;
+      K.at<float>(0, 2) *= (float)aspect;
+      K.at<float>(1, 1) *= (float)aspect;
+      K.at<float>(1, 2) *= (float)aspect;
+      return K;
+    };
+    _photo ph;
+    {
+      const double aspect = photo_scale / work_scale;
+      Ptr<RotationWarper> pw = _warper(projection)->create((float)(warped_scale * aspect));
+      std::vector<Mat> img(m), r2(m), pm(m);
+      std::vector<Point> pc(m);
+      for(int i = 0; i < m; i++)
+      {
+        const Mat K = scaled(i, aspect);
+        const Mat mask(photos[i].size(), CV_8U, Scalar::all(255));
+        pc[i] = pw->warp(photos[i], K, cams[i].R, INTER_LINEAR, BORDER_REFLECT, img[i]);
+        pw->warp(_radius2(photos[i].size()), K, cams[i].R, INTER_LINEAR, BORDER_REFLECT, r2[i]);
+        pw->warp(mask, K, cams[i].R, INTER_NEAREST, BORDER_CONSTANT, pm[i]);
+        // the edge's pixels are interpolated with the outside
+        erode(pm[i], pm[i], Mat(), Point(-1, -1), 2);
+      }
+      photos.clear();
+      const std::vector<_sample> samples = _sample_pairs(img, r2, pm, pc, tops, p->vmax / 1024.0);
+      if(!_fit(samples, m, &ph)) ph = _photo();
+    }
+
     const double seam_aspect = seam_scale / work_scale;
     Ptr<RotationWarper> sw = _warper(projection)->create((float)(warped_scale * seam_aspect));
     std::vector<Point> scorners(m);
-    std::vector<UMat> warped8(m), masks(m), warpedf(m), linear8(m);
-    for(int i = 0; i < m; i++)
+    std::vector<UMat> warped8(m), masks(m), warpedf(m);
+    const auto warp_seams = [&]() {
+      for(int i = 0; i < m; i++)
+      {
+        const Mat K = scaled(i, seam_aspect);
+        Mat sf = seams[i].clone();
+        if(!ph.e.empty()) _correct(sf, ph, i);
+        const Mat mask(sf.size(), CV_8U, Scalar::all(255));
+        scorners[i] = sw->warp(_gamma8(sf), K, cams[i].R, INTER_LINEAR, BORDER_REFLECT, warped8[i]);
+        sw->warp(mask, K, cams[i].R, INTER_NEAREST, BORDER_CONSTANT, masks[i]);
+      }
+    };
+    warp_seams();
+    if(ph.e.empty())
     {
-      Mat K;
-      cams[i].K().convertTo(K, CV_32F);
-      K.at<float>(0, 0) *= (float)seam_aspect;
-      K.at<float>(0, 2) *= (float)seam_aspect;
-      K.at<float>(1, 1) *= (float)seam_aspect;
-      K.at<float>(1, 2) *= (float)seam_aspect;
-      const Mat mask(seams[i].size(), CV_8U, Scalar::all(255));
-      scorners[i] = sw->warp(seams[i], K, cams[i].R, INTER_LINEAR, BORDER_REFLECT, warped8[i]);
-      sw->warp(mask, K, cams[i].R, INTER_NEAREST, BORDER_CONSTANT, masks[i]);
-      warped8[i].convertTo(warpedf[i], CV_32F);
-      // a gain is the model of a linear copy, not of a gamma-encoded one
-      Mat g, l;
-      warped8[i].getMat(ACCESS_READ).convertTo(g, CV_32F, 1.0 / 255.0);
-      pow(g, 2.2, l);
-      l.convertTo(linear8[i], CV_8U, 255.0);
+      // too few samples to fit (the overlaps all sky blown out, or all
+      // dark): one gain a frame, OpenCV's, of linear copies
+      std::vector<UMat> linear8(m);
+      for(int i = 0; i < m; i++)
+      {
+        Mat g, l;
+        warped8[i].getMat(ACCESS_READ).convertTo(g, CV_32F, 1.0 / 255.0);
+        pow(g, 2.2, l);
+        l.convertTo(linear8[i], CV_8U, 255.0);
+      }
+      GainCompensator compensator(1);
+      static_cast<ExposureCompensator &>(compensator).feed(scorners, linear8, masks);
+      std::vector<Mat> gains;
+      compensator.getMatGains(gains);
+      ph.e.assign(m, Vec3d::all(0.0));
+      for(int i = 0; i < m; i++) ph.e[i] = Vec3d::all(-std::log(std::max(1e-6, gains[i].at<double>(0, 0))));
+      warp_seams();
     }
-    GainCompensator compensator(1);
-    static_cast<ExposureCompensator &>(compensator).feed(scorners, linear8, masks);
-    std::vector<Mat> gains;
-    compensator.getMatGains(gains);
+    for(int i = 0; i < m; i++) warped8[i].convertTo(warpedf[i], CV_32F);
     GraphCutSeamFinder(GraphCutSeamFinderBase::COST_COLOR_GRAD).find(warpedf, scorners, masks);
     warped8.clear();
     warpedf.clear();
-    linear8.clear();
+    seams.clear();
 
     // the full-size frames, one at a time, into the blender
     const double vmax = p->vmax * 1.5;
@@ -444,12 +759,12 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
       _step(step, data, "blending", i, m);
       Mat K, wf, wm, seam, dilated;
       full[i].K().convertTo(K, CV_32F);
-      const Mat f = _float(frames[i]);
+      Mat f = _float(frames[i]);
       frames[i].release();
+      _correct(f, ph, i);
       const Mat mask(f.size(), CV_8U, Scalar::all(255));
       fw->warp(f, K, full[i].R, INTER_LINEAR, BORDER_REFLECT, wf);
       fw->warp(mask, K, full[i].R, INTER_NEAREST, BORDER_CONSTANT, wm);
-      wf *= gains[i].at<double>(0, 0);
       dilate(masks[i], dilated, Mat());
       resize(dilated, seam, wm.size(), 0, 0, INTER_LINEAR_EXACT);
       wm = seam & wm;

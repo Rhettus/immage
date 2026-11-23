@@ -49,6 +49,10 @@ Immage stands on the work of these projects:
   in darktable's HDR merge, and stitches Panorama Merge's photos; built
   from source with only the parts they need
   (`app/scripts/build_opencv.sh`). Apache-2.0.
+- [**Hugin**](https://hugin.sourceforge.io/): Panorama Merge matches
+  exposure, color and vignetting between photos with the method of
+  Hugin's photometric optimizer, reimplemented on OpenCV; no Hugin code is
+  included. GPL-2.0-or-later.
 - [**lensfun**](https://lensfun.github.io/): the lens correction
   database, bundled with the app. LGPL-3.0 library, CC BY-SA 3.0 data.
 - [**Stairs to mountain**](https://commons.wikimedia.org/wiki/File:Stairs_to_mountain.jpg)

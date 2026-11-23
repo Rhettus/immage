@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Even panorama skies:** Panorama Merge now matches exposure, color and
+  lens vignetting between the photos before blending, so skies and other
+  smooth areas no longer show steps or bands where the photos overlap.
 - **Drags can overshoot the photo's edge:** Mask shapes and handles, object
   and picker boxes, Heal spots and Upright guide lines follow the pointer past
   the photo into the empty canvas; on release a center, end or box corner left
