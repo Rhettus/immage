@@ -4174,11 +4174,11 @@ export default function App() {
     setWaiting(waitingRef.current);
     if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === r.original))
       await showFolder(folderRef.current, true);
-    const name = w?.name ?? plugins.find((cfg) => cfg.id === r.plugin)?.name ?? "Plugin";
-    void runInBackground(`${name}: result`, async () => r, () => ({
-      text: `${name}: ${baseName(r.result)} is back`, ok: true,
+    const name = w?.name ?? plugins.find((cfg) => cfg.id === r.plugin)?.name ?? t("app.status.pluginFallbackName");
+    void runInBackground(t("app.status.pluginResult", { name }), async () => r, () => ({
+      text: t("app.status.pluginResultBack", { name, file: baseName(r.result) }), ok: true,
       action: generatedAction(r.result, undefined, !!w && !w.opened),
-    }), "Plugin result");
+    }), t("app.status.pluginResultFailed"));
   };
   useEffect(() => {
     const offs = [
