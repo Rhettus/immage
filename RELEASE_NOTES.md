@@ -80,6 +80,10 @@ Improvements
   Preferences › Plugins to open RAWs or 16-bit TIFFs and choose the stacking
   settings. Auto DNG stacks RAWs in the background. The composite appears in
   Immage and can be sent to PhotoCraft.
+- **Move or copy photos to any folder:** **Photo > Move to Folder…** and
+  **Copy to Folder…**, also in the photo right-click menu, send the selection
+  to a folder chosen in the system's folder chooser, including a new one,
+  with the same checked transfer and confirmation as dragging onto a folder.
 
 Performance
 

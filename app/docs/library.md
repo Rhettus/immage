@@ -222,6 +222,14 @@ that isn't connected, don't take a drop.
 Hold ⌥ (Alt) as you drop to copy instead, keeping the originals where they
 are. You can also choose this in the confirmation.
 
+To send photos to a folder that isn't in the **Folders** card, or one that
+doesn't exist yet, choose **Photo > Move to Folder…** or **Photo > Copy to
+Folder…**, or right-click a photo or a selection and choose the same items.
+They act on the selection, or on the open photo when nothing is selected.
+Pick the folder in the system's folder chooser, where **New Folder** makes
+one. The chooser starts in the last folder you picked. The same confirmation
+follows as for a drop.
+
 Nothing happens until you confirm. The confirmation shows the following:
 
 - **The photos.** How many photos go, how much they add up to, and the
@@ -730,6 +738,8 @@ Right-click a photo, or a selection, for:
   hidden for Immich results, which keep Immich's ratings until opened.
 
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
+- **Move to Folder…** / **Copy to Folder…**: send the photos to a folder you
+  choose. See [Moving and copying photos](#moving-and-copying-photos).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more
 - **Panorama Merge…**, for two photos or more

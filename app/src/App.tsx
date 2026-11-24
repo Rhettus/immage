@@ -3843,6 +3843,25 @@ export default function App() {
       setMoveDialog((d) => (d?.req === req ? { ...d, error: String(e) } : d));
     }
   };
+  // Photo > Move to Folder… and Copy to Folder…, and the photo menu's: the
+  // photos (a selection, or the open one) go to a folder chosen in the
+  // system picker, which can also make a new one; the same confirmation
+  // follows as for a drop
+  const LAST_MOVE_FOLDER = "immage.moveFolder";
+  const moveToFolder = async (copy: boolean, list?: ImageEntry[]) => {
+    if (moveDialog || folderMoveDialog) return;
+    const sel = selectionRef.current, all = imagesRef.current;
+    const picked = withPartners(list ?? (sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i))));
+    if (!picked.length) { setStatus(t("app.status.moveNothing")); return; }
+    let start = folderRef.current ?? "";
+    try { start = settings.get(LAST_MOVE_FOLDER) || start; } catch { /* the current folder */ }
+    const dest = await commands.pickFolder(start).catch(() => null);
+    if (!dest) return;
+    try { settings.set(LAST_MOVE_FOLDER, dest); } catch { /* not kept */ }
+    await askMove(picked, dest, copy);
+  };
+  const moveToFolderRef = useRef(moveToFolder);
+  moveToFolderRef.current = moveToFolder;
   // the confirmed move or copy, as a background job. a move hides the
   // photos at once, leaving the open one first so the engine writes no
   // sidecar beside a file that is going; the folder is read again for any
@@ -6405,6 +6424,8 @@ export default function App() {
       "paste-previous": () => { pastePreviousRef.current(); },
       "start-over": () => { startOverRef.current(); },
       "shortcuts": () => { setShortcutsOpen(true); },
+      "move-to-folder": () => { void moveToFolderRef.current(false); },
+      "copy-to-folder": () => { void moveToFolderRef.current(true); },
       "virtual-copy": () => {
         const sel = selectionRef.current, all = imagesRef.current;
         const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
@@ -7983,6 +8004,7 @@ export default function App() {
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
+                  onMoveTo={fileMenu.targets.length ? (copy) => void moveToFolder(copy, fileMenu.targets) : undefined}
                   onRename={grid && local.length > 0 && local.length === fileMenu.targets.length
                     ? () => startRename(local) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
