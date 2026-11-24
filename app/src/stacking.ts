@@ -142,3 +142,16 @@ export function selectionAfterCollapse(
 
   return { selection: next, anchor: nextAnchor };
 }
+
+// the stacked companions among photos about to be moved or copied: those
+// that came only as a collapsed raw's partners. they go too when any of them
+// passes the file-type filter, so filtering to raws leaves them behind
+export function movedCompanions<T extends StackItem>(
+  all: readonly T[],
+  collapsedPartners: ReadonlyMap<number, readonly T[]>,
+  passesKinds: (item: T) => boolean,
+): { companions: T[]; include: boolean } {
+  const behind = new Set(all.flatMap((i) => collapsedPartners.get(i.imgid) ?? []).map((p) => p.imgid));
+  const companions = all.filter((i) => behind.has(i.imgid));
+  return { companions, include: companions.some(passesKinds) };
+}

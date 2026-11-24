@@ -102,6 +102,10 @@ Performance
 
 Bug fixes
 
+- **Copy only the raws of RAW+JPEG stacks:** Moving or copying photos while
+  the file-type filter shows only raws now leaves the stacked JPEG, HEIF and
+  ORI files behind. The confirmation has a checkbox to include or leave out
+  the stacked files either way.
 - **A stuck external drive no longer stalls the library:** When a file on an
   external drive or share stops answering, Immage now stops reading from that
   whole drive, not just the folder, and skips its photos and thumbnails at

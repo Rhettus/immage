@@ -12,10 +12,13 @@ import { t, formatNumber } from "./i18n";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${formatNumber(n)} ${n === 1 ? one : many}`;
 
-export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }: {
+export function MoveDialog({ plan, error, copy: copyAsked, companions, withCompanions, onCompanions, onConfirm, onClose }: {
   plan: MovePlan | null;           // null while it is worked out
   error: string | null;
   copy: boolean;                   // ⌥/Alt held at the drop
+  companions: number;              // stacked JPEG, HEIF or ORI files among the photos
+  withCompanions: boolean;         // whether they go too
+  onCompanions: (on: boolean) => void;
   onConfirm: (copy: boolean, keepBoth: string[]) => void;
   onClose: () => void;
 }) {
@@ -28,17 +31,19 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
   const here = units.filter((u) => u.clash === "here");
   const same = units.filter((u) => u.clash === "same");
   const clashes = units.filter((u) => u.clash === "different");
+  // a new plan can drop a clash that was chosen: only the current ones count
+  const kept = clashes.filter((u) => keep.has(u.key)).map((u) => u.key);
   const fresh = units.filter((u) => u.clash === "none");
   const movable = units.some((u) => !u.keepSource && u.clash !== "here");
   const moving = movable && !copy;
   const downloads = units.filter((u) => u.download).length;
   const immichFiles = units.filter((u) => u.keepSource && !u.download).length;
   const versions = units.filter((u) => u.versions > 1 && u.clash !== "here");
-  const count = fresh.length + keep.size + (moving ? same.length : 0);
+  const count = fresh.length + kept.length + (moving ? same.length : 0);
   const verb = moving ? t("dialogs.move.move") : t("dialogs.move.copy");
   const low = plan?.free != null && plan.free < plan.bytes;
   const where = plan ? plan.dest : "";
-  const confirm = () => { if (plan && count && !low) onConfirm(!moving, [...keep]); };
+  const confirm = () => { if (plan && count && !low) onConfirm(!moving, kept); };
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
       e.stopPropagation();
@@ -101,6 +106,11 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
             {t("dialogs.move.keepOriginals")}
           </label>}
         </>}
+        {/* outside the plan, so they stay put while it is worked out again */}
+        {companions > 0 && <label className="row check">
+          <input type="checkbox" checked={withCompanions} onChange={(e) => onCompanions(e.target.checked)} />
+          {t("dialogs.move.includeCompanions", { n: companions, number: formatNumber(companions) })}
+        </label>}
       </div>
       <div className="modal-foot">
         <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>

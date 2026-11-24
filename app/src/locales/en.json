@@ -3797,6 +3797,8 @@
   "dialogs.move.keepBothNumbered": "Keep both (numbered)",
   "dialogs.move.lowSpace": "Not enough space: {free} free, {needed} needed.",
   "dialogs.move.keepOriginals": "Keep the originals (copy instead of move)",
+  "dialogs.move.includeCompanions_one": "Include the stacked JPEG, HEIF or ORI file",
+  "dialogs.move.includeCompanions_other": "Include the {number} stacked JPEG, HEIF or ORI files",
   "dialogs.move.photo": "photo",
   "dialogs.move.immichPhoto": "Immich photo",
   "dialogs.move.is": "is",

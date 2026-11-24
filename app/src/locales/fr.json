@@ -3797,6 +3797,8 @@
   "dialogs.move.keepBothNumbered": "Conserver les deux (avec numéro)",
   "dialogs.move.lowSpace": "Espace insuffisant : {free} disponible, {needed} nécessaire.",
   "dialogs.move.keepOriginals": "Conserver les originaux (copier au lieu de déplacer)",
+  "dialogs.move.includeCompanions_one": "Inclure le fichier JPEG, HEIF ou ORI empilé",
+  "dialogs.move.includeCompanions_other": "Inclure les {number} fichiers JPEG, HEIF ou ORI empilés",
   "dialogs.move.photo": "photo",
   "dialogs.move.immichPhoto": "photo Immich",
   "dialogs.move.is": "est",

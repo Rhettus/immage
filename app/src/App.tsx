@@ -57,7 +57,7 @@ import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
 import { fetchCachedThumb, fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
-import { buildStackView, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
+import { buildStackView, movedCompanions, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
@@ -180,6 +180,10 @@ const bumpHoldHint = () => {
 };
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+// a move or copy as the confirmation asks it: the photos, the stacked
+// companions among them and whether they go too
+type MoveAsk = { all: ImageEntry[]; companions: ImageEntry[]; withCompanions: boolean; dest: string; copy: boolean };
 
 export default function App() {
   useAgxProfiles();
@@ -636,9 +640,11 @@ export default function App() {
     const sel = selectionRef.current;
     return withPartners(sel.size > 1 && sel.has(i.imgid) ? imagesRef.current.filter((p) => sel.has(p.imgid)) : [i]);
   };
-  // photos dropped on a folder, waiting for the confirmation (MoveDialog)
-  const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
-                                                 plan: MovePlan | null; error: string | null } | null>(null);
+  // photos dropped on a folder, waiting for the confirmation (MoveDialog).
+  // `all` is what was dropped, stacked companions included; `list` is what
+  // the request sends, without the companions when they are left out
+  const [moveDialog, setMoveDialog] = useState<(MoveAsk & { list: ImageEntry[]; req: MoveRequest;
+                                                 plan: MovePlan | null; error: string | null }) | null>(null);
   const [folderMoveDialog, setFolderMoveDialog] = useState<{
     job: number; req: FolderMoveRequest; copy: boolean; plan: FolderMovePlan | null; error: string | null;
   } | null>(null);
@@ -3812,15 +3818,24 @@ export default function App() {
   };
   // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
   // what moving them there would do, for the confirmation
-  const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
-    if (!list.length || moveDialog || folderMoveDialog) return;
+  // a stack's JPEG or HEIF goes with its raw unless the file-type filter
+  // leaves it out; the confirmation can change that
+  const askMove = async (all: ImageEntry[], dest: string, copy: boolean) => {
+    if (!all.length || moveDialog || folderMoveDialog) return;
+    const kinds = filterRef.current.kinds;
+    const { companions, include } = movedCompanions(all, partnersRef.current, (c) => kindsInclude(kinds, c.filename));
+    await planMove({ all, companions, withCompanions: include, dest, copy });
+  };
+  const planMove = async (ask: MoveAsk) => {
+    const left = new Set(ask.withCompanions ? [] : ask.companions.map((c) => c.imgid));
+    const list = ask.all.filter((i) => !left.has(i.imgid));
     const req: MoveRequest = {
       sources: list.map((i) => (isRemote(i) && i.remote
         ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
         : { imgid: i.imgid, asset: null, assetPath: null })),
-      dest, map: list.some(isRemote) ? await pathMap() : null,
+      dest: ask.dest, map: list.some(isRemote) ? await pathMap() : null,
     };
-    setMoveDialog({ list, req, copy, plan: null, error: null });
+    setMoveDialog({ ...ask, list, req, plan: null, error: null });
     try {
       const plan = await commands.movePlan(req);
       setMoveDialog((d) => (d?.req === req ? { ...d, plan } : d));
@@ -7936,6 +7951,8 @@ export default function App() {
     {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
       onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
+                               companions={moveDialog.companions.length} withCompanions={moveDialog.withCompanions}
+                               onCompanions={(on) => void planMove({ ...moveDialog, withCompanions: on })}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {orderOpen && current && session.current && <ModuleOrderDialog session={session.current}
       onBeforeApply={() => record([`order:${performance.now()}`], t("dialogs.moduleOrder.title"))}

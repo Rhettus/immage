@@ -35,7 +35,8 @@ registerHooks({
   },
 });
 
-const { buildStackView, toggleStackKey, selectionAfterCollapse, stackKey } = await import('../app/src/stacking.ts');
+const stacking = await import('../app/src/stacking.ts');
+const { buildStackView, toggleStackKey, selectionAfterCollapse, stackKey } = stacking;
 
 test('collapsed stacks hide companions, populate collapsedPartners, emit ORF+JPG badge', () => {
   const passing = [
@@ -154,4 +155,21 @@ test('selectionAfterCollapse retargets selection and anchor from companion to he
   const res2 = selectionAfterCollapse(new Set([5, 6]), 5, memberIds, headId);
   assert.deepEqual([...res2.selection], [5, 6]);
   assert.equal(res2.anchor, 5);
+});
+
+test('movedCompanions finds a collapsed raw\'s partners and follows the file-type filter', () => {
+  const raw = { imgid: 1, path: '/p/a.ORF', filename: 'a.ORF' };
+  const jpg = { imgid: 2, path: '/p/a.JPG', filename: 'a.JPG' };
+  const lone = { imgid: 3, path: '/p/b.JPG', filename: 'b.JPG' };
+  const partners = new Map([[1, [jpg]]]);
+  const { movedCompanions } = stacking;
+  const all = [raw, jpg, lone];
+  const unfiltered = movedCompanions(all, partners, () => true);
+  assert.deepEqual(unfiltered.companions.map((c) => c.imgid), [2]);
+  assert.equal(unfiltered.include, true);
+  const rawsOnly = movedCompanions(all, partners, (i) => /\.ORF$/.test(i.filename));
+  assert.deepEqual(rawsOnly.companions.map((c) => c.imgid), [2]);
+  assert.equal(rawsOnly.include, false);
+  // an expanded stack has no collapsed partners: each file is the user's pick
+  assert.deepEqual(movedCompanions(all, new Map(), () => false).companions, []);
 });

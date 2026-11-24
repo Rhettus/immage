@@ -243,6 +243,11 @@ Nothing happens until you confirm. The confirmation shows the following:
   and **Keep both for all** set the whole list.
 - **Free space.** A warning appears, and the button is off, when the drive
   doesn't have room.
+- **Stacked files.** When the photos include collapsed RAW+JPEG stacks,
+  **Include the stacked JPEG, HEIF or ORI files** chooses whether the
+  companions go with their raws. It starts ticked, unless the file-type
+  filter shows only raws, so filtering to RAW and dragging moves or copies
+  just the raws.
 
 Each photo goes with its XMP sidecars, every version's, and its mask
 sidecars, so its edits, ratings, labels and keywords arrive with it.
@@ -588,6 +593,8 @@ file for editing. Click the badge on any expanded photo (for example,
 **ARW ▾** or **JPG ▾**) to collapse the stack back into a single thumbnail.
 While collapsed, rating, rejecting, labeling, moving, renaming or deleting
 takes the whole pair; while expanded, each visible file acts independently.
+Moving or copying a collapsed stack can leave its companions behind; see
+[Moving and copying photos](#moving-and-copying-photos).
 
 ## Virtual copies
 
