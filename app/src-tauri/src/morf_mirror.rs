@@ -1709,6 +1709,120 @@ pub(crate) fn merge_rows(rows: Vec<Row>, keywords: &mut Keywords, overrides: &Ov
 }
 
 
+/// The server's own listing of a mapped folder (or one page of it) with the
+/// overrides laid over it, the way `merge_rows` does for the local copy's rows:
+/// fields replaced, gone photos and removed versions dropped, moved or copied
+/// in photos rebuilt from their override row. `seen` collects the server paths
+/// the images name, for `added_outside`. Touched photos follow the untouched.
+/// The snapshot is a clone: no lock is held. `in_scope` says whether a local
+/// path belongs to this listing (scope, recursion, hidden folders, skips).
+pub(crate) fn apply_to_images(
+    images: &mut Vec<LibraryImage>,
+    config: &Config,
+    overrides: &Overrides,
+    seen: &mut HashSet<String>,
+    in_scope: &dyn Fn(&Path) -> bool,
+) {
+    if overrides.is_empty() {
+        return;
+    }
+    let mut kept = Vec::with_capacity(images.len());
+    let mut touched: BTreeMap<String, Vec<LibraryImage>> = BTreeMap::new();
+    for image in std::mem::take(images) {
+        match config.server_folder(Path::new(&image.path)) {
+            Ok(server) if overrides.touches(&server) => {
+                seen.insert(server.clone());
+                touched.entry(server).or_default().push(image);
+            }
+            Ok(server) => {
+                seen.insert(server);
+                kept.push(image);
+            }
+            Err(_) => kept.push(image),
+        }
+    }
+    for (server, mut own) in touched {
+        own.sort_by_key(|i| i.version);
+        let present = overrides.present_after(&server);
+        if present == Some(false) {
+            continue;
+        }
+        if present == Some(true) {
+            kept.extend(added_images(config, overrides, &server, in_scope));
+            continue;
+        }
+        let exif = ExifFields {
+            maker: String::new(),
+            model: String::new(),
+            lens: String::new(),
+            body_serial: String::new(),
+            shutter: 0.0,
+            aperture: 0.0,
+            iso: 0.0,
+            focal: 0.0,
+            bias: 0.0,
+            mtime: None,
+        };
+        let versions = own.iter().map(crate::mirror_overrides::version_from_image).collect();
+        let Some(photo) = overrides.effective(&server, Some(PhotoRow { exif, versions })) else { continue };
+        for version in photo.versions {
+            let Some(mut image) = own.iter().find(|i| i.version == version.version).or_else(|| own.first()).cloned()
+            else {
+                continue;
+            };
+            // a version the server has not indexed is built from a sibling
+            let before = crate::mirror_overrides::version_from_image(&image);
+            image.version = version.version;
+            image.copy = version.copy;
+            image.rating = version.rating.min(5);
+            image.rejected = version.rejected;
+            image.labels = version.labels & 31;
+            image.edited = version.edited.unwrap_or(false);
+            image.keywords = version.keywords;
+            if version.taken_at != before.taken_at {
+                if let Some(taken) = version.taken_at {
+                    image.exif.datetime = crate::morf_photo::exif_datetime(&taken);
+                    image.exif.capture_time_raw = taken;
+                    image.exif.file_datetime = String::new();
+                }
+            }
+            kept.push(image);
+        }
+    }
+    *images = kept;
+}
+
+fn added_images(config: &Config, overrides: &Overrides, server: &str, in_scope: &dyn Fn(&Path) -> bool) -> Vec<LibraryImage> {
+    let Some(photo) = overrides.effective(server, None) else { return Vec::new() };
+    let Ok(path) = config.local_file(server) else { return Vec::new() };
+    let Some(filename) = path.file_name().and_then(|n| n.to_str()) else { return Vec::new() };
+    if !crate::library_cmds::photo_candidate(&path) || !in_scope(&path) {
+        return Vec::new();
+    }
+    photo
+        .versions
+        .into_iter()
+        .filter_map(|version| library_image(&path, filename, &photo.exif, version).ok())
+        .collect()
+}
+
+/// Photos moved or copied in that no part of the listing named: the ones the
+/// server has not indexed in this folder yet.
+pub(crate) fn added_outside(
+    config: &Config,
+    overrides: &Overrides,
+    seen: &HashSet<String>,
+    in_scope: &dyn Fn(&Path) -> bool,
+) -> Vec<LibraryImage> {
+    overrides
+        .added_paths()
+        .into_iter()
+        .filter(|p| !seen.contains(*p))
+        .flat_map(|p| added_images(config, overrides, p, in_scope))
+        .collect()
+}
+
+
 // the columns `row_from` reads, of photos `p` joined to versions `v`
 pub(crate) const ROW_COLUMNS: &str = "p.id, p.server_path, p.make, p.model, p.lens, p.body_serial,
     p.iso, p.aperture, p.focal, p.shutter_s, p.exp_bias, p.mtime,
@@ -2967,5 +3081,84 @@ mod tests {
         assert_eq!(m.snapshot().len(), 1);
         m.with_overrides(|o| o.expire_age(Instant::now() + crate::mirror_overrides::MAX_AGE * 2));
         assert!(m.snapshot().is_empty());
+    }
+
+    // ---- overrides over the server's own listing ----
+
+    fn served(path: &str, number: u32, rating: u8) -> LibraryImage {
+        let local = Path::new("/mnt").join(path.trim_start_matches('/'));
+        let name = local.file_name().unwrap().to_str().unwrap().to_owned();
+        library_image(&local, &name, &crate::mirror_overrides::tests::exif(),
+                      crate::mirror_overrides::tests::version(number, rating)).unwrap()
+    }
+
+    fn overlaid(images: Vec<LibraryImage>, overrides: &Overrides, recursive: bool) -> Vec<(String, u32, u8)> {
+        let scope = Path::new("/mnt/photos");
+        let in_scope = |p: &Path| p.starts_with(scope) && (recursive || p.parent() == Some(scope));
+        let mut images = images;
+        let mut seen = HashSet::new();
+        apply_to_images(&mut images, &reader_config(), overrides, &mut seen, &in_scope);
+        images.extend(added_outside(&reader_config(), overrides, &seen, &in_scope));
+        let mut out: Vec<_> = images
+            .iter()
+            .map(|i| (i.path.trim_start_matches("/mnt/photos/").to_owned(), i.version, i.rating))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn the_servers_listing_gets_the_overrides_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = mirror_in(dir.path());
+        let listing = || vec![
+            served("/photos/a.ARW", 0, 1),
+            served("/photos/b.ARW", 0, 2),
+            served("/photos/b.ARW", 1, 3),
+            served("/photos/c.ARW", 0, 3),
+        ];
+        assert_eq!(overlaid(listing(), &m.snapshot(), true).len(), 4);
+        // fields replace, with the capture time and keywords
+        m.note_fields("/photos/a.ARW", 0, FieldOverride {
+            rating: Some(5), keywords: Some(vec!["k".into()]), taken_at: Some("2027-01-02T03:04:05".into()),
+            ..Default::default()
+        });
+        let mut images = listing();
+        let mut seen = HashSet::new();
+        apply_to_images(&mut images, &reader_config(), &m.snapshot(), &mut seen, &|_| true);
+        let a = images.iter().find(|i| i.filename == "a.ARW").unwrap();
+        assert_eq!((a.rating, a.keywords.clone()), (5, vec!["k".to_owned()]));
+        assert_eq!(a.exif.capture_time_raw, "2027-01-02T03:04:05");
+        assert_eq!(a.exif.datetime, "2027:01:02 03:04:05");
+        // gone leaves; a removed version leaves alone
+        m.note_gone("/photos/c.ARW");
+        m.note_version_removed("/photos/b.ARW", 1);
+        let got = overlaid(listing(), &m.snapshot(), true);
+        assert_eq!(got, [("a.ARW".to_owned(), 0, 5), ("b.ARW".to_owned(), 0, 2)]);
+        // a virtual copy made and not indexed yet
+        m.note_version_added("/photos/a.ARW", crate::mirror_overrides::tests::version(1, 4));
+        assert!(overlaid(listing(), &m.snapshot(), true).contains(&("a.ARW".to_owned(), 1, 4)));
+    }
+
+    #[test]
+    fn added_photos_come_in_only_inside_the_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = mirror_in(dir.path());
+        let row = || PhotoRow {
+            exif: crate::mirror_overrides::tests::exif(),
+            versions: vec![crate::mirror_overrides::tests::version(0, 4)],
+        };
+        m.note_added("/photos/new.ARW", row());
+        m.note_added("/photos/2024/deep.ARW", row());
+        m.note_added("/elsewhere/out.ARW", row());
+        m.note_added("/photos/notes.txt", row());
+        let flat = overlaid(vec![served("/photos/a.ARW", 0, 1)], &m.snapshot(), false);
+        assert_eq!(flat, [("a.ARW".to_owned(), 0, 1), ("new.ARW".to_owned(), 0, 4)]);
+        let deep = overlaid(vec![served("/photos/a.ARW", 0, 1)], &m.snapshot(), true);
+        assert_eq!(deep.len(), 3);
+        assert!(deep.contains(&("2024/deep.ARW".to_owned(), 0, 4)));
+        // one the server already lists is rebuilt from the override, not repeated
+        let again = overlaid(vec![served("/photos/new.ARW", 0, 1)], &m.snapshot(), false);
+        assert_eq!(again, [("new.ARW".to_owned(), 0, 4)]);
     }
 }

@@ -1619,6 +1619,14 @@ pub(crate) struct VersionFields {
 // The one mapping from a morfPhoto photo version to a library image: the
 // server's listing and the local copy both go through it, so a folder looks
 // the same from either.
+// darktable's "YYYY:MM:DD HH:MM:SS" spelling of a stored capture time
+pub(crate) fn exif_datetime(capture: &str) -> String {
+    capture.get(..10).zip(capture.get(10..)).map_or_else(
+        || capture.to_owned(),
+        |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
+    )
+}
+
 pub(crate) fn library_image(
     path: &Path,
     filename: &str,
@@ -1626,10 +1634,7 @@ pub(crate) fn library_image(
     version: VersionFields,
 ) -> Result<LibraryImage, String> {
     let capture = version.taken_at.as_deref().unwrap_or_default();
-    let datetime = capture.get(..10).zip(capture.get(10..)).map_or_else(
-        || capture.to_owned(),
-        |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
-    );
+    let datetime = exif_datetime(capture);
     let file_datetime = if capture.is_empty() {
         exif.mtime
             .filter(|mtime| *mtime > 0)

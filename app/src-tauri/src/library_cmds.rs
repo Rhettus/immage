@@ -51,13 +51,15 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
     let dir = PathBuf::from(&path);
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
+    // what Immage changed itself and the server has not indexed yet (memory only),
+    // taken before any request so no lock is held while the server answers
+    let overrides = state.mirror.snapshot();
     let early = {
         let snapshot = snapshot.clone();
+        let overrides = overrides.clone();
         let runtime = state.runtime.clone();
         let dir = dir.clone();
         let skip = skip.clone();
-        // what Immage changed itself and the server has not indexed yet (memory only)
-        let overrides = state.mirror.snapshot();
         tauri::async_runtime::spawn_blocking(move || {
             let config = crate::morf_photo::load(&runtime);
             let scope = mirror_scope(&config, &dir, recursive, &skip);
@@ -68,14 +70,20 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                     .filter(|image| visible_morf_path(Path::new(&image.path), &dir, &skip)));
                 return Early { known, listing, scope, config };
             }
+            let overlay_scope = mapped_folder_scope(&config, &dir, recursive, &skip);
+            let overlay = |known| match &overlay_scope {
+                Some(mapped) => Overlay { config: &config, overrides: &overrides, mapped, recursive, dir: &dir,
+                                          skip: &skip }.known(known),
+                None => known,
+            };
             if let Some(known) = read_snapshot(&snapshot) {
-                return Early { known: Some(known), listing: None, scope, config };
+                return Early { known: Some(overlay(known)), listing: None, scope, config };
             }
             let mut known = None;
             if config.covers(&dir) {
                 if let Some(mut images) = config.read_cached_listing(&runtime, &dir, recursive) {
                     images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
-                    known = known_value(images.iter());
+                    known = known_value(images.iter()).map(overlay);
                 }
             }
             Early { known, listing: None, scope, config }
@@ -123,6 +131,9 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                 return local(fallback);
             };
             let stream_emit = mapped == dir;
+            let overlay = Overlay { config: &config, overrides: &overrides, mapped: &mapped, recursive, dir: &dir,
+                                    skip: &skip };
+            let mut seen = HashSet::new();
             let mut emitted_pages = 0usize;
             let mut streamed_images = Vec::new();
             let mut streamed_files = Vec::new();
@@ -137,6 +148,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                     }
                     emitted_pages += 1;
                     page_images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                    overlay.apply(&mut page_images, &mut seen);
                     if let Some(index) = state.search_cache.as_deref() {
                         supplement_morf_folder_metadata(index, &mut page_images, cancelled);
                     }
@@ -165,9 +177,30 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                 Ok((mut images, cache_write)) => {
                     let note = Some(SourceNote { local_copy: false, synced_at: None });
                     if stream_emit && emitted_pages > 0 {
+                        // photos moved or copied in that no page named
+                        let mut extra = overlay.finish(&seen);
+                        if let Some(index) = state.search_cache.as_deref() {
+                            supplement_morf_folder_metadata(index, &mut extra, cancelled);
+                        }
+                        let mut batch = Vec::with_capacity(extra.len());
+                        for mut image in extra {
+                            image.imgid = state.tagged.cached_photo(&image.path, i64::from(image.version));
+                            streamed_files.push(image.path.clone());
+                            if let Ok(value) = serde_json::to_value(&image) {
+                                batch.push(value);
+                            }
+                            streamed_images.push(image);
+                        }
+                        if !batch.is_empty() && !cancelled() {
+                            let count = streamed_files.len();
+                            let _ = handle.emit("folder-progress", json!({
+                                "token": token, "done": count, "total": count, "images": batch }));
+                        }
                         Some(Supplied { mapped, images: streamed_images, files: Some(streamed_files), cache_write, streamed: true, note })
                     } else {
                         images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
+                        overlay.apply(&mut images, &mut seen);
+                        images.extend(overlay.finish(&seen));
                         if let Some(index) = state.search_cache.as_deref() {
                             supplement_morf_folder_metadata(index, &mut images, cancelled);
                         }
@@ -442,6 +475,60 @@ fn known_value<'a>(images: impl Iterator<Item = &'a LibraryImage>) -> Option<Val
         list.push(value);
     }
     Some(Value::Array(list))
+}
+
+// Immage's own changes laid over a listing the server gave (a page, the whole
+// list, or the `known` values shown first), for one mapped scope: the same
+// overlay the local copy's rows get in `morf_mirror::merge_rows`. The
+// overrides are a snapshot, so nothing is locked while it is applied.
+struct Overlay<'a> {
+    config: &'a crate::morf_photo::Config,
+    overrides: &'a crate::mirror_overrides::Overrides,
+    mapped: &'a Path,
+    recursive: bool,
+    dir: &'a Path,
+    skip: &'a HashSet<PathBuf>,
+}
+
+impl Overlay<'_> {
+    // whether a local path belongs to the listing being read
+    fn in_scope(&self, path: &Path) -> bool {
+        path.starts_with(self.mapped)
+            && (self.recursive || path.parent() == Some(self.mapped))
+            && visible_morf_path(path, self.dir, self.skip)
+    }
+
+    fn apply(&self, images: &mut Vec<LibraryImage>, seen: &mut HashSet<String>) {
+        crate::morf_mirror::apply_to_images(images, self.config, self.overrides, seen, &|p| self.in_scope(p));
+    }
+
+    // photos moved or copied in that the listing did not name
+    fn finish(&self, seen: &HashSet<String>) -> Vec<LibraryImage> {
+        crate::morf_mirror::added_outside(self.config, self.overrides, seen, &|p| self.in_scope(p))
+    }
+
+    // the page's first values, as the images' JSON without their imgids
+    fn known(&self, known: Value) -> Value {
+        if self.overrides.is_empty() {
+            return known;
+        }
+        let Some(list) = known.as_array() else { return known };
+        let mut images = Vec::with_capacity(list.len());
+        for item in list {
+            let mut item = item.clone();
+            if let Some(o) = item.as_object_mut() {
+                o.entry("imgid").or_insert(json!(0));
+            }
+            match serde_json::from_value::<LibraryImage>(item) {
+                Ok(image) => images.push(image),
+                Err(_) => return known,
+            }
+        }
+        let mut seen = HashSet::new();
+        self.apply(&mut images, &mut seen);
+        images.extend(self.finish(&seen));
+        known_value(images.iter()).unwrap_or(known)
+    }
 }
 
 // The folders the local copy of the catalog serves: those under the mapped
@@ -1923,5 +2010,40 @@ mod tests {
         assert!(!cache_mutation_metadata(&index, &stale_clear, &image).unwrap(),
             "a late response must not recreate a cleared cache row");
         assert_eq!(index.counts().unwrap().variants, 0);
+    }
+
+    #[test]
+    fn the_server_listing_branch_lays_the_overrides_over_pages_and_known_values() {
+        use crate::mirror_overrides::{FieldOverride, Overrides};
+        let config = crate::morf_photo::Config {
+            enabled: true,
+            url: "http://nas.example:8080".into(),
+            server_path: "/photos/".into(),
+            local_path: "/mnt/photos".into(),
+        };
+        let mut overrides = Overrides::default();
+        overrides.note_fields("/photos/b.ARW", 0, FieldOverride { rating: Some(5), ..Default::default() },
+                              std::time::Instant::now());
+        let image = |name: &str| -> LibraryImage {
+            serde_json::from_value(json!({
+                "imgid": 0, "path": format!("/mnt/photos/{name}"), "filename": name, "rating": 1,
+                "rejected": false, "labels": 0, "edited": false, "width": 0, "height": 0, "location": null,
+                "keywords": [], "version": 0, "copy": false,
+                "exif": { "maker": "", "model": "", "lens": "", "body_serial": "", "exposure": 0, "aperture": 0,
+                          "iso": 0, "focal_length": 0, "exposure_bias": 0, "focus_distance": 0,
+                          "datetime": "", "capture_time_raw": "", "file_datetime": "" }
+            })).unwrap()
+        };
+        let (dir, skip) = (PathBuf::from("/mnt/photos"), HashSet::new());
+        let overlay = Overlay { config: &config, overrides: &overrides, mapped: &dir, recursive: false, dir: &dir,
+                                skip: &skip };
+        let mut page = vec![image("a.ARW"), image("b.ARW")];
+        overlay.apply(&mut page, &mut HashSet::new());
+        let rating = |images: &[LibraryImage], name: &str| images.iter().find(|i| i.filename == name).unwrap().rating;
+        assert_eq!((rating(&page, "a.ARW"), rating(&page, "b.ARW")), (1, 5));
+        let known = known_value([image("a.ARW"), image("b.ARW")].iter()).unwrap();
+        let known = overlay.known(known);
+        assert_eq!(known[1]["rating"], 5);
+        assert_eq!(known[0]["rating"], 1);
     }
 }
