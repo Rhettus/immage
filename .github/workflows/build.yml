@@ -212,7 +212,7 @@ jobs:
           persist-credentials: false
       - name: homebrew packages
         run: brew bundle install --file .github/Brewfile
-      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
+      - uses: hendrikmuhs/ccache-action@e91f31892a1d1b8c44424b1a94c0b7f52d337168 # v1.2.26
         with:
           key: macos-arm64
           max-size: 2G
@@ -261,7 +261,7 @@ jobs:
         with:
           persist-credentials: false
       # the packages app/WINDOWS.md lists, plus ccache
-      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+      - uses: msys2/setup-msys2@3c51bf698df1e37b2261f53cb67797b97761185c # v2.34.0
         with:
           msystem: UCRT64
           update: true
@@ -397,7 +397,7 @@ jobs:
         with:
           path: build/webkitgtk/install
           key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ matrix.cc }}-${{ hashFiles('app/scripts/build_webkitgtk.sh', 'patches/webkitgtk-*.patch') }}
-      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
+      - uses: hendrikmuhs/ccache-action@e91f31892a1d1b8c44424b1a94c0b7f52d337168 # v1.2.26
         with:
           key: linux-ubuntu22-webkit254-${{ matrix.arch }}
           max-size: 2G
