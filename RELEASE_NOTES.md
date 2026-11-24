@@ -103,7 +103,9 @@ Improvements
   when it last synced, how many photos it holds, the progress and any error,
   with a **Resync** button. Find's **All folders** search and filter lists
   also read it: a narrow filter over 150,000 photos answers in a few hundredths
-  of a second.
+  of a second. Changes you make in Immage (ratings, labels, keywords, capture
+  times, edits, moves, copies, renames, deletes and virtual copies) show at
+  once in folders and in Find, before the server has indexed them.
 - **Find lists the whole library under All folders:** With **Search in** set
   to **All folders**, Find's file types, keywords, cameras, camera bodies,
   lenses, capture months and exposure settings list every value in the

@@ -29,7 +29,7 @@ use crate::{
     clip_providers,
     immich_search::SearchArgs,
     local_search::{self, LocalSearchArgs},
-    local_search_cmds, mirror_query,
+    local_search_cmds, mirror_overrides::Overrides, mirror_query,
     morf_photo,
     search_cache::SearchCache,
     search_filters::{self as sf, GridFilter},
@@ -337,6 +337,7 @@ fn covered(scopes: &[(PathBuf, bool)], path: &Path) -> bool {
 pub(crate) fn facets(
     cache: Option<&SearchCache>,
     runtime: &Path,
+    overrides: &Overrides,
     args: &FindFacetsArgs,
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<FacetReply, String> {
@@ -361,6 +362,7 @@ pub(crate) fn facets(
                 runtime: runtime.to_owned(),
                 config: morf.clone(),
                 scopes,
+                overrides: overrides.clone(),
             });
         }
     }
@@ -434,9 +436,10 @@ pub async fn find_facets(
     let ticket = state.local_search_requests.begin(request_id)?;
     let cache: Option<Arc<SearchCache>> = state.search_cache.clone();
     let runtime = state.runtime.clone();
+    let overrides = state.mirror.snapshot();
     tauri::async_runtime::spawn_blocking(move || {
         let cancelled = || ticket.cancelled();
-        let result = facets(cache.as_deref(), &runtime, &args, &cancelled);
+        let result = facets(cache.as_deref(), &runtime, &overrides, &args, &cancelled);
         if cancelled() {
             Err("Search cancelled".to_owned())
         } else {

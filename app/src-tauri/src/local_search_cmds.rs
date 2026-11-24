@@ -309,6 +309,7 @@ fn run_local_query(
                 runtime: runtime.to_owned(),
                 config: morf_config.clone(),
                 scopes: from_copy,
+                overrides: app.state::<AppState>().mirror.snapshot(),
             });
             // the copy may be behind the server: ask for a sync, which never
             // blocks this search

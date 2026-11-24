@@ -56,11 +56,13 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         let runtime = state.runtime.clone();
         let dir = dir.clone();
         let skip = skip.clone();
+        // what Immage changed itself and the server has not indexed yet (memory only)
+        let overrides = state.mirror.snapshot();
         tauri::async_runtime::spawn_blocking(move || {
             let config = crate::morf_photo::load(&runtime);
             let scope = mirror_scope(&config, &dir, recursive, &skip);
             let listing = scope.as_deref()
-                .and_then(|scope| crate::morf_mirror::folder(&runtime, &config, scope, recursive));
+                .and_then(|scope| crate::morf_mirror::folder(&runtime, &config, scope, recursive, &overrides));
             if let Some(found) = &listing {
                 let known = known_value(found.images.iter()
                     .filter(|image| visible_morf_path(Path::new(&image.path), &dir, &skip)));
@@ -986,15 +988,18 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
             let name = image["filename"].as_str().unwrap_or("a photo");
             return Err(format!("{name} is not rejected; nothing was deleted"));
         }
-        checked.push((id, path, image["copy"].as_bool() == Some(true)));
+        checked.push((id, path, image["copy"].as_bool() == Some(true), image["version"].as_i64().unwrap_or(0)));
     }
     let mut items: Vec<PathBuf> = Vec::new();
     let mut gone = Vec::new();
     let mut forget = Vec::new();
-    for (id, path, copy) in checked {
+    let mut copies = Vec::new();
+    for (id, path, copy, version) in checked {
         let cmd = if copy { "remove_copy" } else { "sidecars" };
         let reply = state.engine("trash_files").request(json!({ "cmd": cmd, "imgid": id }))?;
-        if !copy {
+        if copy {
+            copies.push(crate::library_ids::Photo { path, version });
+        } else {
             items.push(PathBuf::from(&path));
             gone.push(path);
             forget.push(id);
@@ -1002,6 +1007,9 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
         items.extend(reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from));
     }
     trash_existing(items).await?;
+    // the local copy of the catalog shows them gone at once, not when the server re-indexes
+    crate::mirror_notes::gone(&state, gone.clone());
+    for photo in copies { crate::mirror_notes::copy_removed(&state, Some(photo)); }
     if let Some(index)=&state.search_cache {
         for path in &gone { if let Err(e)=index.remove_path(path) { eprintln!("search cache trash: {e}"); } }
     }
@@ -1086,7 +1094,10 @@ pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) 
     if let Some(image)=reply.get("image") {
         index_imported_metadata(state.search_cache.as_deref(), &Mutex::new(cache::Listed::default()), std::slice::from_ref(image));
     }
-    serde_json::from_value::<CopyReply>(reply).map(|r| r.image).map_err(|e| format!("copy: unexpected reply: {e}"))
+    let copy = serde_json::from_value::<CopyReply>(reply).map(|r| r.image).map_err(|e| format!("copy: unexpected reply: {e}"))?;
+    let made = copy.clone();
+    crate::mirror_notes::defer(&state, move |mirror, config| mirror.copy_created(config, &made));
+    Ok(copy)
 }
 
 // out of the library, its sidecars to the Trash. the photo's file stays.
@@ -1095,7 +1106,9 @@ pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn remove_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Option<String>, String> {
+    let photo = state.tagged.known_photo(imgid);
     let reply = state.engine("remove_virtual_copy").request(json!({ "cmd": "remove_copy", "imgid": imgid }))?;
+    crate::mirror_notes::copy_removed(&state, photo);
     let reply: FilesReply = serde_json::from_value(reply).map_err(|e| format!("remove_copy: unexpected reply: {e}"))?;
     Ok(trash_existing(reply.files.into_iter().map(PathBuf::from).collect()).await.err())
 }
@@ -1140,6 +1153,7 @@ pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFold
         let config = crate::morf_photo::load(&app.state::<AppState>().runtime);
         let path = Path::new(&path);
         let runtime = app.state::<AppState>().runtime.clone();
+        let overrides = app.state::<AppState>().mirror.snapshot();
         // the server first; when it does not answer, the local copy of the
         // catalog; the file system only when neither knows the folder
         let indexed = |dir: &Path| -> Option<Vec<SubFolder>> {
@@ -1154,7 +1168,7 @@ pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFold
                         started.elapsed().as_millis()),
                 }
             }
-            crate::morf_mirror::subfolders(&runtime, &config, dir).map(|children| children.into_iter()
+            crate::morf_mirror::subfolders(&runtime, &config, dir, &overrides).map(|children| children.into_iter()
                 .map(|(path, has_children)| subfolder(&path, has_children))
                 .collect())
         };
@@ -1459,7 +1473,9 @@ pub(crate) async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Ve
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
     let reply = state.engine("keywords_set").request(req)?;
     refresh_search_metadata(&state, imgid).await;
-    serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords_set: unexpected reply: {e}"))
+    let reply = serde_json::from_value::<KeywordsReply>(reply).map_err(|e| format!("keywords_set: unexpected reply: {e}"))?;
+    crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), crate::mirror_notes::keywords_fields(reply.keywords.clone()));
+    Ok(reply.keywords)
 }
 
 // rating, rejected, labels and text fields; only the ones given are set
@@ -1467,11 +1483,13 @@ pub(crate) async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Ve
 #[specta::specta]
 pub(crate) async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map<String, Value>) -> Result<(), String> {
     let mut req = json!({ "cmd": "meta_set", "imgid": imgid });
+    let patch = crate::mirror_notes::meta_fields(&fields);
     for (k, v) in fields {
         req[k] = v;
     }
     state.engine("meta_set").request(req)?;
     refresh_search_metadata(&state, imgid).await;
+    crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), patch);
     Ok(())
 }
 
@@ -1483,6 +1501,7 @@ pub(crate) async fn capture_times(state: State<'_, AppState>, entries: Vec<Captu
     for update in &result.updates {
         if update.error.is_none() {
             refresh_search_metadata(&state, update.imgid).await;
+            crate::mirror_notes::fields(&state, state.tagged.known_photo(update.imgid), crate::mirror_notes::capture_fields(&update.after));
         }
     }
     Ok(result)

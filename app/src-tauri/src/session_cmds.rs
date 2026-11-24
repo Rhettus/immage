@@ -441,10 +441,13 @@ pub(crate) async fn cancel_base(state: State<'_, AppState>) -> Result<(), String
 pub(crate) async fn save(app: AppHandle, state: State<'_, AppState>) -> Result<SaveReply, String> {
     let active = state.tagged.active_photo();
     let reply = state.engine("save").request(json!({ "cmd": "save" }))?;
+    let reply: SaveReply = serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))?;
     if let Some(photo) = active {
+        // the local copy of the catalog shows the edit status at once
+        crate::mirror_notes::fields(&state, Some(photo.clone()), crate::mirror_notes::edited_fields(reply.edited));
         queue_refresh_off_thread(app, photo);
     }
-    serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))
+    Ok(reply)
 }
 
 // the History panel's start over: the photo's whole darktable history goes,
@@ -454,7 +457,9 @@ pub(crate) async fn save(app: AppHandle, state: State<'_, AppState>) -> Result<S
 #[specta::specta]
 pub(crate) async fn history_discard(state: State<'_, AppState>, imgid: i64) -> Result<SaveReply, String> {
     let reply = state.engine("history_discard").request(json!({ "cmd": "history_discard", "imgid": imgid }))?;
-    serde_json::from_value(reply).map_err(|e| format!("history_discard: unexpected reply: {e}"))
+    let reply: SaveReply = serde_json::from_value(reply).map_err(|e| format!("history_discard: unexpected reply: {e}"))?;
+    crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), crate::mirror_notes::edited_fields(reply.edited));
+    Ok(reply)
 }
 
 // Native history snapshots owned by the frontend's batch undo entries.
@@ -463,7 +468,11 @@ pub(crate) async fn history_discard(state: State<'_, AppState>, imgid: i64) -> R
 pub(crate) async fn paste_batch(state: State<'_, AppState>, action: String, token: Option<u64>, imgids: Option<Vec<i64>>) -> Result<PasteBatchReply, String> {
     let reply = state.engine("paste_batch").request(json!({ "cmd": "paste_batch", "action": action,
         "token": token.unwrap_or(0), "imgids": imgids.unwrap_or_default() }))?;
-    serde_json::from_value(reply).map_err(|e| format!("paste_batch: unexpected reply: {e}"))
+    let reply: PasteBatchReply = serde_json::from_value(reply).map_err(|e| format!("paste_batch: unexpected reply: {e}"))?;
+    for update in reply.updates.iter().flatten().filter(|u| u.error.is_none()) {
+        crate::mirror_notes::fields(&state, state.tagged.known_photo(update.imgid), crate::mirror_notes::edited_fields(update.edited));
+    }
+    Ok(reply)
 }
 
 // the user's first change to a new photo: the defaults applied so far become

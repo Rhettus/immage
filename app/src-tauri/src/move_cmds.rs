@@ -1039,7 +1039,7 @@ type TransferResult = Result<Option<(bool, Option<String>)>, String>;
 // must remain valid until a move removes its sources.
 #[cfg(test)]
 fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener) -> TransferResult {
-    transfer_photo_indexed(u, dest, copy, keep, ctx, open, None)
+    transfer_photo_indexed(u, dest, copy, keep, ctx, open, None, None)
 }
 
 type SearchSnapshot = (crate::search_cache::Asset, Vec<crate::search_cache::Variant>);
@@ -1079,9 +1079,14 @@ fn transfer_search_snapshot(
     Ok(false)
 }
 
+// `placed` hears a photo that landed (its source, its new file, and whether the
+// source is gone), once the files are in place: the local copy of the morfPhoto
+// catalog follows it. It runs on this worker thread with no lock held.
+type Placed2<'a> = &'a dyn Fn(&Path, &Path, bool);
+
 #[allow(clippy::too_many_arguments)]
 fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener,
-    index: Option<&crate::search_cache::SearchCache>) -> TransferResult {
+    index: Option<&crate::search_cache::SearchCache>, placed: Option<Placed2>) -> TransferResult {
     let original = file_names(u);
     let mut reservation = DestinationReservation::try_new(dest, &original, u);
     let mut selected = original;
@@ -1123,6 +1128,9 @@ fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &C
         .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), dest));
     let snapshot = index.and_then(|index| search_snapshot(index, u.files.first()?.from.as_ref()?));
     let result = transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open)?;
+    if let (Some(placed), Some(from)) = (placed, u.files[0].from.as_deref()) {
+        placed(from, &dest.join(&selected[0]), result.0);
+    }
     if let (Some(index), Some(snapshot)) = (index, snapshot) {
         if let Err(e) = transfer_search_snapshot(index, snapshot, &dest.join(&selected[0]), result.0) {
             eprintln!("search cache transfer: {e}");
@@ -1300,6 +1308,10 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
     tauri::async_runtime::spawn_blocking(move || {
         let d = dest.clone();
         let forgotten = app.clone();
+        // the saved mapping, read once for the job: each photo that lands is
+        // told to the local copy of the morfPhoto catalog
+        let morf = Some(crate::morf_photo::load(&app.state::<AppState>().runtime)).filter(|c| c.enabled);
+        let told = app.clone();
         transfer_batch(Batch { units, dest, workers, cancel, stall: STALL }, move |unit, ctx| {
             let client: std::cell::OnceCell<Result<immich_upload::Immich, String>> = std::cell::OnceCell::new();
             let open = |id: &str| -> Result<Box<dyn Read>, String> {
@@ -1309,7 +1321,12 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
                 let c = c.as_ref().map_err(|e| e.clone())?;
                 Ok(Box::new(c.original_stream(id)?))
             };
-            transfer_photo_indexed(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open, index.as_deref())
+            let tell = |from: &Path, to: &Path, gone: bool| {
+                if let Some(config) = &morf {
+                    told.state::<AppState>().mirror.file_placed(config, from, to, gone);
+                }
+            };
+            transfer_photo_indexed(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open, index.as_deref(), Some(&tell))
         }, |p| {
             let _ = app.emit("move-progress", json!({ "job": job, "done": p.done, "total": p.total,
                 "bytes": p.bytes, "bytesTotal": p.bytes_total, "file": p.file }));
@@ -1665,6 +1682,10 @@ pub(crate) async fn rename_files(app: AppHandle, items: Vec<RenameItem>) -> Resu
                 stopped = true;
                 continue;
             }
+            // the local copy of the catalog shows the new name at once
+            crate::mirror_notes::now(&state.mirror, &state.runtime, |mirror, config| {
+                mirror.file_placed(config, source, target, true);
+            });
             if let Err(e) = state.engine("rename_files").request(json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
                 eprintln!("could not forget renamed photo {}: {e}", source.display());
             }
@@ -1858,7 +1879,7 @@ mod tests {
             // Exercise the actual Keep Both destination selection as well.
             if copy { std::fs::write(dest.join("A.CR3"),b"another photo").unwrap(); }
             let target=if copy {dest.join(&renamed(&unit,1)[0])} else {dest.join("A.CR3")};
-            assert!(transfer_photo_indexed(&unit,&dest,copy,copy,&ctx(),&no_open,Some(&index)).unwrap().is_some());
+            assert!(transfer_photo_indexed(&unit,&dest,copy,copy,&ctx(),&no_open,Some(&index),None).unwrap().is_some());
             let moved=index.path_variants(target.to_str().unwrap()).unwrap();
             assert_eq!(moved.len(),2);
             for (old,new) in originals.iter().zip(&moved) {

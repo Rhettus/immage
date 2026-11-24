@@ -1568,6 +1568,7 @@ pub(crate) struct Version {
 }
 
 // the listing fields of a photo that every one of its versions shares
+#[derive(Clone, Debug)]
 pub(crate) struct ExifFields {
     pub(crate) maker: String,
     pub(crate) model: String,
@@ -1601,6 +1602,7 @@ impl ExifFields {
 }
 
 // one version's fields, from the server's listing or from the local copy
+#[derive(Clone, Debug)]
 pub(crate) struct VersionFields {
     pub(crate) version: u32,
     pub(crate) copy: bool,

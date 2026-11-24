@@ -9,21 +9,33 @@
 //!
 //! Threads and locks. Everything here opens its own read-only connection
 //! (`morf_mirror::open_reader`) and holds no lock: no `Mirror.state`, no
-//! `SearchCache` lock, nothing shared. Callers run it on a blocking thread
-//! (never the event loop) and give a `cancelled` check, polled between SQL
-//! batches. A page of a search is read in batches of `BATCH` rows, so one
-//! statement never runs unbounded on a path the user waits on.
+//! `Mirror.overrides`, no `SearchCache` lock, nothing shared. The overrides
+//! (what Immage changed itself and the server has not indexed yet) are a copy
+//! the caller took first (`Mirror::snapshot`) and hands over in `Source`.
+//! Callers run it on a blocking thread (never the event loop) and give a
+//! `cancelled` check, polled between SQL batches. A page of a search is read in
+//! batches of `BATCH` rows, so one statement never runs unbounded on a path the
+//! user waits on.
+//!
+//! Overrides. A photo with a change is left out of the SQL (its path is in a
+//! `NOT IN` over `json_each`), read on its own with the changes laid over it,
+//! tested with `search_filters::passes`, and merged into the SQL's rows in
+//! server path and version order; the facets count it the same way.
 
 use crate::{
     find_facets::{List, Tallies},
     immich_search::SearchArgs,
+    mirror_overrides::Overrides,
     morf_mirror as mm,
     morf_photo::{library_image, Config},
     search_filters::{self as sf, GridFilter},
     typed_library::LibraryImage,
 };
 use rusqlite::{params_from_iter, types::Value, Connection};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+};
 
 const BATCH: usize = 300;
 const THREADS: usize = 4;
@@ -35,6 +47,8 @@ pub(crate) struct Source {
     pub(crate) runtime: PathBuf,
     pub(crate) config: Config,
     pub(crate) scopes: Vec<(PathBuf, bool)>,
+    /// A copy of what Immage changed itself, taken before the query.
+    pub(crate) overrides: Overrides,
 }
 
 /// A page's resume point: the last row returned, by server path and version.
@@ -61,6 +75,10 @@ impl Where {
     }
     fn none(&mut self) {
         self.clauses.push("0".into());
+    }
+    // the photos with an override are read on their own
+    fn exclude_paths(&mut self, json: &str) {
+        self.and("p.server_path NOT IN (SELECT value FROM json_each(?))", [Value::Text(json.into())]);
     }
     fn one_of(&mut self, column: &str, values: &[String], recorded: bool) {
         if values.is_empty() {
@@ -300,8 +318,19 @@ impl Source {
             let escaped = needle.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
             w.and("p.filename LIKE ? ESCAPE '\\'", [Value::Text(format!("%{escaped}%"))]);
         }
+        if let Some(json) = self.overrides.json_paths() {
+            w.exclude_paths(&json);
+        }
+        // the changed photos that match, after the resume point, in order
+        let mut extra: VecDeque<(After, LibraryImage)> = self
+            .override_images(&tx, hidden)?
+            .into_iter()
+            .filter(|(key, image)| {
+                after.is_none_or(|a| key > a) && sf::passes(image, None, filter, remote) && accept(image)
+            })
+            .collect();
         let mut cursor = after.cloned();
-        let mut found = Vec::new();
+        let mut found: Vec<(After, LibraryImage)> = Vec::new();
         loop {
             if cancelled() {
                 return Err("Search cancelled".into());
@@ -330,6 +359,12 @@ impl Source {
             let mut keywords = mm::keywords_of(&tx, &ids).map_err(|e| e.to_string())?;
             for mut row in rows {
                 let key = (row.path.clone(), row.version.version);
+                while extra.front().is_some_and(|(k, _)| *k < key) {
+                    found.extend(extra.pop_front());
+                    if found.len() == limit {
+                        return Ok(found);
+                    }
+                }
                 row.version.keywords = keywords.remove(&(row.id, key.1)).unwrap_or_default();
                 let Some(image) = self.image(row) else { continue };
                 if accept(&image) {
@@ -344,7 +379,56 @@ impl Source {
             }
             cursor = Some(next);
         }
+        for item in extra {
+            found.push(item);
+            if found.len() == limit {
+                break;
+            }
+        }
         Ok(found)
+    }
+
+    // The photos Immage changed itself, as they are now: their rows read from
+    // the copy, the changes laid over them, in server path and version order,
+    // limited to the query's folders. A photo moved or copied in has no row of
+    // the copy's and comes from the override alone.
+    fn override_images(&self, tx: &Connection, hidden: &[PathBuf]) -> Result<Vec<(After, LibraryImage)>, String> {
+        let Some(json) = self.overrides.json_paths() else { return Ok(Vec::new()) };
+        let err = |e: rusqlite::Error| e.to_string();
+        let mut statement = tx
+            .prepare(&format!(
+                "SELECT {} {FROM} WHERE p.server_path IN (SELECT value FROM json_each(?1))
+                 ORDER BY p.server_path, v.version",
+                mm::ROW_COLUMNS
+            ))
+            .map_err(err)?;
+        let rows = statement
+            .query_map([json], mm::row_from)
+            .map_err(err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(err)?;
+        drop(statement);
+        let mut ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+        ids.dedup();
+        let mut keywords = mm::keywords_of(tx, &ids).map_err(err)?;
+        let rows = mm::merge_rows(rows, &mut keywords, &self.overrides);
+        let mut images = Vec::new();
+        for row in rows {
+            let key = (row.path.clone(), row.version.version);
+            let Some(image) = self.image(row) else { continue };
+            if self.in_query(Path::new(&image.path), hidden) {
+                images.push((key, image));
+            }
+        }
+        Ok(images)
+    }
+
+    // whether a local file is in the folders the query covers
+    fn in_query(&self, path: &Path, hidden: &[PathBuf]) -> bool {
+        !hidden.iter().any(|h| path.starts_with(h))
+            && self.scopes.iter().any(|(scope, recursive)| {
+                if *recursive { path.starts_with(scope) } else { path.parent() == Some(scope.as_path()) }
+            })
     }
 
     // the row as `Photo::images` maps the server's listing; None when it does
@@ -372,8 +456,9 @@ impl Source {
         cancelled: &(dyn Fn() -> bool + Sync),
     ) -> Result<(), String> {
         let scopes = server_dirs(&self.config, &self.scopes);
-        let hidden = self.hidden_dirs(hidden);
+        let hidden_dirs = self.hidden_dirs(hidden);
         let root = self.config.server_root();
+        let exclude = self.overrides.json_paths();
         // keywords are the slow list: give them a thread of their own
         let mut groups: Vec<Vec<List>> = vec![Vec::new(); THREADS.min(lists.len().max(1))];
         let mut ordered: Vec<List> = lists.to_vec();
@@ -388,7 +473,7 @@ impl Source {
                 .iter()
                 .filter(|g| !g.is_empty())
                 .map(|group| {
-                    let (scopes, hidden, root) = (&scopes, &hidden, &root);
+                    let (scopes, hidden, root, exclude) = (&scopes, &hidden_dirs, &root, &exclude);
                     scope.spawn(move || -> Result<Tallies, String> {
                         let mut conn = self.open()?;
                         let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -398,7 +483,10 @@ impl Source {
                                 return Err("Search cancelled".into());
                             }
                             let (f, r) = crate::find_facets::without(list, filter, remote);
-                            let Some(w) = compile(root, scopes, hidden, &f, &r, mm::FOLD_CASE) else { continue };
+                            let Some(mut w) = compile(root, scopes, hidden, &f, &r, mm::FOLD_CASE) else { continue };
+                            if let Some(json) = exclude {
+                                w.exclude_paths(json);
+                            }
                             tally(&tx, list, &w, &mut mine, cancelled)?;
                         }
                         Ok(mine)
@@ -409,6 +497,26 @@ impl Source {
         });
         for result in results {
             tallies.merge(result?);
+        }
+        // the photos Immage changed itself, counted one at a time as `passes` sees them
+        if exclude.is_some() {
+            let mut conn = self.open()?;
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            let images = self.override_images(&tx, hidden)?;
+            for &list in lists {
+                if cancelled() {
+                    return Err("Search cancelled".into());
+                }
+                let (f, r) = crate::find_facets::without(list, filter, remote);
+                if compile(&root, &scopes, &hidden_dirs, &f, &r, mm::FOLD_CASE).is_none() {
+                    continue;
+                }
+                for (_, image) in &images {
+                    if sf::passes(image, None, &f, &r) {
+                        crate::find_facets::tally_image(tallies, list, image, None);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -648,11 +756,13 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         crate::morf_mirror::test_fill(dir.path(), &config(), items);
         let listing =
-            crate::morf_mirror::folder(dir.path(), &config(), Path::new("/mnt/photos"), true).unwrap();
+            crate::morf_mirror::folder(dir.path(), &config(), Path::new("/mnt/photos"), true, &Overrides::default())
+                .unwrap();
         let source = Source {
             runtime: dir.path().to_owned(),
             config: config(),
             scopes: vec![(PathBuf::from("/mnt/photos"), true)],
+            overrides: Overrides::default(),
         };
         Fixture { dir, source, all: listing.images }
     }
@@ -665,6 +775,7 @@ pub(crate) mod tests {
             runtime: dir.path().to_owned(),
             config: config(),
             scopes: vec![(PathBuf::from("/mnt/photos"), true)],
+            overrides: Overrides::default(),
         };
         (source, dir)
     }
@@ -908,6 +1019,245 @@ pub(crate) mod tests {
             let reference = counted_by_passes(&f, filter, remote, &lists);
             for list in lists {
                 assert_eq!(sql.snapshot(list), reference.snapshot(list), "vector {n} list {list:?}");
+            }
+            checked += 1;
+        }
+        assert!(checked > 70);
+    }
+
+    // ---- overrides ----
+
+    use crate::mirror_overrides::{FieldOverride, PhotoRow};
+    use crate::morf_photo::VersionFields;
+    use std::collections::BTreeMap;
+    use std::time::Instant;
+
+    enum Op {
+        Fields(String, u32, FieldOverride),
+        Gone(String),
+        Removed(String, u32),
+        Added(String, PhotoRow),
+    }
+
+    fn patch(rng: &mut Rng) -> FieldOverride {
+        let mut p = FieldOverride::default();
+        if rng.chance(60) { p.rating = Some(rng.below(6) as u8); }
+        if rng.chance(30) { p.rejected = Some(rng.chance(50)); }
+        if rng.chance(30) { p.labels = Some(rng.below(32) as u32); }
+        if rng.chance(40) {
+            p.keywords = Some((0..rng.below(4)).map(|_| rng.pick(KEYWORDS).to_string()).collect());
+        }
+        if rng.chance(30) { p.edited = Some(rng.chance(50)); }
+        if rng.chance(30) { p.taken_at = rng.pick(TAKEN).map(str::to_owned); }
+        p
+    }
+
+    // The mirror's photos as a model: server path -> rows, read straight from the
+    // copy before any override.
+    fn model(f: &Fixture) -> BTreeMap<String, PhotoRow> {
+        let conn = mm::open_reader(f.dir.path()).unwrap();
+        let mut paths: Vec<String> = f
+            .all
+            .iter()
+            .map(|i| config().server_folder(Path::new(&i.path)).unwrap())
+            .collect();
+        paths.dedup();
+        paths.into_iter().map(|p| { let row = mm::read_photo(&conn, &p).unwrap().unwrap(); (p, row) }).collect()
+    }
+
+    fn random_ops(model: &BTreeMap<String, PhotoRow>, seed: u64, share: u64) -> Vec<Op> {
+        let mut rng = Rng(seed);
+        let paths: Vec<&String> = model.keys().collect();
+        let mut ops = Vec::new();
+        for (n, path) in paths.iter().enumerate() {
+            if !rng.chance(share) {
+                continue;
+            }
+            let photo = &model[*path];
+            match rng.below(6) {
+                0 => ops.push(Op::Gone((*path).clone())),
+                1 if photo.versions.len() > 1 => {
+                    ops.push(Op::Removed((*path).clone(), photo.versions[1].version));
+                }
+                2 => {
+                    // moved or copied in, as another photo's row, under a new path
+                    let source = &model[*rng.pick(&paths)];
+                    let dir = rng.pick(DIRS);
+                    ops.push(Op::Added(format!("{dir}/moved{n}-{}", rng.pick(NAMES)), source.clone()));
+                }
+                _ => {
+                    for _ in 0..1 + rng.below(2) {
+                        let v = rng.pick(&photo.versions).version;
+                        ops.push(Op::Fields((*path).clone(), v, patch(&mut rng)));
+                    }
+                }
+            }
+        }
+        ops
+    }
+
+    fn overrides_of(ops: &[Op]) -> Overrides {
+        let mut o = Overrides::default();
+        let now = Instant::now();
+        for op in ops {
+            match op {
+                Op::Fields(p, v, patch) => o.note_fields(p, *v, patch.clone(), now),
+                Op::Gone(p) => o.note_gone(p, now),
+                Op::Removed(p, v) => o.note_version_removed(p, *v, now),
+                Op::Added(p, row) => o.note_added(p, row.clone(), now),
+            }
+        }
+        o
+    }
+
+    // The same changes laid over the model by hand, field by field, without
+    // `Overrides`, and the model as library images in server path order.
+    fn reference_images(model: &BTreeMap<String, PhotoRow>, ops: &[Op]) -> Vec<LibraryImage> {
+        let mut model = model.clone();
+        for op in ops {
+            match op {
+                Op::Fields(p, v, patch) => {
+                    let Some(version) = model.get_mut(p).and_then(|r| r.versions.iter_mut().find(|x| x.version == *v)) else { continue };
+                    if let Some(r) = patch.rating { version.rating = r; }
+                    if let Some(r) = patch.rejected { version.rejected = r; }
+                    if let Some(l) = patch.labels { version.labels = l; }
+                    if let Some(k) = &patch.keywords { version.keywords = k.clone(); }
+                    if let Some(e) = patch.edited { version.edited = Some(e); }
+                    if let Some(t) = &patch.taken_at { version.taken_at = Some(t.clone()); }
+                }
+                Op::Gone(p) => { model.remove(p); }
+                Op::Removed(p, v) => {
+                    if let Some(r) = model.get_mut(p) {
+                        r.versions.retain(|x| x.version != *v);
+                        if r.versions.is_empty() { model.remove(p); }
+                    }
+                }
+                Op::Added(p, row) => { model.insert(p.clone(), row.clone()); }
+            }
+        }
+        let mut images = Vec::new();
+        for (path, row) in &model {
+            let Ok(local) = config().local_file(path) else { continue };
+            if !crate::library_cmds::photo_candidate(&local) { continue; }
+            let name = local.file_name().unwrap().to_str().unwrap().to_owned();
+            for version in &row.versions {
+                let version: VersionFields = version.clone();
+                images.push(library_image(&local, &name, &row.exif, version).unwrap());
+            }
+        }
+        images
+    }
+
+    fn sql_keys_with(source: &Source, filter: &GridFilter, remote: &SearchArgs) -> Vec<(String, u32)> {
+        source
+            .page(&filter.canonical(), remote, &[], None, None, usize::MAX, &|_| true, &|| false)
+            .unwrap()
+            .into_iter()
+            .map(|(_, i)| key(&i))
+            .collect()
+    }
+
+    fn reference_keys_of(images: &[LibraryImage], filter: &GridFilter, remote: &SearchArgs) -> Vec<(String, u32)> {
+        let filter = filter.canonical();
+        images.iter().filter(|i| sf::passes(i, None, &filter, remote)).map(key).collect()
+    }
+
+    #[test]
+    fn sql_with_overrides_answers_as_passes_over_the_changed_rows() {
+        let mut f = fixture(photos(300, 0xbeef));
+        let model = model(&f);
+        let cases = vectors(&f);
+        let mut changed_answers = 0;
+        for (round, share) in [(1u64, 10u64), (2, 35), (3, 90)] {
+            let ops = random_ops(&model, 0x1234 + round, share);
+            assert!(!ops.is_empty());
+            f.source.overrides = overrides_of(&ops);
+            let reference = reference_images(&model, &ops);
+            for (n, (filter, remote)) in cases.iter().enumerate() {
+                let (sql, expect) = (sql_keys_with(&f.source, filter, remote), reference_keys_of(&reference, filter, remote));
+                assert_eq!(sql, expect, "round {round} vector {n}: {}", serde_json::to_string(filter).unwrap());
+                changed_answers += usize::from(sql != reference_keys(&f, filter, remote));
+            }
+        }
+        // the overrides did change what the filters find
+        assert!(changed_answers > 200, "{changed_answers}");
+    }
+
+    #[test]
+    fn pages_with_overrides_resume_in_order_and_decline_what_the_caller_declines() {
+        let mut f = fixture(photos(200, 0xaced));
+        let model = model(&f);
+        let ops = random_ops(&model, 77, 40);
+        f.source.overrides = overrides_of(&ops);
+        let reference = reference_images(&model, &ops);
+        let remote = SearchArgs::default();
+        for filter in [GridFilter::default(), GridFilter { min_rating: 2, ..Default::default() }, GridFilter { edited: "edited".into(), ..Default::default() }] {
+            let whole = reference_keys_of(&reference, &filter, &remote);
+            assert!(whole.len() > 50);
+            for size in [1usize, 7, 17, 301] {
+                let mut joined = Vec::new();
+                let mut after = None;
+                loop {
+                    let page = f.source.page(&filter, &remote, &[], None, after.as_ref(), size, &|_| true, &|| false).unwrap();
+                    let Some(last) = page.last().map(|(k, _)| k.clone()) else { break };
+                    joined.extend(page.iter().map(|(_, i)| key(i)));
+                    after = Some(last);
+                }
+                assert_eq!(joined, whole, "pages of {size}");
+            }
+            // what the caller declines is skipped from the changed photos too
+            let even: Vec<_> = f.source.page(&filter, &remote, &[], None, None, usize::MAX, &|i| i.version == 0, &|| false).unwrap();
+            assert_eq!(even.len(), whole.iter().filter(|(_, v)| *v == 0).count());
+        }
+    }
+
+    #[test]
+    fn hidden_folders_and_scopes_apply_to_the_changed_photos() {
+        let mut f = fixture(photos(120, 5));
+        let model = model(&f);
+        let ops = random_ops(&model, 9, 60);
+        let reference = reference_images(&model, &ops);
+        f.source.overrides = overrides_of(&ops);
+        f.source.scopes = vec![(PathBuf::from("/mnt/photos/2024"), true), (PathBuf::from("/mnt/photos"), false)];
+        let hidden = [PathBuf::from("/mnt/photos/2024/a")];
+        let inside = |i: &LibraryImage| {
+            let p = Path::new(&i.path);
+            !p.starts_with("/mnt/photos/2024/a")
+                && (p.starts_with("/mnt/photos/2024") || p.parent() == Some(Path::new("/mnt/photos")))
+        };
+        let got: Vec<_> = f.source
+            .page(&GridFilter::default(), &SearchArgs::default(), &hidden, None, None, usize::MAX, &|_| true, &|| false)
+            .unwrap().into_iter().map(|(_, i)| key(&i)).collect();
+        let expect: Vec<_> = reference.iter().filter(|i| inside(i)).map(key).collect();
+        assert_eq!(got, expect);
+        assert!(got.len() > 20);
+    }
+
+    #[test]
+    fn facet_counts_with_overrides_match_passes_over_the_changed_rows() {
+        use crate::find_facets::List::*;
+        let mut f = fixture(photos(300, 0xfeed));
+        let model = model(&f);
+        let ops = random_ops(&model, 31, 40);
+        f.source.overrides = overrides_of(&ops);
+        let reference = reference_images(&model, &ops);
+        let lists = [Kinds, Keywords, Cameras, Bodies, Lenses, Months, Iso, Aperture, Focal, Shutter];
+        let mut checked = 0;
+        for (n, (filter, remote)) in vectors(&f).iter().enumerate().step_by(7) {
+            let mut sql = Tallies::new();
+            f.source.facets(&filter.canonical(), remote, &[], &lists, &mut sql, &|| false).unwrap();
+            let mut expect = Tallies::new();
+            let canonical = filter.canonical();
+            for &list in &lists {
+                let (g, r) = without(list, &canonical, remote);
+                for image in &reference {
+                    if sf::passes(image, None, &g, &r) {
+                        tally_image(&mut expect, list, image, None);
+                    }
+                }
+            }
+            for list in lists {
+                assert_eq!(sql.snapshot(list), expect.snapshot(list), "vector {n} list {list:?}");
             }
             checked += 1;
         }

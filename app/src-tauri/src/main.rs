@@ -22,6 +22,8 @@ mod search_filters;
 mod local_search;
 mod local_search_cmds;
 mod find_facets;
+mod mirror_notes;
+mod mirror_overrides;
 mod mirror_query;
 mod map_tiles;
 mod map_search;

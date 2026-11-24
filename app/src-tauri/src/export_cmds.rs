@@ -349,9 +349,13 @@ pub(crate) async fn export_images(
                     .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
-                    if let Err(e) = state.engine("export_images").request(req) {
-                        failed.push(ExportFailure { file: path_text(&target),
-                            error: format!("exported, but the keywords were not added to the original: {e}") });
+                    match state.engine("export_images").request(req) {
+                        Err(e) => failed.push(ExportFailure { file: path_text(&target),
+                            error: format!("exported, but the keywords were not added to the original: {e}") }),
+                        Ok(reply) => if let Ok(reply) = serde_json::from_value::<crate::typed_library::KeywordsReply>(reply) {
+                            crate::mirror_notes::fields(&state, state.tagged.known_photo(item.imgid),
+                                crate::mirror_notes::keywords_fields(reply.keywords));
+                        },
                     }
                 }
                 match (result, &immich) {

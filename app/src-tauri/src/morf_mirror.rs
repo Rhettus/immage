@@ -28,11 +28,22 @@
 //! the event loop. After a page that changed rows commits, the sync thread
 //! reports the changed directories through `events` (set once, no lock) with
 //! no lock held.
+//!
+//! The second lock is `Mirror.overrides` (mirror_overrides.rs), also a leaf: it
+//! guards what Immage changed itself (ratings, moves, ...) until the server
+//! re-indexes it. It is never held together with `Mirror.state`; should that
+//! ever change, `state` is taken before `overrides`. It is held only to insert,
+//! remove or clone in-memory values (`with_overrides`), never across SQLite,
+//! HTTP, disk, an emit or an engine call. `note_*` take it alone and are
+//! constant time, so a command may call them wherever it stands; readers clone
+//! what they need first (`snapshot`) and query without it. Debug builds assert
+//! the two are never nested.
 
 use crate::morf_photo::{
     encode_plus_query, header_str, library_image, read_response_body, Api, Config, ExifFields,
     PageOutcome, Version, VersionFields, MAX_PAGE_BYTES, PAGE_SIZE, REQUEST_TIMEOUT,
 };
+use crate::mirror_overrides::{FieldOverride, Overrides, PhotoRow};
 use crate::search_filters as sf;
 use crate::typed_library::LibraryImage;
 use reqwest::header::{ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_NONE_MATCH};
@@ -41,7 +52,8 @@ use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtensio
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    cell::Cell,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs::File,
     path::{Path, PathBuf},
     sync::{
@@ -136,6 +148,32 @@ pub(crate) enum Phase {
     Error,
 }
 
+// Which of the two leaf locks this thread holds, so debug builds can assert they
+// are never nested (see the module docs). The bit is set while a guard lives.
+thread_local! {
+    static HELD: Cell<u8> = const { Cell::new(0) };
+}
+const HOLDS_STATE: u8 = 1;
+const HOLDS_OVERRIDES: u8 = 2;
+
+struct Held(u8);
+
+impl Held {
+    fn take(lock: u8, other: u8) -> Held {
+        HELD.with(|h| {
+            debug_assert_eq!(h.get() & other, 0, "Mirror.state and Mirror.overrides are never nested");
+            h.set(h.get() | lock);
+        });
+        Held(lock)
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        HELD.with(|h| h.set(h.get() & !self.0));
+    }
+}
+
 // in-memory values only: the leaf lock's data
 struct SyncState {
     phase: Phase,
@@ -165,7 +203,12 @@ pub(crate) struct MirrorStatus {
 }
 
 pub(crate) struct Mirror {
+    // where the reader connections find the file
+    runtime: PathBuf,
     state: Mutex<SyncState>,
+    // what Immage changed itself and the server has not indexed yet; a leaf lock
+    // beside `state`, never nested with it
+    overrides: Mutex<Overrides>,
     wake: Condvar,
     kicked: AtomicBool,
     reset: AtomicBool,
@@ -241,7 +284,7 @@ impl Mirror {
         runtime: &Path,
         quiet: impl Fn() -> Duration + Send + Sync + 'static,
     ) -> Arc<Mirror> {
-        let mirror = Arc::new(Mirror::new(quiet));
+        let mirror = Arc::new(Mirror::new(runtime.to_path_buf(), quiet));
         let thread = mirror.clone();
         let runtime = runtime.to_path_buf();
         if std::thread::Builder::new()
@@ -254,8 +297,10 @@ impl Mirror {
         mirror
     }
 
-    fn new(quiet: impl Fn() -> Duration + Send + Sync + 'static) -> Mirror {
+    fn new(runtime: PathBuf, quiet: impl Fn() -> Duration + Send + Sync + 'static) -> Mirror {
         Mirror {
+            runtime,
+            overrides: Mutex::new(Overrides::default()),
             state: Mutex::new(SyncState {
                 phase: Phase::Off,
                 done: 0,
@@ -292,7 +337,14 @@ impl Mirror {
     }
 
     fn with_state<R>(&self, f: impl FnOnce(&mut SyncState) -> R) -> R {
+        let _held = Held::take(HOLDS_STATE, HOLDS_OVERRIDES);
         f(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    // The only way to the overrides: in-memory work inside `f`, nothing else.
+    fn with_overrides<R>(&self, f: impl FnOnce(&mut Overrides) -> R) -> R {
+        let _held = Held::take(HOLDS_OVERRIDES, HOLDS_STATE);
+        f(&mut self.overrides.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     // Safe while holding any other lock: sets an atomic and notifies without
@@ -310,6 +362,8 @@ impl Mirror {
     pub(crate) fn request_reset(&self) {
         self.reset.store(true, Ordering::Release);
         self.generation.fetch_add(1, Ordering::AcqRel);
+        // nothing of ours outlives the catalog it was laid over
+        self.with_overrides(Overrides::clear);
         self.kick();
     }
 
@@ -351,6 +405,7 @@ impl Mirror {
     }
 
     fn wait_for_work(&self, deadline: Instant) {
+        let _held = Held::take(HOLDS_STATE, HOLDS_OVERRIDES);
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if self.kicked.load(Ordering::Acquire)
@@ -438,6 +493,7 @@ impl Mirror {
     }
 
     fn cycle(&self, runtime: &Path, w: &mut Worker) {
+        self.with_overrides(|o| o.expire_age(Instant::now()));
         let reset = self.reset.swap(false, Ordering::AcqRel);
         let generation = self.generation.load(Ordering::Acquire);
         let config = crate::morf_photo::load(runtime);
@@ -448,6 +504,7 @@ impl Mirror {
             w.last_status = None;
             w.last_snapshot = None;
             w.no_feed_until = None;
+            self.with_overrides(Overrides::clear);
             if let Err(fail) = clear_all(&mut w.conn) {
                 self.record_failure(w, fail);
                 return;
@@ -529,7 +586,9 @@ impl Mirror {
         generation: u64,
     ) -> Result<(), Fail> {
         let origin = config.origin().map_err(Fail::message)?;
-        ensure_identity(&mut w.conn, &origin, &config.server_root())?;
+        if ensure_identity(&mut w.conn, &origin, &config.server_root())? {
+            self.with_overrides(Overrides::clear);
+        }
         self.load_summary(&w.conn);
         let status = self.probe(w, api)?;
         let delta = status.catalog_id.is_some()
@@ -592,6 +651,7 @@ impl Mirror {
             meta_set(&tx, "catalog_id", catalog_id)?;
             write_identity(&tx, config)?;
             tx.commit()?;
+            self.with_overrides(Overrides::clear);
             self.load_summary(&w.conn);
         }
         let complete = meta_get(&w.conn, "complete")?.as_deref() == Some("1");
@@ -690,6 +750,9 @@ impl Mirror {
             return Err(Fail::Aborted);
         }
         tx.commit()?;
+        // the page is committed: what the server now says can retire our changes
+        let paths: Vec<&str> = items.iter().map(|i| i.path.as_str()).collect();
+        self.expire_for(conn, &paths, Instant::now());
         Ok(changed)
     }
 
@@ -712,6 +775,7 @@ impl Mirror {
             meta_set(&tx, "catalog_id", "snapshot")?;
             write_identity(&tx, config)?;
             tx.commit()?;
+            self.with_overrides(Overrides::clear);
             self.load_summary(&w.conn);
         }
         let complete = meta_get(&w.conn, "complete")?.as_deref() == Some("1");
@@ -814,6 +878,10 @@ impl Mirror {
             return Err(Fail::Aborted);
         }
         tx.commit()?;
+        // a whole listing is in: every change of ours can be checked against it
+        let paths: Vec<String> = self.with_overrides(|o| o.paths().into_iter().map(str::to_owned).collect());
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        self.expire_for(&w.conn, &paths, Instant::now());
         self.load_summary(&w.conn);
         Ok(())
     }
@@ -1143,17 +1211,18 @@ fn write_identity(tx: &Connection, config: &Config) -> Result<(), Fail> {
 
 // the mirror belongs to one server and one server folder; the local mount is
 // not part of it, as paths are stored the server's way
-fn ensure_identity(conn: &mut Connection, origin: &str, root: &str) -> Result<(), Fail> {
+// true when the tables were cleared because the identity changed
+fn ensure_identity(conn: &mut Connection, origin: &str, root: &str) -> Result<bool, Fail> {
     let tx = conn.transaction()?;
-    if meta_get(&tx, "origin")?.as_deref() != Some(origin)
-        || meta_get(&tx, "server_root")?.as_deref() != Some(root)
-    {
+    let changed = meta_get(&tx, "origin")?.as_deref() != Some(origin)
+        || meta_get(&tx, "server_root")?.as_deref() != Some(root);
+    if changed {
         clear_tables(&tx)?;
         meta_set(&tx, "origin", origin)?;
         meta_set(&tx, "server_root", root)?;
     }
     tx.commit()?;
-    Ok(())
+    Ok(changed)
 }
 
 fn clear_all(conn: &mut Connection) -> Result<(), Fail> {
@@ -1307,6 +1376,158 @@ pub(crate) fn test_fill(dir: &Path, config: &Config, items: Vec<Value>) {
     tx.commit().unwrap();
 }
 
+// ---- local overrides ----
+
+// The server path of a local file under the mapped folder, None for any other.
+// A test has no network mount to ask about, so it asks for the mapping alone.
+fn server_path(config: &Config, path: &Path) -> Option<String> {
+    #[cfg(not(test))]
+    let covered = config.covers_local_copy(path);
+    #[cfg(test)]
+    let covered = config.enabled && path.starts_with(config.local_path.trim());
+    covered.then(|| config.server_folder(path).ok()).flatten()
+}
+
+fn server_dir(path: &str) -> String {
+    path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned()
+}
+
+// One photo's row as the server has it, for a path; None when it has none.
+pub(crate) fn read_photo(conn: &Connection, path: &str) -> Result<Option<PhotoRow>, rusqlite::Error> {
+    let mut statement = conn.prepare_cached(&format!(
+        "SELECT {ROW_COLUMNS} FROM photos p JOIN versions v ON v.photo_id = p.id
+         WHERE p.server_path = ?1 ORDER BY v.version"
+    ))?;
+    let rows = statement.query_map(params![path], row_from)?.collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let Some(id) = rows.first().map(|r| r.id) else { return Ok(None) };
+    let mut keywords = keywords_of(conn, &[id])?;
+    let exif = rows[0].exif.clone();
+    let versions = rows
+        .into_iter()
+        .map(|mut row| {
+            row.version.keywords = keywords.remove(&(id, row.version.version)).unwrap_or_default();
+            row.version
+        })
+        .collect();
+    Ok(Some(PhotoRow { exif, versions }))
+}
+
+impl Mirror {
+    /// A copy of every override, for a reader to lay over its rows. Constant
+    /// time apart from the copy; takes `overrides` alone.
+    pub(crate) fn snapshot(&self) -> Overrides {
+        self.with_overrides(|o| o.clone())
+    }
+
+    pub(crate) fn note_fields(&self, server_path: &str, version: u32, patch: FieldOverride) {
+        self.with_overrides(|o| o.note_fields(server_path, version, patch, Instant::now()));
+    }
+
+    pub(crate) fn note_gone(&self, server_path: &str) {
+        self.with_overrides(|o| o.note_gone(server_path, Instant::now()));
+    }
+
+    pub(crate) fn note_added(&self, server_path: &str, row: PhotoRow) {
+        self.with_overrides(|o| o.note_added(server_path, row, Instant::now()));
+    }
+
+    pub(crate) fn note_version_removed(&self, server_path: &str, version: u32) {
+        self.with_overrides(|o| o.note_version_removed(server_path, version, Instant::now()));
+    }
+
+    pub(crate) fn note_version_added(&self, server_path: &str, version: crate::morf_photo::VersionFields) {
+        self.with_overrides(|o| o.note_version_added(server_path, version, Instant::now()));
+    }
+
+    // The photo at a server path as the mirror shows it now, for the row a moved
+    // or copied photo takes with it. A read of the local file; never the share.
+    fn source_photo(&self, config: &Config, server_path: &str) -> Option<PhotoRow> {
+        let mut conn = open_reader(&self.runtime)?;
+        let tx = conn.transaction().ok()?;
+        read_identity(&tx, config)?;
+        let base = read_photo(&tx, server_path).ok()?;
+        drop(tx);
+        self.with_overrides(|o| o.restrict(&[server_path])).effective(server_path, base)
+    }
+
+    // Tells the open folders the photos in these server directories changed.
+    // No lock is held: the callers have released `overrides`.
+    fn announce_paths(&self, config: &Config, paths: &[&str]) {
+        let dirs: BTreeSet<String> = paths.iter().map(|p| server_dir(p)).collect();
+        self.announce(config, &dirs);
+    }
+
+    // ---- the callers' side: local paths, after their file work succeeded ----
+
+    /// A sidecar's fields changed on one version of the photo at `path`.
+    pub(crate) fn fields_changed(&self, config: &Config, path: &Path, version: u32, patch: FieldOverride) {
+        let Some(server) = server_path(config, path) else { return };
+        self.note_fields(&server, version, patch);
+        self.announce_paths(config, &[&server]);
+    }
+
+    /// The photo at `path` was deleted or trashed, with every version.
+    pub(crate) fn file_gone(&self, config: &Config, path: &Path) {
+        let Some(server) = server_path(config, path) else { return };
+        self.note_gone(&server);
+        self.announce_paths(config, &[&server]);
+    }
+
+    /// A photo went from `from` to `to`: moved (`moved`; also a rename) or copied.
+    /// The new place takes the old one's mirror row; a source outside the
+    /// mapped folder, or unknown to the mirror, leaves the server to index it.
+    pub(crate) fn file_placed(&self, config: &Config, from: &Path, to: &Path, moved: bool) {
+        let (from, to) = (server_path(config, from), server_path(config, to));
+        let row = from.as_deref().and_then(|from| self.source_photo(config, from));
+        let mut touched: Vec<&str> = Vec::new();
+        if let (true, Some(from)) = (moved, from.as_deref()) {
+            self.note_gone(from);
+            touched.push(from);
+        }
+        if let (Some(to), Some(row)) = (to.as_deref(), row) {
+            self.note_added(to, row);
+            touched.push(to);
+        }
+        self.announce_paths(config, &touched);
+    }
+
+    /// A virtual copy of the photo at `path` was removed.
+    pub(crate) fn copy_removed(&self, config: &Config, path: &Path, version: u32) {
+        let Some(server) = server_path(config, path) else { return };
+        self.note_version_removed(&server, version);
+        self.announce_paths(config, &[&server]);
+    }
+
+    /// A virtual copy was made; `image` is the engine's account of it.
+    pub(crate) fn copy_created(&self, config: &Config, image: &LibraryImage) {
+        let Some(server) = server_path(config, Path::new(&image.path)) else { return };
+        self.note_version_added(&server, crate::mirror_overrides::version_from_image(image));
+        self.announce_paths(config, &[&server]);
+    }
+
+    // After a committed page: for each path that has an override, the server's
+    // row as committed, then the override's expiry rules. The rows are read
+    // with no lock held.
+    fn expire_for(&self, conn: &Connection, paths: &[&str], now: Instant) {
+        let touched: Vec<String> = self.with_overrides(|o| {
+            paths.iter().filter(|p| o.touches(p)).map(|p| (*p).to_owned()).collect()
+        });
+        if touched.is_empty() {
+            return;
+        }
+        let rows: Vec<(String, Option<PhotoRow>)> = touched
+            .into_iter()
+            .filter_map(|path| read_photo(conn, &path).ok().map(|row| (path, row)))
+            .collect();
+        self.with_overrides(|o| {
+            for (path, row) in &rows {
+                o.expire_path(path, row.as_ref(), now);
+            }
+        });
+    }
+}
+
 // ---- readers ----
 
 // what a folder read needs to know about a listing to compare it with the
@@ -1412,14 +1633,17 @@ pub(crate) fn folder(
     config: &Config,
     local: &Path,
     recursive: bool,
+    overrides: &Overrides,
 ) -> Option<MirrorListing> {
     let base = config.server_folder(local).ok()?;
     let base = base.trim_end_matches('/');
     let mut conn = open_reader(runtime)?;
     let tx = conn.transaction().ok()?;
     let identity = read_identity(&tx, config)?;
-    let (rows, keywords) = read_rows(&tx, base, recursive).ok()?;
+    let (rows, mut keywords) = read_rows(&tx, base, recursive).ok()?;
     drop(tx);
+    // what Immage changed itself, over what the server has indexed
+    let rows = merge_rows(rows, &mut keywords, overrides);
     let images = build_images(config, local, recursive, rows, keywords, FOLD_CASE);
     Some(MirrorListing {
         images,
@@ -1431,6 +1655,58 @@ pub(crate) fn folder(
 }
 
 pub(crate) type Keywords = HashMap<(i64, u32), Vec<String>>;
+
+// Rows in server path and version order with the overrides laid over them: a
+// photo with changes is rebuilt (its keywords moved onto its rows first, as
+// the overrides see them there), one that is gone leaves, one moved or copied
+// in takes its place in the order, under an id below every real one.
+pub(crate) fn merge_rows(rows: Vec<Row>, keywords: &mut Keywords, overrides: &Overrides) -> Vec<Row> {
+    if overrides.is_empty() {
+        return rows;
+    }
+    let mut out = Vec::with_capacity(rows.len());
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut rows = rows.into_iter().peekable();
+    while let Some(first) = rows.next() {
+        if !overrides.touches(&first.path) {
+            out.push(first);
+            continue;
+        }
+        let (id, path, exif) = (first.id, first.path.clone(), first.exif.clone());
+        let mut versions = Vec::new();
+        let mut next = Some(first);
+        while let Some(mut row) = next {
+            row.version.keywords = keywords.remove(&(id, row.version.version)).unwrap_or_default();
+            versions.push(row.version);
+            next = rows.next_if(|r| r.path == path);
+        }
+        if let Some(photo) = overrides.effective(&path, Some(PhotoRow { exif, versions })) {
+            out.extend(photo.versions.into_iter().map(|version| Row {
+                id,
+                path: path.clone(),
+                exif: photo.exif.clone(),
+                version,
+            }));
+        }
+        seen.insert(path);
+    }
+    let mut added = false;
+    for (n, path) in overrides.added_paths().into_iter().filter(|p| !seen.contains(*p)).enumerate() {
+        if let Some(photo) = overrides.effective(path, None) {
+            added = true;
+            out.extend(photo.versions.into_iter().map(|version| Row {
+                id: -1 - n as i64,
+                path: path.to_owned(),
+                exif: photo.exif.clone(),
+                version,
+            }));
+        }
+    }
+    if added {
+        out.sort_by(|a, b| (a.path.as_str(), a.version.version).cmp(&(b.path.as_str(), b.version.version)));
+    }
+    out
+}
 
 
 // the columns `row_from` reads, of photos `p` joined to versions `v`
@@ -1572,7 +1848,10 @@ fn build_images(
             continue;
         }
         let Some(filename) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        row.version.keywords = keywords.remove(&(row.id, row.version.version)).unwrap_or_default();
+        // a row an override rebuilt already carries its keywords
+        if let Some(found) = keywords.remove(&(row.id, row.version.version)) {
+            row.version.keywords = found;
+        }
         if let Ok(image) = library_image(path, filename, &row.exif, row.version) {
             images.push(image);
         }
@@ -1587,6 +1866,7 @@ pub(crate) fn subfolders(
     runtime: &Path,
     config: &Config,
     local: &Path,
+    overrides: &Overrides,
 ) -> Option<Vec<(PathBuf, bool)>> {
     let base = config.server_folder(local).ok()?;
     let base = base.trim_end_matches('/');
@@ -1595,15 +1875,31 @@ pub(crate) fn subfolders(
     read_identity(&tx, config)?;
     let (low, high) = (format!("{base}/"), format!("{base}0"));
     let mut statement = tx
-        .prepare("SELECT DISTINCT dir FROM photos WHERE dir >= ?1 AND dir < ?2")
+        .prepare("SELECT dir, COUNT(*) FROM photos WHERE dir >= ?1 AND dir < ?2 GROUP BY dir")
         .ok()?;
-    let dirs = statement
-        .query_map(params![low, high], |r| r.get::<_, String>(0))
+    let mut counts = statement
+        .query_map(params![low, high], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
         .ok()?
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<BTreeMap<_, _>, _>>()
         .ok()?;
     drop(statement);
+    // a photo moved or deleted by Immage, and one moved or copied in, count
+    // for the directories they leave and reach
+    for path in overrides.paths() {
+        let Some(after) = overrides.present_after(path) else { continue };
+        let dir = server_dir(path);
+        if !(dir.as_str() >= low.as_str() && dir.as_str() < high.as_str()) {
+            continue;
+        }
+        let before = tx
+            .query_row("SELECT 1 FROM photos WHERE server_path = ?1", params![path], |_| Ok(()))
+            .optional()
+            .ok()?
+            .is_some();
+        *counts.entry(dir).or_insert(0) += i64::from(after) - i64::from(before);
+    }
     drop(tx);
+    let dirs: Vec<String> = counts.into_iter().filter(|(_, n)| *n > 0).map(|(dir, _)| dir).collect();
     let children = child_names(&low, &dirs);
     let found: Vec<(PathBuf, bool)> = children
         .into_iter()
@@ -1710,7 +2006,7 @@ mod tests {
     };
 
     fn mirror() -> Mirror {
-        Mirror::new(|| Duration::from_secs(60))
+        Mirror::new(PathBuf::new(), || Duration::from_secs(60))
     }
 
     fn worker(dir: &Path) -> Worker {
@@ -2180,18 +2476,18 @@ mod tests {
     #[test]
     fn a_reader_returns_nothing_unless_the_identity_matches() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).is_none());
+        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false, &Overrides::default()).is_none());
         filled(dir.path(), vec![item(1, 1, "/photos/a.ARW", vec![version(0, 1, &[])])]);
-        let found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).unwrap();
+        let found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false, &Overrides::default()).unwrap();
         assert_eq!((found.catalog_id.as_str(), found.high_water, found.complete), ("cat-1", Some(10), true));
         assert_eq!(names(&found), vec!["/mnt/photos/a.ARW"]);
         let mut other = reader_config();
         other.url = "http://elsewhere.example:8080".into();
-        assert!(folder(dir.path(), &other, Path::new("/mnt/photos"), false).is_none());
+        assert!(folder(dir.path(), &other, Path::new("/mnt/photos"), false, &Overrides::default()).is_none());
         let mut moved = reader_config();
         moved.server_path = "/other".into();
-        assert!(folder(dir.path(), &moved, Path::new("/mnt/photos"), false).is_none());
-        assert!(subfolders(dir.path(), &other, Path::new("/mnt/photos")).is_none());
+        assert!(folder(dir.path(), &moved, Path::new("/mnt/photos"), false, &Overrides::default()).is_none());
+        assert!(subfolders(dir.path(), &other, Path::new("/mnt/photos"), &Overrides::default()).is_none());
     }
 
     #[test]
@@ -2201,7 +2497,7 @@ mod tests {
         let conn = Connection::open(dir.path().join(FILE)).unwrap();
         conn.pragma_update(None, "user_version", USER_VERSION + 1).unwrap();
         drop(conn);
-        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).is_none());
+        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false, &Overrides::default()).is_none());
     }
 
     #[test]
@@ -2218,14 +2514,14 @@ mod tests {
         ]);
         let cfg = reader_config();
         let year = Path::new("/mnt/photos/2024");
-        assert_eq!(names(&folder(dir.path(), &cfg, year, false).unwrap()), vec!["/mnt/photos/2024/a.ARW"]);
+        assert_eq!(names(&folder(dir.path(), &cfg, year, false, &Overrides::default()).unwrap()), vec!["/mnt/photos/2024/a.ARW"]);
         assert_eq!(
-            names(&folder(dir.path(), &cfg, year, true).unwrap()),
+            names(&folder(dir.path(), &cfg, year, true, &Overrides::default()).unwrap()),
             vec!["/mnt/photos/2024/a.ARW", "/mnt/photos/2024/june/b.ARW"]
         );
         let root = Path::new("/mnt/photos");
-        assert_eq!(names(&folder(dir.path(), &cfg, root, false).unwrap()), vec!["/mnt/photos/top.ARW"]);
-        assert_eq!(folder(dir.path(), &cfg, root, true).unwrap().images.len(), 6);
+        assert_eq!(names(&folder(dir.path(), &cfg, root, false, &Overrides::default()).unwrap()), vec!["/mnt/photos/top.ARW"]);
+        assert_eq!(folder(dir.path(), &cfg, root, true, &Overrides::default()).unwrap().images.len(), 6);
     }
 
     #[test]
@@ -2246,7 +2542,7 @@ mod tests {
         filled(dir.path(), vec![json.clone()]);
         let photo: crate::morf_photo::Photo = serde_json::from_value(json).unwrap();
         let mut expected = photo.images(Path::new("/mnt/photos/2024/x.ARW")).unwrap();
-        let mut found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos/2024"), false)
+        let mut found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos/2024"), false, &Overrides::default())
             .unwrap()
             .images;
         // keywords come back in the copy's alphabetical order
@@ -2292,7 +2588,7 @@ mod tests {
             item(6, 6, "/photos/trips/europe/paris/e.ARW", v()),
         ]);
         let cfg = reader_config();
-        let root = subfolders(dir.path(), &cfg, Path::new("/mnt/photos")).unwrap();
+        let root = subfolders(dir.path(), &cfg, Path::new("/mnt/photos"), &Overrides::default()).unwrap();
         assert_eq!(
             root,
             vec![
@@ -2301,11 +2597,11 @@ mod tests {
                 (PathBuf::from("/mnt/photos/trips"), true),
             ]
         );
-        let year = subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024")).unwrap();
+        let year = subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024"), &Overrides::default()).unwrap();
         assert_eq!(year, vec![(PathBuf::from("/mnt/photos/2024/june"), false)]);
         // a folder the copy knows nothing under: the caller reads the files
-        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024/june")).is_none());
-        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2023")).is_none());
+        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024/june"), &Overrides::default()).is_none());
+        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2023"), &Overrides::default()).is_none());
     }
 
     fn stamp(catalog: &str, high_water: Option<i64>, complete: bool) -> Stamp {
@@ -2404,5 +2700,272 @@ mod tests {
         m.announce(&reader_config(), &BTreeSet::new());
         let heard = heard.lock().unwrap();
         assert_eq!(*heard, vec![(vec!["/mnt/photos".to_owned(), "/mnt/photos/2024".to_owned()], false)]);
+    }
+
+    // ---- local overrides ----
+
+    fn mirror_in(dir: &Path) -> Arc<Mirror> {
+        Arc::new(Mirror::new(dir.to_path_buf(), || Duration::from_secs(60)))
+    }
+
+    fn rated(rating: u8) -> FieldOverride {
+        FieldOverride { rating: Some(rating), ..Default::default() }
+    }
+
+    // (file, version, rating) of a recursive read of the whole mapped folder
+    fn listed(dir: &Path, overrides: &Overrides) -> Vec<(String, u32, u8)> {
+        folder(dir, &reader_config(), Path::new("/mnt/photos"), true, overrides)
+            .unwrap()
+            .images
+            .iter()
+            .map(|i| (i.path.trim_start_matches("/mnt/photos/").to_owned(), i.version, i.rating))
+            .collect()
+    }
+
+    fn two() -> Vec<Value> {
+        vec![
+            item(1, 1, "/photos/a.ARW", vec![version(0, 1, &["x"])]),
+            item(2, 2, "/photos/b.ARW", vec![version(0, 2, &[]), version(1, 3, &[])]),
+            item(3, 3, "/photos/c.ARW", vec![version(0, 3, &[])]),
+            item(4, 4, "/photos/2024/d.ARW", vec![version(0, 4, &[])]),
+        ]
+    }
+
+    #[test]
+    fn a_folder_read_shows_every_kind_of_override() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), two());
+        let m = mirror_in(dir.path());
+        assert_eq!(listed(dir.path(), &m.snapshot()).len(), 5);
+        m.note_fields(
+            "/photos/a.ARW",
+            0,
+            FieldOverride { rating: Some(5), keywords: Some(vec!["k".into()]), ..Default::default() },
+        );
+        m.note_gone("/photos/c.ARW");
+        m.note_version_removed("/photos/b.ARW", 1);
+        let source = read_photo(&open_reader(dir.path()).unwrap(), "/photos/a.ARW").unwrap().unwrap();
+        m.note_added("/photos/2024/new.ARW", source);
+        let all = listed(dir.path(), &m.snapshot());
+        let names: Vec<_> = all.iter().map(|(n, v, r)| (n.as_str(), *v, *r)).collect();
+        assert_eq!(names, [
+            ("2024/d.ARW", 0, 4),
+            ("2024/new.ARW", 0, 1),
+            ("a.ARW", 0, 5),
+            ("b.ARW", 0, 2),
+        ]);
+        let images = folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), true, &m.snapshot()).unwrap().images;
+        assert_eq!(images.iter().find(|i| i.filename == "a.ARW").unwrap().keywords, ["k"]);
+        // the copy added in carries its source's keywords
+        assert_eq!(images.iter().find(|i| i.filename == "new.ARW").unwrap().keywords, ["x"]);
+        // one folder, not recursive: only what is in it
+        let top = folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false, &m.snapshot()).unwrap();
+        assert_eq!(names_of(&top), ["a.ARW", "b.ARW"]);
+        let year = folder(dir.path(), &reader_config(), Path::new("/mnt/photos/2024"), false, &m.snapshot()).unwrap();
+        assert_eq!(names_of(&year), ["d.ARW", "new.ARW"]);
+    }
+
+    fn names_of(listing: &MirrorListing) -> Vec<String> {
+        listing.images.iter().map(|i| i.filename.clone()).collect()
+    }
+
+    #[test]
+    fn subfolders_follow_what_was_moved_in_and_out() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), vec![
+            item(1, 1, "/photos/top.ARW", vec![version(0, 1, &[])]),
+            item(2, 2, "/photos/2024/a.ARW", vec![version(0, 1, &[])]),
+            item(3, 3, "/photos/2024/b.ARW", vec![version(0, 1, &[])]),
+        ]);
+        let m = mirror_in(dir.path());
+        let root = Path::new("/mnt/photos");
+        let read = |m: &Mirror| subfolders(dir.path(), &reader_config(), root, &m.snapshot());
+        assert_eq!(read(&m).unwrap(), vec![(PathBuf::from("/mnt/photos/2024"), false)]);
+        // one of two leaves, the folder stays; both go, it goes
+        m.note_gone("/photos/2024/a.ARW");
+        assert_eq!(read(&m).unwrap().len(), 1);
+        m.note_gone("/photos/2024/b.ARW");
+        assert!(read(&m).is_none());
+        // a photo moved into a new folder makes it
+        let source = read_photo(&open_reader(dir.path()).unwrap(), "/photos/top.ARW").unwrap().unwrap();
+        m.note_added("/photos/2025/x/new.ARW", source);
+        assert_eq!(read(&m).unwrap(), vec![(PathBuf::from("/mnt/photos/2025"), true)]);
+    }
+
+    #[test]
+    fn the_callers_tell_the_copy_in_local_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), two());
+        let m = mirror_in(dir.path());
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let (sink, probe) = (heard.clone(), m.clone());
+        m.set_events(move |dirs, all| {
+            // neither leaf lock is held while the page is told
+            assert!(probe.state.try_lock().is_ok() && probe.overrides.try_lock().is_ok());
+            sink.lock().unwrap().push((dirs, all));
+        });
+        let cfg = reader_config();
+        let p = |name: &str| PathBuf::from(format!("/mnt/photos/{name}"));
+        // rating
+        m.fields_changed(&cfg, &p("a.ARW"), 0, rated(5));
+        // a move into a folder, a copy, a rename (a move to a new name)
+        m.file_placed(&cfg, &p("b.ARW"), &p("2025/b.ARW"), true);
+        m.file_placed(&cfg, &p("c.ARW"), &p("2025/c-copy.ARW"), false);
+        m.file_placed(&cfg, &p("2024/d.ARW"), &p("2024/renamed.ARW"), true);
+        // a source the copy knows nothing about adds nothing; a path outside the mapped folder is not ours
+        m.file_placed(&cfg, &p("nope.ARW"), &p("2025/nope.ARW"), true);
+        m.file_gone(&cfg, Path::new("/elsewhere/z.ARW"));
+        m.fields_changed(&cfg, Path::new("/elsewhere/z.ARW"), 0, rated(1));
+        // a virtual copy made and one removed
+        let made = crate::morf_photo::library_image(
+            &p("a.ARW"), "a.ARW", &read_photo(&open_reader(dir.path()).unwrap(), "/photos/a.ARW").unwrap().unwrap().exif,
+            { let mut v = crate::mirror_overrides::tests::version(2, 4); v.copy = true; v },
+        ).unwrap();
+        m.copy_created(&cfg, &made);
+        m.copy_removed(&cfg, &p("2025/b.ARW"), 1);
+        let all = listed(dir.path(), &m.snapshot());
+        let names: Vec<_> = all.iter().map(|(n, v, r)| (n.as_str(), *v, *r)).collect();
+        assert_eq!(names, [
+            ("2024/renamed.ARW", 0, 4),
+            ("2025/b.ARW", 0, 2),
+            ("2025/c-copy.ARW", 0, 3),
+            ("a.ARW", 0, 5),
+            ("a.ARW", 2, 4),
+            ("c.ARW", 0, 3),
+        ]);
+        let heard = heard.lock().unwrap();
+        // every call that changed something told the open folders where
+        assert_eq!(heard.len(), 7);
+        assert_eq!(heard[0], (vec!["/mnt/photos".to_owned()], false));
+        assert_eq!(heard[1].0, vec!["/mnt/photos".to_owned(), "/mnt/photos/2025".to_owned()]);
+    }
+
+    #[test]
+    fn a_reset_clears_every_override() {
+        let m = mirror();
+        m.note_fields("/photos/a.ARW", 0, rated(3));
+        m.note_gone("/photos/b.ARW");
+        assert_eq!(m.snapshot().len(), 2);
+        m.request_reset();
+        assert!(m.snapshot().is_empty());
+        // the same when the sync thread finds the identity changed
+        m.note_gone("/photos/b.ARW");
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = open_conn(&dir.path().join(FILE)).unwrap();
+        assert!(ensure_identity(&mut conn, "http://nas", "/photos").unwrap());
+        assert!(!ensure_identity(&mut conn, "http://nas", "/photos").unwrap());
+    }
+
+    #[test]
+    fn notes_and_snapshots_never_wait_for_the_state_lock() {
+        let m = mirror_in(&std::env::temp_dir());
+        let held = m.clone();
+        let (locked, release) = std::sync::mpsc::channel();
+        let (done, finished) = std::sync::mpsc::channel();
+        let holder = thread::spawn(move || {
+            let _guard = held.state.lock().unwrap();
+            locked.send(()).unwrap();
+            let _ = finished.recv_timeout(Duration::from_secs(10));
+        });
+        release.recv().unwrap();
+        let source = PhotoRow { exif: crate::mirror_overrides::tests::exif(), versions: vec![crate::mirror_overrides::tests::version(0, 1)] };
+        m.note_fields("/photos/a.ARW", 0, rated(1));
+        m.note_gone("/photos/b.ARW");
+        m.note_added("/photos/c.ARW", source);
+        m.note_version_removed("/photos/d.ARW", 1);
+        let cfg = reader_config();
+        m.file_gone(&cfg, Path::new("/mnt/photos/e.ARW"));
+        let seen = m.snapshot();
+        assert_eq!(seen.len(), 5);
+        // a reader works from the copy of the overrides alone
+        assert!(folder(&std::env::temp_dir(), &cfg, Path::new("/mnt/photos"), true, &seen).is_none());
+        done.send(()).unwrap();
+        holder.join().unwrap();
+        // and the other way: the status does not wait for a lock on the overrides
+        let held = m.clone();
+        let (locked, release) = std::sync::mpsc::channel();
+        let (done, finished) = std::sync::mpsc::channel();
+        let holder = thread::spawn(move || {
+            held.with_overrides(|_| {
+                locked.send(()).unwrap();
+                let _ = finished.recv_timeout(Duration::from_secs(10));
+            });
+        });
+        release.recv().unwrap();
+        let _ = m.status();
+        m.kick();
+        done.send(()).unwrap();
+        holder.join().unwrap();
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "never nested")]
+    fn nesting_the_two_leaf_locks_is_caught_in_debug_builds() {
+        let m = mirror();
+        m.with_overrides(|_| m.with_state(|_| ()));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "never nested")]
+    fn nesting_them_the_other_way_is_caught_too() {
+        let m = mirror();
+        m.with_state(|_| m.with_overrides(|_| ()));
+    }
+
+    #[test]
+    fn a_rating_shows_before_the_server_catches_up_and_goes_when_it_has() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), two());
+        let mut w = worker(dir.path());
+        let m = mirror_in(dir.path());
+        let cfg = reader_config();
+        let rating_of_a = |ov: &Overrides| listed(dir.path(), ov).iter().find(|(n, ..)| n == "a.ARW").unwrap().2;
+        assert_eq!(rating_of_a(&m.snapshot()), 1);
+        // the user rates a photo; the folder read has it at once
+        m.fields_changed(&cfg, Path::new("/mnt/photos/a.ARW"), 0, rated(4));
+        assert_eq!(rating_of_a(&m.snapshot()), 4);
+        assert_eq!(rating_of_a(&Overrides::default()), 1, "the mirror itself still has the server's value");
+        // the server re-indexes something else of the photo (its keywords): not ours yet
+        apply(&m, &mut w.conn, vec![item(1, 10, "/photos/a.ARW", vec![version(0, 1, &["y"])])], (10, 1), true);
+        assert_eq!(m.snapshot().len(), 1);
+        assert_eq!(rating_of_a(&m.snapshot()), 4);
+        // a photo the user did not touch changes: the override stays
+        apply(&m, &mut w.conn, vec![item(2, 11, "/photos/b.ARW", vec![version(0, 2, &[])])], (11, 2), true);
+        assert_eq!(m.snapshot().len(), 1);
+        // the feed delivers the same value: the override is dropped, the server's row shows
+        apply(&m, &mut w.conn, vec![item(1, 12, "/photos/a.ARW", vec![version(0, 4, &["y"])])], (12, 1), true);
+        assert!(m.snapshot().is_empty());
+        assert_eq!(rating_of_a(&m.snapshot()), 4);
+    }
+
+    #[test]
+    fn a_move_is_gone_and_added_until_the_feed_reports_both() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), two());
+        let mut w = worker(dir.path());
+        let m = mirror_in(dir.path());
+        let cfg = reader_config();
+        m.file_placed(&cfg, Path::new("/mnt/photos/c.ARW"), Path::new("/mnt/photos/2025/c.ARW"), true);
+        assert_eq!(m.snapshot().len(), 2);
+        // the feed reports the old path missing: its override goes, the new one stays
+        apply(&m, &mut w.conn, vec![tombstone(3, 20, "missing", "/photos/c.ARW")], (20, 3), true);
+        assert_eq!(m.snapshot().paths(), ["/photos/2025/c.ARW"]);
+        assert!(listed(dir.path(), &m.snapshot()).iter().any(|(n, ..)| n == "2025/c.ARW"));
+        apply(&m, &mut w.conn, vec![item(9, 21, "/photos/2025/c.ARW", vec![version(0, 3, &[])])], (21, 9), true);
+        assert!(m.snapshot().is_empty());
+        let all = listed(dir.path(), &m.snapshot());
+        assert!(all.iter().any(|(n, ..)| n == "2025/c.ARW") && !all.iter().any(|(n, ..)| n == "c.ARW"));
+    }
+
+    #[test]
+    fn expiry_runs_in_the_sync_threads_cycle_by_age() {
+        let m = mirror();
+        m.note_gone("/photos/a.ARW");
+        m.with_overrides(|o| o.expire_age(Instant::now()));
+        assert_eq!(m.snapshot().len(), 1);
+        m.with_overrides(|o| o.expire_age(Instant::now() + crate::mirror_overrides::MAX_AGE * 2));
+        assert!(m.snapshot().is_empty());
     }
 }

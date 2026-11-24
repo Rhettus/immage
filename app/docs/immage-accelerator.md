@@ -268,6 +268,29 @@ about is read from the server, and then from the files, as before.
 The folder tree reads the server's subfolders first, then the local copy when
 the server does not answer, then the files.
 
+### Your changes show at once
+
+The server learns of a change made in Immage only when it next indexes the
+photo's sidecar, which can be minutes later. Until then Immage shows your
+change itself, in folders, the folder tree and Find, so nothing seems to revert:
+
+- A rating, reject, color label, keyword, capture time or edit you save shows at
+  once in the folder and in Find's results and filter lists.
+- A photo you move, copy, rename, delete or move to the Trash in a folder under
+  the mapped folder leaves or appears in its folders and in Find at once. A
+  photo arrives with the information the local copy had of the original, so a
+  photo from outside the mapped folder shows once the server has indexed it.
+- A virtual copy you make or remove shows at once.
+
+Each change is forgotten when the server reports the same values for the photo.
+If the server reports a change of the photo more than a minute after yours (for
+example another computer changed it), the server's values show, and nothing is
+kept longer than half an hour. These changes are not saved: after you quit and
+start Immage again the server's values show until it has indexed your changes.
+Forget, Resync and a changed server drop them too. Semantic (Smart) searches
+and folders read from the server because the copy is out of date show the
+server's values.
+
 While the mapped share is not mounted or is not answering, its photos still
 show from the local copy, each with a small red dot (the red of the drive's
 offline dot) and the tooltip **Photo's drive is offline**. Their thumbnails
