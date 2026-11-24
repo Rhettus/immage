@@ -520,6 +520,22 @@ files beside the fixture:
   open a native folder picker, outside the app-only boundary, so the picker
   flow stays a manual check. Run it after the drag cases or in its own launch.
 
+## Export subfolders
+
+`--case export-subfolders` passed live on Linux on 2026-11-24 and needs no `--fixture`. The runner copies two JPEGs
+with injected Exif capture dates (2021-03-14 and 2022-11-05) beside the default
+fixture, which has no capture date, and seeds the export destination
+(`export-dest/` in the run's fixture folder) into the isolated profile's saved
+export settings with "If a file exists" set to a unique name, so the native
+folder chooser is never operated. The case opens Export, ticks "Inside a new
+folder", types `{year}/{month}/{day}`, checks the "First photo" example, exports
+every shown photo and checks on disk that the dated photos are in
+`YYYY/MM/DD/` folders (the fixture, which has no Exif date, gets the file's own
+date from the library) with no date folder outside the destination. It then
+exports with `{year}/{camera}/{month}`, where no photo has a camera model, and
+checks that the empty part is dropped, and finally with the plain name `Export`,
+checking that every photo lands in `export-dest/Export/`.
+
 ## Renaming photos in the Library grid
 
 `--case rename-photos` uses three disposable copies of the launch fixture. It

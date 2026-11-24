@@ -84,13 +84,15 @@ export function expand(template: string, i: ImageEntry, meta: Meta, seq: number,
   return fill(template, i, vals) || vals.filename;
 }
 
-// a subfolder for Move and Copy: each part of the pattern between slashes is
-// filled in as a file name is, and a part left empty (a photo without a
-// capture date, say) is dropped, so the photo goes one level up. a part
-// cannot start with a dot, so none is ".."
+// a subfolder for Move, Copy and Export: each part of the pattern between
+// slashes is filled in as a file name is, and a part left empty (a photo
+// without a capture date, say) is dropped, so the photo goes one level up.
+// a part cannot start with a dot, so none is "..". Export passes the photo's
+// metadata, number and date style; Move and Copy have neither
 export const FOLDER_PATTERN = "{year}/{month}/{day}";
-export function folderPath(pattern: string, i: ImageEntry): string {
-  const vals = values(i, EMPTY_META, 1, 1, "YYYY-MM-DD");
+export function folderPath(pattern: string, i: ImageEntry, meta: Meta = EMPTY_META, seq = 1, total = 1,
+                           dateFormat = "YYYY-MM-DD"): string {
+  const vals = values(i, meta, seq, total, dateFormat);
   return pattern.split(/[/\\]+/).map((part) => fill(part, i, vals)).filter(Boolean).join("/");
 }
 

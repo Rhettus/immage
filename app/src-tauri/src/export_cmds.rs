@@ -203,6 +203,12 @@ fn export_dir(dir: &str, subfolder: Option<&str>) -> PathBuf {
     d
 }
 
+// the folder one image goes into: the export's, or a subfolder of it from
+// the subfolder pattern
+fn item_dir(dir: &Path, item: &ExportItem) -> Result<PathBuf, String> {
+    Ok(dir.join(crate::move_cmds::subfolder(item.subdir.as_deref())?))
+}
+
 fn export_stem(item: &ExportItem) -> String {
     match item.stem.trim() {
         "" => format!("image-{}", item.imgid),
@@ -224,6 +230,8 @@ pub(crate) async fn export_existing(items: Vec<ExportItem>, dir: String, subfold
         }
         let ext = extension(&format);
         items.iter().map(|item| {
+            // a subfolder refused here is refused again by the export, which reports it
+            let dir = item_dir(&dir, item).unwrap_or_else(|_| dir.clone());
             let path = dir.join(format!("{}.{ext}", export_stem(item)));
             ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
         }).collect()
@@ -302,8 +310,21 @@ pub(crate) async fn export_images(
             (None, Some(c)) => c,
             _ => conflict,
         };
-        match export_target(&dir, &stem, ext, conflict) {
-            None => skipped.push(path_text(&dir.join(format!("{stem}.{ext}")))),
+        // to Immich every image renders into the one cache folder
+        let item_dir = match &immich {
+            Some(_) => Ok(dir.clone()),
+            None => item_dir(&dir, item),
+        };
+        let item_dir = match item_dir {
+            Ok(d) => d,
+            Err(error) => {
+                failed.push(ExportFailure { file: path_text(&dir.join(format!("{stem}.{ext}"))), error });
+                let _ = app.emit("export-progress", json!({ "job": job, "done": n + 1, "total": total }));
+                continue;
+            }
+        };
+        match export_target(&item_dir, &stem, ext, conflict) {
+            None => skipped.push(path_text(&item_dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
                 let mut req = json!({
                     "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
@@ -608,6 +629,30 @@ mod tests {
         assert_eq!(extension("jxl"), "jxl");
         assert_eq!(extension("jpeg"), "jpg");
         assert_eq!(extension("tiff"), "tif");
+    }
+
+    #[test]
+    fn an_image_subfolder_stays_inside_the_export_folder() {
+        let dir = Path::new("/exports");
+        let item = |sub: Option<&str>| ExportItem { subdir: sub.map(String::from), ..Default::default() };
+        assert_eq!(item_dir(dir, &item(None)).unwrap(), dir);
+        assert_eq!(item_dir(dir, &item(Some("2026/11/18"))).unwrap(), dir.join("2026").join("11").join("18"));
+        assert!(item_dir(dir, &item(Some("../elsewhere"))).is_err());
+        assert!(item_dir(dir, &item(Some("/etc"))).is_err());
+    }
+
+    #[test]
+    fn export_existing_looks_in_each_photos_subfolder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("2026/11/18")).unwrap();
+        std::fs::write(dir.join("2026/11/18/a.jpg"), b"x").unwrap();
+        let item = |sub: &str| ExportItem { stem: "a".into(), subdir: Some(sub.into()), ..Default::default() };
+        let files = tauri::async_runtime::block_on(export_existing(
+            vec![item("2026/11/18"), item("2026/11/19")], dir.to_string_lossy().into_owned(), None, "jpeg".into()));
+        assert_eq!(files.len(), 2);
+        assert!(Path::new(&files[0].path).ends_with("2026/11/18/a.jpg") && files[0].exists);
+        assert!(Path::new(&files[1].path).ends_with("2026/11/19/a.jpg") && !files[1].exists);
     }
 
     #[test]

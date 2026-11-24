@@ -88,6 +88,10 @@ Improvements
   confirmation has **Sort into subfolders**, which puts each photo in a
   subfolder named from its metadata, such as `{year}/{month}/{day}`, so
   photos from many days go into a year/month/day library in one step.
+- **Export into folders named from metadata:** Export's **Inside a new
+  folder** name takes the same tokens as file names, such as
+  `{year}/{month}/{day}` or `{camera}/{title}`, and each `/` starts a folder
+  inside the one before, so one export can fill a dated library.
 
 Performance
 

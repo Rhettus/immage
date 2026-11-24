@@ -442,6 +442,7 @@ export type ExportItem = {
 	created?: string | null,
 	conflict?: string | null,
 	frame?: Value | null,
+	subdir?: string | null,
 };
 
 export type ExportOptions = {

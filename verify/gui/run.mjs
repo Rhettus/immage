@@ -286,6 +286,17 @@ try {
       await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1', 'immage.stackPairs': '1' }, null, 2));
     }
   }
+  // export-subfolders: dated JPEGs, and the export destination seeded in the saved export settings
+  // (the native folder chooser is never operated)
+  if (selectedCases.includes('export-subfolders')) {
+    const { exportSubfolderFixtures } = await import('./specs/export-subfolders.mjs');
+    const dest = await exportSubfolderFixtures(fixtures, root);
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.export': JSON.stringify({ dir: dest, conflict: 'unique', askMigrated: true }) }, null, 2));
+    report.exportSubfolderFixtures = { dest, dated: ['dated-a.jpg', 'dated-b.jpg'] };
+  }
   let crossFolderTarget = null;
   if (selectedCases.includes('move-folders')) {
     const { folderMoveFixtures } = await import('./specs/move-folders.mjs');

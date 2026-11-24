@@ -87,4 +87,9 @@ test('folder patterns make one folder per part and drop the empty ones', () => {
   assert.equal(folderPath('../{year}/./..', photo), '2026');
   const undated = { ...photo, exif: { ...photo.exif, datetime: '' } };
   assert.equal(folderPath('{year}/{month}/{day}', undated), '');
+  // export's subfolder: the photo's metadata, number and date style too
+  const meta = { ...EMPTY_META, title: 'Paris: day 1', creator: 'Ann' };
+  assert.equal(folderPath('{creator}/{title}', photo, meta), 'Ann/Paris_day 1');
+  assert.equal(folderPath('{datecaptured}/{seq}', photo, meta, 7, 20, 'YYYY.MM'), '2026.11/007');
+  assert.equal(folderPath('Export', photo, meta), 'Export');
 });

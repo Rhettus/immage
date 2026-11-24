@@ -29,6 +29,10 @@ pub struct ExportItem {
     // engine reads it, and the page's frame editor shapes it
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<Value>,
+    // the folder under the export's own it goes into, expanded from the
+    // subfolder pattern: names only, never `..` or a root
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize, Type)]

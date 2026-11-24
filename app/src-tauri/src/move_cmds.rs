@@ -554,10 +554,10 @@ fn immich_client(app: &AppHandle) -> Result<immich_upload::Immich, String> {
     immich_upload::Immich::new(&conn)
 }
 
-// a source's subfolder as a relative path of plain names. the page fills
-// it from photo metadata, so anything that could climb out of the
+// a source's subfolder, or an exported photo's, as a relative path of
+// plain names. the page fills it from photo metadata, so anything that could climb out of the
 // destination or name another root is refused
-fn subfolder(sub: Option<&str>) -> Result<PathBuf, String> {
+pub(crate) fn subfolder(sub: Option<&str>) -> Result<PathBuf, String> {
     let mut out = PathBuf::new();
     for c in Path::new(sub.unwrap_or("").trim()).components() {
         match c {

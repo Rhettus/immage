@@ -41,7 +41,14 @@ For a folder:
 
 - **Choose a folder…**
 - **Inside a new folder**: puts the files in a subfolder, **Export** by
-  default.
+  default. The name can use the tokens of a custom file name (see
+  [File Name](#file-name)), filled in from each photo, and each `/` starts a
+  folder inside the one before: `{year}/{month}/{day}` puts a photo taken on
+  18 November 2026 in `2026/11/18`, and photos from different days go into
+  their own folders in one export. `{datecaptured}` follows the chosen date
+  style. A part whose tokens are all empty, such as `{day}` on a photo with
+  no capture date, is left out, so that photo goes one level up. When the
+  name has tokens, the first photo's folder is shown under it.
 - **If a file exists**: **Ask me**, **Add a number**, **Replace it** or
   **Skip it**. **Ask me** offers **Use Unique Name**, **Overwrite**, **Skip**
   or **Cancel**, and can apply your answer to every clash. An existing file
