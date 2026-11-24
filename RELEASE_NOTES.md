@@ -92,6 +92,11 @@ Improvements
   folder** name takes the same tokens as file names, such as
   `{year}/{month}/{day}` or `{camera}/{title}`, and each `/` starts a folder
   inside the one before, so one export can fill a dated library.
+- **Local copy of the morfPhoto catalog:** With Immage Accelerator on, Immage
+  keeps a copy of the server's catalog on this computer and updates it in the
+  background, pausing while you work on photos. **Preferences > Immage
+  Accelerator** shows when it last synced, how many photos it holds, the
+  progress and any error, with a **Resync** button.
 
 Performance
 

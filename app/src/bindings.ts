@@ -196,6 +196,8 @@ export const commands = {
 	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
 	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
 	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
+	morfMirrorStatus: () => __TAURI_INVOKE<MirrorStatus>("morf_mirror_status"),
+	morfMirrorResync: () => __TAURI_INVOKE<void>("morf_mirror_resync"),
 	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
 	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
 	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
@@ -823,6 +825,17 @@ export type MetaText = {
 	notes: string,
 };
 
+export type MirrorStatus = {
+	phase: Phase,
+	done: number,
+	total: number,
+	syncedAt: number | null,
+	photos: number,
+	complete: boolean,
+	error: string | null,
+	diskFull: boolean,
+};
+
 export type ModelStatus = {
 	revision: string,
 	bytes: number,
@@ -1046,6 +1059,8 @@ export type PathMap = {
 	immich?: string,
 	local?: string,
 };
+
+export type Phase = "off" | "unavailable" | "idle" | "syncing" | "error";
 
 export type PickerStats = {
 	min: [number, number, number],

@@ -207,6 +207,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::morf_photo_cmds::morf_photo_save,
         crate::morf_photo_cmds::morf_photo_test,
         crate::morf_photo_cmds::morf_photo_forget,
+        crate::morf_photo_cmds::morf_mirror_status,
+        crate::morf_photo_cmds::morf_mirror_resync,
         // Edit In plugins, backups and the support bundle
         crate::plugins::plugin_find_apps,
         crate::plugins::plugin_config,

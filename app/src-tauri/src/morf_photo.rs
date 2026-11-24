@@ -24,11 +24,11 @@ use std::{
 };
 
 pub(crate) const SETTINGS: &str = "native.morfphoto";
-const PAGE_SIZE: usize = 500;
-const MAX_PAGE_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const PAGE_SIZE: usize = 500;
+pub(crate) const MAX_PAGE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_INDEX_STATUS_BYTES: u64 = 65536;
 const MAX_CATALOG_CACHE_DECOMPRESSED_BYTES: u64 = 128 * 1024 * 1024;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const LIST_TIMEOUT: Duration = Duration::from_secs(25);
 const SEMANTIC_TIMEOUT: Duration = Duration::from_secs(22);
 const THUMBNAIL_TIMEOUT: Duration = Duration::from_millis(1500);
@@ -215,7 +215,7 @@ fn load_fresh_credential(origin: &str) -> Result<Credential, String> {
     Ok(found)
 }
 
-fn header_str(headers: &HeaderMap, name: impl reqwest::header::AsHeaderName) -> Option<String> {
+pub(crate) fn header_str(headers: &HeaderMap, name: impl reqwest::header::AsHeaderName) -> Option<String> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
@@ -224,7 +224,7 @@ fn header_str(headers: &HeaderMap, name: impl reqwest::header::AsHeaderName) -> 
         .map(str::to_owned)
 }
 
-fn read_response_body(
+pub(crate) fn read_response_body(
     response: reqwest::blocking::Response,
     limit: u64,
 ) -> Result<Vec<u8>, String> {
@@ -248,7 +248,7 @@ fn read_response_body(
     Ok(body)
 }
 
-fn encode_plus_query(url: &mut Url) {
+pub(crate) fn encode_plus_query(url: &mut Url) {
     // QUrlQuery interprets a literal '+' as a plus, including in folder names.
     if let Some(query) = url.query() {
         let encoded = query.replace('+', "%20");
@@ -353,7 +353,7 @@ fn clean_server(path: &str) -> bool {
 }
 
 impl Config {
-    fn endpoint(&self) -> Result<Url, String> {
+    pub(crate) fn endpoint(&self) -> Result<Url, String> {
         let mut url = Url::parse(self.url.trim()).map_err(|_| "Invalid morfPhoto server URL")?;
         if !matches!(url.scheme(), "https" | "http")
             || url.host().is_none()
@@ -369,6 +369,11 @@ impl Config {
             .pop_if_empty()
             .extend(["api", "v1", "library"]);
         Ok(url)
+    }
+
+    // the server folder every mirrored photo lives under, without a trailing slash
+    pub(crate) fn server_root(&self) -> String {
+        self.server_path.trim().trim_end_matches('/').to_owned()
     }
 
     pub(crate) fn origin(&self) -> Result<String, String> {
@@ -446,7 +451,7 @@ impl Config {
         read_catalog_cache(&cache_path).map(|entry| entry.images)
     }
 
-    fn client(&self, key: Option<&str>) -> Result<Api, String> {
+    pub(crate) fn client(&self, key: Option<&str>) -> Result<Api, String> {
         let endpoint = self.endpoint()?;
         let origin = endpoint.origin().ascii_serialization();
         let (auth, from_cache) = match key {
@@ -1216,29 +1221,29 @@ impl Config {
     }
 }
 
-struct Api {
-    client: &'static Client,
-    endpoint: Url,
-    auth: HeaderValue,
+pub(crate) struct Api {
+    pub(crate) client: &'static Client,
+    pub(crate) endpoint: Url,
+    pub(crate) auth: HeaderValue,
     from_cache: bool,
 }
 
 #[derive(Deserialize)]
-struct Page {
-    items: Vec<Photo>,
+pub(crate) struct Page {
+    pub(crate) items: Vec<Photo>,
     #[serde(default)]
-    total: Option<usize>,
+    pub(crate) total: Option<usize>,
     #[serde(default)]
     page: Option<usize>,
     #[serde(default)]
     page_size: Option<usize>,
     #[serde(default)]
-    has_more: Option<bool>,
+    pub(crate) has_more: Option<bool>,
     #[serde(default)]
-    next_cursor: Option<String>,
+    pub(crate) next_cursor: Option<String>,
 }
 
-enum PageOutcome {
+pub(crate) enum PageOutcome {
     NotModified,
     Ok {
         page: Page,
@@ -1256,7 +1261,7 @@ enum ThumbnailOutcome {
 }
 
 impl Api {
-    fn send_authed(
+    pub(crate) fn send_authed(
         &mut self,
         build: impl Fn(&Api) -> reqwest::blocking::RequestBuilder,
     ) -> Result<reqwest::blocking::Response, reqwest::Error> {
@@ -1429,7 +1434,7 @@ impl Api {
         })
     }
 
-    fn page(
+    pub(crate) fn page(
         &mut self,
         folder: Option<&str>,
         recursive: bool,
@@ -1491,7 +1496,7 @@ impl Api {
         Self::decode_page_response(response, size, Some(page))
     }
 
-    fn cursor_page(
+    pub(crate) fn cursor_page(
         &mut self,
         folder: Option<&str>,
         recursive: bool,
@@ -1523,25 +1528,27 @@ impl Api {
 }
 
 #[derive(Deserialize)]
-struct Photo {
-    path: String,
-    versions: Vec<Version>,
+pub(crate) struct Photo {
+    pub(crate) path: String,
+    pub(crate) versions: Vec<Version>,
     #[serde(flatten)]
-    exif: serde_json::Map<String, Value>,
+    pub(crate) exif: serde_json::Map<String, Value>,
 }
 
 #[derive(Deserialize)]
-struct Version {
-    version: u32,
-    copy: bool,
-    rating: u8,
-    rejected: bool,
-    labels: u32,
-    edited: Option<bool>,
-    taken_at: Option<String>,
+pub(crate) struct Version {
+    pub(crate) version: u32,
+    pub(crate) copy: bool,
+    pub(crate) rating: u8,
+    pub(crate) rejected: bool,
+    pub(crate) labels: u32,
+    pub(crate) edited: Option<bool>,
+    pub(crate) taken_at: Option<String>,
+    #[allow(dead_code)]
     latitude: Option<f64>,
+    #[allow(dead_code)]
     longitude: Option<f64>,
-    keywords: Vec<String>,
+    pub(crate) keywords: Vec<String>,
 }
 
 impl Photo {

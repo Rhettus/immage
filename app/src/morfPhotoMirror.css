@@ -1,0 +1,9 @@
+.mirror-value {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.mirror-error {
+  overflow-wrap: anywhere;
+  text-align: end;
+}

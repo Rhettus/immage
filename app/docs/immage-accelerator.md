@@ -223,6 +223,32 @@ not answer, has CLIP disabled, or cannot handle an active filter, Immage falls
 through immediately to the next available provider (Immich if mapped for that
 folder, otherwise local CLIP) and shows a notice.
 
+## Local catalog
+
+With Immage Accelerator on, Immage keeps a copy of the server's catalog on
+this computer: each photo and version under the mapped server folder, with the
+fields Find's filters use (file type, camera, lens, exposure, rating, labels,
+keywords and dates). It updates in the background, a few seconds after launch,
+after you save the settings and about every minute while Immage is open. With
+a morfPhoto server that offers the change feed, only what changed is
+downloaded. Older servers are read in full at most every ten minutes. The sync
+pauses while you open, edit or browse photos, so it never slows your work.
+
+Open **Preferences → Immage Accelerator (Experimental)** and look at **Local
+catalog**:
+
+- **Last synced** is when the copy last matched the server.
+- **Photos in the local copy** is how many photos it holds.
+- **Syncing** shows progress while a sync runs.
+- **Last error** appears when a sync fails, for example when the disk is full.
+  Immage keeps what it has and tries again, waiting longer after each failure.
+- **Resync now** discards the local copy and downloads the catalog again.
+
+Selecting **Forget**, or saving a different server URL or server folder, also
+empties the local copy. The copy is disposable: deleting it loses nothing.
+If the file cannot be opened, Immage works without it. Folders and Find still
+read the server as described above.
+
 ## Monitor NAS activity
 
 Open **Preferences → Immage Accelerator (Experimental)** and expand

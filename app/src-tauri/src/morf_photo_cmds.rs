@@ -94,6 +94,7 @@ pub(crate) async fn morf_photo_save(
         let mapping_changed = previous_settings.url.trim() != settings.url.trim()
             || previous_settings.server_path.trim() != settings.server_path.trim()
             || previous_settings.local_path.trim() != settings.local_path.trim();
+        let previous_identity = identity(&previous_settings);
         let saved = serde_json::to_string(&settings).map_err(|_| "Invalid morfPhoto settings")?;
         let store = app.state::<crate::settings::Settings>();
         if let Some(key) = key {
@@ -130,6 +131,7 @@ pub(crate) async fn morf_photo_save(
             }
             app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
             crate::clip_providers::refresh_share_roots(&app, &runtime);
+            changed_mirror(&app, previous_identity, &settings);
             return Ok(());
         }
         if settings.enabled {
@@ -146,6 +148,7 @@ pub(crate) async fn morf_photo_save(
         }
         app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
         crate::clip_providers::refresh_share_roots(&app, &runtime);
+        changed_mirror(&app, previous_identity, &settings);
         Ok(())
     })
     .await
@@ -174,6 +177,8 @@ pub(crate) async fn morf_photo_forget(
             .set(SETTINGS, &saved)?;
         morf_photo::clear_caches(Some(&runtime));
         thumbs.clear();
+        // the local catalog goes with the key; the sync thread empties it
+        app.state::<crate::AppState>().mirror.request_reset();
         app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
         crate::clip_providers::refresh_share_roots(&app, &runtime);
         match morf_photo::entry()?.delete_credential() {
@@ -182,4 +187,35 @@ pub(crate) async fn morf_photo_forget(
         }
     })
     .await
+}
+
+fn identity(config: &Config) -> Option<(String, String)> {
+    Some((config.origin().ok()?, config.server_root()))
+}
+
+// a saved change of server or server folder empties the local catalog; any
+// save starts a sync, as it may have turned the Accelerator on
+fn changed_mirror(app: &AppHandle, previous: Option<(String, String)>, next: &Config) {
+    let mirror = &app.state::<crate::AppState>().mirror;
+    if previous.is_some() && previous != identity(next) {
+        mirror.request_reset();
+    } else {
+        mirror.kick();
+    }
+}
+
+// memory only: the sync thread's last report
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn morf_mirror_status(
+    state: State<'_, crate::AppState>,
+) -> crate::morf_mirror::MirrorStatus {
+    state.mirror.status()
+}
+
+// Preferences' Resync: the sync thread empties the local catalog and starts over
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn morf_mirror_resync(state: State<'_, crate::AppState>) {
+    state.mirror.request_reset();
 }

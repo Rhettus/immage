@@ -7,6 +7,7 @@ import { commands } from "./commands";
 import { PrefCard, PrefRow, PrefSwitch } from "./PrefsUI";
 import { t } from "./i18n";
 import { MorfPhotoMetrics } from "./MorfPhotoMetrics";
+import { MorfPhotoMirror } from "./MorfPhotoMirror";
 
 type Status = Awaited<ReturnType<typeof commands.morfPhotoStatus>>;
 type Settings = Required<Status["settings"]>;
@@ -163,6 +164,7 @@ export function MorfPhotoPrefs() {
         </div>
       </PrefRow>
     </PrefCard>
+    {saved.settings.enabled && <MorfPhotoMirror key={saved.settings.url} />}
     {saved.settings.enabled && <MorfPhotoMetrics key={saved.settings.url} />}
     {message && <div role="status" className={`prefs-status${message.error ? " warn" : ""}`}>{message.text}</div>}
   </>;

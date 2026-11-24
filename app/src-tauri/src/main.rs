@@ -54,6 +54,7 @@ mod library_cmds;
 mod export_cmds;
 mod move_cmds;
 mod immich_cmds;
+mod morf_mirror;
 mod morf_photo;
 mod morf_photo_cmds;
 mod print_cmds;
@@ -77,6 +78,8 @@ use crate::app_cmds::supervise;
 struct AppState {
     // disposable local search metadata; darktable's catalog remains in-memory
     search_cache: Option<Arc<search_cache::SearchCache>>,
+    // the local copy of the morfPhoto catalog; its sync thread owns the file
+    mirror: Arc<morf_mirror::Mirror>,
     analysis_queue: Arc<analysis_queue::AnalysisQueue>,
     search_analysis: search_analysis::Control,
     search_clear_lock: Mutex<()>,
@@ -275,6 +278,11 @@ fn main() {
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
             let clip_providers = Arc::new(clip_providers::ProbeCache::new());
+            // yields to the user's photo work (Tagged::quiet_for); the thread opens the file
+            let mirror = {
+                let tagged = engine.tagged();
+                morf_mirror::Mirror::start(&runtime, move || tagged.quiet_for())
+            };
             let search_analysis = search_analysis::start(
                 app.handle().clone(),
                 search_cache.clone(),
@@ -286,6 +294,7 @@ fn main() {
                 runtime.clone(),
             );
             app.manage(AppState {
+                mirror,
                 search_analysis,
                 search_cache,
                 analysis_queue,
@@ -360,6 +369,7 @@ fn main() {
     app.run(|_app, _event| {
         if matches!(_event, tauri::RunEvent::Exit) {
             _app.state::<AppState>().search_analysis.stop();
+            _app.state::<AppState>().mirror.stop();
             _app.state::<AppState>().local_search_requests.cancel_all();
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();
