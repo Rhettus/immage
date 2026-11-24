@@ -136,6 +136,9 @@ Performance
 
 Bug fixes
 
+- **Rename keeps the photo selected:** Renaming a photo selected in the
+  Library grid keeps it selected, with the grid cursor on it, instead of
+  returning to the open photo.
 - **Find across folders honors file type and Serial not recorded:** Ticking a
   file type such as **ARW** or **JPG**, or **Serial not recorded** under
   Camera body, in an All folders search no longer returns nothing.

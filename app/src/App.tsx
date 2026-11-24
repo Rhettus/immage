@@ -116,6 +116,7 @@ import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
 import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
+import { followRename, followSelection, NO_FOLLOW, type Followed } from "./selectionIdentity";
 import { gridActivePhoto, photoToOpenOnLeaveGrid, shouldOpenOnPick, stepGridSelection } from "./gridSelection";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
@@ -561,6 +562,8 @@ export default function App() {
   const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
   const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
+  // the selection's photos by identity, for an id that changes (selectionIdentity.ts)
+  const followed = useRef<Followed>(NO_FOLLOW);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Lightroom's Grid (G): the filmstrip spread over the editing area
@@ -4130,6 +4133,7 @@ export default function App() {
       .map((row) => [row.oldPath, row.newPath]));
     const refresh = moved.size > 0 || result.rows.some((row) => row.error);
     if (refresh) {
+      followed.current = followRename(followed.current, selected, anchor, moved, Date.now() + 30000);
       loader.current!.clear();
       updateImages(imagesRef.current.filter((photo) => !moved.has(photo.path)));
       if (search && query && search.generation === combined.current?.getState().generation) {
@@ -6985,13 +6989,15 @@ export default function App() {
     if (currentImgid === undefined || gridRef.current) return;
     setSelection((old) => (old.has(currentImgid) ? old : new Set([currentImgid])));
   }, [currentImgid]);
+  // a photo whose id changes (a refresh, a rename) stays selected, found by
+  // its path and version; photos no longer listed leave the selection
   useEffect(() => {
-    setSelection((old) => {
-      const ids = new Set(shown.map((i) => i.imgid));
-      const kept = [...old].filter((id) => ids.has(id));
-      return kept.length === old.size ? old : new Set(kept);
-    });
-  }, [shown]);
+    const r = followSelection(shown, selectionRef.current, pickAnchor.current, followed.current, Date.now());
+    followed.current = r.followed;
+    if (!r.changed) return;
+    pickAnchor.current = r.anchor;
+    setSelection(r.selection);
+  }, [shown, selection]);
 
   const [infoMode, setInfoMode] = useState(loadInfoMode);
   useEffect(() => { try { settings.set(INFO_MODE_KEY, String(infoMode)); } catch { /* not kept */ } }, [infoMode]);
