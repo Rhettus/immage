@@ -1193,6 +1193,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .modal.move-photos .move-clashes { list-style: none; margin: 0; padding: 0; max-height: 200px; overflow-y: auto; }
 .modal.move-photos .move-clashes .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal.move-photos .move-clashes select { flex: none; }
+.modal.move-photos .move-pattern { margin-inline-start: 24px; }
+.modal.move-photos .move-pattern .field { inline-size: 100%; box-sizing: border-box; }
 .folders .photo-dot { width: 5px; height: 5px; flex: none; margin: 0 4px; border-radius: 50%; background: var(--text-2); }
 .folders .twisty {
   flex: none; display: flex; align-items: center; justify-content: center; width: 16px; height: 16px;

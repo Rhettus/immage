@@ -27,7 +27,7 @@ registerHooks({
 });
 
 const { settings } = await import('../app/src/settings.ts');
-const { expand, EMPTY_META } = await import('../app/src/exportTokens.ts');
+const { expand, folderPath, EMPTY_META } = await import('../app/src/exportTokens.ts');
 const { bitDepths, exportOptionsFor, loadSettings, DEFAULTS } = await import('../app/src/exportSettings.ts');
 
 test('JPEG XL sends quality and its own bit depth', () => {
@@ -74,4 +74,17 @@ test('shared filename tokens use metadata, capture date formats and padded seque
   assert.equal(expand('{datecaptured}-{timecaptured:HH-mm}-{seq}', photo, meta, 4, 1000, 'YYYY-MM-DD'),
     '2026-11-18-15-40-0004');
   assert.equal(expand('{caption}', photo, meta, 1, 1, 'YYYYMMDD'), 'Rock River');
+});
+
+test('folder patterns make one folder per part and drop the empty ones', () => {
+  const photo = {
+    filename: 'IMG.0082.CR3', rating: 3,
+    exif: { datetime: '2026:11:18 15:40:02', model: 'X-T5', lens: 'n/a', iso: 100 },
+  };
+  assert.equal(folderPath('{year}/{month}/{day}', photo), '2026/11/18');
+  assert.equal(folderPath('{datecaptured:YYYY}\\{datecaptured:YYYY-MM-DD} {camera}', photo), '2026/2026-11-18 X-T5');
+  assert.equal(folderPath('Keepers/{lens}/{year}', photo), 'Keepers/2026');
+  assert.equal(folderPath('../{year}/./..', photo), '2026');
+  const undated = { ...photo, exif: { ...photo.exif, datetime: '' } };
+  assert.equal(folderPath('{year}/{month}/{day}', undated), '');
 });

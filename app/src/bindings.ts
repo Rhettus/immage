@@ -904,6 +904,7 @@ export type MoveSource = {
 	imgid?: number | null,
 	asset?: string | null,
 	assetPath?: string | null,
+	subdir?: string | null,
 };
 
 export type MoveSummary = {
@@ -1069,6 +1070,7 @@ export type PlanUnit = {
 	clash: string,
 	download: boolean,
 	keepSource: boolean,
+	folder: string,
 };
 
 export type PluginConfig = {

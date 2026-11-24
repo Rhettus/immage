@@ -1,6 +1,7 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
+import { FOLDER_PATTERN, folderPath } from "./exportTokens";
 import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
 import { profileSelection, AGX_USER_FIRST, agxRuns, isAgxProfile, isColorBalanceProfile, TM_AGX, TONE_MAPPER_ALL_OPS, TONE_MAPPER_OPS } from "./manifest";
@@ -182,8 +183,24 @@ const bumpHoldHint = () => {
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 // a move or copy as the confirmation asks it: the photos, the stacked
-// companions among them and whether they go too
-type MoveAsk = { all: ImageEntry[]; companions: ImageEntry[]; withCompanions: boolean; dest: string; copy: boolean };
+// companions among them and whether they go too, and the subfolder pattern
+// that sorts them in the destination (null for none)
+type MoveAsk = { all: ImageEntry[]; companions: ImageEntry[]; withCompanions: boolean; dest: string; copy: boolean;
+                 pattern: string | null; map: MoveRequest["map"] };
+// the confirmation's subfolder choice, kept for the next one
+const MOVE_SUBFOLDERS = "immage.moveSubfolders", MOVE_PATTERN = "immage.movePattern";
+const loadMovePattern = () => {
+  try { return settings.get(MOVE_PATTERN) || FOLDER_PATTERN; } catch { return FOLDER_PATTERN; }
+};
+const loadMoveSubfolders = () => {
+  try { return settings.get(MOVE_SUBFOLDERS) === "1" ? loadMovePattern() : null; } catch { return null; }
+};
+const storeMoveSubfolders = (pattern: string | null) => {
+  try {
+    settings.set(MOVE_SUBFOLDERS, pattern === null ? "0" : "1");
+    if (pattern !== null) settings.set(MOVE_PATTERN, pattern);
+  } catch { /* not kept */ }
+};
 
 export default function App() {
   useAgxProfiles();
@@ -3824,7 +3841,10 @@ export default function App() {
     if (!all.length || moveDialog || folderMoveDialog) return;
     const kinds = filterRef.current.kinds;
     const { companions, include } = movedCompanions(all, partnersRef.current, (c) => kindsInclude(kinds, c.filename));
-    await planMove({ all, companions, withCompanions: include, dest, copy });
+    // Immich's path map is read once here, so a plan made again from the
+    // open confirmation has nothing to wait for and no old plan to confirm
+    const map = all.some(isRemote) ? await pathMap() : null;
+    planMove({ all, companions, withCompanions: include, dest, copy, pattern: loadMoveSubfolders(), map });
   };
   const planMove = async (ask: MoveAsk) => {
     const left = new Set(ask.withCompanions ? [] : ask.companions.map((c) => c.imgid));
@@ -3832,8 +3852,9 @@ export default function App() {
     const req: MoveRequest = {
       sources: list.map((i) => (isRemote(i) && i.remote
         ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
-        : { imgid: i.imgid, asset: null, assetPath: null })),
-      dest: ask.dest, map: list.some(isRemote) ? await pathMap() : null,
+        : { imgid: i.imgid, asset: null, assetPath: null }))
+        .map((src, n) => ({ ...src, subdir: ask.pattern === null ? null : folderPath(ask.pattern, list[n]) || null })),
+      dest: ask.dest, map: ask.map,
     };
     setMoveDialog({ ...ask, list, req, plan: null, error: null });
     try {
@@ -3908,7 +3929,11 @@ export default function App() {
     const now = folderRef.current;
     if (!now || immichRef.current) return;
     const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
-    const arrived = now === dest || (includeSubRef.current && within(dest, now));
+    // sorted into subfolders, they may arrive in a folder under the destination
+    const sorted = req.sources.some((s) => s.subdir);
+    const arrived = now === dest || (includeSubRef.current && within(dest, now)) || (sorted && within(now, dest));
+    // the Folders card shows the subfolders made
+    if (sorted) setFolderRefresh((n) => n + 1);
     if (stayed || arrived) await showFolder(now, true);
   };
   const askFolderMove = (source: string, dest: string, copy: boolean) => {
@@ -7974,6 +7999,11 @@ export default function App() {
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
                                companions={moveDialog.companions.length} withCompanions={moveDialog.withCompanions}
                                onCompanions={(on) => void planMove({ ...moveDialog, withCompanions: on })}
+                               pattern={moveDialog.pattern} lastPattern={loadMovePattern()}
+                               onPattern={(pattern) => {
+                                 storeMoveSubfolders(pattern);
+                                 if (pattern !== moveDialog.pattern) void planMove({ ...moveDialog, pattern });
+                               }}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
     {orderOpen && current && session.current && <ModuleOrderDialog session={session.current}
       onBeforeApply={() => record([`order:${performance.now()}`], t("dialogs.moduleOrder.title"))}

@@ -151,6 +151,10 @@ pub struct MoveSource {
     pub asset: Option<String>,
     #[serde(default)]
     pub asset_path: Option<String>,
+    // a folder under the destination to put it in, from the confirmation's
+    // subfolder pattern: names only, never `..` or a root
+    #[serde(default)]
+    pub subdir: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Type)]
@@ -178,6 +182,8 @@ pub struct PlanUnit {
     pub clash: String,
     pub download: bool,
     pub keep_source: bool,
+    // the subfolder of the destination it goes into, empty for the folder itself
+    pub folder: String,
 }
 
 #[derive(Serialize, Clone, Type)]
@@ -548,13 +554,40 @@ fn immich_client(app: &AppHandle) -> Result<immich_upload::Immich, String> {
     immich_upload::Immich::new(&conn)
 }
 
+// a source's subfolder as a relative path of plain names. the page fills
+// it from photo metadata, so anything that could climb out of the
+// destination or name another root is refused
+fn subfolder(sub: Option<&str>) -> Result<PathBuf, String> {
+    let mut out = PathBuf::new();
+    for c in Path::new(sub.unwrap_or("").trim()).components() {
+        match c {
+            std::path::Component::Normal(n) => out.push(n),
+            std::path::Component::CurDir => {}
+            _ => return Err(format!("{} is not a subfolder name", sub.unwrap_or(""))),
+        }
+    }
+    Ok(out)
+}
+
+// a unit placed in a subfolder of the destination: every file keeps its
+// place relative to the photo, under that folder
+fn place(u: &mut Unit, sub: &Path) {
+    if sub.as_os_str().is_empty() {
+        return;
+    }
+    for f in &mut u.files {
+        f.rel = sub.join(&f.rel);
+    }
+}
+
 // the units to move, from the engine's say of where each photo is: the
 // page names photos, never files
 async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) -> Result<Vec<Unit>, String> {
     let dest = PathBuf::from(&req.dest);
-    let mut by_path: Vec<(PathBuf, Vec<i64>)> = Vec::new();
+    let mut by_path: Vec<(PathBuf, Vec<i64>, PathBuf)> = Vec::new();
     let mut assets = Vec::new();
     for s in &req.sources {
+        let sub = subfolder(s.subdir.as_deref())?;
         if let Some(id) = s.imgid.filter(|i| *i > 0) {
             let reply = state.engine("move_plan").request(json!({ "cmd": "meta", "imgid": id }))?;
             let path = reply["image"]["path"].as_str().unwrap_or_default();
@@ -562,19 +595,20 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
                 continue;
             }
             let path = PathBuf::from(path);
-            match by_path.iter_mut().find(|(p, _)| *p == path) {
-                Some((_, ids)) => ids.push(id),
-                None => by_path.push((path, vec![id])),
+            // versions of one file go together, into the first one's folder
+            match by_path.iter_mut().find(|(p, _, _)| *p == path) {
+                Some((_, ids, _)) => ids.push(id),
+                None => by_path.push((path, vec![id], sub)),
             }
         } else if let Some(a) = &s.asset {
-            assets.push((a.clone(), s.asset_path.clone().unwrap_or_default()));
+            assets.push((a.clone(), s.asset_path.clone().unwrap_or_default(), sub));
         }
     }
     let mut local = Vec::new();
-    for (path, ids) in by_path {
+    for (path, ids, sub) in by_path {
         let reply = state.engine("move_plan").request(json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
         let sidecars: Vec<PathBuf> = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
-        local.push((path, ids, sidecars));
+        local.push((path, ids, sidecars, sub));
     }
     let map = req.map.clone().unwrap_or_default();
     let app = app.clone();
@@ -592,17 +626,20 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
             }
         };
         let mut v = Vec::new();
-        for (path, ids, sidecars) in local {
+        for (path, ids, sidecars, sub) in local {
             reach(&path)?;
-            v.push(local_unit(&path, ids, sidecars, &dest, false));
+            let mut u = local_unit(&path, ids, sidecars, &dest.join(&sub), false);
+            place(&mut u, &sub);
+            v.push(u);
         }
         let mut client = None;
-        for (id, server) in assets {
+        for (id, server, sub) in assets {
             if let Some(p) = immich_search::local_path(&server, &map) {
                 reach(&p)?;
                 let sidecars = mapped_sidecars(&p);
-                let mut u = local_unit(&p, Vec::new(), sidecars, &dest, true);
+                let mut u = local_unit(&p, Vec::new(), sidecars, &dest.join(&sub), true);
                 u.key = format!("immich:{id}");
+                place(&mut u, &sub);
                 v.push(u);
                 continue;
             }
@@ -617,7 +654,7 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
                 name: name.clone(),
                 imgids: Vec::new(),
                 versions: 1,
-                files: vec![UnitFile { from: None, rel: PathBuf::from(&name), size: info.size.unwrap_or(0) }],
+                files: vec![UnitFile { from: None, rel: sub.join(&name), size: info.size.unwrap_or(0) }],
                 download: Some((id, info.checksum)),
                 keep_source: true,
                 here: false,
@@ -671,6 +708,7 @@ pub(crate) async fn move_plan(app: AppHandle, state: State<'_, AppState>, req: M
                 clash: if here { "here".into() } else { c.label().into() },
                 download: u.download.is_some(),
                 keep_source: u.keep_source,
+                folder: u.files[0].rel.parent().map(text).unwrap_or_default(),
             });
         }
         MovePlan {
@@ -880,6 +918,8 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
 struct Placed {
     created: Vec<PathBuf>,
     renamed: Vec<(PathBuf, PathBuf)>,
+    // folders this transfer made, outermost first
+    folders: Vec<PathBuf>,
 }
 
 impl Placed {
@@ -889,6 +929,11 @@ impl Placed {
         }
         for p in &self.created {
             let _ = std::fs::remove_file(p);
+        }
+        // deepest first; remove_dir leaves a folder another photo has
+        // put something in meanwhile
+        for d in self.folders.iter().rev() {
+            let _ = std::fs::remove_dir(d);
         }
     }
 }
@@ -910,7 +955,10 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
             }
             let target = dest.join(r);
             if let Some(parent) = target.parent() {
+                let missing: Vec<PathBuf> = parent.ancestors().take_while(|a| a.symlink_metadata().is_err())
+                    .map(Path::to_path_buf).collect();
                 std::fs::create_dir_all(parent).map_err(|e| transfer_io_error("create destination directory", parent, e))?;
+                placed.folders.extend(missing.into_iter().rev());
             }
             if target.symlink_metadata().is_ok() {
                 return Err(format!("{} appeared at the destination", target.display()));
@@ -2350,6 +2398,56 @@ mod tests {
         transfer_unit(&unit(&good), &dest, &["G.CR3".into()], &[false], true, false, &ctx(), &open).unwrap();
         assert_eq!(std::fs::read(dest.join("G.CR3")).unwrap(), body);
         assert_eq!(clash(&unit(&good), &dest, &["G.CR3".into()], None).0, Clash::Same);
+    }
+
+    #[test]
+    fn a_subfolder_is_plain_names_only() {
+        assert_eq!(subfolder(None).unwrap(), PathBuf::new());
+        assert_eq!(subfolder(Some(" ")).unwrap(), PathBuf::new());
+        assert_eq!(subfolder(Some("2026/11/23")).unwrap(), PathBuf::from("2026").join("11").join("23"));
+        assert_eq!(subfolder(Some("./2026//11/")).unwrap(), PathBuf::from("2026").join("11"));
+        assert!(subfolder(Some("../out")).is_err());
+        assert!(subfolder(Some("2026/../../out")).is_err());
+        assert!(subfolder(Some("/etc")).is_err());
+    }
+
+    #[test]
+    fn a_photo_goes_into_its_subfolder_with_its_sidecars() {
+        let d = test_dir("subfolder");
+        let dest = d.join("dest");
+        let sub = subfolder(Some("2026/11")).unwrap();
+        let mut u = photo(&d.join("src"), "G.ORF");
+        place(&mut u, &sub);
+        assert!(u.files.iter().all(|f| f.rel.starts_with(&sub)));
+        // the folders are made by the transfer, not before it
+        assert!(!dest.join(&sub).exists());
+        let (gone, _) = transfer_unit(&u, &dest, &names(&u), &[false; 4], true, false, &ctx(), &no_open).unwrap();
+        assert!(!gone);
+        for f in ["G.ORF", "G.ORF.xmp", "G_01.ORF.xmp", "G.ORF.dtdata"] {
+            assert!(dest.join(&sub).join(f).is_file(), "{f}");
+        }
+        // a clash is looked for in the subfolder, and numbered there
+        std::fs::write(dest.join(&sub).join("G.ORF.xmp"), "another edit").unwrap();
+        assert_eq!(clash(&u, &dest, &names(&u), None).0, Clash::Different);
+        assert_eq!(numbered(&u, &dest)[0], sub.join("G_1.ORF"));
+        // a photo already in that subfolder is marked here
+        let raw = dest.join(&sub).join("G.ORF");
+        assert!(local_unit(&raw, vec![1], Vec::new(), &dest.join(&sub), false).here);
+        assert!(!local_unit(&raw, vec![1], Vec::new(), &dest, false).here);
+    }
+
+    #[test]
+    fn a_failed_copy_into_a_subfolder_leaves_no_folder() {
+        let d = test_dir("subfolder-undo");
+        let dest = d.join("dest");
+        let sub = subfolder(Some("2026/11")).unwrap();
+        let mut u = photo(&d.join("src"), "H.ORF");
+        place(&mut u, &sub);
+        // the last sidecar is gone by the time it is copied
+        std::fs::remove_file(u.files[3].from.as_ref().unwrap()).unwrap();
+        assert!(transfer_unit(&u, &dest, &names(&u), &[false; 4], true, false, &ctx(), &no_open).is_err());
+        assert!(!dest.join("2026").exists());
+        assert!(dest.is_dir());
     }
 
     #[test]

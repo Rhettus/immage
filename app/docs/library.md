@@ -251,6 +251,20 @@ Nothing happens until you confirm. The confirmation shows the following:
   and **Keep both for all** set the whole list.
 - **Free space.** A warning appears, and the button is off, when the drive
   doesn't have room.
+- **Sort into subfolders.** Tick it to put each photo in a subfolder of the
+  destination named from its metadata, for example a year/month/day
+  library. The pattern starts as `{year}/{month}/{day}`; each `/` starts a
+  folder inside the one before. Use `{year}`, `{month}`, `{day}`,
+  `{datecaptured:YYYY-MM-DD}` (any mix of YYYY, MM and DD), `{camera}`,
+  `{lens}` or `{rating}`, and any text of your own, as in
+  `Keepers/{year}/{datecaptured:YYYY-MM-DD}`. A part left empty, such as
+  the date of a photo without a capture time, is dropped, so that photo
+  goes one level up. A photo's virtual copies share its file, so they go
+  together into the folder its first version names. The confirmation says
+  how many subfolders the photos go into and names one. Missing folders are made during the transfer, and
+  photos already in their folder, or there with other content, are found in
+  the subfolder. The choice and the pattern are kept for the next move or
+  copy.
 - **Stacked files.** When the photos include collapsed RAW+JPEG stacks,
   **Include the stacked JPEG, HEIF or ORI files** chooses whether the
   companions go with their raws. It starts ticked, unless the file-type

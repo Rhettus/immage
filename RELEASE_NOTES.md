@@ -84,6 +84,10 @@ Improvements
   **Copy to Folder…**, also in the photo right-click menu, send the selection
   to a folder chosen in the system's folder chooser, including a new one,
   with the same checked transfer and confirmation as dragging onto a folder.
+- **Sort moved and copied photos into dated folders:** The move and copy
+  confirmation has **Sort into subfolders**, which puts each photo in a
+  subfolder named from its metadata, such as `{year}/{month}/{day}`, so
+  photos from many days go into a year/month/day library in one step.
 
 Performance
 
