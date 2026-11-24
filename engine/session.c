@@ -392,7 +392,10 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
   dt_imgid_t imgid = library_import(path);
   if(!dt_is_valid_imgid(imgid))
   {
-    *err = g_strdup_printf("could not import '%s'", path);
+    drives_t *held = drives_path_held(path);
+    *err = held ? g_strdup_printf("%s is not answering: its drive or network share may be disconnected",
+                                  drives_mount(held))
+                : g_strdup_printf("could not import '%s'", path);
     return FALSE;
   }
   GList *ids = library_image_versions(imgid);

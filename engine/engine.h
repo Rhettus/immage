@@ -267,7 +267,9 @@ typedef enum _stage_t
 //   5  ai_load         AI provider conf while a model loads (slow)
 //   6  ai_cache        segmentation and mask caches
 //   7  pool            the five thread-pool pointers, and the prefetch queue
-//   8  probe           quarantine table; a folder probe's finished flag
+//   8  probe           quarantine table; a folder probe's finished flag; the
+//                      drive table and import slots (drives.c). each rank-8
+//                      lock is taken alone, never with another of them
 //   9  cancel, fg      base and merge cancel flags; foreground busy flag
 //   10 reply           stdout line writes (taken from everywhere, leaf)
 typedef enum eng_lock_rank_t
@@ -395,6 +397,20 @@ gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, dou
 gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num);
 void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous);
 gboolean wb_presets(JsonBuilder *b, char **err);
+// drives.c: drives that have stopped answering, held until their stuck read
+// returns. a drives_t is never freed. NULL is the system disk, never held
+typedef struct drives_t drives_t;
+void drives_init(void);
+drives_t *drives_of(const char *path);
+const char *drives_mount(const drives_t *d);
+gboolean drives_held(drives_t *d);
+drives_t *drives_path_held(const char *path);
+void drives_stuck(drives_t *d);
+void drives_unstuck(drives_t *d);
+int drives_import_begin(drives_t *d);
+void drives_import_end(const int slot);
+void drives_test_stall(const char *path);
+
 // files.c: the file-name params no number can hold, edited as the hash of the
 // name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
 // file in the LUT folder) and watermark's "wm_marker" (filename, a marker in

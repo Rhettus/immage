@@ -270,8 +270,19 @@ static GMutex _import_lock;
 // importing reads an existing sidecar, so earlier edits come back
 dt_imgid_t library_import(const char *path)
 {
+  // a drive already known to be stuck is not read: the import would wait on
+  // _import_lock behind its stuck read, and then join it (drives.c)
+  drives_t *drive = drives_of(path);
+  if(drives_held(drive))
+  {
+    fprintf(stderr, "[engine] %s not imported: drive %s is not answering\n", path, drives_mount(drive));
+    return NO_IMGID;
+  }
   gchar *dir = g_path_get_dirname(path);
   eng_lock(&_import_lock, ENG_LOCK_IMPORT);
+  // from here, not before the lock: waiting on it is not the drive's time
+  const int slot = drives_import_begin(drive);
+  drives_test_stall(path);
   dt_film_t film;
   dt_film_init(&film); // holds a mutex; dt_film_new() does not set it up
   const dt_filmid_t filmid = dt_film_new(&film, dir);
@@ -305,6 +316,7 @@ dt_imgid_t library_import(const char *path)
     }
     g_list_free(versions);
   }
+  drives_import_end(slot);
   eng_unlock(&_import_lock, ENG_LOCK_IMPORT);
   return _real_version(imgid);
 }
@@ -1039,6 +1051,8 @@ typedef struct _probe_t
   gint refs;
   char *path;
   gint64 finished_at;
+  drives_t *drive;     // the path's drive, kept from the start (drives.c)
+  gboolean abandoned;  // the waiter gave up on it; under `lock`
 } _probe_t;
 
 static void _probe_unref(_probe_t *p)
@@ -1052,6 +1066,7 @@ static void _probe_unref(_probe_t *p)
 
 static void _probe_read(const char *path)
 {
+  drives_test_stall(path);
   FILE *f = g_fopen(path, "rb");
   if(!f) return;
   char buf[4096];
@@ -1069,8 +1084,11 @@ static gpointer _probe_run(gpointer data)
   eng_lock(&p->lock, ENG_LOCK_PROBE);
   p->finished_at = g_get_monotonic_time();
   p->finished = TRUE;
+  const gboolean abandoned = p->abandoned;
   g_cond_signal(&p->done);
   eng_unlock(&p->lock, ENG_LOCK_PROBE);
+  // the stuck read has returned: its drive may answer again
+  if(abandoned) drives_unstuck(p->drive);
   _probe_unref(p);
   return NULL;
 }
@@ -1106,6 +1124,8 @@ static void _quarantine_folder(const char *path, const gint64 now)
 // did not a moment ago
 static gboolean _file_answers(const char *path, const gint64 timeout_us)
 {
+  drives_t *drive = drives_of(path);
+  if(drives_held(drive)) return FALSE;
   gchar *dir = g_path_get_dirname(path);
   const gint64 now = g_get_monotonic_time();
   eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
@@ -1124,6 +1144,7 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   g_cond_init(&p->done);
   p->refs = 2; // this call and the thread
   p->path = g_strdup(path);
+  p->drive = drive;
   GThread *t = g_thread_new("import-probe", _probe_run, p);
   g_thread_unref(t);
 
@@ -1131,10 +1152,16 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   eng_lock(&p->lock, ENG_LOCK_PROBE);
   while(!p->finished && g_cond_wait_until(&p->done, &p->lock, deadline)) {}
   const gboolean answered = p->finished;
+  // abandoned before stuck is counted, so a read that returns in between
+  // still counts itself off (the count dips below zero for a moment)
+  if(!answered) p->abandoned = TRUE;
   eng_unlock(&p->lock, ENG_LOCK_PROBE);
+  if(!answered) drives_stuck(drive);
   _probe_unref(p);
 
-  if(!answered)
+  // a drive that can be held is, until the read returns (drives.c); only the
+  // system disk's folders are skipped for a while instead
+  if(!answered && !drive)
   {
     gint64 *when = g_new(gint64, 1);
     *when = g_get_monotonic_time() + _PROBE_QUARANTINE_US;
@@ -1145,7 +1172,11 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
             timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
   }
   else
+  {
+    if(!answered)
+      fprintf(stderr, "[engine] %s did not answer in %.1f s; skipped\n", path, timeout_us / 1e6);
     g_free(dir);
+  }
   return answered;
 }
 
@@ -1163,6 +1194,8 @@ typedef struct _metadata_task_t
   gint64 finished_at;
   dt_exif_prefetch_t *prefetch;
   char *path;
+  drives_t *drive;     // as _probe_t's
+  gboolean abandoned;  // under `lock`
 } _metadata_task_t;
 
 static GMutex _metadata_lock;
@@ -1200,8 +1233,10 @@ static gpointer _metadata_run(gpointer data)
   eng_lock(&task->lock, ENG_LOCK_PROBE);
   task->finished_at = g_get_monotonic_time();
   task->finished = TRUE;
+  const gboolean abandoned = task->abandoned;
   g_cond_broadcast(&task->done);
   eng_unlock(&task->lock, ENG_LOCK_PROBE);
+  if(abandoned) drives_unstuck(task->drive);
   _metadata_unref(task);
   return NULL;
 }
@@ -1209,6 +1244,7 @@ static gpointer _metadata_run(gpointer data)
 // NULL means the strict process-wide bound is already occupied.
 static _metadata_task_t *_metadata_start(const char *path, const guint batch_workers)
 {
+  drives_t *drive = drives_of(path);
   eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
   // A preference change applies to the next batch. In-flight batches retain
   // their snapshot, while this hard process cap includes abandoned workers.
@@ -1225,6 +1261,7 @@ static _metadata_task_t *_metadata_start(const char *path, const guint batch_wor
   task->refs = 2; // importing batch and worker
   task->launched = g_get_monotonic_time();
   task->path = g_strdup(path);
+  task->drive = drive;
   GThread *thread = g_thread_new("import-metadata", _metadata_run, task);
   g_thread_unref(thread);
   return task;
@@ -1252,7 +1289,10 @@ static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint
     const gint64 now = g_get_monotonic_time();
     if(now >= deadline)
     {
+      // as in _file_answers: abandoned first, then counted stuck
+      task->abandoned = TRUE;
       eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      drives_stuck(task->drive);
       return METADATA_TIMEOUT;
     }
     g_cond_wait_until(&task->done, &task->lock, MIN(deadline, now + 50 * 1000));
@@ -1285,6 +1325,7 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   const guint n = files ? json_array_get_length(files) : 0;
   guint k = 0;
   GPtrArray *silent = g_ptr_array_new();
+  GPtrArray *held = g_ptr_array_new(); // drives_t *, each once
   _metadata_task_t **tasks = g_new0(_metadata_task_t *, n);
   gboolean *staged = g_new0(gboolean, n);
     gboolean stop_metadata = FALSE;
@@ -1313,13 +1354,22 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
         staged[j] = TRUE;
         const char *next = json_array_get_string_element(files, j);
         if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
-           || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
+           || drives_path_held(next) || !g_file_test(next, G_FILE_TEST_IS_REGULAR)
+           || _folder_quarantined(next)) continue;
         tasks[j] = _metadata_start(next, workers);
       }
     }
 
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
+    // before the stat below, which a stuck drive would hold
+    drives_t *stuck = drives_path_held(path);
+    if(stuck)
+    {
+      g_ptr_array_add(silent, (gpointer)path);
+      if(!g_ptr_array_find(held, stuck, NULL)) g_ptr_array_add(held, stuck);
+      continue;
+    }
     if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
     dt_imgid_t imgid = NO_IMGID;
     if(dt_exif_prefetch_supported(path))
@@ -1350,9 +1400,17 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
         if(wait_result == METADATA_TIMEOUT)
         {
           stop_metadata = TRUE;
-          _quarantine_folder(path, g_get_monotonic_time());
-          fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
-                  path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+          // a task given up on holds its drive (drives.c); one that came back
+          // late, or one on the system disk, has its folder skipped instead.
+          // `abandoned` is only set by this thread, in _metadata_wait
+          const gboolean holds = task->drive && task->abandoned;
+          if(!holds) _quarantine_folder(path, g_get_monotonic_time());
+          if(holds)
+            fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its drive\n",
+                    path, _METADATA_TIMEOUT_US / 1e6);
+          else
+            fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
+                    path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
           g_ptr_array_add(silent, (gpointer)path);
           for(guint j = k + 1; j < n; j++)
           {
@@ -1398,6 +1456,12 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
       }
     }
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
+    else if((stuck = drives_path_held(path)))
+    {
+      // its drive was held while this file waited (library_import refused it)
+      if(!g_ptr_array_find(silent, path, NULL)) g_ptr_array_add(silent, (gpointer)path);
+      if(!g_ptr_array_find(held, stuck, NULL)) g_ptr_array_add(held, stuck);
+    }
   }
   for(guint j = 0; j < n; j++) if(tasks[j]) _metadata_unref(tasks[j]);
   g_free(tasks);
@@ -1408,6 +1472,14 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   for(guint i = 0; i < silent->len; i++) json_builder_add_string_value(b, g_ptr_array_index(silent, i));
   json_builder_end_array(b);
   g_ptr_array_free(silent, TRUE);
+  // the drives skipped as not answering (drives.c), so the client can stop
+  // asking for their photos for a while
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < held->len; i++)
+    json_builder_add_string_value(b, drives_mount(g_ptr_array_index(held, i)));
+  json_builder_end_array(b);
+  g_ptr_array_free(held, TRUE);
   json_builder_set_member_name(b, "done");
   json_builder_add_int_value(b, k);
   fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,

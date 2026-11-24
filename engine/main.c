@@ -1727,6 +1727,7 @@ int main(int argc, char **argv)
   // Keep ORF metadata preparation in step with the user's thumbnail worker
   // preference.
   library_metadata_threads(thumb_threads);
+  drives_init();
 
 #ifdef HAVE_AI
   // The registry checks installed model versions during dt_init. It must

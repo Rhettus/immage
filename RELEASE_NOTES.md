@@ -102,6 +102,11 @@ Performance
 
 Bug fixes
 
+- **A stuck external drive no longer stalls the library:** When a file on an
+  external drive or share stops answering, Immage now stops reading from that
+  whole drive, not just the folder, and skips its photos at once instead of
+  waiting on each one. Photos on other drives keep loading, and the drive is
+  read again by itself as soon as it answers.
 - **History rows no longer pile up below the card:** The History card now
   shows every step and the Library panel scrolls as a whole, instead of the
   card scrolling on its own. On Linux its rows could be drawn stacked on one

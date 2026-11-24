@@ -62,10 +62,12 @@ Open the **Folders** card in the **Library** panel.
   for at most a few seconds, and a file that hasn't answered by then keeps its
   saved copy until you next open the folder. A folder whose listing doesn't come
   back within 10 seconds is reported as not answering.
-- A share that stops answering mid-folder doesn't freeze Immage. A file that
-  doesn't answer within 5 seconds is skipped, with the rest of that folder for
-  30 seconds, so photos on your own drive still open. Open the folder again
-  once the share is back to read the skipped files.
+- A drive or share that stops answering mid-folder doesn't freeze Immage. A
+  file that doesn't answer within 5 seconds is skipped, and so is the rest of
+  that drive until the stuck file answers or the drive is unplugged, so photos
+  on your other drives still open. On your computer's own disk only that file's
+  folder is skipped, for 30 seconds. Open the folder again once the drive is
+  back to read the skipped files.
 - Editing comes first. While you zoom or adjust an open photo, the folder's
   reading and thumbnails slow down and catch up when you pause.
 
