@@ -59,6 +59,7 @@ import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { moveFolders } from './specs/move-folders.mjs';
+import { moveCompanions, moveSubfolders, moveMenuItems } from './specs/move-options.mjs';
 import { renamePhotos } from './specs/rename-photos.mjs';
 import { unmountedShare } from './specs/unmounted-share.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
@@ -109,6 +110,9 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'rename-photos': renamePhotos,
   'unmounted-share': unmountedShare,
   'move-copy': moveCopy,
+  'move-companions': moveCompanions,
+  'move-subfolders': moveSubfolders,
+  'move-menu-items': moveMenuItems,
   'folder-menu': folderMenu,
   'library-menu-rate': libraryMenuRate,
   'immich-prefs': immichPrefs,

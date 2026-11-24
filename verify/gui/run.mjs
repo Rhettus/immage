@@ -275,6 +275,17 @@ try {
     report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
       files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
   }
+  // move options: raw+JPEG pairs (and the stacking preference), dated JPEGs, destination folders
+  if (['move-companions', 'move-subfolders'].some(n => selectedCases.includes(n))) {
+    const { moveOptionFixtures } = await import('./specs/move-options.mjs');
+    report.moveOptionFixtures = await moveOptionFixtures(fixtures, root,
+      { companions: selectedCases.includes('move-companions'), subfolders: selectedCases.includes('move-subfolders') });
+    if (selectedCases.includes('move-companions')) {
+      const runtime = join(profile, 'data', 'app.immage');
+      await mkdir(runtime, { recursive: true });
+      await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1', 'immage.stackPairs': '1' }, null, 2));
+    }
+  }
   let crossFolderTarget = null;
   if (selectedCases.includes('move-folders')) {
     const { folderMoveFixtures } = await import('./specs/move-folders.mjs');

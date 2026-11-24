@@ -496,6 +496,30 @@ confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
 
+### Move options
+
+Three further cases cover the confirmation's newer options. They passed live
+on Linux on 2026-11-24 (`move-companions,move-subfolders` in one launch,
+`move-menu-items` alone). They need no `--fixture`; the runner builds its own
+files beside the fixture:
+
+- `move-companions` copies a RAW from `benchmarking/corpus/` (three `pair-*`
+  copies, each with a same-named JPEG from `app/sample/`), seeds
+  `immage.stackPairs` in the isolated profile's `settings.json` and sets the
+  File type filter to All RAW through Find. The confirmation's "Include the
+  stacked JPEG, HEIF or ORI file" box must be unticked and only the raw and its
+  sidecar arrive; ticking it plans again and both arrive; without the filter it
+  is ticked. The case is blocked when the corpus has no RAW.
+- `move-subfolders` drops a JPEG with an injected Exif capture date (2021-03-14)
+  with Alt held, ticks "Sort into subfolders", checks the default pattern,
+  hint and "Into 1 folder: 2021/03/14" example, types a pattern (Confirm should
+  be disabled during the 400 ms debounce; a miss is recorded, not failed), then
+  copies and checks the file and rated sidecar in `sort-dest/2021/03/14`.
+- `move-menu-items` checks that Move to Folder... and Copy to Folder... are in
+  the photo right-click menu and the Photo menu. It never clicks them: they
+  open a native folder picker, outside the app-only boundary, so the picker
+  flow stays a manual check. Run it after the drag cases or in its own launch.
+
 ## Renaming photos in the Library grid
 
 `--case rename-photos` uses three disposable copies of the launch fixture. It
