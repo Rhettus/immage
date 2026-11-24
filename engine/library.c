@@ -1512,6 +1512,72 @@ void library_import_run(gpointer data, gpointer user_data)
   g_object_unref(parser);
 }
 
+// the request reader's answer to an import whose every file is on a held
+// drive (drives.c), so it is not queued behind the import thread, which may
+// itself be stuck on that drive. FALSE, with `b` untouched, otherwise
+gboolean library_import_held_reply(JsonObject *req, JsonBuilder *b)
+{
+  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
+  const guint n = files ? json_array_get_length(files) : 0;
+  if(!n) return FALSE;
+  GPtrArray *held = g_ptr_array_new();
+  for(guint i = 0; i < n; i++)
+  {
+    drives_t *d = drives_path_held(json_array_get_string_element(files, i));
+    if(!d)
+    {
+      g_ptr_array_free(held, TRUE);
+      return FALSE;
+    }
+    if(!g_ptr_array_find(held, d, NULL)) g_ptr_array_add(held, d);
+  }
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member_with_default(req, "tag", 0));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "images");
+  json_builder_begin_array(b);
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "unanswered");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < n; i++)
+  {
+    const char *path = json_array_get_string_element(files, i);
+    if(path && !_is_sidecar(path)) json_builder_add_string_value(b, path);
+  }
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < held->len; i++) json_builder_add_string_value(b, drives_mount(g_ptr_array_index(held, i)));
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, n);
+  g_ptr_array_free(held, TRUE);
+  return TRUE;
+}
+
+// the request reader's answer to a thumb or analysis_preview whose `path`
+// (sent by the client for this) is on a held drive. FALSE otherwise
+gboolean library_thumb_held_reply(JsonObject *req, JsonBuilder *b)
+{
+  const char *path = json_object_get_string_member_with_default(req, "path", NULL);
+  drives_t *d = path ? drives_path_held(path) : NULL;
+  if(!d) return FALSE;
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member_with_default(req, "tag", 0));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, FALSE);
+  json_builder_set_member_name(b, "error");
+  gchar *msg = g_strdup_printf("%s is not answering: its drive or network share may be disconnected", drives_mount(d));
+  json_builder_add_string_value(b, msg);
+  g_free(msg);
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  json_builder_add_string_value(b, drives_mount(d));
+  json_builder_end_array(b);
+  return TRUE;
+}
+
 // FALSE once the pool has stopped; the request then gets no reply
 gboolean library_import_queue(JsonParser *parser)
 {
@@ -1794,6 +1860,47 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
 GThreadPool *library_thumb_pool = NULL;
 static GMutex _thumb_lock;
 
+// a thumbnail already in darktable's memory cache needs no read of the file
+static gboolean _thumb_in_memory(const dt_imgid_t imgid, const int size)
+{
+  if(size <= 0) return FALSE;
+  dt_mipmap_buffer_t buf = { 0 };
+  buf.size = DT_MIPMAP_NONE; // a miss leaves it unset, and release reads it
+  dt_mipmap_cache_get(&buf, imgid, dt_mipmap_cache_get_matching_size(size, size), DT_MIPMAP_TESTLOCK, 'r');
+  const gboolean there = buf.buf && buf.width > 0 && buf.height > 0;
+  dt_mipmap_cache_release(&buf);
+  return there;
+}
+
+// NULL when the photo may be read for a thumbnail or analysis preview, or
+// why not: its drive is held (drives.c), or its file did not answer the
+// probe, which may hold the drive. a stuck decode cannot be abandoned, so
+// a stuck drive's photos are not started at all. the system disk is never
+// probed here, so it works as before
+static char *_thumb_unanswered(const dt_imgid_t imgid, const int size, const gboolean plain, JsonBuilder *b)
+{
+  if(!dt_is_valid_imgid(imgid)) return NULL;
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+  drives_t *drive = *path ? drives_of(path) : NULL;
+  if(!drive) return NULL;
+  if(!drives_held(drive))
+  {
+    if(plain && _thumb_in_memory(imgid, size)) return NULL;
+    if(_file_answers(path, _PROBE_TIMEOUT_US)) return NULL;
+  }
+  if(drives_held(drive))
+  {
+    json_builder_set_member_name(b, "held");
+    json_builder_begin_array(b);
+    json_builder_add_string_value(b, drives_mount(drive));
+    json_builder_end_array(b);
+    return g_strdup_printf("%s is not answering: its drive or network share may be disconnected", drives_mount(drive));
+  }
+  return g_strdup_printf("%s is not answering", path);
+}
+
 // foreground (the lightbox's photo) before grid thumbnails and metadata,
 // those before analysis previews; equal ranks keep their arrival order
 static gint _thumb_rank(JsonParser *parser)
@@ -1836,6 +1943,11 @@ void library_thumb_run(gpointer data, gpointer user_data)
     }
     else err = g_strdup("no such image");
   }
+  else if(dest && (err = _thumb_unanswered(imgid, analysis ? 0 : json_object_get_int_member_with_default(req, "size", 256),
+                                           !analysis && !json_object_get_boolean_member_with_default(req, "proof", FALSE)
+                                           && !json_object_get_boolean_member_with_default(req, "prefer_source", FALSE)
+                                           && !json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), b)))
+    ok = FALSE;
   else if(dest && analysis)
     ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
   else if(dest)

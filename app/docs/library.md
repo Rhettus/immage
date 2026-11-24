@@ -65,7 +65,9 @@ Open the **Folders** card in the **Library** panel.
 - A drive or share that stops answering mid-folder doesn't freeze Immage. A
   file that doesn't answer within 5 seconds is skipped, and so is the rest of
   that drive until the stuck file answers or the drive is unplugged, so photos
-  on your other drives still open. On your computer's own disk only that file's
+  and thumbnails on your other drives still load. Its photos keep their
+  placeholders and are asked for again when you scroll to them or reopen the
+  folder. On your computer's own disk only that file's
   folder is skipped, for 30 seconds. Open the folder again once the drive is
   back to read the skipped files.
 - Editing comes first. While you zoom or adjust an open photo, the folder's

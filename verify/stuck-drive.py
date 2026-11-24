@@ -94,27 +94,57 @@ def main():
         for p in [stall / 'a.tif', stall / 'b.tif', ok / 'c.tif']:
             p.write_bytes(tiff())
         engine = Engine(args.engine, work, stall)
+        release = stall / '.release'
+        a_tif, b_tif, c_tif = str(stall / 'a.tif'), str(stall / 'b.tif'), str(ok / 'c.tif')
         try:
-            # the first stuck read is given up on after the 5 s probe and holds the drive
-            reply, took = engine.timed({'cmd': 'import', 'files': [str(stall / 'a.tif')]})
-            assert reply['unanswered'] == [str(stall / 'a.tif')] and reply['held'] == [str(stall)], reply
+            # a photo on the drive while it answers, then the drive sticks
+            release.touch()
+            reply, _ = engine.timed({'cmd': 'import', 'files': [a_tif]})
+            a_id = reply['images'][0]['imgid']
+            release.unlink()
+            # imports: the first stuck read is given up on after the 5 s
+            # probe and holds the drive; later ones are answered at once,
+            # by the request reader, without a probe
+            reply, took = engine.timed({'cmd': 'import', 'files': [b_tif]})
+            assert reply['unanswered'] == [b_tif] and reply['held'] == [str(stall)], reply
             assert 4 < took < 15, took
-            # a held drive is answered at once, without a probe
-            reply, took = engine.timed({'cmd': 'import', 'files': [str(stall / 'b.tif')]})
-            assert reply['unanswered'] == [str(stall / 'b.tif')] and reply['held'] == [str(stall)], reply
+            reply, took = engine.timed({'cmd': 'import', 'files': [b_tif]})
+            assert reply['unanswered'] == [b_tif] and reply['held'] == [str(stall)], reply
             assert took < 1, took
+            # thumbnails of a held drive's photo: refused at once, by the
+            # worker and, given the path, by the request reader
+            for extra in [{}, {'path': a_tif}]:
+                reply, took = engine.timed({'cmd': 'thumb', 'imgid': a_id, 'size': 64,
+                                            'out': str(work / 'a.rgba')} | extra)
+                assert not reply['ok'] and reply['held'] == [str(stall)], reply
+                assert took < 1, took
             # another drive is not held
-            reply, took = engine.timed({'cmd': 'import', 'files': [str(ok / 'c.tif')]})
+            reply, _ = engine.timed({'cmd': 'import', 'files': [c_tif]})
             assert len(reply['images']) == 1 and not reply['held'] and not reply['unanswered'], reply
+            reply, _ = engine.timed({'cmd': 'thumb', 'imgid': reply['images'][0]['imgid'], 'size': 64,
+                                     'out': str(work / 'c.rgba')})
+            assert reply['ok'], reply
             # the stuck read returns: the drive answers again
-            (stall / '.release').touch()
+            release.touch()
             time.sleep(0.5)
-            reply, took = engine.timed({'cmd': 'import', 'files': [str(stall / 'b.tif')]})
+            reply, _ = engine.timed({'cmd': 'import', 'files': [b_tif]})
             assert len(reply['images']) == 1 and not reply['held'], reply
+            reply, _ = engine.timed({'cmd': 'thumb', 'imgid': a_id, 'size': 64, 'path': a_tif,
+                                     'out': str(work / 'a.rgba')})
+            assert reply['ok'], reply
+            # a thumbnail's own probe holds the drive too
+            release.unlink()
+            reply, took = engine.timed({'cmd': 'thumb', 'imgid': reply.get('imgid', a_id), 'size': 2000,
+                                        'out': str(work / 'a2.rgba')})
+            assert not reply['ok'] and reply.get('held') == [str(stall)], reply
+            assert 4 < took < 15, took
+            release.touch()
         finally:
+            release.touch()
             engine.close()
             log = (work / 'engine.log').read_text(errors='replace')
-        for line in ['not answering: held until its read returns', 'answering again']:
+        for line in ['not answering: held until its read returns', 'answering again',
+                     'answered at once: its drive is held']:
             assert line in log, f'missing log line: {line}'
     print('stuck-drive: ok')
 

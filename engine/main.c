@@ -80,6 +80,8 @@ static gint64 _base_running, _base_canceled;
 // keeps a long edit session from starving them for good, and a client's
 // batch from outrunning its timeout
 static GAsyncQueue *_requests = NULL;
+// where the request reader replies itself (_reader_reply): set before it starts
+static FILE *_reply_out = NULL;
 static GMutex _fg_lock;
 static gboolean _fg_busy = FALSE;
 static gint64 _fg_last = 0;
@@ -1620,6 +1622,14 @@ static void _trim(const gboolean pressure)
 // `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
 // answers it, then hands the model's work to a thread (ai_denoise_run,
 // ai_run), which answers again with the tag
+// a reply the request reader built itself, to a request it then does not queue
+static void _reader_reply(JsonBuilder *b, const char *cmd)
+{
+  json_builder_end_object(b);
+  fprintf(stderr, "[engine] %s answered at once: its drive is held\n", cmd);
+  engine_reply(_reply_out, b);
+}
+
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
@@ -1656,8 +1666,12 @@ static gpointer _read_requests(gpointer data)
                  || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] %s %.*s\n", cmd, (int)strcspn(line->str, "\r\n"), line->str);
+          JsonBuilder *b = json_builder_new();
+          json_builder_begin_object(b);
+          if(g_strcmp0(cmd, "meta") && library_thumb_held_reply(req, b)) _reader_reply(b, cmd);
           // the pool frees the parser
-          if(library_thumb_queue(parser)) parser = NULL;
+          else if(library_thumb_queue(parser)) parser = NULL;
+          g_object_unref(b);
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
@@ -1679,7 +1693,11 @@ static gpointer _read_requests(gpointer data)
             library_import_latest = job;
             eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
           }
-          if(library_import_queue(parser)) parser = NULL;
+          JsonBuilder *b = json_builder_new();
+          json_builder_begin_object(b);
+          if(library_import_held_reply(req, b)) _reader_reply(b, cmd);
+          else if(library_import_queue(parser)) parser = NULL;
+          g_object_unref(b);
           taken = TRUE;
         }
       }
@@ -1797,6 +1815,7 @@ int main(int argc, char **argv)
   clip_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
+  _reply_out = out;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   _pressure_watch();
   gboolean quit = FALSE, trimmed = TRUE;

@@ -550,6 +550,8 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
 extern GThreadPool *library_import_pool;
 void library_import_run(gpointer data, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
+gboolean library_import_held_reply(JsonObject *req, JsonBuilder *b);
+gboolean library_thumb_held_reply(JsonObject *req, JsonBuilder *b);
 void library_import_wait(void);
 gboolean library_import_metadata_pending(void);
 gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err);
