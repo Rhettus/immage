@@ -334,9 +334,11 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         // files the share did not answer for are skipped, not retried, so one
         // stalled read cannot hold the folder; a batch of one from then on
         // shows each further stall by itself
+        // a held drive's files are skipped at once (engine/drives.c), so the
+        // batch keeps its size: the rest of that drive is answered as fast
         if let Some(silent) = reply["unanswered"].as_array().filter(|a| !a.is_empty()) {
             unanswered.extend(silent.iter().cloned());
-            size = IMPORT_BATCH.1;
+            if reply["held"].as_array().is_none_or(|h| h.is_empty()) { size = IMPORT_BATCH.1; }
         }
         images.extend(got.iter().cloned());
         if let Some(got) = progress.add(got, Instant::now(), done == total) {
@@ -1136,16 +1138,27 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     let edited_preview = size > 0 && !proof && edited_preview.unwrap_or(false);
     // browsing: Smart search leaves network drives until it stops
     state.tagged.mark_active();
-    let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&caches.listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
-    let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview, edited_preview)));
+    // the photo's file, so the engine can refuse a stuck drive's at once
+    let file = path.clone().or_else(|| state.tagged.known_photo(imgid).map(|p| p.path));
+    // a drive the engine said is stuck is not asked, nor its file looked at
+    if let Some(mount) = file.as_deref().and_then(|f| state.tagged.held(f)) {
+        return Err(crate::engine::not_answering(&mount));
+    }
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
-    let (reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
-        let got = thumbs.request(tag, json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out }))
-            .and_then(|reply| Ok((reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
+    let listed = caches.listed.clone();
+    let (name, reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
+        // the cache name stats the photo and its sidecar: here, off the async
+        // runtime, as a stuck drive's stat would hold its worker
+        let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+        let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview, edited_preview)));
+        let mut req = json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out });
+        if let Some(file) = file { req["path"] = json!(file); }
+        let got = thumbs.request(tag, req)
+            .and_then(|reply| Ok((name, reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);
         drop(storage);
         got

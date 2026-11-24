@@ -373,6 +373,8 @@ impl Service {
         if !selected(path, &library_selection(&self.runtime))
             || self.providers.cached().for_path(path) == ClipProvider::MorfPhoto
             || self.deferred(&row.path)
+            // as in analyze(): photo_fingerprints() stats the file
+            || self.engine.held(&row.path).is_some()
         {
             return Ok(());
         }
@@ -423,6 +425,9 @@ impl Service {
         if !selected(path, &library_selection(&self.runtime))
             || self.providers.cached().for_path(path) != ClipProvider::Local
             || self.deferred(&row.path)
+            // a drive the engine said is stuck: not looked at (current() stats
+            // the file), and tried again at a later scan
+            || self.engine.held(&row.path).is_some()
         {
             return Ok(());
         }
@@ -437,7 +442,8 @@ impl Service {
         let preview = (|| {
             self.engine.request(
                 tag,
-                json!({"cmd":"analysis_preview", "imgid":imgid,"subject":subject,"out":out}),
+                // the path lets the engine's reader refuse a held drive's at once
+                json!({"cmd":"analysis_preview", "imgid":imgid,"subject":subject,"out":out,"path":row.path}),
             )?;
             FrameOutput::read(&out).map_err(|e| e.to_string())
         })();

@@ -71,6 +71,50 @@ pub struct Link {
     // a quiet spell (Tagged::quiet_for)
     started: Instant,
     active_ms: AtomicU64,
+    // drives the engine reported held (engine/drives.c), by mount, and when:
+    // a hint for HOLD_HINT, so their photos fail at once rather than wait on
+    // the engine; the engine stays the one to ask after that. LOCK ORDER: a
+    // leaf, taken while the Engine mutex or a photo's import gate may be held,
+    // with nothing taken under it and no I/O inside
+    holds: Holds,
+}
+
+#[derive(Default)]
+struct Holds(Mutex<HashMap<String, Instant>>);
+
+impl Holds {
+    // a reply's "held" drives, kept as a hint
+    fn note(&self, reply: &Value, now: Instant) {
+        let Some(held) = reply["held"].as_array().filter(|h| !h.is_empty()) else { return };
+        let mut holds = self.0.lock().unwrap();
+        holds.retain(|_, at| now.duration_since(*at) < HOLD_HINT);
+        for m in held.iter().filter_map(Value::as_str) { holds.insert(m.to_string(), now); }
+    }
+
+    fn covering(&self, path: &str, now: Instant) -> Option<String> {
+        let holds = self.0.lock().unwrap();
+        covering(holds.iter().filter(|(_, at)| now.duration_since(**at) < HOLD_HINT).map(|(m, _)| m), path)
+    }
+}
+
+// how long a drive the engine reported held is taken as still held
+const HOLD_HINT: Duration = Duration::from_secs(10);
+
+// the error for a photo on a drive that is not answering, as the folder
+// read words it (library_cmds.rs, open_folder)
+pub fn not_answering(at: &str) -> String {
+    format!("{at} is not answering: its drive or network share may be disconnected")
+}
+
+// the mount among `holds` that `path` is on, by whole components
+fn covering<'a>(holds: impl Iterator<Item = &'a String>, path: &str) -> Option<String> {
+    let sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
+    holds.filter(|m| {
+        let m = m.trim_end_matches(sep);
+        !m.is_empty() && path.len() >= m.len() && path.is_char_boundary(m.len())
+            && if cfg!(windows) { path[..m.len()].eq_ignore_ascii_case(m) } else { &path[..m.len()] == m }
+            && path[m.len()..].chars().next().is_none_or(sep)
+    }).max_by_key(|m| m.len()).cloned()
 }
 
 impl Link {
@@ -88,11 +132,16 @@ impl Link {
             search_cache: Mutex::new(None),
             started: Instant::now(),
             active_ms: AtomicU64::new(0),
+            holds: Holds::default(),
         })
     }
 
     fn current(&self) -> Arc<Conn> {
         self.current.lock().unwrap().clone()
+    }
+
+    fn held(&self, path: &str) -> Option<String> {
+        self.holds.covering(path, Instant::now())
     }
 
     fn install(&self, conn: Arc<Conn>) {
@@ -259,6 +308,12 @@ impl Tagged {
 
     // how long since the user last opened, rendered or browsed photos
     // (mark_active), or since the app started
+    // the mount of a drive the engine said is not answering, if `path` is
+    // on one: its photos fail at once for a while (Link::holds)
+    pub fn held(&self, path: &str) -> Option<String> {
+        self.link.held(path)
+    }
+
     pub fn quiet_for(&self) -> Duration {
         let at = Duration::from_millis(self.link.active_ms.load(Ordering::Relaxed));
         self.link.started.elapsed().saturating_sub(at)
@@ -268,6 +323,9 @@ impl Tagged {
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;
             let Some(photo) = photo else { return Ok(id) };
+            // a drive known to be stuck is not asked: this import would wait
+            // behind its stuck read, up to 30 s for each photo
+            if let Some(mount) = self.link.held(&photo.path) { return Err(not_answering(&mount)); }
             let gate = self.link.library_ids.lock().unwrap().gate(&photo.path);
             let _importing = gate.lock().map_err(|_| "cached photo import lock poisoned")?;
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
@@ -284,7 +342,11 @@ impl Tagged {
                 answer.wait_until(Duration::from_secs(30), || conn.dead.load(Ordering::SeqCst))
             })();
             Self::forget_on(conn, tag);
-            result?;
+            let reply = result?;
+            if reply["unanswered"].as_array().is_some_and(|u| u.iter().any(|p| p.as_str() == Some(photo.path.as_str()))) {
+                let mount = reply["held"].as_array().and_then(|h| h.first()).and_then(Value::as_str);
+                return Err(not_answering(mount.unwrap_or(&photo.path)));
+            }
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
             self.link.library_ids.lock().unwrap().resolved(&photo)
                 .ok_or_else(|| format!("photo version {} is no longer available: {}", photo.version, photo.path))
@@ -429,6 +491,7 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, conn: Arc<Conn>, lin
             .unwrap_or_else(|e| json!({ "ok": false, "error": format!("engine reply: {e}") }));
         { let current = link.current.lock().unwrap();
           if conn.epoch == current.epoch { link.library_ids.lock().unwrap().reply(&mut reply); } }
+        link.holds.note(&reply, Instant::now());
         match reply["tag"].as_u64() {
             Some(tag) if reply["progress"].as_bool() == Some(true) => {
                 if let Some(f) = progress.lock().unwrap().get(&tag) {
@@ -1104,7 +1167,8 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
+    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT, covering, Holds, HOLD_HINT};
+    use serde_json::json;
     use crate::settings::Settings;
     use std::time::{Duration, Instant};
 
@@ -1325,6 +1389,33 @@ for line in sys.stdin:
         }
         engine.quit();
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn holds_cover_their_drive_for_a_while() {
+        let holds = Holds::default();
+        let t = Instant::now();
+        holds.note(&json!({"held": []}), t);
+        assert_eq!(holds.covering("/Volumes/A/x.nef", t), None);
+        holds.note(&json!({"ok": true, "held": ["/Volumes/A"]}), t);
+        assert_eq!(holds.covering("/Volumes/A/2015/x.nef", t).as_deref(), Some("/Volumes/A"));
+        assert_eq!(holds.covering("/Volumes/A", t).as_deref(), Some("/Volumes/A"));
+        // by whole components
+        assert_eq!(holds.covering("/Volumes/AB/x.nef", t), None);
+        assert_eq!(holds.covering("/Users/me/x.nef", t), None);
+        // a hint only: the engine is asked again after HOLD_HINT
+        assert_eq!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT), None);
+        holds.note(&json!({"held": ["/Volumes/A"]}), t + HOLD_HINT);
+        assert!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT).is_some());
+    }
+
+    #[test]
+    fn covering_never_matches_an_empty_or_root_mount() {
+        let roots = ["/".to_string(), String::new()];
+        assert_eq!(covering(roots.iter(), "/Users/me/x.nef"), None);
+        let nested = ["/run/user/1000/gvfs".to_string(), "/run/user/1000/gvfs/smb-share:server=nas".to_string()];
+        assert_eq!(covering(nested.iter(), "/run/user/1000/gvfs/smb-share:server=nas/p.nef").as_deref(),
+                   Some("/run/user/1000/gvfs/smb-share:server=nas"));
     }
 
     #[test]

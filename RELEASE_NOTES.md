@@ -106,7 +106,8 @@ Bug fixes
   external drive or share stops answering, Immage now stops reading from that
   whole drive, not just the folder, and skips its photos and thumbnails at
   once instead of waiting on each one. Thumbnails of photos on other drives
-  keep loading, and the drive is read again by itself as soon as it answers.
+  keep loading, Smart search analysis leaves the drive alone meanwhile, and
+  the drive is read again by itself as soon as it answers.
 - **History rows no longer pile up below the card:** The History card now
   shows every step and the Library panel scrolls as a whole, instead of the
   card scrolling on its own. On Linux its rows could be drawn stacked on one
