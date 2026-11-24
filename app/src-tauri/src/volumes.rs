@@ -191,6 +191,18 @@ pub fn answering(path: &Path) -> bool {
     false
 }
 
+// Whether the path is on a drive known to be offline, from state already
+// learned and the mount table alone: an unmounted share, or a drive whose last
+// stat is still stuck. Never touches the drive, so a listing can ask it before
+// any check has answered. LOCK ORDER: only DRIVES, held for the lookup.
+pub fn cached_offline(path: &Path) -> bool {
+    if unmounted_share(path).is_some() {
+        return true;
+    }
+    let drive = drive_of(path).map(|v| v.mount).unwrap_or_default();
+    DRIVES.lock().unwrap_or_else(|e| e.into_inner()).get(&drive).is_some_and(|d| d.stuck)
+}
+
 // the server in a mount's source: //user@nas.local/Pictures, nas:/export,
 // \\nas\share
 fn host_of(source: &str) -> Option<String> {

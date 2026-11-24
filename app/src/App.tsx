@@ -152,7 +152,8 @@ import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
 import { commands, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
-import { formatNumber, t, t as translate } from "./i18n";
+import { formatDate, formatNumber, t, t as translate } from "./i18n";
+import { isOffline, mirrorChangeTouches, type FolderSource, type MirrorChange } from "./folderSource";
 
 const MAX_PREVIEW = 2560;
 
@@ -208,6 +209,11 @@ export default function App() {
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
   folderRef.current = folder;
+  // where the open folder's photos came from, when it is under the morfPhoto
+  // mapping: its drive offline (a red dot on each photo), the local copy
+  const [folderSource, setFolderSource] = useState<FolderSource | null>(null);
+  const folderSourceRef = useRef(folderSource);
+  folderSourceRef.current = folderSource;
   // with pairs stacked, each raw's partners (set at render); every rating,
   // reject, label and delete of a photo takes its partners too
   const partnersRef = useRef(new Map<number, ImageEntry[]>());
@@ -357,6 +363,8 @@ export default function App() {
   // `known` are the photos the folder's last read found, shown until read
   const [reading, setReading] = useState<{ done: number; total: number; files: string[]; listed: boolean;
                                            known: Known[] } | null>(null);
+  const readingRef = useRef(reading);
+  readingRef.current = reading;
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(["basic"]));
   const [layout, setLayoutState] = useState<Layout>(loadLayout);
   const setLayout = (f: (l: Layout) => Layout) =>
@@ -3215,11 +3223,13 @@ export default function App() {
       // the last folder's photos go at once: listing a folder on a network
       // share can take seconds before its first batch
       updateImages([]);
+      setFolderSource(null);
     }
     let got: ImageEntry[] = [];
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
+    let source: FolderSource | null = null;
     const edits = new FolderEdits<ImageEntry>();
     folderEdits.current.add(edits);
     try {
@@ -3240,12 +3250,22 @@ export default function App() {
         if (!again && batch.length) { updateImages(got); seen?.(got); }
         loader.current!.request(batch.map((i) => i.imgid));
         setReading({ done, total, files: again ? [] : files, listed, known });
+      }, (from) => {
+        if (immichRef.current) return;
+        source = from;
+        setFolderSource(from);
       });
       if (immichRef.current) return list;
       setReading(null);
       const sorted = byCaptureTime(edits.apply(list));
       updateImages(sorted);
-      setStatus(t("app.status.photoCount", { count: list.length }));
+      // the server did not answer: say the photos are the local copy
+      const shown = source as FolderSource | null;
+      const localCopy = shown?.localCopy ? shown : null;
+      setStatus(localCopy
+        ? t("app.status.localCatalog", {
+            time: localCopy.syncedAt ? formatDate(localCopy.syncedAt * 1000, { dateStyle: "medium", timeStyle: "short" }) : "-" })
+        : t("app.status.photoCount", { count: list.length }));
       if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
       return sorted;
     } catch (e) {
@@ -3264,6 +3284,28 @@ export default function App() {
       folderEdits.current.delete(edits);
     }
   };
+
+  // the local copy of the catalog changed under the open folder (the sync
+  // committed rows in its directory): read it again, once a burst of pages
+  // has settled and no read or search is using the grid
+  const showFolderRef = useRef(showFolder);
+  showFolderRef.current = showFolder;
+  useEffect(() => {
+    let timer = 0;
+    const off = listen<MirrorChange>("mirror-changed", ({ payload }) => {
+      if (!mirrorChangeTouches(folderRef.current, includeSubRef.current, folderSourceRef.current?.root ?? null, payload)) return;
+      window.clearTimeout(timer);
+      let tries = 0;
+      const run = () => {
+        const dir = folderRef.current;
+        if (!dir || immichRef.current) return;
+        if (readingRef.current && tries++ < 8) { timer = window.setTimeout(run, 1500); return; }
+        void showFolderRef.current(dir, true);
+      };
+      timer = window.setTimeout(run, 1500);
+    });
+    return () => { window.clearTimeout(timer); void off.then((f) => f()); };
+  }, []);
 
   type SearchQuery = { form: ImmichSearch; filters: Filter; folder: string; recursive: boolean; imageVariant?: string };
   const combined = useRef<ReturnType<typeof createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>> | null>(null);
@@ -3329,6 +3371,12 @@ export default function App() {
   // first; from then on the cell is that file, the engine's like any other
   const resolving = useRef(new Set<number>());
   const openEntry = async (i: ImageEntry) => {
+    // a photo on an offline drive is listed from the local copy of the
+    // catalog, not opened
+    if (!isRemote(i) && isOffline(i.path, folderSourceRef.current)) {
+      setStatus(t("app.status.photoOffline", { name: i.filename }));
+      return false;
+    }
     if (!isRemote(i)) return openFile(i.path, i.imgid);
     // a double click opens the cell twice, once for each of its clicks. the
     // second would find the first's open under way, take the session before
@@ -7419,7 +7467,7 @@ export default function App() {
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
                               : "add a folder to start"} current={inspectedEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
                        height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
-                       revealThumb={thumbRevealKey}
+                       revealThumb={thumbRevealKey} source={folderSource}
                        onPress={(i, e) => pressPhoto(e, {
                          count: () => dragSet(i).length,
                          from: () => [...new Set(dragSet(i).filter((p) => !isRemote(p)).map((p) => parentDir(p.path)))],
@@ -7431,6 +7479,7 @@ export default function App() {
                          // a comparison's candidate waits for its photo to be read, and so
                          // does a virtual copy: by its path alone, the original would open
                          if ((compare !== null && !double) || k.copy) return;
+                         if (isOffline(k.path, folderSource)) { setStatus(t("app.status.photoOffline", { name: k.filename })); return; }
                          if (double) { setCompare(null); setGrid(false); }
                          setSelection(new Set());
                          void openFile(k.path);

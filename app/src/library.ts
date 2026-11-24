@@ -7,6 +7,7 @@ import { commands } from "./commands";
 import { listen } from "@tauri-apps/api/event";
 import { fetchImmichThumb } from "./immich";
 import { settings } from "./settings";
+import type { FolderSource } from "./folderSource";
 
 export type Exif = {
   maker: string; model: string; lens: string;
@@ -60,18 +61,26 @@ export const LABEL_COLORS = ["#e5484d", "#f5c518", "#46a758", "#3e7bfa", "#9b5de
 // reads it, with how far it has got, and once before the first with every
 // file to be read (`files`, in the order they will come). before that, for
 // a folder read before, it hears what the last read found (`known`). `skip` lists
-// subfolders taken off the folder tree, left out of `recursive`. opening
+// subfolders taken off the folder tree, left out of `recursive`. `onSource`
+// hears, after the photos of a folder under the morfPhoto mapping are out,
+// whether its drive is offline and whether they are the local copy of the
+// catalog (folderSource.ts). opening
 // another folder stops this one, which then rejects with "superseded"
 let folderToken = 0;
 export async function openFolder(path: string, recursive = false, skip: string[] = [],
                                  onBatch?: (images: ImageEntry[], done: number, total: number, files?: string[],
                                             known?: Known[]) => void,
+                                 onSource?: (source: FolderSource) => void,
 ): Promise<ImageEntry[]> {
   const token = ++folderToken;
   type Progress = { token: number; done: number; total: number; images: ImageEntry[]; files?: string[]; known?: Known[] };
   const off = await listen<Progress>("folder-progress", (e) => {
     const p = e.payload;
     if (p.token === token && token === folderToken) onBatch?.(p.images, p.done, p.total, p.files, p.known);
+  });
+  const offSource = await listen<FolderSource & { token: number }>("folder-source", (e) => {
+    const { token: from, ...source } = e.payload;
+    if (from === token && token === folderToken) onSource?.(source);
   });
   try {
     if (token !== folderToken) throw "superseded";
@@ -83,6 +92,8 @@ export async function openFolder(path: string, recursive = false, skip: string[]
     throw e;
   } finally {
     off();
+    // the event follows the rows, and may land just after the reply
+    window.setTimeout(offSource, 1500);
   }
 }
 

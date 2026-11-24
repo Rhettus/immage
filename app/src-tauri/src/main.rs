@@ -283,6 +283,13 @@ fn main() {
                 let tagged = engine.tagged();
                 morf_mirror::Mirror::start(&runtime, move || tagged.quiet_for())
             };
+            {
+                // the sync thread calls this with no lock held
+                let events = app.handle().clone();
+                mirror.set_events(move |dirs, all| {
+                    let _ = events.emit("mirror-changed", serde_json::json!({ "dirs": dirs, "all": all }));
+                });
+            }
             let search_analysis = search_analysis::start(
                 app.handle().clone(),
                 search_cache.clone(),

@@ -54,7 +54,10 @@ Open the **Folders** card in the **Library** panel.
   treated as a network share. If that share isn't mounted, its drive heading
   gets a red dot and its folders can't be opened or browsed, and nothing in
   them is changed. The dot turns green and the folders are read again once the
-  share is mounted.
+  share is mounted. With morfPhoto and Immage Accelerator on, the folders
+  instead list their photos from Immage's local copy of the morfPhoto catalog,
+  each with a small red dot; those photos can't be opened until the share is
+  mounted (see [Immage Accelerator](immage-accelerator.md#local-catalog)).
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
   after the file it is on. Photos you opened before appear straight away from

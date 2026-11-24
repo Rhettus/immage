@@ -14,6 +14,7 @@ import { SecondaryClickGuard } from "./secondaryClick";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
+import { isOffline, type FolderSource } from "./folderSource";
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -22,7 +23,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 export function Filmstrip({ images, stackBadges, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack, revealThumb = 0 }: {
+                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack, revealThumb = 0, source = null }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
@@ -43,6 +44,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
   onToggleStack?: (badge: StackBadge) => void; // expand or collapse stack
   revealThumb?: number;
+  source?: FolderSource | null;           // the morfPhoto folder's drive: photos on it offline get a red dot
 }) {
   const strip = useRef<HTMLDivElement>(null);
   // the cell after the last, which asks for the next page of results
@@ -192,7 +194,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {images.map((i) => !("imgid" in i)
-        ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid} />
+        ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid}
+                     offline={isOffline(i.path, source)} />
         : (
         (() => {
           const stack = stackBadges.get(i.imgid);
@@ -201,7 +204,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
             <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
                       stack={stack} types={types}
                       active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
-                      candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null} />
+                      candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null}
+                      offline={isOffline(i.path, source)} />
           );
         })()
       ))}
@@ -211,15 +215,22 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   );
 }
 
+// a photo whose drive is offline: listed from the local copy of the catalog,
+// its original out of reach. the red of the drive heading's offline dot
+function OfflineDot() {
+  return <span className="thumb-offline" role="img" aria-label={t("library.filmstrip.offline")} title={t("library.filmstrip.offline")} />;
+}
+
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
 export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress" | "onToggleStack">;
 
 // one photo's filmstrip cell
-export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, stack, types, active, selected, candidate, doubleOpens }: {
+export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, stack, types, active, selected, candidate, doubleOpens, offline = false }: {
   entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
   stack?: StackBadge; types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
+  offline?: boolean;
 }) {
   const clickGuard = useRef(new SecondaryClickGuard());
   return (
@@ -257,7 +268,7 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, sta
           <span className="thumb-type">{types}{copyName(i)}</span>
         )}
       </div>
-      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} /></div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} />{offline && <OfflineDot />}</div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}
       <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
@@ -285,8 +296,8 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, sta
 
 // a photo known from the folder's last read, not yet read by this one: as
 // it was then, and read-only until it is read, when a FilmCell takes its place
-export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open, doubleOpens }: {
-  entry: Known; loader: ThumbLoader; cell: React.CSSProperties;
+export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open, doubleOpens, offline = false }: {
+  entry: Known; loader: ThumbLoader; cell: React.CSSProperties; offline?: boolean;
   open: React.RefObject<(k: Known, double: boolean) => void>; doubleOpens: boolean;
 }) {
   return (
@@ -298,7 +309,7 @@ export const KnownCell = memo(function KnownCell({ entry: i, loader, cell, open,
         {i.edited && <span className="thumb-edited" title={t("library.filmstrip.edited")}><SlidersIcon /></span>}
         <span className="thumb-type">{(i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase()}{copyName(i)}</span>
       </div>
-      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} /></div>
+      <div className="thumb-image"><ThumbCanvas loader={loader} imgid={knownKey(i)} dogEar={!!i.copy} />{offline && <OfflineDot />}</div>
       <div className="thumb-foot read-only">
         {i.rejected && <button className="thumb-reject on" disabled>✕</button>}
         <span className="thumb-stars">

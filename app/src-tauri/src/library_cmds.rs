@@ -31,7 +31,16 @@ use crate::repo_root;
 // so the client can lay out a cell for each. a newer call (another `token`)
 // stops this one. returns every image: ratings, labels and EXIF summary.
 // `skip` names subfolders taken off the folder tree, which `recursive`
-// leaves out with their own subfolders
+// leaves out with their own subfolders.
+// a folder under the morfPhoto mapping is read in this order: the local copy
+// of the catalog (morf_mirror.rs) goes out as `known` first; then the server's
+// /index/status is asked for at most PROBE_TIMEOUT. its catalog and high-water
+// mark equal the copy's: the copy is the final list, with no catalog request.
+// not equal: the server's streaming listing, the copy standing in if that
+// fails. no answer: the copy stands, and a "folder-source" event says it is
+// the local copy. no copy at all: the server's listing, then the files.
+// "folder-source" follows every published mapped listing with whether the
+// mapped drive is offline, from the cached drive state only
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path: String, recursive: Option<bool>,
@@ -42,43 +51,75 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     let snapshot = snapshot_path(&state.runtime, &path, recursive, skip.as_deref().unwrap_or_default());
     let dir = PathBuf::from(&path);
     let skip: HashSet<PathBuf> = skip.unwrap_or_default().into_iter().map(PathBuf::from).collect();
-    let known = {
+    let early = {
         let snapshot = snapshot.clone();
         let runtime = state.runtime.clone();
         let dir = dir.clone();
         let skip = skip.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            if let Some(known) = read_snapshot(&snapshot) {
-                return Some(known);
-            }
             let config = crate::morf_photo::load(&runtime);
+            let scope = mirror_scope(&config, &dir, recursive, &skip);
+            let listing = scope.as_deref()
+                .and_then(|scope| crate::morf_mirror::folder(&runtime, &config, scope, recursive));
+            if let Some(found) = &listing {
+                let known = known_value(found.images.iter()
+                    .filter(|image| visible_morf_path(Path::new(&image.path), &dir, &skip)));
+                return Early { known, listing, scope, config };
+            }
+            if let Some(known) = read_snapshot(&snapshot) {
+                return Early { known: Some(known), listing: None, scope, config };
+            }
+            let mut known = None;
             if config.covers(&dir) {
                 if let Some(mut images) = config.read_cached_listing(&runtime, &dir, recursive) {
                     images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
-                    if let Ok(Value::Array(mut list)) = serde_json::to_value(images) {
-                        for item in &mut list {
-                            if let Some(obj) = item.as_object_mut() {
-                                obj.remove("imgid");
-                            }
-                        }
-                        return Some(Value::Array(list));
-                    }
+                    known = known_value(images.iter());
                 }
             }
-            None
+            Early { known, listing: None, scope, config }
         }).await.map_err(|e| e.to_string())?
     };
+    let Early { known, listing, scope, config } = early;
     if let Some(known) = known {
         let _ = app.emit("folder-progress", json!({ "token": token, "done": 0, "total": 0, "images": [],
                                                     "known": known }));
     }
-    let supplied = {
+    // the copy served this read, or will stand in for it: have the sync catch up
+    let mut mirror = listing.zip(scope);
+    if mirror.is_some() {
+        state.mirror.kick();
+    }
+    let plan = match &mirror {
+        Some((listing, _)) => {
+            let (stamp, probe_config) = (listing.stamp(), config.clone());
+            let probe = tauri::async_runtime::spawn_blocking(move || crate::morf_mirror::probe_status(&probe_config))
+                .await.map_err(|e| e.to_string())?;
+            if state.folder_token.load(Ordering::SeqCst) != token {
+                return Err("superseded".into());
+            }
+            crate::morf_mirror::plan(Some(&stamp), &probe)
+        }
+        None => crate::morf_mirror::Plan::Server,
+    };
+    let supplied = match (plan, mirror.take()) {
+        (crate::morf_mirror::Plan::Mirror { local_copy }, Some((listing, scope))) => {
+            let (handle, dir, skip) = (app.clone(), dir.clone(), skip.clone());
+            Some(tauri::async_runtime::spawn_blocking(move ||
+                mirror_supplied(&handle, listing, scope, &dir, &skip, token, local_copy))
+                .await.map_err(|e| e.to_string())?)
+        }
+        (_, fallback) => {
         let (handle, dir, skip) = (app.clone(), dir.clone(), skip.clone());
+        let config = config.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let state = handle.state::<AppState>();
-            let config = crate::morf_photo::load(&state.runtime);
-            let mapped = mapped_folder_scope(&config, &dir, recursive, &skip)?;
             let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
+            // the server cannot list the folder: the local copy stands in
+            let local = |fallback: Option<(crate::morf_mirror::MirrorListing, PathBuf)>| fallback.map(|(listing, scope)|
+                mirror_supplied(&handle, listing, scope, &dir, &skip, token, true));
+            let Some(mapped) = mapped_folder_scope(&config, &dir, recursive, &skip) else {
+                return local(fallback);
+            };
             let stream_emit = mapped == dir;
             let mut emitted_pages = 0usize;
             let mut streamed_images = Vec::new();
@@ -120,25 +161,31 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                 },
             ) {
                 Ok((mut images, cache_write)) => {
+                    let note = Some(SourceNote { local_copy: false, synced_at: None });
                     if stream_emit && emitted_pages > 0 {
-                        Some((mapped, streamed_images, Some(streamed_files), cache_write, true))
+                        Some(Supplied { mapped, images: streamed_images, files: Some(streamed_files), cache_write, streamed: true, note })
                     } else {
                         images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
                         if let Some(index) = state.search_cache.as_deref() {
                             supplement_morf_folder_metadata(index, &mut images, cancelled);
                         }
-                        Some((mapped, images, None, cache_write, false))
+                        Some(Supplied { mapped, images, files: None, cache_write, streamed: false, note })
                     }
                 }
                 Err(reason) => {
                     eprintln!("morfPhoto catalog request failed: {reason}");
-                    if !cancelled() {
+                    if cancelled() {
+                        None
+                    } else if fallback.is_some() {
+                        local(fallback)
+                    } else {
                         let _ = handle.emit("morfphoto-fallback", mapped.to_string_lossy());
+                        None
                     }
-                    None
                 }
             }
         }).await.map_err(|e| e.to_string())?
+        }
     };
     if state.folder_token.load(Ordering::SeqCst) != token {
         return Err("superseded".into());
@@ -147,7 +194,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     let mut supplied_files = Vec::new();
     let mut skip = skip;
     let local_listing = supplied.is_none();
-    if let Some((mapped, images, streamed_files, cache_write, streamed)) = supplied {
+    if let Some(Supplied { mapped, images, files: streamed_files, cache_write, streamed, note }) = supplied {
         let complete = mapped == dir;
         skip.insert(mapped);
         if streamed {
@@ -162,6 +209,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             if let Some(write) = cache_write {
                 tauri::async_runtime::spawn_blocking(move || write.persist());
             }
+            announce_source(&app, token, &config, note).await;
             return Ok(FolderReply { images, unanswered: Vec::new() });
         }
         for mut image in images {
@@ -180,6 +228,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             if let Some(write) = cache_write {
                 tauri::async_runtime::spawn_blocking(move || write.persist());
             }
+            announce_source(&app, token, &config, note).await;
             return serde_json::from_value(json!({ "images": supplied_images }))
                 .map_err(|e| format!("open_folder: unexpected reply: {e}"));
         }
@@ -188,6 +237,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
         if let Some(write) = cache_write {
             tauri::async_runtime::spawn_blocking(move || write.persist());
         }
+        announce_source(&app, token, &config, note).await;
     }
     let there = {
         let dir = dir.clone();
@@ -353,6 +403,85 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
     }
     serde_json::from_value(json!({ "images": images, "unanswered": unanswered }))
         .map_err(|e| format!("open_folder: unexpected reply: {e}"))
+}
+
+// what the first, quick read of a folder found
+struct Early {
+    known: Option<Value>,
+    // the local copy of the catalog for this folder, with the mapped scope it covers
+    listing: Option<crate::morf_mirror::MirrorListing>,
+    scope: Option<PathBuf>,
+    config: crate::morf_photo::Config,
+}
+
+// a mapped folder's listing, ready to publish
+struct Supplied {
+    mapped: PathBuf,
+    images: Vec<LibraryImage>,
+    files: Option<Vec<String>>,
+    cache_write: Option<crate::morf_photo::CatalogCacheWrite>,
+    streamed: bool,
+    note: Option<SourceNote>,
+}
+
+// where a published mapped listing came from
+struct SourceNote {
+    // the server did not confirm it: the local copy of the catalog
+    local_copy: bool,
+    synced_at: Option<i64>,
+}
+
+// images as the page's `known` list: without the engine's ids
+fn known_value<'a>(images: impl Iterator<Item = &'a LibraryImage>) -> Option<Value> {
+    let mut list = Vec::new();
+    for image in images {
+        let mut value = serde_json::to_value(image).ok()?;
+        value.as_object_mut()?.remove("imgid");
+        list.push(value);
+    }
+    Some(Value::Array(list))
+}
+
+// The folders the local copy of the catalog serves: those under the mapped
+// root, mounted or not, or the root itself when a recursive read of a parent
+// includes it.
+fn mirror_scope(config: &crate::morf_photo::Config, dir: &Path, recursive: bool,
+                skip: &HashSet<PathBuf>) -> Option<PathBuf> {
+    if config.covers_local_copy(dir) { return Some(dir.to_path_buf()); }
+    let root = config.local_copy_root()?;
+    (recursive && root.starts_with(dir) && visible_morf_path(&root, dir, skip)).then_some(root)
+}
+
+// the local copy's photos as a folder listing, with the metadata the page
+// shows from Immage's own cache
+fn mirror_supplied(handle: &AppHandle, listing: crate::morf_mirror::MirrorListing, scope: PathBuf,
+                   dir: &Path, skip: &HashSet<PathBuf>, token: u64, local_copy: bool) -> Supplied {
+    let state = handle.state::<AppState>();
+    let cancelled = || state.folder_token.load(Ordering::SeqCst) != token;
+    let synced_at = listing.synced_at;
+    let mut images = listing.images;
+    images.retain(|image| visible_morf_path(Path::new(&image.path), dir, skip));
+    if let Some(index) = state.search_cache.as_deref() {
+        supplement_morf_folder_metadata(index, &mut images, cancelled);
+    }
+    Supplied { mapped: scope, images, files: None, cache_write: None, streamed: false,
+               note: Some(SourceNote { local_copy, synced_at }) }
+}
+
+// After a mapped folder's rows are out: whether its drive is offline (from the
+// cached drive state, never a fresh answer check) and whether the rows are the
+// local copy. A later event than the rows, so the grid never waits for it.
+async fn announce_source(app: &AppHandle, token: u64, config: &crate::morf_photo::Config, note: Option<SourceNote>) {
+    let Some(note) = note else { return };
+    let config = config.clone();
+    let Ok(payload) = tauri::async_runtime::spawn_blocking(move || {
+        let root = PathBuf::from(config.local_path.trim());
+        json!({ "token": token, "root": root.to_string_lossy(), "offline": volumes::cached_offline(&root),
+                "localCopy": note.local_copy, "syncedAt": note.synced_at })
+    }).await else { return };
+    if app.state::<AppState>().folder_token.load(Ordering::SeqCst) == token {
+        let _ = app.emit("folder-source", payload);
+    }
 }
 
 // the most a folder's opening waits for its files' sizes and times
@@ -1010,19 +1139,24 @@ pub(crate) async fn list_subfolders(app: AppHandle, path: String) -> Vec<SubFold
     tauri::async_runtime::spawn_blocking(move || {
         let config = crate::morf_photo::load(&app.state::<AppState>().runtime);
         let path = Path::new(&path);
+        let runtime = app.state::<AppState>().runtime.clone();
+        // the server first; when it does not answer, the local copy of the
+        // catalog; the file system only when neither knows the folder
         let indexed = |dir: &Path| -> Option<Vec<SubFolder>> {
-            if !config.covers(dir) { return None; }
-            let started = std::time::Instant::now();
-            match config.subfolders(dir) {
-                Ok(children) => Some(children.into_iter()
-                    .map(|(path, has_children)| subfolder(&path, has_children))
-                    .collect()),
-                Err(reason) => {
-                    eprintln!("morfPhoto folder tree request failed after {} ms: {reason}",
-                        started.elapsed().as_millis());
-                    None
+            if !config.covers_local_copy(dir) { return None; }
+            if config.covers(dir) {
+                let started = std::time::Instant::now();
+                match config.subfolders(dir) {
+                    Ok(children) => return Some(children.into_iter()
+                        .map(|(path, has_children)| subfolder(&path, has_children))
+                        .collect()),
+                    Err(reason) => eprintln!("morfPhoto folder tree request failed after {} ms: {reason}",
+                        started.elapsed().as_millis()),
                 }
             }
+            crate::morf_mirror::subfolders(&runtime, &config, dir).map(|children| children.into_iter()
+                .map(|(path, has_children)| subfolder(&path, has_children))
+                .collect())
         };
         let mut list = if let Some(list) = indexed(path) {
             list

@@ -22,29 +22,37 @@
 //! `Tagged::quiet_for()` is under `QUIET` (the user opened, rendered or browsed
 //! a photo a moment ago), at most `QUIET_CAP` per page. Every command here
 //! only reads or sets in-memory state.
+//!
+//! Readers (`folder`, `subfolders`) open their own read-only connection per
+//! call and take no lock at all, so they run on any blocking thread, never on
+//! the event loop. After a page that changed rows commits, the sync thread
+//! reports the changed directories through `events` (set once, no lock) with
+//! no lock held.
 
 use crate::morf_photo::{
-    encode_plus_query, header_str, read_response_body, Api, Config, PageOutcome, Version,
-    MAX_PAGE_BYTES, PAGE_SIZE, REQUEST_TIMEOUT,
+    encode_plus_query, header_str, library_image, read_response_body, Api, Config, ExifFields,
+    PageOutcome, Version, VersionFields, MAX_PAGE_BYTES, PAGE_SIZE, REQUEST_TIMEOUT,
 };
+use crate::typed_library::LibraryImage;
 use reqwest::header::{ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_NONE_MATCH};
 use reqwest::StatusCode;
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction};
+use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs::File,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Condvar, Mutex, PoisonError,
+        Arc, Condvar, Mutex, OnceLock, PoisonError,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub(crate) const FILE: &str = "morfphoto-mirror.sqlite";
 const LOCK: &str = "morfphoto-mirror.lock";
-const USER_VERSION: i64 = 1;
+const USER_VERSION: i64 = 2;
 const TICK: Duration = Duration::from_secs(60);
 const WAIT_SLICE: Duration = Duration::from_secs(5);
 const QUIET: Duration = Duration::from_millis(300);
@@ -57,6 +65,11 @@ const BACKOFF_DISK_FULL: Duration = Duration::from_secs(300);
 const PAGE_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_STATUS_BYTES: u64 = 65536;
 const CHANGES_LIMIT: usize = 500;
+// how long a folder read waits for the server's status before it shows the
+// local copy as final
+pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
+// directories one `mirror-changed` event names; more says "everything"
+const EVENT_DIRS: usize = 200;
 
 const SCHEMA: &str = "
 CREATE TABLE mirror_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -70,6 +83,7 @@ CREATE TABLE photos (
     make TEXT, model TEXT, lens TEXT, body_key TEXT, body_serial TEXT,
     camera_label TEXT, iso_label TEXT, aperture_label TEXT, focal_label TEXT, shutter_label TEXT,
     exif_taken_at TEXT,
+    iso REAL, aperture REAL, focal REAL, shutter_s REAL, exp_bias REAL,
     seq INTEGER NOT NULL DEFAULT 0,
     gen INTEGER NOT NULL DEFAULT 0
 );
@@ -85,6 +99,7 @@ CREATE TABLE versions (
     version INTEGER NOT NULL,
     copy INTEGER NOT NULL, rating INTEGER NOT NULL, rejected INTEGER NOT NULL,
     labels INTEGER NOT NULL, edited INTEGER NOT NULL, taken_at TEXT,
+    latitude REAL, longitude REAL,
     PRIMARY KEY (photo_id, version)
 ) WITHOUT ROWID;
 CREATE INDEX versions_rating ON versions(rating, rejected);
@@ -147,7 +162,12 @@ pub(crate) struct Mirror {
     // bumped by a reset; a page fetched under an older value is dropped
     generation: AtomicU64,
     quiet: Box<dyn Fn() -> Duration + Send + Sync>,
+    // told the changed local directories (and whether there were too many to
+    // list) after a page commits; set once by the app
+    events: OnceLock<Events>,
 }
+
+type Events = Box<dyn Fn(Vec<String>, bool) + Send + Sync>;
 
 // everything the sync thread keeps between cycles
 struct Worker {
@@ -241,6 +261,22 @@ impl Mirror {
             stopping: AtomicBool::new(false),
             generation: AtomicU64::new(0),
             quiet: Box::new(quiet),
+            events: OnceLock::new(),
+        }
+    }
+
+    // `mirror-changed`: the sync thread calls it with no lock held
+    pub(crate) fn set_events(&self, emit: impl Fn(Vec<String>, bool) + Send + Sync + 'static) {
+        let _ = self.events.set(Box::new(emit));
+    }
+
+    fn announce(&self, config: &Config, dirs: &BTreeSet<String>) {
+        if dirs.is_empty() {
+            return;
+        }
+        if let Some(emit) = self.events.get() {
+            let (list, all) = local_dirs(config, dirs, EVENT_DIRS);
+            emit(list, all);
         }
     }
 
@@ -511,21 +547,7 @@ impl Mirror {
                 .ok_or_else(|| Fail::message("Unexpected HTTP 304 from morfPhoto")),
             Fetched::NotFound => Err(Fail::message("morfPhoto index status unavailable")),
             Fetched::Body { bytes, etag } => {
-                let value: Value = serde_json::from_slice(&bytes)
-                    .map_err(|_| Fail::message("Invalid morfPhoto index status"))?;
-                let text = |key: &str| {
-                    value
-                        .get(key)
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_owned)
-                };
-                let status = ServerStatus {
-                    catalog_id: text("catalog_id"),
-                    high_water: value.get("high_water").and_then(Value::as_i64),
-                    revision: text("catalog_revision"),
-                };
+                let status = parse_status(&bytes)?;
                 w.status_etag = etag;
                 w.last_status = Some(status.clone());
                 Ok(status)
@@ -601,7 +623,7 @@ impl Mirror {
                 return Err(Fail::message("morfPhoto change feed did not advance"));
             }
             let new_cursor = end_cursor(next, &reply.items, reply.high_water, cursor);
-            self.apply_delta(
+            let changed = self.apply_delta(
                 &mut w.conn,
                 &root,
                 &reply.items,
@@ -610,6 +632,7 @@ impl Mirror {
                 next.is_none(),
                 generation,
             )?;
+            self.announce(config, &changed);
             cursor = new_cursor;
             self.set_syncing(cursor.0.max(0) as u64, reply.high_water.max(0) as u64);
             self.load_summary(&w.conn);
@@ -632,9 +655,11 @@ impl Mirror {
         high_water: i64,
         complete: bool,
         generation: u64,
-    ) -> Result<(), Fail> {
+    ) -> Result<BTreeSet<String>, Fail> {
         let tx = conn.transaction()?;
+        let mut changed = BTreeSet::new();
         for item in items {
+            changed.insert(item.path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned());
             if item.state == "present" && under_root(root, &item.path) {
                 upsert_file(&tx, item.id, &item.path, &item.fields, &item.versions, item.seq, 0)?;
             } else {
@@ -654,7 +679,7 @@ impl Mirror {
             return Err(Fail::Aborted);
         }
         tx.commit()?;
-        Ok(())
+        Ok(changed)
     }
 
     // Servers without /library/changes: page the whole recursive listing,
@@ -914,6 +939,10 @@ fn text(fields: &Map<String, Value>, keys: &[&str]) -> Option<String> {
     })
 }
 
+fn real(fields: &Map<String, Value>, key: &str) -> Option<f64> {
+    fields.get(key).and_then(Value::as_f64)
+}
+
 fn int(fields: &Map<String, Value>, key: &str) -> Option<i64> {
     fields.get(key).and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
 }
@@ -939,9 +968,10 @@ fn upsert_file(
     tx.prepare_cached(
         "INSERT INTO photos (id, server_path, dir, filename, extension, kind, size, mtime,
              sidecar_fp, make, model, lens, body_key, body_serial, camera_label, iso_label,
-             aperture_label, focal_label, shutter_label, exif_taken_at, seq, gen)
+             aperture_label, focal_label, shutter_label, exif_taken_at, iso, aperture, focal,
+             shutter_s, exp_bias, seq, gen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-             ?18, ?19, ?20, ?21, ?22)
+             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
          ON CONFLICT(id) DO UPDATE SET
              server_path = excluded.server_path, dir = excluded.dir,
              filename = excluded.filename, extension = excluded.extension,
@@ -951,7 +981,10 @@ fn upsert_file(
              body_serial = excluded.body_serial, camera_label = excluded.camera_label,
              iso_label = excluded.iso_label, aperture_label = excluded.aperture_label,
              focal_label = excluded.focal_label, shutter_label = excluded.shutter_label,
-             exif_taken_at = excluded.exif_taken_at, seq = excluded.seq, gen = excluded.gen",
+             exif_taken_at = excluded.exif_taken_at, iso = excluded.iso,
+             aperture = excluded.aperture, focal = excluded.focal,
+             shutter_s = excluded.shutter_s, exp_bias = excluded.exp_bias,
+             seq = excluded.seq, gen = excluded.gen",
     )?
     .execute(params![
         id,
@@ -974,6 +1007,11 @@ fn upsert_file(
         text(fields, &["focal_label"]),
         text(fields, &["shutter_label"]),
         taken,
+        real(fields, "iso"),
+        real(fields, "aperture"),
+        real(fields, "focal_length"),
+        real(fields, "shutter_speed_s"),
+        real(fields, "exposure_compensation"),
         seq,
         generation,
     ])?;
@@ -983,7 +1021,8 @@ fn upsert_file(
         .execute(params![id])?;
     let mut insert_version = tx.prepare_cached(
         "INSERT OR REPLACE INTO versions (photo_id, version, copy, rating, rejected, labels,
-             edited, taken_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             edited, taken_at, latitude, longitude)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )?;
     let mut insert_keyword = tx.prepare_cached(
         "INSERT OR IGNORE INTO keywords (photo_id, version, keyword) VALUES (?1, ?2, ?3)",
@@ -998,6 +1037,8 @@ fn upsert_file(
             version.labels & 31,
             version.edited.unwrap_or(false),
             version.taken_at,
+            version.latitude,
+            version.longitude,
         ])?;
         for keyword in &version.keywords {
             insert_keyword.execute(params![id, version.version, keyword])?;
@@ -1164,6 +1205,410 @@ fn open_or_quarantine(path: &Path) -> Option<Connection> {
     }
 }
 
+fn parse_status(bytes: &[u8]) -> Result<ServerStatus, Fail> {
+    let value: Value =
+        serde_json::from_slice(bytes).map_err(|_| Fail::message("Invalid morfPhoto index status"))?;
+    let text = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    Ok(ServerStatus {
+        catalog_id: text("catalog_id"),
+        high_water: value.get("high_water").and_then(Value::as_i64),
+        revision: text("catalog_revision"),
+    })
+}
+
+// the local directory of a server directory (the mapped root itself included)
+fn local_dir(config: &Config, server_dir: &str) -> Option<PathBuf> {
+    if server_dir == config.server_root() {
+        return Some(PathBuf::from(config.local_path.trim()));
+    }
+    config.local_file(server_dir).ok()
+}
+
+// The local directories a page changed, at most `cap`; `true` when there were
+// more, which tells the page to treat every open folder as changed.
+fn local_dirs(config: &Config, server_dirs: &BTreeSet<String>, cap: usize) -> (Vec<String>, bool) {
+    let dirs: BTreeSet<String> = server_dirs
+        .iter()
+        .filter_map(|dir| local_dir(config, dir))
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .collect();
+    let all = dirs.len() > cap;
+    (dirs.into_iter().take(cap).collect(), all)
+}
+
+// ---- readers ----
+
+// what a folder read needs to know about a listing to compare it with the
+// server: the catalog it came from, how far the copy had caught up, and
+// whether a full sync had finished
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Stamp {
+    pub(crate) catalog_id: String,
+    pub(crate) high_water: Option<i64>,
+    pub(crate) complete: bool,
+}
+
+pub(crate) struct MirrorListing {
+    pub(crate) images: Vec<LibraryImage>,
+    pub(crate) catalog_id: String,
+    pub(crate) high_water: Option<i64>,
+    pub(crate) complete: bool,
+    // seconds since the epoch of the last time the copy was checked current
+    pub(crate) synced_at: Option<i64>,
+}
+
+impl MirrorListing {
+    pub(crate) fn stamp(&self) -> Stamp {
+        Stamp {
+            catalog_id: self.catalog_id.clone(),
+            high_water: self.high_water,
+            complete: self.complete,
+        }
+    }
+}
+
+// a read-only connection of its own; None when there is no mirror file yet
+fn open_reader(runtime: &Path) -> Option<Connection> {
+    let path = runtime.join(FILE);
+    if !path.exists() {
+        return None;
+    }
+    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    conn.busy_timeout(Duration::from_secs(2)).ok()?;
+    conn.pragma_update(None, "query_only", "ON").ok()?;
+    Some(conn)
+}
+
+struct Identity {
+    catalog_id: String,
+    high_water: Option<i64>,
+    complete: bool,
+    synced_at: Option<i64>,
+}
+
+// Read inside the same read transaction as the rows, so a reset between the two
+// cannot pair one catalog's identity with another's rows. None unless the copy
+// belongs to the server and folder the Accelerator is set to now.
+fn read_identity(conn: &Connection, config: &Config) -> Option<Identity> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).ok()?;
+    if version != USER_VERSION {
+        return None;
+    }
+    if meta_get(conn, "origin").ok()??.as_str() != config.origin().ok()?
+        || meta_get(conn, "server_root").ok()??.as_str() != config.server_root()
+    {
+        return None;
+    }
+    let number = |key: &str| meta_get(conn, key).ok().flatten().and_then(|v| v.parse::<i64>().ok());
+    Some(Identity {
+        catalog_id: meta_get(conn, "catalog_id").ok()??,
+        high_water: number("high_water"),
+        complete: meta_get(conn, "complete").ok().flatten().as_deref() == Some("1"),
+        synced_at: number("synced_at"),
+    })
+}
+
+// Range predicates, not LIKE: `dir` is the folder, or in a subtree every
+// string from "<folder>/" up to (not including) "<folder>0", '0' being the
+// character after '/'. A sibling "<folder>b" falls outside both.
+fn scope(base: &str, recursive: bool) -> (&'static str, Vec<String>) {
+    if recursive {
+        (
+            "(p.dir = ?1 OR (p.dir >= ?2 AND p.dir < ?3))",
+            vec![base.to_owned(), format!("{base}/"), format!("{base}0")],
+        )
+    } else {
+        ("p.dir = ?1", vec![base.to_owned()])
+    }
+}
+
+struct Row {
+    id: i64,
+    path: String,
+    exif: ExifFields,
+    version: VersionFields,
+}
+
+// Where Immage runs on a case-insensitive file system, two server paths that
+// differ only in case are one local file.
+const FOLD_CASE: bool = cfg!(any(windows, target_os = "macos"));
+
+// The photos of one folder (and with `recursive` its subfolders) from the local
+// copy, as the server's listing would give them. None when there is no copy of
+// this server and folder, or the file cannot be read. Never on the event loop.
+pub(crate) fn folder(
+    runtime: &Path,
+    config: &Config,
+    local: &Path,
+    recursive: bool,
+) -> Option<MirrorListing> {
+    let base = config.server_folder(local).ok()?;
+    let base = base.trim_end_matches('/');
+    let mut conn = open_reader(runtime)?;
+    let tx = conn.transaction().ok()?;
+    let identity = read_identity(&tx, config)?;
+    let (rows, keywords) = read_rows(&tx, base, recursive).ok()?;
+    drop(tx);
+    let images = build_images(config, local, recursive, rows, keywords, FOLD_CASE);
+    Some(MirrorListing {
+        images,
+        catalog_id: identity.catalog_id,
+        high_water: identity.high_water,
+        complete: identity.complete,
+        synced_at: identity.synced_at,
+    })
+}
+
+type Keywords = HashMap<(i64, u32), Vec<String>>;
+
+fn read_rows(
+    tx: &Connection,
+    base: &str,
+    recursive: bool,
+) -> Result<(Vec<Row>, Keywords), rusqlite::Error> {
+    let (predicate, bound) = scope(base, recursive);
+    let mut statement = tx.prepare(&format!(
+        "SELECT p.id, p.server_path, p.make, p.model, p.lens, p.body_serial, p.iso, p.aperture,
+                p.focal, p.shutter_s, p.exp_bias, p.mtime,
+                v.version, v.copy, v.rating, v.rejected, v.labels, v.edited, v.taken_at,
+                v.latitude, v.longitude
+         FROM photos p JOIN versions v ON v.photo_id = p.id
+         WHERE {predicate} ORDER BY p.server_path, v.version"
+    ))?;
+    let text = |r: &rusqlite::Row, i: usize| -> Result<String, rusqlite::Error> {
+        Ok(r.get::<_, Option<String>>(i)?.unwrap_or_default())
+    };
+    let real = |r: &rusqlite::Row, i: usize| -> Result<f64, rusqlite::Error> {
+        Ok(r.get::<_, Option<f64>>(i)?.unwrap_or(0.0))
+    };
+    let rows = statement
+        .query_map(params_from_iter(bound.iter()), |r| {
+            Ok(Row {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                exif: ExifFields {
+                    maker: text(r, 2)?,
+                    model: text(r, 3)?,
+                    lens: text(r, 4)?,
+                    body_serial: text(r, 5)?,
+                    iso: real(r, 6)?,
+                    aperture: real(r, 7)?,
+                    focal: real(r, 8)?,
+                    shutter: real(r, 9)?,
+                    bias: real(r, 10)?,
+                    mtime: r.get(11)?,
+                },
+                version: VersionFields {
+                    version: r.get(12)?,
+                    copy: r.get(13)?,
+                    rating: r.get(14)?,
+                    rejected: r.get(15)?,
+                    labels: r.get(16)?,
+                    edited: Some(r.get(17)?),
+                    taken_at: r.get(18)?,
+                    latitude: r.get(19)?,
+                    longitude: r.get(20)?,
+                    keywords: Vec::new(),
+                },
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut statement = tx.prepare(&format!(
+        "SELECT k.photo_id, k.version, k.keyword FROM keywords k
+         JOIN photos p ON p.id = k.photo_id WHERE {predicate}
+         ORDER BY k.photo_id, k.version, k.keyword"
+    ))?;
+    let mut keywords: Keywords = HashMap::new();
+    for found in statement.query_map(params_from_iter(bound.iter()), |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?, r.get::<_, String>(2)?))
+    })? {
+        let (id, version, keyword) = found?;
+        keywords.entry((id, version)).or_default().push(keyword);
+    }
+    Ok((rows, keywords))
+}
+
+// the rows' images, mapped to local paths exactly as `Photo::images` maps the
+// server's listing; a row that does not map (or is not a photo) is left out
+fn build_images(
+    config: &Config,
+    local: &Path,
+    recursive: bool,
+    rows: Vec<Row>,
+    mut keywords: Keywords,
+    fold_case: bool,
+) -> Vec<LibraryImage> {
+    // the lowest id wins a path that exists twice in different case
+    let mut winners: HashMap<String, i64> = HashMap::new();
+    let mut mapped: HashMap<i64, PathBuf> = HashMap::new();
+    for row in &rows {
+        if mapped.contains_key(&row.id) {
+            continue;
+        }
+        let Ok(path) = config.local_file(&row.path) else { continue };
+        if !path.starts_with(local) || (!recursive && path.parent() != Some(local)) {
+            continue;
+        }
+        if !crate::library_cmds::photo_candidate(&path) {
+            continue;
+        }
+        if fold_case {
+            let key = path.to_string_lossy().to_lowercase();
+            match winners.get(&key) {
+                Some(&first) if first != row.id => {
+                    eprintln!("morfPhoto local catalog: {} repeats a path in another case", row.path);
+                    if row.id < first {
+                        winners.insert(key, row.id);
+                    }
+                }
+                Some(_) => {}
+                None => {
+                    winners.insert(key, row.id);
+                }
+            }
+        }
+        mapped.insert(row.id, path);
+    }
+    let mut images = Vec::with_capacity(rows.len());
+    for mut row in rows {
+        let Some(path) = mapped.get(&row.id) else { continue };
+        if fold_case && winners.get(&path.to_string_lossy().to_lowercase()) != Some(&row.id) {
+            continue;
+        }
+        let Some(filename) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        row.version.keywords = keywords.remove(&(row.id, row.version.version)).unwrap_or_default();
+        if let Ok(image) = library_image(path, filename, &row.exif, row.version) {
+            images.push(image);
+        }
+    }
+    images
+}
+
+// The folders directly under `local` that hold photos, or have folders with
+// photos below them, and whether each has folders of its own. None when the
+// copy knows nothing under this folder, so the caller reads the file system.
+pub(crate) fn subfolders(
+    runtime: &Path,
+    config: &Config,
+    local: &Path,
+) -> Option<Vec<(PathBuf, bool)>> {
+    let base = config.server_folder(local).ok()?;
+    let base = base.trim_end_matches('/');
+    let mut conn = open_reader(runtime)?;
+    let tx = conn.transaction().ok()?;
+    read_identity(&tx, config)?;
+    let (low, high) = (format!("{base}/"), format!("{base}0"));
+    let mut statement = tx
+        .prepare("SELECT DISTINCT dir FROM photos WHERE dir >= ?1 AND dir < ?2")
+        .ok()?;
+    let dirs = statement
+        .query_map(params![low, high], |r| r.get::<_, String>(0))
+        .ok()?
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    drop(statement);
+    drop(tx);
+    let children = child_names(&low, &dirs);
+    let found: Vec<(PathBuf, bool)> = children
+        .into_iter()
+        .filter_map(|(name, has_children)| {
+            config.local_file(&format!("{low}{name}")).ok().map(|path| (path, has_children))
+        })
+        .collect();
+    (!found.is_empty()).then_some(found)
+}
+
+// the first folder name after `prefix` in each directory, and whether any
+// directory goes deeper. A hidden (dot) folder, and anything below one, is
+// left out as the folder tree leaves it out.
+fn child_names(prefix: &str, dirs: &[String]) -> BTreeMap<String, bool> {
+    let mut children: BTreeMap<String, bool> = BTreeMap::new();
+    for dir in dirs {
+        let Some(rest) = dir.strip_prefix(prefix) else { continue };
+        let mut parts = rest.split('/');
+        let Some(name) = parts.next().filter(|n| !n.is_empty()) else { continue };
+        if rest.split('/').any(|part| part.starts_with('.')) {
+            continue;
+        }
+        let deeper = parts.next().is_some();
+        let entry = children.entry(name.to_owned()).or_insert(false);
+        *entry |= deeper;
+    }
+    children
+}
+
+// ---- the folder read's decision ----
+
+// what the server's status said, within PROBE_TIMEOUT
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Probe {
+    // no answer, or an error answer: the server cannot confirm anything
+    Unreachable,
+    Status { catalog_id: Option<String>, high_water: Option<i64> },
+}
+
+// Asks /index/status once, for at most PROBE_TIMEOUT. Blocking: runs on a
+// blocking thread, never the event loop.
+pub(crate) fn probe_status(config: &Config) -> Probe {
+    match config.client(None) {
+        Ok(mut api) => probe_with(&mut api, PROBE_TIMEOUT),
+        Err(_) => Probe::Unreachable,
+    }
+}
+
+fn probe_with(api: &mut Api, timeout: Duration) -> Probe {
+    match fetch(api, Route::Status, &[], None, timeout, MAX_STATUS_BYTES) {
+        Ok(Fetched::Body { bytes, .. }) => match parse_status(&bytes) {
+            Ok(status) => Probe::Status { catalog_id: status.catalog_id, high_water: status.high_water },
+            Err(_) => Probe::Unreachable,
+        },
+        // an older server without the status route cannot confirm the copy
+        Ok(Fetched::NotFound | Fetched::NotModified) => {
+            Probe::Status { catalog_id: None, high_water: None }
+        }
+        Err(_) => Probe::Unreachable,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Plan {
+    // the local copy is the final list; `local_copy` says the server did not
+    // confirm it, so the page tells the user
+    Mirror { local_copy: bool },
+    // today's listing from the server; if it fails the local copy stands
+    Server,
+}
+
+// The folder read's order after the local copy has been shown (AGENTS.md:
+// visible result first). No rows: the server. The server's catalog and
+// high-water mark equal the copy's and the copy is complete: the copy is final
+// with no catalog request. Not confirmed: the server's listing. Unreachable:
+// the copy stands, marked as the local copy.
+pub(crate) fn plan(listing: Option<&Stamp>, probe: &Probe) -> Plan {
+    let Some(stamp) = listing else { return Plan::Server };
+    match probe {
+        Probe::Unreachable => Plan::Mirror { local_copy: true },
+        Probe::Status { catalog_id, high_water } => {
+            let current = stamp.complete
+                && catalog_id.as_deref() == Some(stamp.catalog_id.as_str())
+                && high_water.is_some()
+                && *high_water == stamp.high_water;
+            if current {
+                Plan::Mirror { local_copy: false }
+            } else {
+                Plan::Server
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1213,7 +1658,7 @@ mod tests {
 
     fn apply(m: &Mirror, conn: &mut Connection, values: Vec<Value>, cursor: (i64, i64), complete: bool) {
         match m.apply_delta(conn, "/photos", &items(values), cursor, 10, complete, 0) {
-            Ok(()) => {}
+            Ok(_) => {}
             Err(Fail::Error { message, .. }) => panic!("{message}"),
             Err(_) => panic!("apply failed"),
         }
@@ -1619,5 +2064,256 @@ mod tests {
         assert!(m.kicked.load(Ordering::Acquire) && m.reset.load(Ordering::Acquire));
         done.send(()).unwrap();
         holder.join().unwrap();
+    }
+
+    // ---- readers ----
+
+    fn reader_config() -> Config {
+        config("http://nas.example:8080")
+    }
+
+    // a mirror in `dir` belonging to the reader config, holding `values`
+    fn filled(dir: &Path, values: Vec<Value>) {
+        let mut w = worker(dir);
+        let m = mirror();
+        apply(&m, &mut w.conn, values, (9, 9), true);
+        let tx = w.conn.transaction().unwrap();
+        write_identity(&tx, &reader_config()).unwrap();
+        meta_set(&tx, "catalog_id", "cat-1").unwrap();
+        meta_set(&tx, "high_water", "10").unwrap();
+        tx.commit().unwrap();
+    }
+
+    fn names(listing: &MirrorListing) -> Vec<String> {
+        listing.images.iter().map(|i| i.path.clone()).collect()
+    }
+
+    #[test]
+    fn a_reader_returns_nothing_unless_the_identity_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).is_none());
+        filled(dir.path(), vec![item(1, 1, "/photos/a.ARW", vec![version(0, 1, &[])])]);
+        let found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).unwrap();
+        assert_eq!((found.catalog_id.as_str(), found.high_water, found.complete), ("cat-1", Some(10), true));
+        assert_eq!(names(&found), vec!["/mnt/photos/a.ARW"]);
+        let mut other = reader_config();
+        other.url = "http://elsewhere.example:8080".into();
+        assert!(folder(dir.path(), &other, Path::new("/mnt/photos"), false).is_none());
+        let mut moved = reader_config();
+        moved.server_path = "/other".into();
+        assert!(folder(dir.path(), &moved, Path::new("/mnt/photos"), false).is_none());
+        assert!(subfolders(dir.path(), &other, Path::new("/mnt/photos")).is_none());
+    }
+
+    #[test]
+    fn a_reader_does_not_use_a_mirror_of_another_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        filled(dir.path(), vec![item(1, 1, "/photos/a.ARW", vec![version(0, 1, &[])])]);
+        let conn = Connection::open(dir.path().join(FILE)).unwrap();
+        conn.pragma_update(None, "user_version", USER_VERSION + 1).unwrap();
+        drop(conn);
+        assert!(folder(dir.path(), &reader_config(), Path::new("/mnt/photos"), false).is_none());
+    }
+
+    #[test]
+    fn recursive_reads_a_subtree_and_not_a_sibling_with_the_same_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = || vec![version(0, 1, &[])];
+        filled(dir.path(), vec![
+            item(1, 1, "/photos/top.ARW", v()),
+            item(2, 2, "/photos/2024/a.ARW", v()),
+            item(3, 3, "/photos/2024/june/b.ARW", v()),
+            item(4, 4, "/photos/2024b/c.ARW", v()),
+            item(5, 5, "/photos/2024-x/d.ARW", v()),
+            item(6, 6, "/photos/2023/e.ARW", v()),
+        ]);
+        let cfg = reader_config();
+        let year = Path::new("/mnt/photos/2024");
+        assert_eq!(names(&folder(dir.path(), &cfg, year, false).unwrap()), vec!["/mnt/photos/2024/a.ARW"]);
+        assert_eq!(
+            names(&folder(dir.path(), &cfg, year, true).unwrap()),
+            vec!["/mnt/photos/2024/a.ARW", "/mnt/photos/2024/june/b.ARW"]
+        );
+        let root = Path::new("/mnt/photos");
+        assert_eq!(names(&folder(dir.path(), &cfg, root, false).unwrap()), vec!["/mnt/photos/top.ARW"]);
+        assert_eq!(folder(dir.path(), &cfg, root, true).unwrap().images.len(), 6);
+    }
+
+    #[test]
+    fn the_local_copy_maps_exactly_as_the_server_listing_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let versions = vec![
+            json!({"version": 0, "copy": false, "rating": 4, "rejected": false, "labels": 33,
+                   "edited": true, "taken_at": "2026-06-01T10:11:12", "latitude": 48.5,
+                   "longitude": 2.25, "keywords": ["Trips|June", "Family"]}),
+            json!({"version": 2, "copy": true, "rating": 9, "rejected": true, "labels": 4,
+                   "edited": null, "taken_at": null, "latitude": 95.0, "longitude": 1.0,
+                   "keywords": []}),
+        ];
+        let json = json!({"id": 7, "seq": 7, "state": "present", "path": "/photos/2024/x.ARW",
+            "make": "Maker", "camera_model": "Model", "lens": "50mm", "body_serial": "S1",
+            "iso": 400, "aperture": 2.8, "focal_length": 50, "shutter_speed_s": 0.004,
+            "exposure_compensation": -0.7, "mtime": 1780000000, "versions": versions});
+        filled(dir.path(), vec![json.clone()]);
+        let photo: crate::morf_photo::Photo = serde_json::from_value(json).unwrap();
+        let mut expected = photo.images(Path::new("/mnt/photos/2024/x.ARW")).unwrap();
+        let mut found = folder(dir.path(), &reader_config(), Path::new("/mnt/photos/2024"), false)
+            .unwrap()
+            .images;
+        // keywords come back in the copy's alphabetical order
+        for image in expected.iter_mut().chain(found.iter_mut()) {
+            image.keywords.sort();
+        }
+        assert_eq!(found.len(), 2);
+        assert_eq!(serde_json::to_value(&found).unwrap(), serde_json::to_value(&expected).unwrap());
+        assert_eq!(found[0].morfphoto_preview, Some(true));
+    }
+
+    #[test]
+    fn a_path_repeated_in_another_case_keeps_the_lowest_id_where_case_is_folded() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = || vec![version(0, 1, &[])];
+        filled(dir.path(), vec![
+            item(8, 1, "/photos/Photo.ARW", v()),
+            item(3, 2, "/photos/photo.arw", v()),
+            item(5, 3, "/photos/other.ARW", v()),
+        ]);
+        let conn = open_reader(dir.path()).unwrap();
+        let read = |fold| {
+            let (rows, keywords) = read_rows(&conn, "/photos", false).unwrap();
+            build_images(&reader_config(), Path::new("/mnt/photos"), false, rows, keywords, fold)
+                .iter()
+                .map(|i| i.filename.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(read(true), vec!["other.ARW", "photo.arw"]);
+        assert_eq!(read(false).len(), 3);
+    }
+
+    #[test]
+    fn subfolders_come_from_the_directories_with_photos() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = || vec![version(0, 1, &[])];
+        filled(dir.path(), vec![
+            item(1, 1, "/photos/top.ARW", v()),
+            item(2, 2, "/photos/2024/a.ARW", v()),
+            item(3, 3, "/photos/2024/june/b.ARW", v()),
+            item(4, 4, "/photos/2024b/c.ARW", v()),
+            item(5, 5, "/photos/.hidden/d.ARW", v()),
+            item(6, 6, "/photos/trips/europe/paris/e.ARW", v()),
+        ]);
+        let cfg = reader_config();
+        let root = subfolders(dir.path(), &cfg, Path::new("/mnt/photos")).unwrap();
+        assert_eq!(
+            root,
+            vec![
+                (PathBuf::from("/mnt/photos/2024"), true),
+                (PathBuf::from("/mnt/photos/2024b"), false),
+                (PathBuf::from("/mnt/photos/trips"), true),
+            ]
+        );
+        let year = subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024")).unwrap();
+        assert_eq!(year, vec![(PathBuf::from("/mnt/photos/2024/june"), false)]);
+        // a folder the copy knows nothing under: the caller reads the files
+        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2024/june")).is_none());
+        assert!(subfolders(dir.path(), &cfg, Path::new("/mnt/photos/2023")).is_none());
+    }
+
+    fn stamp(catalog: &str, high_water: Option<i64>, complete: bool) -> Stamp {
+        Stamp { catalog_id: catalog.into(), high_water, complete }
+    }
+
+    fn status(catalog: Option<&str>, high_water: Option<i64>) -> Probe {
+        Probe::Status { catalog_id: catalog.map(str::to_owned), high_water }
+    }
+
+    #[test]
+    fn the_folder_read_plan_covers_every_branch() {
+        let current = stamp("c", Some(5), true);
+        // no rows: today's server listing
+        assert_eq!(plan(None, &status(Some("c"), Some(5))), Plan::Server);
+        assert_eq!(plan(None, &Probe::Unreachable), Plan::Server);
+        // the server confirms the copy: final, no catalog request
+        assert_eq!(plan(Some(&current), &status(Some("c"), Some(5))), Plan::Mirror { local_copy: false });
+        // a newer high-water mark, another catalog or a copy still catching up
+        assert_eq!(plan(Some(&current), &status(Some("c"), Some(6))), Plan::Server);
+        assert_eq!(plan(Some(&current), &status(Some("d"), Some(5))), Plan::Server);
+        assert_eq!(plan(Some(&stamp("c", Some(5), false)), &status(Some("c"), Some(5))), Plan::Server);
+        // an old server cannot confirm anything
+        assert_eq!(plan(Some(&current), &status(None, None)), Plan::Server);
+        assert_eq!(plan(Some(&stamp("snapshot", None, true)), &status(None, None)), Plan::Server);
+        // no answer: the copy stands, marked as the local copy
+        assert_eq!(plan(Some(&current), &Probe::Unreachable), Plan::Mirror { local_copy: true });
+        assert_eq!(plan(Some(&stamp("c", None, false)), &Probe::Unreachable), Plan::Mirror { local_copy: true });
+    }
+
+    #[test]
+    fn the_probe_reads_the_status_and_gives_up_on_a_dead_server() {
+        let server = Fake::new(|_| (200, json!({"catalog_id": "c", "high_water": 5})));
+        let mut api = config(&server.url).client(Some("key")).unwrap();
+        assert_eq!(
+            probe_with(&mut api, PROBE_TIMEOUT),
+            Probe::Status { catalog_id: Some("c".into()), high_water: Some(5) }
+        );
+        let old = Fake::new(|_| (404, json!({})));
+        let mut api = config(&old.url).client(Some("key")).unwrap();
+        assert_eq!(probe_with(&mut api, PROBE_TIMEOUT), Probe::Status { catalog_id: None, high_water: None });
+        let broken = Fake::new(|_| (500, json!({})));
+        let mut api = config(&broken.url).client(Some("key")).unwrap();
+        assert_eq!(probe_with(&mut api, PROBE_TIMEOUT), Probe::Unreachable);
+        let mut api = config("http://127.0.0.1:1").client(Some("key")).unwrap();
+        assert_eq!(probe_with(&mut api, PROBE_TIMEOUT), Probe::Unreachable);
+    }
+
+    #[test]
+    fn changed_directories_become_local_ones_and_are_capped() {
+        let cfg = reader_config();
+        let dirs: BTreeSet<String> =
+            ["/photos", "/photos/2024", "/photos/2024/june", "/elsewhere"].iter().map(|d| d.to_string()).collect();
+        let (list, all) = local_dirs(&cfg, &dirs, 10);
+        assert_eq!(list, vec!["/mnt/photos", "/mnt/photos/2024", "/mnt/photos/2024/june"]);
+        assert!(!all);
+        let (list, all) = local_dirs(&cfg, &dirs, 2);
+        assert_eq!(list.len(), 2);
+        assert!(all);
+        let (list, all) = local_dirs(&cfg, &BTreeSet::new(), 2);
+        assert!(list.is_empty() && !all);
+    }
+
+    #[test]
+    fn a_committed_page_reports_each_changed_directory_once_and_no_lock_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = worker(dir.path());
+        let m = Arc::new(mirror());
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let (sink, probe) = (heard.clone(), m.clone());
+        m.set_events(move |dirs, all| {
+            // the state lock is free while the sync thread emits
+            assert!(probe.state.try_lock().is_ok());
+            sink.lock().unwrap().push((dirs, all));
+        });
+        let v = || vec![version(0, 1, &[])];
+        let changed = m
+            .apply_delta(
+                &mut w.conn,
+                "/photos",
+                &items(vec![
+                    item(1, 1, "/photos/a.ARW", v()),
+                    item(2, 2, "/photos/b.ARW", v()),
+                    item(3, 3, "/photos/2024/c.ARW", v()),
+                    tombstone(4, 4, "missing", "/photos/2024/d.ARW"),
+                ]),
+                (4, 4),
+                10,
+                true,
+                0,
+            )
+            .ok()
+            .unwrap();
+        assert_eq!(changed.len(), 2);
+        m.announce(&reader_config(), &changed);
+        m.announce(&reader_config(), &BTreeSet::new());
+        let heard = heard.lock().unwrap();
+        assert_eq!(*heard, vec![(vec!["/mnt/photos".to_owned(), "/mnt/photos/2024".to_owned()], false)]);
     }
 }

@@ -64,7 +64,7 @@ struct CachedSubfolders {
     seq: u64,
 }
 
-#[derive(Default, Serialize, Deserialize, specta::Type)]
+#[derive(Clone, Default, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Config {
     pub enabled: bool,
@@ -394,6 +394,24 @@ impl Config {
             .then_some(mount)
     }
 
+    // Whether the local copy of the catalog serves this folder: it is under
+    // the mapped root, which is a network mount or a share that is not mounted
+    // now (then its folders are empty local ones). `covers` needs the mount.
+    pub(crate) fn covers_local_copy(&self, path: &Path) -> bool {
+        if !(self.enabled && self.validate_mapping().is_ok() && clean_local(path)) {
+            return false;
+        }
+        let mount = PathBuf::from(self.local_path.trim());
+        path.starts_with(&mount)
+            && (crate::volumes::on_network(&mount) || crate::volumes::unmounted_share(&mount).is_some())
+    }
+
+    // the mapped root for `covers_local_copy`, mounted or not
+    pub(crate) fn local_copy_root(&self) -> Option<PathBuf> {
+        let mount = PathBuf::from(self.local_path.trim());
+        self.covers_local_copy(&mount).then_some(mount)
+    }
+
     pub(crate) fn covers(&self, path: &Path) -> bool {
         clean_local(path)
             && self
@@ -401,7 +419,7 @@ impl Config {
                 .is_some_and(|mount| path.starts_with(mount))
     }
 
-    fn server_folder(&self, path: &Path) -> Result<String, String> {
+    pub(crate) fn server_folder(&self, path: &Path) -> Result<String, String> {
         let relative = path
             .strip_prefix(self.local_path.trim())
             .map_err(|_| "Folder is outside the morfPhoto mount")?;
@@ -1197,7 +1215,7 @@ impl Config {
         Ok(images)
     }
 
-    fn local_file(&self, path: &str) -> Result<PathBuf, String> {
+    pub(crate) fn local_file(&self, path: &str) -> Result<PathBuf, String> {
         if !clean_server(path) {
             return Err("Invalid morfPhoto photo path".into());
         }
@@ -1544,15 +1562,111 @@ pub(crate) struct Version {
     pub(crate) labels: u32,
     pub(crate) edited: Option<bool>,
     pub(crate) taken_at: Option<String>,
-    #[allow(dead_code)]
-    latitude: Option<f64>,
-    #[allow(dead_code)]
-    longitude: Option<f64>,
+    pub(crate) latitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
     pub(crate) keywords: Vec<String>,
 }
 
+// the listing fields of a photo that every one of its versions shares
+pub(crate) struct ExifFields {
+    pub(crate) maker: String,
+    pub(crate) model: String,
+    pub(crate) lens: String,
+    pub(crate) body_serial: String,
+    pub(crate) shutter: f64,
+    pub(crate) aperture: f64,
+    pub(crate) iso: f64,
+    pub(crate) focal: f64,
+    pub(crate) bias: f64,
+    pub(crate) mtime: Option<i64>,
+}
+
+impl ExifFields {
+    fn from_listing(exif: &serde_json::Map<String, Value>) -> Self {
+        let text = |key: &str| exif.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+        let number = |key: &str| exif.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+        ExifFields {
+            maker: text("make"),
+            model: text("camera_model"),
+            lens: text("lens"),
+            body_serial: text("body_serial"),
+            shutter: number("shutter_speed_s"),
+            aperture: number("aperture"),
+            iso: number("iso"),
+            focal: number("focal_length"),
+            bias: number("exposure_compensation"),
+            mtime: exif.get("mtime").and_then(Value::as_i64),
+        }
+    }
+}
+
+// one version's fields, from the server's listing or from the local copy
+pub(crate) struct VersionFields {
+    pub(crate) version: u32,
+    pub(crate) copy: bool,
+    pub(crate) rating: u8,
+    pub(crate) rejected: bool,
+    pub(crate) labels: u32,
+    pub(crate) edited: Option<bool>,
+    pub(crate) taken_at: Option<String>,
+    pub(crate) latitude: Option<f64>,
+    pub(crate) longitude: Option<f64>,
+    pub(crate) keywords: Vec<String>,
+}
+
+// The one mapping from a morfPhoto photo version to a library image: the
+// server's listing and the local copy both go through it, so a folder looks
+// the same from either.
+pub(crate) fn library_image(
+    path: &Path,
+    filename: &str,
+    exif: &ExifFields,
+    version: VersionFields,
+) -> Result<LibraryImage, String> {
+    let capture = version.taken_at.as_deref().unwrap_or_default();
+    let datetime = capture.get(..10).zip(capture.get(10..)).map_or_else(
+        || capture.to_owned(),
+        |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
+    );
+    let file_datetime = if capture.is_empty() {
+        exif.mtime
+            .filter(|mtime| *mtime > 0)
+            .and_then(|mtime| chrono::DateTime::from_timestamp(mtime, 0))
+            .map(|mtime| {
+                mtime
+                    .with_timezone(&chrono::Local)
+                    .format("%Y:%m:%d %H:%M:%S")
+                    .to_string()
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let location = version
+        .latitude
+        .zip(version.longitude)
+        .filter(|(lat, lon)| lat.abs() <= 90.0 && lon.abs() <= 180.0)
+        .map(|(latitude, longitude)| json!({ "latitude": latitude, "longitude": longitude }));
+    serde_json::from_value(json!({
+        "imgid": 0, "path": path, "filename": filename,
+        "rating": version.rating.min(5), "rejected": version.rejected,
+        "labels": version.labels & 31, "edited": version.edited.unwrap_or(false),
+        "width": 0, "height": 0, "location": location, "keywords": version.keywords,
+        "version": version.version, "copy": version.copy,
+        "morfphotoPreview": true,
+        "exif": {
+            "maker": exif.maker, "model": exif.model, "lens": exif.lens,
+            "body_serial": exif.body_serial, "exposure": exif.shutter,
+            "aperture": exif.aperture, "iso": exif.iso, "focal_length": exif.focal,
+            "exposure_bias": exif.bias, "focus_distance": 0,
+            "datetime": datetime, "capture_time_raw": capture, "file_datetime": file_datetime
+        }
+    }))
+    .map_err(|_| "Invalid morfPhoto metadata".into())
+}
+
 impl Photo {
-    fn images(self, path: &Path) -> Result<Vec<LibraryImage>, String> {
+    pub(crate) fn images(self, path: &Path) -> Result<Vec<LibraryImage>, String> {
         let filename = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -1561,58 +1675,30 @@ impl Photo {
         if self.versions.is_empty() {
             return Err("morfPhoto photo has no versions".into());
         }
+        let exif = ExifFields::from_listing(&self.exif);
         self.versions
             .into_iter()
             .map(|version| {
                 if !versions.insert(version.version) {
                     return Err("Duplicate morfPhoto version".into());
                 }
-                let text = |key: &str| self.exif.get(key).and_then(Value::as_str).unwrap_or_default();
-                let number = |key: &str| self.exif.get(key).and_then(Value::as_f64).unwrap_or(0.0);
-                let capture = version.taken_at.as_deref().unwrap_or_default();
-                let datetime = capture.get(..10).zip(capture.get(10..)).map_or_else(
-                    || capture.to_owned(),
-                    |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
-                );
-                let file_datetime = if capture.is_empty() {
-                    self.exif
-                        .get("mtime")
-                        .and_then(Value::as_i64)
-                        .filter(|mtime| *mtime > 0)
-                        .and_then(|mtime| chrono::DateTime::from_timestamp(mtime, 0))
-                        .map(|mtime| {
-                            mtime
-                                .with_timezone(&chrono::Local)
-                                .format("%Y:%m:%d %H:%M:%S")
-                                .to_string()
-                        })
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                let location = version
-                    .latitude
-                    .zip(version.longitude)
-                    .filter(|(lat, lon)| lat.abs() <= 90.0 && lon.abs() <= 180.0)
-                    .map(|(latitude, longitude)| {
-                        json!({ "latitude": latitude, "longitude": longitude })
-                    });
-                serde_json::from_value(json!({
-                    "imgid": 0, "path": path, "filename": filename,
-                    "rating": version.rating.min(5), "rejected": version.rejected,
-                    "labels": version.labels & 31, "edited": version.edited.unwrap_or(false),
-                    "width": 0, "height": 0, "location": location, "keywords": version.keywords,
-                    "version": version.version, "copy": version.copy,
-                    "morfphotoPreview": true,
-                    "exif": {
-                        "maker": text("make"), "model": text("camera_model"), "lens": text("lens"),
-                        "body_serial": text("body_serial"), "exposure": number("shutter_speed_s"),
-                        "aperture": number("aperture"), "iso": number("iso"), "focal_length": number("focal_length"),
-                        "exposure_bias": number("exposure_compensation"), "focus_distance": 0,
-                        "datetime": datetime, "capture_time_raw": capture, "file_datetime": file_datetime
-                    }
-                }))
-                .map_err(|_| "Invalid morfPhoto metadata".into())
+                library_image(
+                    path,
+                    filename,
+                    &exif,
+                    VersionFields {
+                        version: version.version,
+                        copy: version.copy,
+                        rating: version.rating,
+                        rejected: version.rejected,
+                        labels: version.labels,
+                        edited: version.edited,
+                        taken_at: version.taken_at,
+                        latitude: version.latitude,
+                        longitude: version.longitude,
+                        keywords: version.keywords,
+                    },
+                )
             })
             .collect()
     }

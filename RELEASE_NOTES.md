@@ -94,9 +94,14 @@ Improvements
   inside the one before, so one export can fill a dated library.
 - **Local copy of the morfPhoto catalog:** With Immage Accelerator on, Immage
   keeps a copy of the server's catalog on this computer and updates it in the
-  background, pausing while you work on photos. **Preferences > Immage
-  Accelerator** shows when it last synced, how many photos it holds, the
-  progress and any error, with a **Resync** button.
+  background, pausing while you work on photos. Folders under the mapped
+  folder open from that copy at once, and the server is asked only whether
+  anything changed; when the server does not answer, the copy stands and the
+  status bar says it is showing the local catalog and when it last synced.
+  With the share unmounted or not answering, its photos still show, each with
+  a red dot, and are not opened. **Preferences > Immage Accelerator** shows
+  when it last synced, how many photos it holds, the progress and any error,
+  with a **Resync** button.
 
 Performance
 

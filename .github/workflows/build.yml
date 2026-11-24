@@ -124,6 +124,7 @@ jobs:
             verify/saved-filters.test.mjs \
             verify/stacking.test.mjs \
             verify/folder-edits.test.mjs \
+            verify/folder-source.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
             verify/gui-suites.test.mjs \

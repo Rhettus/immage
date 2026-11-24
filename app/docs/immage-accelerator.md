@@ -181,7 +181,8 @@ staying compatible with older morfPhoto servers:
   disk (up to 32 folders / 64 MiB) and subfolder listings in memory, validating
   both with `ETag` / `304 Not Modified` checks so unchanged folders open with
   zero catalog re-download. The catalog cache clears automatically when you
-  change the server URL or folder mapping, or when you select **Forget**.
+  change the server URL or folder mapping, or when you select **Forget**. The
+  [local catalog](#local-catalog) opens folders first when it has them.
 - **Local thumbnail caching:** For visible thumbnails of unedited originals,
   Immage checks its own cache first, then checks its local morfPhoto thumbnail
   cache (up to 256 MiB) and revalidates cached server previews via `ETag` /
@@ -246,8 +247,33 @@ catalog**:
 
 Selecting **Forget**, or saving a different server URL or server folder, also
 empties the local copy. The copy is disposable: deleting it loses nothing.
-If the file cannot be opened, Immage works without it. Folders and Find still
+If the file cannot be opened, Immage works without it. Folders and Find then
 read the server as described above.
+
+### Folders open from the local copy
+
+A folder under the mapped folder shows its photos from the local copy at once,
+before the server is asked anything. Immage then asks the server whether its
+catalog has changed since the last sync. If it has not, the copy is the final
+list and no catalog is downloaded. If it has, the folder is read from the
+server as before while the sync catches up, and the folder refreshes by itself
+when the sync has changed photos in it.
+
+When the server does not answer within about a second and a half, the copy
+stands and the status bar says **Showing the local catalog, synced** with the
+time of the last sync. Rating, label and keyword changes made on the server
+since then are missing until it answers again. A folder the copy knows nothing
+about is read from the server, and then from the files, as before.
+
+The folder tree reads the server's subfolders first, then the local copy when
+the server does not answer, then the files.
+
+While the mapped share is not mounted or is not answering, its photos still
+show from the local copy, each with a small red dot (the red of the drive's
+offline dot) and the tooltip **Photo's drive is offline**. Their thumbnails
+come from Immage's or morfPhoto's caches, or stay empty. Clicking such a photo
+selects it but does not open it, and the status bar says the photo is on an
+offline drive. Open it once the share is connected again.
 
 ## Monitor NAS activity
 
