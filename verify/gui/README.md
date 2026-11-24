@@ -579,6 +579,23 @@ requires `ecp-b`'s `edit-` file and the same quick cull. Timings are recorded.
 It runs alone, after startup, and is left out of `all`:
 `node verify/gui/run.mjs --config verify/gui/local.json --case edited-culling-preview`.
 
+`morfphoto-mirror` checks the local copy of the morfPhoto catalog against an
+in-process fake server (loopback, bearer key `gui-mirror-key`, every request
+logged). It needs `/mnt/mac` to be a 9p mount (the host share stands in for the
+network share) and otherwise reports Blocked. The runner makes
+`/mnt/mac/.immage-gui-test-<run id>/photos/` (three copies of the fixture at the
+root, two in `2024/`) and a plain local twin beside the run's fixtures, seeds
+both as library folders, and removes that whole scratch tree afterwards, on
+failure and on signals (only a path under that prefix is ever removed). It also
+starts its own `dbus-daemon --session` on a socket in a private temp folder and
+`gnome-keyring-daemon --foreground --components=secrets --unlock` (empty password
+on stdin) as its own children, and hands the app only that
+`DBUS_SESSION_BUS_ADDRESS`, so saving the API key never reaches the user's
+keyring; either daemon failing to start makes the case Blocked. The case waits
+for the 60 s sync tick twice, so allow about five minutes. It runs alone, after
+startup, and is left out of `all`:
+`node verify/gui/run.mjs --config verify/gui/local.json --case morfphoto-mirror`.
+
 For a floating Hyprland test window, maximize each newly opened ws9 app window
 only when its client is not already maximized. The maximize dispatch is a
 toggle; do not send it repeatedly to an already maximized window. Confirm the

@@ -89,8 +89,8 @@ export const cases = {
     limitation: 'Checks view changes in one session, plus Find auto-hide and rail reveal.' },
   'find-saved': { scope: 'saved filters: Save filter… names the current one, the popup shows its line, a change shows changed and Update, Alt+1 re-applies it after the Filters header\'s Clear, the Find split button\'s menu lists it with its shortcut, Manage renames and deletes it', fixture: 'any photo', verification: 'Linux WebKitGTK, maximized 1706x911. Run 2026-11-20T07-57-04.272Z_7f61ca5_bd277111.', liveValidated: true,
     limitation: 'Assumes a fresh profile with no saved filters (Alt+1 is the first). Local filters only; Immich skipped-note behavior is not exercised.' },
-  'rename-photos': { scope: 'Library grid context menu, single-photo filename and collision, rating in the moved XMP, bulk count and one filename example in grid order, preserved selection and original bytes, and Find by a new filename', fixture: 'three disposable copies of the launch fixture', liveValidated: false,
-    verification: 'Linux ARM64, system WebKitGTK, maximized 2556×1248 on isolated workspace 9. Run 2026-11-19T01-33-01.888Z_7cb7e41_76408da4 passed before the count and single example assertions were added.',
+  'rename-photos': { scope: 'Library grid context menu, single-photo filename and collision, rating in the moved XMP, bulk count and one filename example in grid order, preserved selection and original bytes, and Find by a new filename', fixture: 'three disposable copies of the launch fixture', liveValidated: true,
+    verification: 'Linux ARM64 system WebKitGTK, viewport 1706x911 on empty workspace 9 (maximized), original workspace 1 restored. Run 2026-11-24T15-24-58.202Z_5f17202_8ca8e631, alone, binary 463a86b4 (release-0.48.0 5f17202 + rename selection fix).',
     limitation: 'No CLIP model, stacked RAW/JPEG, virtual copy, or network share needed for this case.' },
   'unmounted-share': { scope: 'a folder under the Immich path mapping\'s local path (or morfPhoto\'s) that is not on a network mount is offline: before the mapping nas/ and local/ open and list their photos with no drive dot off; the mapping (External library path /photos, Folder on this computer nas/) set live in Preferences > Immich turns nas/\'s drive heading dot off and its row offline within the 10 s volume read, opening it says not answering and lists no photos, local/ still opens and lists its photos, Find\'s analysis counter does not increase, the nas files and sidecar are unchanged (names, sizes, mtimes, SHA-256), and after a relaunch with the mapping saved nas/ is offline at startup', fixture: 'any (nas and local folders of three copies each, a sidecar in nas, made by the runner beside the fixtures)', liveValidated: false,
     limitation: 'Not yet run live. The isolated profile has no CLIP model, so the analysis counter is dimmed with no number and the exclusion of nas photos is recorded as not observable. The mapping is typed key by key, so a prefix of the path is briefly the local path and the run folder reads offline until the next volume read; the case waits for that. Clicking an offline folder clears the grid and shows the error status (the case asserts that, not a kept grid). morfPhoto\'s local path and a real network mount are not exercised.' },
@@ -122,6 +122,7 @@ export const cases = {
     limitation: 'Show in the file manager is checked as offered, not clicked (another application). No offline drive, so its disabled items are not exercised. Right-clicks: run after drag cases or in a launch of its own (webdriver.mjs rightClick).' },
   'morfphoto-prefs': { scope: 'Experimental morfPhoto Preferences, default state and connection success and failure against an isolated loopback API', fixture: 'any', liveValidated: true,
     verification: 'Linux, system WebKit, run 2026-11-20T01-52-25.737Z_f133482_992fc2f5.', limitation: 'Uses a loopback API and a throwaway key; live NAS browsing and keychain persistence are outside this case.' },
+  'morfphoto-mirror': { scope: 'the local copy of the morfPhoto catalog against an in-process fake server (index status, change feed, subfolders, listing; the items of the real server): Preferences > Immage Accelerator (URL, folder on the server, folder on this computer on the 9p host share, key, Enable, Save) fills the Local catalog card with 5 photos and a synced time; opening the share folder lists its photos from the local copy with a status probe and no /api/v1/library listing request, and its 2024 subfolder appears; a photo rated three stars here keeps them while the feed reports an unrelated change (the server still says 0) and after the server reports 3; Find over All folders lists the camera in darktable\'s spelling (Nikon Z 6) with count 5, ticking it counts 5, and the Lenses list renders; with the server stopped the folder still lists its photos and the status says it is the local catalog with a synced time; pointing Folder on this computer at a plain local twin makes it an unmounted share: every photo carries the red offline dot, a click says the photo is on a drive that is offline and opens nothing, and nothing is written to the twin; only the scratch tree and the run folder are written', fixture: 'any (five copies on a scratch folder of the 9p host share /mnt/mac/.immage-gui-test-<run id>/photos, three at its root and two in 2024/, and the same names in a local twin; made by the runner, the share tree removed afterwards)', liveValidated: true, verification: 'Linux ARM64 system WebKitGTK, viewport 1706x911 on empty workspace 9 (maximized), original workspace 1 restored. Run 2026-11-24T15-19-06.682Z_5f17202_f946e413, alone, binary 463a86b4 (release-0.48.0 5f17202 + rename selection fix).', limitation: 'The 9p host share stands in for the network mount, and the case is Blocked unless /mnt/mac is a 9p mount. The runner starts its own private session bus and gnome-keyring-daemon (empty password) so the API key Save never touches the user\'s keyring; the app inherits that bus. The server is a fake: the real morfPhoto and its indexer are not exercised. The sync and the folder re-read are waited for up to about 2.5 minutes. Runs alone (after startup) and is left out of all.' },
   'immich-prefs': { scope: 'Preferences > Immich: example values typed into Server URL, Match the folder path, Destination as Immich sees it, External library path and Folder on this computer; the Opening search results example line shows a tick with no not-available warning; screenshot for the user guide', fixture: 'any', liveValidated: true,
     verification: 'Linux, system WebKitGTK 2.54.2, Wayland, empty workspace 9 maximized (viewport 1768x954, scale 2), original workspace 1 restored, DOC_LOCAL_DIR=/var/tmp/photos. Run 2026-11-17T05-47-59.910Z_32595f1_adf84cf0; screenshot cropped to the dialog for app/docs/images/immich-prefs.png.',
     limitation: 'Documentation screenshot, no server contact or API key. DOC_LOCAL_DIR may name an existing neutral folder for the local path.' },
@@ -307,8 +308,8 @@ export function resolveCases(name) {
   // These two cases seed their own launch state and deliberately validate the
   // initial grid/thumbnail before a full-resolution editor frame exists.
   const startupless = new Set(['startup-restore', 'dng-thumbnail']);
-  // launches with its own RAW copies: left out of 'all', and not mixed with other cases
-  const alone = 'edited-culling-preview';
+  // launch with their own fixtures (RAW copies; the 9p scratch share and a private keychain): left out of 'all', and not mixed with other cases
+  const aloneCases = new Set(['edited-culling-preview', 'morfphoto-mirror']);
   // a comma list runs several cases in one launch: startup,masks,heal
   if (name.includes(',')) {
     const names = name.split(',').map(s => s.trim()).filter(Boolean);
@@ -316,11 +317,12 @@ export function resolveCases(name) {
     const onlyStartupless = names.length === 1 && startupless.has(names[0]);
     if (names.some(n => startupless.has(n)) && !onlyStartupless)
       throw Error('startup-restore and dng-thumbnail must run alone without the smoke startup prerequisite');
-    if (names.includes(alone) && names.some(n => n !== alone && n !== 'startup'))
-      throw Error(`${alone} must run alone: it launches with its own RAW copies`);
+    for (const alone of aloneCases)
+      if (names.includes(alone) && names.some(n => n !== alone && n !== 'startup'))
+        throw Error(`${alone} must run alone: it launches with its own fixtures`);
     return onlyStartupless ? names : [...new Set(['startup', ...names])];
   }
-  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup'&&c!==alone&&!startupless.has(c))];
+  if (name === 'all') return ['startup',...Object.keys(cases).filter(c=>c!=='startup'&&!aloneCases.has(c)&&!startupless.has(c))];
   if (Object.hasOwn(suites, name)) return suites[name];
   if (!Object.hasOwn(cases, name)) throw Error(`Unknown case/suite: ${name}`);
   return name === 'startup' || startupless.has(name) ? [name] : ['startup', name];
