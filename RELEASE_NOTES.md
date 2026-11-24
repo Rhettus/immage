@@ -7,182 +7,81 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- **Even panorama skies:** Panorama Merge now matches exposure, color and
-  lens vignetting between the photos before blending, so skies and other
-  smooth areas no longer show steps or bands where the photos overlap.
-- **Drags can overshoot the photo's edge:** Mask shapes and handles, object
-  and picker boxes, Heal spots and Upright guide lines follow the pointer past
-  the photo into the empty canvas; on release a center, end or box corner left
-  off the photo snaps back to its edge.
-- **Edited photo previews kept longest:** When the thumbnail cache is full,
-  previews of edited photos are trimmed last, up to half the limit, and
-  Preferences > Cache shows how much of the Library thumbnails they take.
-- **Zoom out past Fit:** The mouse wheel, pinch, **⌘-** and the zoom slider
-  now zoom out to half the size of Fit, leaving empty canvas around the photo.
-  The Navigator has a new **1:2** (50%) button, and the wheel pauses at Fit
-  and 50% on the way. Below Fit the photo stays centered and cannot be panned.
-- **No tone mapper on JPEGs and other non-RAW formats:** JPEGs, PNGs, WebP,
-  HEIC and 8/16-bit TIFFs no longer enable AgX or Sigmoid on open, Start Over,
-  paste or preset application. Their Basic controls remap to the same
-  non-tone-mapper modules as masks (**color balance rgb** for Contrast, Whites
-  and Saturation; **exposure** for Blacks), and Profile offers **None** and
-  Color Balance RGB looks only. Existing sidecars edited in earlier releases
-  keep their saved rendering untouched.
-- **Single tone mapper guard:** Simple mode keeps at most one tone mapper
-  active on RAW photos and never enables Sigmoid on photos without a tone
-  mapper. In Advanced mode and History, enabling or duplicating a second tone
-  mapper opens a warning dialog to switch cleanly, enable anyway or cancel,
-  and tone mappers are disabled on already tone-mapped formats.
-- **Copy and paste settings in Grid view:** **Copy…**, **Paste** and
-  **Previous** stay pinned at the bottom of the right panel below Find's filter
-  footer in Library Grid view, matching the Adjustments panel.
-- **Reset edited photos from Grid view:** Right-click an edited photo or a
-  selection in Grid view and choose **Reset Photo** (or **Reset N Photos…**) to
-  discard saved edits and return them to unedited. Multiple photos ask for
-  confirmation first, unedited photos in a mixed selection are skipped, and the
-  option is hidden when no selected photo is edited.
-- **Theme export and aligned actions in Preferences:** Preferences > General >
-  Theme aligns the active theme name with Import, Export, and Delete icon
-  buttons below the swatches, lets you export any theme as JSON, and keeps the
-  Delete button disabled for built-in themes.
-- **Expandable RAW+JPEG stacks:** Stacked RAW+JPEG (and HEIF / `.ORI`) pairs
-  now show a layered thumbnail with a drop shadow in Grid view and the
-  filmstrip. Click the format badge (for example, **ARW+JPG ▸**) to expand the
-  pair side by side and select or edit either the RAW or the JPEG independently,
-  and click either badge again to collapse the stack back together.
-- **CLIP provider precedence (morfPhoto → Immich → local):** When morfPhoto or
-  Immich is already serving CLIP for a mapped directory, Immage skips local CPU
-  CLIP analysis for all photos in that folder (and excludes them from Find's
-  analysis backlog), routes **This folder** and **All folders** Smart searches
-  using **morfPhoto → Immich → local** precedence, falls through immediately to
-  the next provider if a server does not answer, and shows the active CLIP
-  provider per folder in Preferences > Performance > Local photo cache.
-- **Show in Library from the right-click menu:** Right-click a photo in search
-  results, a subfolder view, or the filmstrip and choose **Show in Library** to
-  jump straight to its thumbnail in its folder view, expanding and scrolling to
-  its folder in the left panel.
-- **Search in Keyboard Shortcuts:** The Keyboard Shortcuts window now has a
-  search box at the top that filters shortcuts by partial matches across
-  actions, keys, and sections as you type, returning to the full list when
-  cleared.
-- **Module order in Advanced mode:** The **Module order** button at the end of
-  the module search box lists a photo's enabled modules in the order darktable
-  runs them. Drag a module, or select it and press **Alt+Up** or **Alt+Down**,
-  to change that photo's order. Locked modules stay put, and **Reset to default**
-  restores darktable's order.
-- **PhotoCraft in Edit In:** Enable PhotoCraft in Preferences › Plugins to
-  open selected photos as full-size, editable 16-bit ProPhoto RGB layers with
-  Immage edits applied. Immage saves a layered TIFF beside the first photo for
-  smaller stacks and a PSB for larger stacks, and you can continue editing the
-  TIFF composite in Immage. The handoff shows render progress and prevents
-  duplicate jobs.
-- **Helicon Focus in Edit In:** On Windows and macOS, enable Helicon Focus in
-  Preferences › Plugins to open RAWs or 16-bit TIFFs and choose the stacking
-  settings. Auto DNG stacks RAWs in the background. The composite appears in
-  Immage and can be sent to PhotoCraft.
-- **Move or copy photos to any folder:** **Photo > Move to Folder…** and
-  **Copy to Folder…**, also in the photo right-click menu, send the selection
-  to a folder chosen in the system's folder chooser, including a new one,
-  with the same checked transfer and confirmation as dragging onto a folder.
-- **Sort moved and copied photos into dated folders:** The move and copy
-  confirmation has **Sort into subfolders**, which puts each photo in a
-  subfolder named from its metadata, such as `{year}/{month}/{day}`, so
-  photos from many days go into a year/month/day library in one step.
-- **Export into folders named from metadata:** Export's **Inside a new
-  folder** name takes the same tokens as file names, such as
-  `{year}/{month}/{day}` or `{camera}/{title}`, and each `/` starts a folder
-  inside the one before, so one export can fill a dated library.
-- **Local copy of the morfPhoto catalog:** With Immage Accelerator on, Immage
-  keeps a copy of the server's catalog on this computer and updates it in the
-  background, pausing while you work on photos. Folders under the mapped
-  folder open from that copy at once, and the server is asked only whether
-  anything changed; when the server does not answer, the copy stands and the
-  status bar says it is showing the local catalog and when it last synced.
-  With the share unmounted or not answering, its photos still show, each with
-  a red dot, and are not opened. **Preferences > Immage Accelerator** shows
-  when it last synced, how many photos it holds, the progress and any error,
-  with a **Resync** button. Find's **All folders** search and filter lists
-  also read it: a narrow filter over 150,000 photos answers in a few hundredths
-  of a second. Changes you make in Immage (ratings, labels, keywords, capture
-  times, edits, moves, copies, renames, deletes and virtual copies) show at
-  once in folders and in Find, before the server has indexed them.
-- **Find lists the whole library under All folders:** With **Search in** set
-  to **All folders**, Find's file types, keywords, cameras, camera bodies,
-  lenses, capture months and exposure settings list every value in the
-  library with how many photos have it, narrowed by your other filters, not
-  only what the loaded results hold. Cameras, lenses and exposure values have
-  a find box, and a list of more than 200 values shows the 200 most used and
-  finds the rest as you type. Camera and lens names from a morfPhoto server
-  use darktable's spelling (**Nikon Z 6**), so each appears once.
+- **Better results on JPEGs and other non-RAW photos:** They no longer get a
+  RAW tone mapper applied, so they open looking as shot. Immage also warns
+  before a second tone mapper is turned on. JPEGs you edited in earlier
+  versions keep their look; to get the new rendering, reset them (**Reset
+  Photo** in Grid view, or **Start Over** in History) and edit them again.
+- **Module order in Advanced mode:** A new **Module order** button lets you
+  drag modules to change the order they run in for a photo.
+- **Find searches the whole library:** Under **All folders**, Find's filter
+  lists show every camera, lens, keyword, file type, month and exposure setting
+  in your library, with photo counts. With a morfPhoto library, filters answer
+  almost instantly even across very large libraries.
+- **Zoom out past Fit:** Zoom out to half the size of Fit with the wheel, pinch,
+  **⌘-** or the zoom slider. The Navigator has a new **1:2** button.
+- **Expandable RAW+JPEG stacks:** Stacked pairs show as a layered thumbnail.
+  Click the format badge to spread the pair out and pick or edit either file on
+  its own.
+- **Move, copy and export into dated folders:** **Move to Folder…** and **Copy
+  to Folder…** are in the Photo and right-click menus. Moves, copies and
+  exports can sort photos into folders named from their metadata, such as
+  year/month/day, in one step.
+- **PhotoCraft and Helicon Focus in Edit In:** Send photos to PhotoCraft as
+  full-quality layers, or to Helicon Focus (Windows and macOS) for focus
+  stacking. The results come back into Immage to keep editing.
+- **Smoother panoramas:** Panorama Merge evens out exposure, color and
+  vignetting between photos, so skies no longer show bands where they overlap.
+- **More in Grid view:** Right-click to **Reset Photo** on edited photos, or
+  **Show in Library** to jump to a photo's folder from search results or the
+  filmstrip. **Copy…**, **Paste** and **Previous** now stay at the bottom of
+  the panel.
+- **Drag past the photo's edge:** Mask shapes, Heal spots and guide lines can
+  be dragged past the edge of the photo and snap back to it on release.
+- **Search in Keyboard Shortcuts:** Type to filter the shortcuts list.
+- **Export themes:** Preferences > General > Theme can export any theme.
+- **Your morfPhoto library, on this computer:** With Immage Accelerator on,
+  Immage keeps a local copy of the server's catalog and keeps it up to date in
+  the background. Folders open at once, stay browsable when the server or share
+  is offline, and your own changes show straight away. **Preferences > Immage
+  Accelerator** shows the sync status, with a **Resync** button.
+- **Smart search uses your server's analysis:** Folders already analyzed by
+  morfPhoto or Immich are not analyzed again on this computer, and Smart search
+  asks the server for them. Preferences > Performance shows which source each
+  folder uses.
 
 Performance
 
-- **Edited photos open faster in culling:** After you edit a RAW photo and move
-  on, Immage prepares its culling preview in the background, once the grid's
-  thumbnails have loaded, so culling it afterwards no longer waits for a fresh
-  render.
-- **Lightweight Grid browsing:** Clicking or stepping with arrow keys through
-  photos in Grid view selects them and updates Metadata and Keywording without
-  decoding full RAWs or rendering the hidden editor until you open a photo to
-  edit.
-- **Faster Immage Accelerator catalog and thumbnail loading:** With morfPhoto
-  v0.15.9+, Immage caches folder catalogs, subfolder listings, and server
-  thumbnails locally and revalidates them so unchanged folders open without
-  re-downloading, shows the first page of photos immediately while remaining
-  pages load in the background, uses gzip compression and persistent Keep-Alive
-  connections, and waits up to 22 seconds for NAS Smart Search responses so cold
-  disks can respond before falling back. Older morfPhoto servers remain
-  supported.
+- **Faster culling of edited photos:** Immage prepares an edited photo's
+  culling preview in the background, and keeps edited photos' previews longest
+  when the thumbnail cache fills up.
+- **Lighter Grid browsing:** Stepping through photos in Grid view no longer
+  loads the full RAW until you open a photo to edit.
+- **Faster Immage Accelerator folders and thumbnails:** Folders and thumbnails
+  are kept on this computer, so unchanged folders open without downloading
+  again, and the first photos show while the rest load.
 
 Bug fixes
 
-- **Rename keeps the photo selected:** Renaming a photo selected in the
-  Library grid keeps it selected, with the grid cursor on it, instead of
-  returning to the open photo.
-- **Find across folders honors file type and Serial not recorded:** Ticking a
-  file type such as **ARW** or **JPG**, or **Serial not recorded** under
-  Camera body, in an All folders search no longer returns nothing.
-- **Copy only the raws of RAW+JPEG stacks:** Moving or copying photos while
-  the file-type filter shows only raws now leaves the stacked JPEG, HEIF and
-  ORI files behind. The confirmation has a checkbox to include or leave out
-  the stacked files either way.
-- **A stuck external drive no longer stalls the library:** When a file on an
-  external drive or share stops answering, Immage now stops reading from that
-  whole drive, not just the folder, and skips its photos and thumbnails at
-  once instead of waiting on each one. Thumbnails of photos on other drives
-  keep loading, Smart search analysis leaves the drive alone meanwhile, and
-  the drive is read again by itself as soon as it answers.
-- **History rows no longer pile up below the card:** The History card now
-  shows every step and the Library panel scrolls as a whole, instead of the
-  card scrolling on its own. On Linux its rows could be drawn stacked on one
-  line in the blank space below the card.
-- **Mask and choice-aware module tooltips:** Hovering over a slider in the
-  Masks panel now shows the darktable module it drives, and sliders with
-  selectable modules report the active module for the photo or mask.
-- **No sidecar writes or Smart search re-analysis on unedited photos:** Viewing
-  an unedited RAW photo with automatic defaults (such as AgX or a New Photos
-  preset) no longer writes an XMP sidecar or triggers background Smart search
-  re-analysis until you actually make an edit.
-- **Start Over and Grid reset on the open photo:** Closing the active photo
-  before discarding history now closes it in the engine as well, fixing **Start
-  Over** and Grid photo reset failing with "close the photo first" when the
-  currently open photo is included.
-- **Immich right-click menu gating:** Immich context menu items (**Import
-  Parent Folder**, **Show in Immich**, **Show Results in Immich**) no longer
-  appear when Immich is not configured or is disabled in Preferences, and
-  **Show Results in Immich** is hidden on local-only searches.
-- **Importer theme integration, close button, and refresh on reopen:** The
-  importer's dropdowns, overlays, and buttons now follow Immage's active theme
-  (including Light and Grey themes), its close button matches the culling
-  preview's **×** icon, and reopening Import refreshes the active card or folder
-  so newly added photos and thumbnails appear immediately.
-- **Offline shares for Immich and morfPhoto folders:** A folder inside the local
-  folder set up for Immich or morfPhoto is always treated as a network share.
-  When that share isn't mounted, its drive heading in Folders gets a red dot
-  and its folders can't be opened, instead of showing an empty folder. Its
-  photos are left out of Find's analysis count until the share is mounted
-  again, and nothing in the folder is changed. When the share returns, the dot
-  turns green and the folders are read again.
+- Renaming a photo in the Library grid keeps it selected.
+- Find's file type and **Serial not recorded** filters no longer return
+  nothing.
+- Moving or copying with only raws showing no longer takes the stacked JPEGs
+  along; the confirmation lets you choose.
+- An external drive or share that stops responding no longer stalls the
+  library; Immage skips it until it answers again.
+- The History card shows every step, and on Linux its rows no longer pile up
+  below the card.
+- Viewing an unedited photo no longer saves a sidecar or restarts Smart search
+  analysis.
+- **Start Over** no longer fails with "close the photo first" on the open
+  photo.
+- Slider tooltips in the Masks panel show the module they adjust.
+- Immich menu items are hidden when Immich is not set up.
+- The importer follows the current theme and shows newly added photos when
+  reopened.
+- An offline Immich or morfPhoto share shows with a red dot in Folders instead
+  of as an empty folder.
 
 ## 0.47.1
 
