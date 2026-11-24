@@ -19,6 +19,7 @@ import { ResetIcon } from "./icons";
 import type { ImmichSearch } from "./immich";
 import { formatNumber, t } from "./i18n";
 import { FilterEditor } from "./FindEditors";
+import { useLibraryFacets } from "./libraryFacets";
 import { categoryTitle, editorId, FilterGroup, FilterRow, GROUP_TITLE, rowId, summarize } from "./FindFilters";
 
 export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, saved, savedLine,
@@ -154,6 +155,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   ];
 
   const where = searchIn(s);
+  // Search in = All folders: the lists count the whole library, not the loaded pages
+  const library = useLibraryFacets(where === "library" && r.local, openKey, f, s);
   // without Smart search the segmented control shows Filename; the stored mode is left alone
   const modeShown = smart ? s.mode : "filename";
   const countText = <>
@@ -236,7 +239,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
                              tag={c.only === "immich" && r.local && r.immich ? t("library.find.group.immich") : undefined}
                              excludes={active.find((a) => a.key === c.key)?.excludes}
                              onToggle={() => toggle(c.key)} onClear={() => send(clearCategory(state, c.key))}>
-                    <FilterEditor cat={c.key} state={state} send={send} images={images} local={r.local} server={server} {...names} />
+                    <FilterEditor cat={c.key} state={state} send={send} images={images} local={r.local} server={server} {...names}
+                                  library={library.lists} busy={library.busy} />
                   </FilterRow>
                 );
               })}

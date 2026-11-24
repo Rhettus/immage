@@ -1647,6 +1647,9 @@ pub(crate) fn library_image(
         .zip(version.longitude)
         .filter(|(lat, lon)| lat.abs() <= 90.0 && lon.abs() <= 180.0)
         .map(|(latitude, longitude)| json!({ "latitude": latitude, "longitude": longitude }));
+    // ExifTool's spelling of the camera and lens, as darktable spells them
+    let (maker, model) = crate::camera_names::make_model(&exif.maker, &exif.model);
+    let lens = crate::camera_names::lens(&exif.lens);
     serde_json::from_value(json!({
         "imgid": 0, "path": path, "filename": filename,
         "rating": version.rating.min(5), "rejected": version.rejected,
@@ -1655,7 +1658,7 @@ pub(crate) fn library_image(
         "version": version.version, "copy": version.copy,
         "morfphotoPreview": true,
         "exif": {
-            "maker": exif.maker, "model": exif.model, "lens": exif.lens,
+            "maker": maker, "model": model, "lens": lens,
             "body_serial": exif.body_serial, "exposure": exif.shutter,
             "aperture": exif.aperture, "iso": exif.iso, "focal_length": exif.focal,
             "exposure_bias": exif.bias, "focus_distance": 0,

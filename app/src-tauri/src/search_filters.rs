@@ -22,11 +22,41 @@ pub struct GridFilter {
     pub focal: Vec<String>,
     pub shutter: Vec<String>,
 }
+// Years are four digits, so the day as text sorts as the date does (the
+// mirror's SQL compares days as text).
 fn day(value: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(&value.get(..10)?.replace(':', "-"), "%Y-%m-%d").ok()
+    NaiveDate::parse_from_str(&value.get(..10)?.replace(':', "-"), "%Y-%m-%d")
+        .ok()
+        .filter(|d| (0..=9999).contains(&chrono::Datelike::year(d)))
+}
+/// A filter's day as the text the mirror stores days in; None when invalid.
+pub(crate) fn day_text(value: &str) -> Option<String> {
+    day(value).map(|d| d.format("%Y-%m-%d").to_string())
+}
+/// The capture day (YYYY-MM-DD) of a morfPhoto version's `taken_at`, as
+/// `morf_photo::library_image` writes it into `exif.datetime` and `passes` reads
+/// it back. None when there is no valid date.
+pub(crate) fn capture_day(taken_at: &str) -> Option<String> {
+    let datetime = taken_at.get(..10).zip(taken_at.get(10..)).map_or_else(
+        || taken_at.to_owned(),
+        |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
+    );
+    day(&datetime).map(|d| d.format("%Y-%m-%d").to_string())
 }
 fn selected(values: &[String], value: &str) -> bool {
     values.is_empty() || (!value.is_empty() && values.iter().any(|v| v == value))
+}
+impl GridFilter {
+    /// The filter with its chosen cameras, bodies and lenses in the one spelling
+    /// every source is mapped to (`camera_names`), so a value picked from either
+    /// spelling matches. `passes` and the SQL over the mirror take this form.
+    pub fn canonical(&self) -> GridFilter {
+        let mut f = self.clone();
+        f.cameras = self.cameras.iter().map(|c| crate::camera_names::camera_label(c)).collect();
+        f.bodies = self.bodies.iter().map(|b| crate::camera_names::body_key(b)).collect();
+        f.lenses = self.lenses.iter().map(|l| crate::camera_names::lens(l)).collect();
+        f
+    }
 }
 fn exact(expected: &Option<String>, value: &str) -> bool {
     expected
@@ -63,7 +93,7 @@ pub fn validate(f: &GridFilter, r: &SearchArgs) -> Result<(), String> {
     }
     Ok(())
 }
-fn kind(name: &str) -> &str {
+pub(crate) fn kind(name: &str) -> &'static str {
     match name
         .rsplit('.')
         .next()
@@ -119,6 +149,62 @@ fn decimal(value: f64, places: u32) -> Option<String> {
             .to_string()
     })
 }
+// The file's extension as Find's File type lists it (filter.ts `fileExt`):
+// upper case, .jpeg and .jpe as JPG, .tif as TIFF; "" without one.
+pub(crate) fn ext_name(name: &str) -> String {
+    match name.rsplit_once('.') {
+        Some((_, ext)) if !ext.is_empty() && !ext.contains('.') => {
+            let ext = ext.to_uppercase();
+            match ext.as_str() {
+                "JPEG" | "JPE" => "JPG".into(),
+                "TIF" => "TIFF".into(),
+                _ => ext,
+            }
+        }
+        _ => String::new(),
+    }
+}
+pub(crate) fn is_raw_file(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|s| crate::immich_search::RAW_EXTENSIONS.contains(&s.to_ascii_lowercase().as_str()))
+}
+pub(crate) fn camera_key(maker: &str, model: &str) -> String {
+    format!("{maker} {model}").trim().to_string()
+}
+pub(crate) fn body_key(maker: &str, model: &str, serial: &str) -> String {
+    if serial.trim().is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(&[maker, model, serial.trim()]).unwrap_or_default()
+    }
+}
+// The exposure values as the camera shows them, "" where not recorded; one
+// value per label (1/250 whatever the exact fraction). filter.ts `exposureLabel`.
+pub(crate) fn iso_key(v: f64) -> String {
+    if v.is_finite() && v > 0.0 { v.round().to_string() } else { String::new() }
+}
+pub(crate) fn aperture_key(v: f64) -> String {
+    decimal(v, 1).map(|s| format!("f/{s}")).unwrap_or_default()
+}
+pub(crate) fn focal_key(v: f64) -> String {
+    decimal(v, 0).map(|s| format!("{s} mm")).unwrap_or_default()
+}
+pub(crate) fn shutter_key(v: f64) -> String {
+    if !(v.is_finite() && v > 0.0) {
+        String::new()
+    } else if v >= 0.3 {
+        decimal(v, 1).map(|s| format!("{s}s")).unwrap_or_default()
+    } else {
+        format!("1/{}", (1.0 / v).round())
+    }
+}
+// The capture day of a photo: the precise raw text where there is one, else
+// EXIF's, never the file's time.
+pub(crate) fn date_of(i: &LibraryImage, capture: Option<&str>) -> Option<NaiveDate> {
+    capture.and_then(day).or_else(|| day(&i.exif.datetime))
+}
 pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &SearchArgs) -> bool {
     // These server identities/fields have no verified local mapping. Unknown
     // never satisfies a selected filter; five stars are not an Immich favorite.
@@ -147,26 +233,18 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
     {
         return false;
     }
-    let raw = std::path::Path::new(&i.filename)
-        .extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|s| {
-            crate::immich_search::RAW_EXTENSIONS.contains(&s.to_ascii_lowercase().as_str())
-        });
-    if (r.raw_only && !raw) || !selected(&f.kinds, kind(&i.filename)) {
+    let raw = is_raw_file(&i.filename);
+    // a type is chosen by its extension or its coarser kind, as filter.ts does
+    if (r.raw_only && !raw)
+        || !(f.kinds.is_empty()
+            || f.kinds.iter().any(|k| *k == ext_name(&i.filename) || k == kind(&i.filename)))
+    {
         return false;
     }
-    let camera = format!("{} {}", i.exif.maker, i.exif.model)
-        .trim()
-        .to_string();
-    let body = if i.exif.body_serial.trim().is_empty() {
-        String::new()
-    } else {
-        serde_json::to_string(&[&i.exif.maker, &i.exif.model, i.exif.body_serial.trim()])
-            .unwrap_or_default()
-    };
+    let camera = camera_key(&i.exif.maker, &i.exif.model);
+    let body = body_key(&i.exif.maker, &i.exif.model, &i.exif.body_serial);
     if !selected(&f.cameras, &camera)
-        || !selected(&f.bodies, &body)
+        || !(f.bodies.is_empty() || f.bodies.contains(&body))
         || !selected(&f.lenses, &i.exif.lens)
         || !exact(&r.make, &i.exif.maker)
         || !exact(&r.model, &i.exif.model)
@@ -182,7 +260,7 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
         return false;
     }
     // Capture dates never fall back to filesystem modification dates here.
-    let date = capture.and_then(day).or_else(|| day(&i.exif.datetime));
+    let date = date_of(i, capture);
     if !date_range(date, &f.taken_from, &f.taken_to)
         || !date_range(
             date,
@@ -192,40 +270,11 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
     {
         return false;
     }
-    let iso = i
-        .exif
-        .iso
-        .as_f64()
-        .filter(|v| v.is_finite() && *v > 0.0)
-        .map(|v| v.round().to_string())
-        .unwrap_or_default();
-    let aperture = i
-        .exif
-        .aperture
-        .as_f64()
-        .and_then(|v| decimal(v, 1))
-        .map(|s| format!("f/{s}"))
-        .unwrap_or_default();
-    let focal = i
-        .exif
-        .focal_length
-        .as_f64()
-        .and_then(|v| decimal(v, 0))
-        .map(|s| format!("{s} mm"))
-        .unwrap_or_default();
-    let shutter = i
-        .exif
-        .exposure
-        .as_f64()
-        .filter(|v| v.is_finite() && *v > 0.0)
-        .and_then(|v| {
-            if v >= 0.3 {
-                decimal(v, 1).map(|s| format!("{s}s"))
-            } else {
-                Some(format!("1/{}", (1.0 / v).round()))
-            }
-        })
-        .unwrap_or_default();
+    let number = |v: &serde_json::Number| v.as_f64().unwrap_or(0.0);
+    let iso = iso_key(number(&i.exif.iso));
+    let aperture = aperture_key(number(&i.exif.aperture));
+    let focal = focal_key(number(&i.exif.focal_length));
+    let shutter = shutter_key(number(&i.exif.exposure));
     selected(&f.iso, &iso)
         && selected(&f.aperture, &aperture)
         && selected(&f.focal, &focal)

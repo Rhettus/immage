@@ -17,19 +17,19 @@ use std::{
     },
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const IMMICH_SMART_TIMEOUT: Duration = Duration::from_secs(22);
 
 #[derive(Default)]
 pub struct Requests(Mutex<HashMap<u64, Arc<AtomicBool>>>);
-struct Ticket {
+pub(crate) struct Ticket {
     id: u64,
     requests: Arc<Requests>,
     cancelled: Arc<AtomicBool>,
 }
 impl Requests {
-    fn begin(self: &Arc<Self>, id: u64) -> Result<Ticket, String> {
+    pub(crate) fn begin(self: &Arc<Self>, id: u64) -> Result<Ticket, String> {
         let mut requests = self.0.lock().map_err(|_| "Search request lock poisoned")?;
         if id == 0 || requests.contains_key(&id) {
             return Err("Invalid or duplicate local search request".into());
@@ -61,7 +61,7 @@ impl Requests {
     }
 }
 impl Ticket {
-    fn cancelled(&self) -> bool {
+    pub(crate) fn cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
     }
     fn publish<T>(&self, publish: impl FnOnce() -> T) -> Option<T> {
@@ -81,7 +81,7 @@ impl Drop for Ticket {
     }
 }
 
-fn provider_scopes(
+pub(crate) fn provider_scopes(
     args: &LocalSearchArgs,
     roots: &[PathBuf],
     hidden: &[PathBuf],
@@ -273,8 +273,18 @@ fn run_local_query(
         provider.exclude_vector_scopes(excluded_vector_scopes);
     }
     if let Some(mapped) = morf_config.mapped_root() {
+        // A metadata query reads a complete local copy of the catalog by SQL, so
+        // only the matching rows are loaded; a semantic query needs its images by
+        // path and lists each folder as before.
+        let metadata_only = vector.is_none() && args.image_variant.is_none();
+        let sql = metadata_only && crate::mirror_query::Source::ready(runtime, morf_config);
+        let mut from_copy = Vec::new();
         for (scope, recursive) in provider_scopes(args, roots, hidden, &mapped) {
             if !morf_config.covers(&scope) {
+                continue;
+            }
+            if sql {
+                from_copy.push((scope, recursive));
                 continue;
             }
             let result = morf_config.list_cached(Some(runtime), &scope, recursive, cancelled);
@@ -293,6 +303,16 @@ fn run_local_query(
                     let _ = app.emit("morfphoto-fallback", scope.to_string_lossy().as_ref());
                 }
             }
+        }
+        if !from_copy.is_empty() {
+            provider.add_mirror(crate::mirror_query::Source {
+                runtime: runtime.to_owned(),
+                config: morf_config.clone(),
+                scopes: from_copy,
+            });
+            // the copy may be behind the server: ask for a sync, which never
+            // blocks this search
+            app.state::<AppState>().mirror.kick();
         }
     }
     let mut page =

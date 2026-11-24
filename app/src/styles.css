@@ -3153,3 +3153,6 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .order-confirm p { margin: 0; flex: 1; color: var(--text-2); }
 .order-foot { justify-content: flex-start; }
 .order-spacer { flex: 1; }
+
+/* Find lists while newer values are on their way */
+.filter-ticks[aria-busy="true"] { opacity: 0.6; }

@@ -33,6 +33,7 @@ use crate::morf_photo::{
     encode_plus_query, header_str, library_image, read_response_body, Api, Config, ExifFields,
     PageOutcome, Version, VersionFields, MAX_PAGE_BYTES, PAGE_SIZE, REQUEST_TIMEOUT,
 };
+use crate::search_filters as sf;
 use crate::typed_library::LibraryImage;
 use reqwest::header::{ACCEPT_ENCODING, AUTHORIZATION, ETAG, IF_NONE_MATCH};
 use reqwest::StatusCode;
@@ -52,7 +53,7 @@ use std::{
 
 pub(crate) const FILE: &str = "morfphoto-mirror.sqlite";
 const LOCK: &str = "morfphoto-mirror.lock";
-const USER_VERSION: i64 = 2;
+const USER_VERSION: i64 = 3;
 const TICK: Duration = Duration::from_secs(60);
 const WAIT_SLICE: Duration = Duration::from_secs(5);
 const QUIET: Duration = Duration::from_millis(300);
@@ -85,25 +86,35 @@ CREATE TABLE photos (
     exif_taken_at TEXT,
     iso REAL, aperture REAL, focal REAL, shutter_s REAL, exp_bias REAL,
     seq INTEGER NOT NULL DEFAULT 0,
-    gen INTEGER NOT NULL DEFAULT 0
+    gen INTEGER NOT NULL DEFAULT 0,
+    -- what Find's filters compare, worked out when the row is written by the
+    -- same functions `search_filters::passes` uses (make, model and lens above
+    -- are already in darktable's spelling): extension, coarse kind, raw by
+    -- Immich's list, camera, body and the four exposure labels
+    f_ext TEXT NOT NULL DEFAULT '', f_kind TEXT NOT NULL DEFAULT '',
+    f_raw INTEGER NOT NULL DEFAULT 0, f_photo INTEGER NOT NULL DEFAULT 0,
+    nver INTEGER NOT NULL DEFAULT 0,
+    f_camera TEXT NOT NULL DEFAULT '', f_body TEXT NOT NULL DEFAULT '',
+    f_iso TEXT NOT NULL DEFAULT '', f_aperture TEXT NOT NULL DEFAULT '',
+    f_focal TEXT NOT NULL DEFAULT '', f_shutter TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX photos_dir ON photos(dir);
-CREATE INDEX photos_camera ON photos(camera_label);
+CREATE INDEX photos_lower_path ON photos(lower(server_path));
+CREATE INDEX photos_camera ON photos(f_camera);
 CREATE INDEX photos_lens ON photos(lens);
-CREATE INDEX photos_iso ON photos(iso_label);
-CREATE INDEX photos_aperture ON photos(aperture_label);
-CREATE INDEX photos_focal ON photos(focal_label);
-CREATE INDEX photos_shutter ON photos(shutter_label);
+CREATE INDEX photos_ext ON photos(f_ext);
 CREATE TABLE versions (
     photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
     version INTEGER NOT NULL,
     copy INTEGER NOT NULL, rating INTEGER NOT NULL, rejected INTEGER NOT NULL,
     labels INTEGER NOT NULL, edited INTEGER NOT NULL, taken_at TEXT,
+    -- the capture day, YYYY-MM-DD, of a valid taken_at; NULL otherwise
+    day TEXT,
     latitude REAL, longitude REAL,
     PRIMARY KEY (photo_id, version)
 ) WITHOUT ROWID;
 CREATE INDEX versions_rating ON versions(rating, rejected);
-CREATE INDEX versions_taken ON versions(taken_at);
+CREATE INDEX versions_day ON versions(day);
 CREATE TABLE keywords (
     photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
     version INTEGER NOT NULL,
@@ -965,13 +976,32 @@ fn upsert_file(
         .or_else(|| versions.iter().find_map(|v| v.taken_at.clone()));
     tx.prepare_cached("DELETE FROM photos WHERE server_path = ?1 AND id != ?2")?
         .execute(params![path, id])?;
+    let (make, model) = crate::camera_names::make_model(
+        &text(fields, &["make"]).unwrap_or_default(),
+        &text(fields, &["camera_model", "model"]).unwrap_or_default(),
+    );
+    let lens = crate::camera_names::lens(&text(fields, &["lens"]).unwrap_or_default());
+    let serial = text(fields, &["body_serial"]).unwrap_or_default();
+    let number = |key: &str| real(fields, key).unwrap_or(0.0);
+    let keys = [
+        sf::ext_name(&filename),
+        sf::kind(&filename).to_owned(),
+        sf::camera_key(&make, &model),
+        sf::body_key(&make, &model, &serial),
+        sf::iso_key(number("iso")),
+        sf::aperture_key(number("aperture")),
+        sf::focal_key(number("focal_length")),
+        sf::shutter_key(number("shutter_speed_s")),
+    ];
     tx.prepare_cached(
         "INSERT INTO photos (id, server_path, dir, filename, extension, kind, size, mtime,
              sidecar_fp, make, model, lens, body_key, body_serial, camera_label, iso_label,
              aperture_label, focal_label, shutter_label, exif_taken_at, iso, aperture, focal,
-             shutter_s, exp_bias, seq, gen)
+             shutter_s, exp_bias, seq, gen, f_ext, f_kind, f_raw, f_camera, f_body, f_iso,
+             f_aperture, f_focal, f_shutter, f_photo, nver)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+             ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
+             ?34, ?35, ?36, ?37, ?38)
          ON CONFLICT(id) DO UPDATE SET
              server_path = excluded.server_path, dir = excluded.dir,
              filename = excluded.filename, extension = excluded.extension,
@@ -984,7 +1014,12 @@ fn upsert_file(
              exif_taken_at = excluded.exif_taken_at, iso = excluded.iso,
              aperture = excluded.aperture, focal = excluded.focal,
              shutter_s = excluded.shutter_s, exp_bias = excluded.exp_bias,
-             seq = excluded.seq, gen = excluded.gen",
+             seq = excluded.seq, gen = excluded.gen, f_ext = excluded.f_ext,
+             f_kind = excluded.f_kind, f_raw = excluded.f_raw, f_camera = excluded.f_camera,
+             f_body = excluded.f_body, f_iso = excluded.f_iso,
+             f_aperture = excluded.f_aperture, f_focal = excluded.f_focal,
+             f_shutter = excluded.f_shutter, f_photo = excluded.f_photo,
+             nver = excluded.nver",
     )?
     .execute(params![
         id,
@@ -996,9 +1031,9 @@ fn upsert_file(
         int(fields, "size"),
         int(fields, "mtime"),
         text(fields, &["sidecars", "sidecar_fp"]),
-        text(fields, &["make"]),
-        text(fields, &["camera_model", "model"]),
-        text(fields, &["lens"]),
+        make,
+        model,
+        lens,
         text(fields, &["body_key"]),
         text(fields, &["body_serial"]),
         text(fields, &["camera", "camera_label"]),
@@ -1014,6 +1049,17 @@ fn upsert_file(
         real(fields, "exposure_compensation"),
         seq,
         generation,
+        keys[0],
+        keys[1],
+        sf::is_raw_file(&filename),
+        keys[2],
+        keys[3],
+        keys[4],
+        keys[5],
+        keys[6],
+        keys[7],
+        crate::library_cmds::photo_candidate(Path::new(&filename)),
+        versions.len() as i64,
     ])?;
     tx.prepare_cached("DELETE FROM versions WHERE photo_id = ?1")?
         .execute(params![id])?;
@@ -1021,8 +1067,8 @@ fn upsert_file(
         .execute(params![id])?;
     let mut insert_version = tx.prepare_cached(
         "INSERT OR REPLACE INTO versions (photo_id, version, copy, rating, rejected, labels,
-             edited, taken_at, latitude, longitude)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             edited, taken_at, day, latitude, longitude)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     let mut insert_keyword = tx.prepare_cached(
         "INSERT OR IGNORE INTO keywords (photo_id, version, keyword) VALUES (?1, ?2, ?3)",
@@ -1037,6 +1083,7 @@ fn upsert_file(
             version.labels & 31,
             version.edited.unwrap_or(false),
             version.taken_at,
+            version.taken_at.as_deref().and_then(sf::capture_day),
             version.latitude,
             version.longitude,
         ])?;
@@ -1128,7 +1175,7 @@ fn take_writer_lock(path: &Path) -> Option<File> {
     Some(file)
 }
 
-fn open_conn(path: &Path) -> Result<Connection, String> {
+pub(crate) fn open_conn(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e| e.to_string())?;
     conn.pragma_update(None, "foreign_keys", "ON").map_err(|e| e.to_string())?;
@@ -1243,6 +1290,23 @@ fn local_dirs(config: &Config, server_dirs: &BTreeSet<String>, cap: usize) -> (V
     (dirs.into_iter().take(cap).collect(), all)
 }
 
+// A complete mirror of `items` (feed items as JSON) in `dir` for the config, for
+// tests of the readers in other files.
+#[cfg(test)]
+pub(crate) fn test_fill(dir: &Path, config: &Config, items: Vec<Value>) {
+    let mut conn = open_conn(&dir.join(FILE)).unwrap();
+    let tx = conn.transaction().unwrap();
+    for value in items {
+        let item: ChangeItem = serde_json::from_value(value).unwrap();
+        upsert_file(&tx, item.id, &item.path, &item.fields, &item.versions, item.seq, 0).unwrap();
+    }
+    write_identity(&tx, config).unwrap();
+    meta_set(&tx, "catalog_id", "cat-1").unwrap();
+    meta_set(&tx, "high_water", "10").unwrap();
+    finish(&tx, 10).unwrap();
+    tx.commit().unwrap();
+}
+
 // ---- readers ----
 
 // what a folder read needs to know about a listing to compare it with the
@@ -1275,7 +1339,7 @@ impl MirrorListing {
 }
 
 // a read-only connection of its own; None when there is no mirror file yet
-fn open_reader(runtime: &Path) -> Option<Connection> {
+pub(crate) fn open_reader(runtime: &Path) -> Option<Connection> {
     let path = runtime.join(FILE);
     if !path.exists() {
         return None;
@@ -1286,17 +1350,17 @@ fn open_reader(runtime: &Path) -> Option<Connection> {
     Some(conn)
 }
 
-struct Identity {
-    catalog_id: String,
-    high_water: Option<i64>,
-    complete: bool,
-    synced_at: Option<i64>,
+pub(crate) struct Identity {
+    pub(crate) catalog_id: String,
+    pub(crate) high_water: Option<i64>,
+    pub(crate) complete: bool,
+    pub(crate) synced_at: Option<i64>,
 }
 
 // Read inside the same read transaction as the rows, so a reset between the two
 // cannot pair one catalog's identity with another's rows. None unless the copy
 // belongs to the server and folder the Accelerator is set to now.
-fn read_identity(conn: &Connection, config: &Config) -> Option<Identity> {
+pub(crate) fn read_identity(conn: &Connection, config: &Config) -> Option<Identity> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).ok()?;
     if version != USER_VERSION {
         return None;
@@ -1329,16 +1393,16 @@ fn scope(base: &str, recursive: bool) -> (&'static str, Vec<String>) {
     }
 }
 
-struct Row {
-    id: i64,
-    path: String,
-    exif: ExifFields,
-    version: VersionFields,
+pub(crate) struct Row {
+    pub(crate) id: i64,
+    pub(crate) path: String,
+    pub(crate) exif: ExifFields,
+    pub(crate) version: VersionFields,
 }
 
 // Where Immage runs on a case-insensitive file system, two server paths that
 // differ only in case are one local file.
-const FOLD_CASE: bool = cfg!(any(windows, target_os = "macos"));
+pub(crate) const FOLD_CASE: bool = cfg!(any(windows, target_os = "macos"));
 
 // The photos of one folder (and with `recursive` its subfolders) from the local
 // copy, as the server's listing would give them. None when there is no copy of
@@ -1366,7 +1430,70 @@ pub(crate) fn folder(
     })
 }
 
-type Keywords = HashMap<(i64, u32), Vec<String>>;
+pub(crate) type Keywords = HashMap<(i64, u32), Vec<String>>;
+
+
+// the columns `row_from` reads, of photos `p` joined to versions `v`
+pub(crate) const ROW_COLUMNS: &str = "p.id, p.server_path, p.make, p.model, p.lens, p.body_serial,
+    p.iso, p.aperture, p.focal, p.shutter_s, p.exp_bias, p.mtime,
+    v.version, v.copy, v.rating, v.rejected, v.labels, v.edited, v.taken_at,
+    v.latitude, v.longitude";
+
+pub(crate) fn row_from(r: &rusqlite::Row) -> Result<Row, rusqlite::Error> {
+    let text = |i: usize| -> Result<String, rusqlite::Error> {
+        Ok(r.get::<_, Option<String>>(i)?.unwrap_or_default())
+    };
+    let real = |i: usize| -> Result<f64, rusqlite::Error> {
+        Ok(r.get::<_, Option<f64>>(i)?.unwrap_or(0.0))
+    };
+    Ok(Row {
+        id: r.get(0)?,
+        path: r.get(1)?,
+        exif: ExifFields {
+            maker: text(2)?,
+            model: text(3)?,
+            lens: text(4)?,
+            body_serial: text(5)?,
+            iso: real(6)?,
+            aperture: real(7)?,
+            focal: real(8)?,
+            shutter: real(9)?,
+            bias: real(10)?,
+            mtime: r.get(11)?,
+        },
+        version: VersionFields {
+            version: r.get(12)?,
+            copy: r.get(13)?,
+            rating: r.get(14)?,
+            rejected: r.get(15)?,
+            labels: r.get(16)?,
+            edited: Some(r.get(17)?),
+            taken_at: r.get(18)?,
+            latitude: r.get(19)?,
+            longitude: r.get(20)?,
+            keywords: Vec::new(),
+        },
+    })
+}
+
+// the keywords of the given photos, by photo and version
+pub(crate) fn keywords_of(tx: &Connection, ids: &[i64]) -> Result<Keywords, rusqlite::Error> {
+    let mut keywords: Keywords = HashMap::new();
+    for chunk in ids.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let mut statement = tx.prepare(&format!(
+            "SELECT photo_id, version, keyword FROM keywords WHERE photo_id IN ({marks})
+             ORDER BY photo_id, version, keyword"
+        ))?;
+        for found in statement.query_map(params_from_iter(chunk.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?, r.get::<_, String>(2)?))
+        })? {
+            let (id, version, keyword) = found?;
+            keywords.entry((id, version)).or_default().push(keyword);
+        }
+    }
+    Ok(keywords)
+}
 
 fn read_rows(
     tx: &Connection,
@@ -1375,50 +1502,12 @@ fn read_rows(
 ) -> Result<(Vec<Row>, Keywords), rusqlite::Error> {
     let (predicate, bound) = scope(base, recursive);
     let mut statement = tx.prepare(&format!(
-        "SELECT p.id, p.server_path, p.make, p.model, p.lens, p.body_serial, p.iso, p.aperture,
-                p.focal, p.shutter_s, p.exp_bias, p.mtime,
-                v.version, v.copy, v.rating, v.rejected, v.labels, v.edited, v.taken_at,
-                v.latitude, v.longitude
+        "SELECT {ROW_COLUMNS}
          FROM photos p JOIN versions v ON v.photo_id = p.id
          WHERE {predicate} ORDER BY p.server_path, v.version"
     ))?;
-    let text = |r: &rusqlite::Row, i: usize| -> Result<String, rusqlite::Error> {
-        Ok(r.get::<_, Option<String>>(i)?.unwrap_or_default())
-    };
-    let real = |r: &rusqlite::Row, i: usize| -> Result<f64, rusqlite::Error> {
-        Ok(r.get::<_, Option<f64>>(i)?.unwrap_or(0.0))
-    };
     let rows = statement
-        .query_map(params_from_iter(bound.iter()), |r| {
-            Ok(Row {
-                id: r.get(0)?,
-                path: r.get(1)?,
-                exif: ExifFields {
-                    maker: text(r, 2)?,
-                    model: text(r, 3)?,
-                    lens: text(r, 4)?,
-                    body_serial: text(r, 5)?,
-                    iso: real(r, 6)?,
-                    aperture: real(r, 7)?,
-                    focal: real(r, 8)?,
-                    shutter: real(r, 9)?,
-                    bias: real(r, 10)?,
-                    mtime: r.get(11)?,
-                },
-                version: VersionFields {
-                    version: r.get(12)?,
-                    copy: r.get(13)?,
-                    rating: r.get(14)?,
-                    rejected: r.get(15)?,
-                    labels: r.get(16)?,
-                    edited: Some(r.get(17)?),
-                    taken_at: r.get(18)?,
-                    latitude: r.get(19)?,
-                    longitude: r.get(20)?,
-                    keywords: Vec::new(),
-                },
-            })
-        })?
+        .query_map(params_from_iter(bound.iter()), row_from)?
         .collect::<Result<Vec<_>, _>>()?;
     let mut statement = tx.prepare(&format!(
         "SELECT k.photo_id, k.version, k.keyword FROM keywords k

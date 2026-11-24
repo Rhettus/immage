@@ -23,6 +23,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::local_search_cmds::local_search,
         crate::local_search_cmds::local_search_cancel,
         crate::local_search_cmds::local_search_seed,
+        crate::find_facets::find_facets,
         crate::search_cmds::search_pause,
         crate::search_cmds::search_analysis_status,
         crate::search_cmds::search_cache_clear,

@@ -101,7 +101,17 @@ Improvements
   With the share unmounted or not answering, its photos still show, each with
   a red dot, and are not opened. **Preferences > Immage Accelerator** shows
   when it last synced, how many photos it holds, the progress and any error,
-  with a **Resync** button.
+  with a **Resync** button. Find's **All folders** search and filter lists
+  also read it: a narrow filter over 150,000 photos answers in a few hundredths
+  of a second.
+- **Find lists the whole library under All folders:** With **Search in** set
+  to **All folders**, Find's file types, keywords, cameras, camera bodies,
+  lenses, capture months and exposure settings list every value in the
+  library with how many photos have it, narrowed by your other filters, not
+  only what the loaded results hold. Cameras, lenses and exposure values have
+  a find box, and a list of more than 200 values shows the 200 most used and
+  finds the rest as you type. Camera and lens names from a morfPhoto server
+  use darktable's spelling (**Nikon Z 6**), so each appears once.
 
 Performance
 
@@ -124,6 +134,9 @@ Performance
 
 Bug fixes
 
+- **Find across folders honors file type and Serial not recorded:** Ticking a
+  file type such as **ARW** or **JPG**, or **Serial not recorded** under
+  Camera body, in an All folders search no longer returns nothing.
 - **Copy only the raws of RAW+JPEG stacks:** Moving or copying photos while
   the file-type filter shows only raws now leaves the stacked JPEG, HEIF and
   ORI files behind. The confirmation has a checkbox to include or leave out

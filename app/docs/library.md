@@ -556,6 +556,24 @@ list the server's values.
 Each list counts only the photos your other choices leave: tick a camera, and
 **Lens** lists just the lenses used on it.
 
+With **Search in** set to **All folders**, the lists hold every value in your
+whole library, with how many photos have it, not just the photos on the current
+page of results: file types, keywords (a photo counts once under each level of
+a keyword), cameras, camera bodies, lenses, capture months and the four
+exposure settings. They include photos in the local catalog of an Immage
+Accelerator folder and Immage's own photo index. The lists refresh a moment
+after you change a filter and keep showing the previous values until the new
+ones arrive. **This folder** lists the photos of the folder, as before.
+
+**Camera**, **Camera body**, **Lens** and each **Exposure** tab have a find box
+once they list more than eight values. A list of more than 200 values shows the
+200 most used, plus any you have ticked; type in the find box to search the
+whole list.
+
+A camera or lens has one spelling in the lists, whether Immage read it from the
+file or from your morfPhoto server: **Nikon Z 6**, not **NIKON CORPORATION
+NIKON Z 6**. Saved filters that name the other spelling still match.
+
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. The footer is always visible below the list:
 it shows how many photos match, **Load** (saved filters) and **Save filter…**,

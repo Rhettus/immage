@@ -8,11 +8,13 @@ import type { ImageEntry } from "./library";
 export const INDEX_CHANGED = "index-changed";
 export const indexChanged = (error: unknown) => String(error).includes(INDEX_CHANGED);
 let requestId = 0;
+// ids of requests the Rust side tracks for cancelling; Find's lists share the counter
+export const nextRequestId = () => ++requestId;
 export async function localSearch(q: ImmichSearch, filters: Filter, folder: string, recursive: boolean,
                                   next: string | null, signal: AbortSignal, imageVariant?: string, pendingMetadata?: Promise<unknown>[]) {
   if (pendingMetadata?.length) await Promise.allSettled(pendingMetadata);
   if (signal.aborted) throw new Error("Search cancelled");
-  const id = ++requestId;
+  const id = nextRequestId();
   const cancel = () => { void commands.localSearchCancel(id).catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   try {

@@ -275,6 +275,21 @@ come from Immage's or morfPhoto's caches, or stay empty. Clicking such a photo
 selects it but does not open it, and the status bar says the photo is on an
 offline drive. Open it once the share is connected again.
 
+### Find reads the local copy
+
+With **All folders** and a metadata search (filters, or a file name search),
+Find reads the local copy by database queries and loads only the photos that
+match, so a narrow filter over a library of 150,000 photos answers in a few
+hundredths of a second and the filter lists count the whole library. This
+needs the copy to be complete; until the first sync finishes Find lists the
+server's folders as before, and the filter lists hold the photos Immage has
+already read. Smart (photo content) searches are unchanged.
+
+Camera and lens names from the server are shown as Immage shows the ones it
+reads itself, using darktable's camera names (**Nikon Z 6**, **Canon EOS R5**,
+**Sony ILCE-7M3**). A lens keeps the server's name except for Canon RF and RF-S,
+and Nikkor, Tamron and Viltrox names, which are spelled as darktable spells them.
+
 ## Monitor NAS activity
 
 Open **Preferences → Immage Accelerator (Experimental)** and expand

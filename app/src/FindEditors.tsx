@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { commands, type Named } from "./commands";
 import { bodyLabel, EXPOSURE, facetsWithin, rejectedOptions, type ExposureKey, type Facets, type Filter } from "./filter";
+import { MOST_USED, shownValues, type LibraryFacets } from "./libraryFacets";
 import { pickKinds, setKinds, setRawOnly, setStars, setTaken, type CategoryKey, type FindState } from "./findModel";
 import { StarIcon } from "./icons";
 import { fileKind, LABEL_COLORS, type ImageEntry } from "./library";
@@ -16,26 +17,31 @@ import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
 
 // values to tick, any of them, with how many photos have each; a long list
-// scrolls in its own box (CSS) and gets a box to find one in
-export function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts = true, indent }: {
+// scrolls in its own box (CSS) and gets a box to find one in. Past MOST_USED
+// values only the most used are drawn, with the chosen ones, and the box finds
+// the rest in the whole list. `byName`: the items are not in the reader's
+// order (the library's lists come in code point order), so what is drawn is
+// sorted by name here
+export function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, counts = true, indent, byName, busy }: {
   items: [string, number][]; chosen: string[]; onChange: (v: string[]) => void;
   show?: (v: string) => string; empty: string;
   find?: string;                           // the find box's placeholder
   counts?: boolean;
   indent?: (v: string) => boolean;         // rows set in under the one before
+  byName?: boolean;
+  busy?: boolean;                          // new values are on their way
 }) {
   const [words, setWords] = useState("");
   const w = words.trim().toLowerCase();
-  // a chosen value the shown photos no longer have stays to untick
-  const all: [string, number][] = [...chosen.filter((c) => !items.some(([v]) => v === c)).map((c) => [c, 0] as [string, number]),
-                                    ...items].filter(([v]) => !w || show(v).toLowerCase().includes(w));
+  const { shown, cut } = shownValues(items, chosen, w, show, !!byName);
+  const all = shown;
   return (
     <>
       {find && items.length > 8 && (
         <input className="field find" type="search" spellCheck={false} placeholder={find} aria-label={find} value={words}
                onChange={(e) => setWords(e.target.value)} />
       )}
-      <div className="filter-ticks">
+      <div className="filter-ticks" aria-busy={busy || undefined}>
         {all.map(([v, n]) => (
           <button key={v} role="checkbox" aria-checked={chosen.includes(v)} className={`${chosen.includes(v) ? "on" : ""}${indent?.(v) ? " indent" : ""}`}
                   onClick={() => onChange(chosen.includes(v) ? chosen.filter((x) => x !== v) : [...chosen, v])}>
@@ -43,6 +49,7 @@ export function Ticks({ items, chosen, onChange, show = (v) => v, empty, find, c
             {counts && <span className="count">{formatNumber(n)}</span>}</button>
         ))}
         {!all.length && <div className="empty">{w ? t("library.filters.noMatch") : empty}</div>}
+        {cut && <div className="empty" role="note">{t("library.filters.mostUsedOnly")}</div>}
       </div>
     </>
   );
@@ -56,9 +63,11 @@ export const chosen = (v: string[], name: (x: string) => string = (x) => x) =>
   v.length === 1 ? name(v[0]) : v.length ? t("library.filters.chosen", { count: v.length }) : "";
 export const keyword = (k: string) => k.split("|").join(" › ");
 
+type List = (key: keyof Facets, clear: Partial<Filter>) => [string, number][];
+
 // the exposure settings as tabs, and the values of the one chosen under them
-function Exposure({ v, set, within }: {
-  v: Filter; set: (p: Partial<Filter>) => void; within: (clear: Partial<Filter>) => Facets;
+function Exposure({ v, set, list, byName, busy }: {
+  v: Filter; set: (p: Partial<Filter>) => void; list: List; byName: boolean; busy: boolean;
 }) {
   const [shown, setShown] = useState<ExposureKey>("iso");
   return (
@@ -72,8 +81,8 @@ function Exposure({ v, set, within }: {
           </button>
         ))}
       </div>
-      <Ticks key={shown} items={within({ [shown]: [] })[shown]} chosen={v[shown]} onChange={(x) => set({ [shown]: x })}
-             empty={t("library.filters.noneRecorded")} />
+      <Ticks key={shown} items={list(shown, { [shown]: [] })} chosen={v[shown]} onChange={(x) => set({ [shown]: x })}
+             empty={t("library.filters.noneRecorded")} find={t("library.filters.findSetting")} byName={byName} busy={busy} />
     </>
   );
 }
@@ -299,15 +308,21 @@ export type EditorProps = {
   local: boolean;        // this computer's photos are searched
   server: boolean;       // the server's pickers stand in for the folder's lists
   people: Named[]; tags: Named[]; albums: Named[];
+  // Search in = All folders: the library's lists, which stand in for what the
+  // loaded photos hold; `busy` while newer ones are on their way
+  library?: LibraryFacets | null;
+  busy?: boolean;
 };
 
 // the editor of one category; the facets it lists are worked out here, so
 // only the one open is
-export function FilterEditor({ cat, state, send, images, local, server, people, tags, albums }: EditorProps) {
+export function FilterEditor({ cat, state, send, images, local, server, people, tags, albums, library, busy = false }: EditorProps) {
   const { search: s, filter: f } = state;
   const patchSearch = (p: Partial<ImmichSearch>) => send({ ...state, search: { ...s, ...p } });
   const patchFilter = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
-  const within = (clear: Partial<Filter>) => facetsWithin(images, f, clear);
+  // a list from the library when it has one, else from the photos shown
+  const list: List = (key, clear) => library?.[key] ?? facetsWithin(images, f, clear)[key];
+  const byName = !!library;
   switch (cat) {
     case "rating":
       return <Rating state={state} send={send} images={images} local={local} />;
@@ -331,38 +346,38 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
             <input type="checkbox" className="switch" aria-label={t("library.find.rawOnly")} checked={s.rawOnly}
                    onChange={(e) => send(setRawOnly(state, e.target.checked))} />
           </div>
-        : <Ticks items={within({ kinds: [] }).kinds} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, pickKinds(f.kinds, kinds)))}
+        : <Ticks items={list("kinds", { kinds: [] })} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, pickKinds(f.kinds, kinds)))}
                  show={(v) => v === "RAW" ? t("library.find.allRaw") : v} indent={(v) => v !== "RAW" && fileKind(`.${v}`) === "RAW"}
                  empty={t("library.filters.noPhotos")} />;
     case "keywords":
       return server
         ? ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"))
         // every one ticked, and a keyword covers those under it
-        : <Ticks items={within({ keywords: [] }).keywords} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
-                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} />;
+        : <Ticks items={list("keywords", { keywords: [] })} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
+                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} byName={byName} busy={busy} />;
     case "cameras":
       return server
         ? <Camera v={s} set={patchSearch} />
-        : <Ticks items={within({ cameras: [] }).cameras} chosen={f.cameras} onChange={(cameras) => patchFilter({ cameras })}
-                 empty={t("library.filters.noneRecorded")} />;
+        : <Ticks items={list("cameras", { cameras: [] })} chosen={f.cameras} onChange={(cameras) => patchFilter({ cameras })}
+                 empty={t("library.filters.noneRecorded")} find={t("library.filters.findCamera")} byName={byName} busy={busy} />;
     case "bodies":
       return (
         <div className="filter-bodies">
-          <Ticks items={within({ bodies: [] }).bodies} chosen={f.bodies} onChange={(bodies) => patchFilter({ bodies })}
-                 show={bodyLabel} empty={t("library.filters.noPhotos")} find={t("library.filters.findModelSerial")} />
+          <Ticks items={list("bodies", { bodies: [] })} chosen={f.bodies} onChange={(bodies) => patchFilter({ bodies })}
+                 show={bodyLabel} empty={t("library.filters.noPhotos")} find={t("library.filters.findModelSerial")} byName={byName} busy={busy} />
           <p className="fe-hint after">{t("library.filters.bodyHint")}</p>
         </div>
       );
     case "lenses":
       return server
         ? <Camera v={s} set={patchSearch} />
-        : <Ticks items={within({ lenses: [] }).lenses} chosen={f.lenses} onChange={(lenses) => patchFilter({ lenses })}
-                 empty={t("library.filters.noneRecorded")} />;
+        : <Ticks items={list("lenses", { lenses: [] })} chosen={f.lenses} onChange={(lenses) => patchFilter({ lenses })}
+                 empty={t("library.filters.noneRecorded")} find={t("library.filters.findLens")} byName={byName} busy={busy} />;
     case "exposure":
-      return <Exposure v={f} set={patchFilter} within={within} />;
+      return <Exposure v={f} set={patchFilter} list={list} byName={false} busy={busy} />;
     case "taken":
       return <Captured from={f.takenFrom || s.takenFrom} to={f.takenTo || s.takenTo}
-                       months={local ? within({ takenFrom: "", takenTo: "" }).months : null}
+                       months={local ? list("months", { takenFrom: "", takenTo: "" }) : null}
                        onChange={(from, to) => send(setTaken(state, from, to))} />;
     case "place":
       return <Place v={s} set={patchSearch} />;

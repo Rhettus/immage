@@ -121,6 +121,7 @@ jobs:
             verify/file-menu.test.mjs \
             verify/filter-rejected.test.mjs \
             verify/find-model.test.mjs \
+            verify/find-facets.test.mjs \
             verify/saved-filters.test.mjs \
             verify/stacking.test.mjs \
             verify/folder-edits.test.mjs \

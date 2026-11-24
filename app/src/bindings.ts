@@ -10,6 +10,11 @@ export const commands = {
 	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
 	/**  Resolve the clicked file version to a cache identity, never an engine ID. */
 	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
+	/**
+	 *  Every value the library holds for Find's lists, with counts, for the search's
+	 *  folders. The page cancels a request it has outgrown with `local_search_cancel`.
+	 */
+	findFacets: (args: FindFacetsArgs, requestId: number) => __TAURI_INVOKE<FacetReply>("find_facets", { args, requestId }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	/**
 	 *  Find's indicator: the real backlog of photos waiting for analysis, whether
@@ -481,6 +486,19 @@ export type ExportReply = {
 	album?: string | null,
 };
 
+export type FacetReply = {
+	kinds: ([string, number])[],
+	keywords: ([string, number])[],
+	cameras: ([string, number])[],
+	bodies: ([string, number])[],
+	lenses: ([string, number])[],
+	months: ([string, number])[],
+	iso: ([string, number])[],
+	aperture: ([string, number])[],
+	focal: ([string, number])[],
+	shutter: ([string, number])[],
+};
+
 export type FetchState = "idle" | "running" | "done" | "failed";
 
 export type FilmFetch = {
@@ -511,6 +529,17 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+export type FindFacetsArgs = {
+	/**  "library" (All folders) or "folder" */
+	scope?: string,
+	folder?: string | null,
+	recursive?: boolean,
+	filters?: GridFilter,
+	remote?: SearchArgs,
+	/**  the lists to count; none means every list */
+	lists?: string[],
 };
 
 export type FolderConflict = {
