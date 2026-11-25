@@ -101,7 +101,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          rangeCenter, samePart, saveZoneOverlay, ZONE_PARTS, zoneAt, zoneMaskName, zoneOfMask, zonePartOf, zoneShape,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type ShowSpots, type SpotTool } from "./SpotOverlay";
-import type { NewSpot, Spot } from "./spots";
+import { DEFAULT_FILL, anchorOf, type FillSettings, type NewSpot, type Spot } from "./spots";
 import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
@@ -819,7 +819,15 @@ export default function App() {
   const healMode = rightMode === "heal";
   const [spots, setSpots] = useState<Spot[]>([]);
   const [spotSel, setSpotSel] = useState<number | null>(null);
-  const [spotTool, setSpotTool] = useState<SpotTool>({ mode: "heal", size: 0.03, feather: 0.5, opacity: 1 });
+  const [spotTool, setSpotTool] = useState<SpotTool>({
+    mode: "heal", size: 0.03, feather: 0.5, opacity: 1,
+    fill_mode: 1, fill_color: null, fill_brightness: 0, blur_type: 0, blur_radius: 10,
+  });
+  // what the photo's fill and blur spots share, and the eyedropper that is on
+  // (a spot's color, or the color range they are limited to)
+  const [spotFill, setSpotFill] = useState<FillSettings>(DEFAULT_FILL);
+  const [spotPick, setSpotPick] = useState<"color" | "range" | null>(null);
+  useEffect(() => { if (!healMode) setSpotPick(null); }, [healMode]);
   const [visualize, setVisualize] = useState<number | null>(null);
   // Show Spots, remembered; H hides the spots and brings back the choice before
   const [showSpots, setShowSpotsState] = useState<ShowSpots>(() => {
@@ -834,7 +842,10 @@ export default function App() {
   };
   // bumped when the whole-image base is redrawn, for Visualize Spots
   const [baseTick, setBaseTick] = useState(0);
-  const syncSpots = () => setSpots(session.current?.spots ?? []);
+  const syncSpots = () => {
+    setSpots(session.current?.spots ?? []);
+    setSpotFill(session.current?.fill ?? DEFAULT_FILL);
+  };
   // the engine's map of the selected mask's ranges, for the overlay
   const [rangeMap, setRangeMap] = useState<RangeMap | null>(null);
   // the Zone System: the engine's zones of the image, made again after
@@ -992,10 +1003,31 @@ export default function App() {
     if (!s) return;
     leaveBefore();
     try {
-      const { sx, sy } = await commands.spotSource(spot);
+      let made: Spot;
+      if (spot.mode === "fill" || spot.mode === "blur") {
+        // no source: a fill takes the color the photo has where it is made,
+        // unless one was picked
+        const t = spotTool;
+        if (spot.mode === "blur")
+          made = { ...spot, blur_type: t.blur_type, blur_radius: t.blur_radius } as Spot;
+        else {
+          let color = t.fill_color;
+          if (t.fill_mode === 1 && !color) {
+            const [x, y] = anchorOf(spot as Spot);
+            const ry = spot.type === "circle" && full.current ? spot.r * full.current.w / full.current.h : 0;
+            const box = spot.type === "circle"
+              ? [Math.max(0, x - spot.r), Math.max(0, y - ry), Math.min(1, x + spot.r), Math.min(1, y + ry)] : null;
+            color = (await commands.sample(x, y, box, "retouch")).picker?.mean ?? null;
+          }
+          made = { ...spot, fill_mode: t.fill_mode, fill_color: color, fill_brightness: t.fill_brightness } as Spot;
+        }
+      } else {
+        const { sx, sy } = await commands.spotSource(spot);
+        made = { ...spot, sx, sy } as Spot;
+      }
       record(["spot:create"]);
-      s.setSpots([...s.spots, { ...spot, sx, sy } as Spot]);
-      setSpotSel(s.spots.length - 1);
+      s.setSpots([...s.spots, made]);
+      setSpotSel(s.spots.indexOf(made));
       syncSpots();
     } catch (e) {
       setStatus(t("app.status.healError", { error: e }));
@@ -1007,6 +1039,40 @@ export default function App() {
     record([key]);
     s.setSpots(next);
     syncSpots();
+  };
+  // the fill and blur spots' shared settings
+  const editFill = (patch: Partial<FillSettings>) => {
+    const s = session.current;
+    if (!s) return;
+    leaveBefore();
+    record(["spot:fill"]);
+    s.setFill(patch);
+    syncSpots();
+  };
+  // the eyedropper's click: the photo's color there becomes the selected
+  // fill spot's (and the brush's), or the color range the fill is limited to
+  const pickSpotPoint = async (x: number, y: number) => {
+    const s = session.current, kind = spotPick;
+    if (!s || !kind) return;
+    setSpotPick(null);
+    try {
+      if (kind === "color") {
+        const color = (await commands.sample(x, y, null, "retouch")).picker?.mean;
+        if (!color) return;
+        setSpotTool((tl) => ({ ...tl, fill_color: color }));
+        const sel = spotSel !== null ? s.spots[spotSel] : undefined;
+        if (sel && sel.mode === "fill")
+          editSpots(s.spots.map((q, i) => (i === spotSel ? { ...q, fill_color: color } as Spot : q)), `spot:edit:${spotSel}`);
+        return;
+      }
+      // the range reads the photo as the fill instance receives it
+      const v = await commands.sample(x, y, null, "retouch_in");
+      const r: Range = { type: "color", hue: v.hue, width: 0.04, feather: 0.04, chroma: v.chroma * 0.5 };
+      const custom = (s.fill.ranges as unknown as Range[]).some((q) => q.type === "parametric");
+      editFill({ ranges: [custom ? { type: "parametric", channels: rangeChannels(r) } : r] as unknown as FillSettings["ranges"] });
+    } catch (e) {
+      setStatus(t("app.status.sampleError", { error: e }));
+    }
   };
   const deleteSpot = () => {
     const s = session.current;
@@ -4808,7 +4874,7 @@ export default function App() {
   // alike. a run of changes to the same thing (a slider drag, a curve or
   // shape drag, the white balance picker settling) is one step
   // `label` names the change that follows the state, for the History panel
-  type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
+  type Snap = { values: Values; masks: Mask[]; spots: Spot[]; fill: FillSettings; look: { name: string | null; path: string | null };
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
                 modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
@@ -4817,7 +4883,7 @@ export default function App() {
                 advanced: Map<string, AdvancedState>; instances: InstanceEntry[] | null };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
-    look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
+    fill: structuredClone(s.fill), look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
     modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
     instances: s.instanceLayout(),
   });
@@ -4903,6 +4969,10 @@ export default function App() {
       s.setSpots(target.spots);
       syncSpots();
       setSpotSel(null);
+    }
+    if (JSON.stringify(target.fill) !== JSON.stringify(s.fill)) {
+      s.setFill(target.fill);
+      syncSpots();
     }
   };
   // an undo or redo in the crop tool, whose guide stays its own until
@@ -7291,6 +7361,7 @@ export default function App() {
               <div className="mask-box" ref={maskBox}>
                 <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} tool={spotTool}
                              show={showSpots} visualize={visualize} base={baseCanvas} baseTick={baseTick} overlayColor={maskOverlayRgb(overlayColor)}
+                             picking={spotPick !== null} onPickPoint={(x, y) => void pickSpotPoint(x, y)}
                              onSelect={setSpotSel} onCreate={(sp) => void createSpot(sp)}
                              onChange={(next) => editSpots(next, "spot:drag")} />
               </div>
@@ -7665,6 +7736,8 @@ export default function App() {
           )}
           {healMode && !cropping && (
             <HealPanel tool={spotTool} spots={spots} selected={spotSel} show={showSpots} visualize={visualize} disabled={!current}
+                       fill={spotFill} picking={spotPick} onFill={editFill} onPick={setSpotPick}
+                       onDeselect={() => setSpotSel(null)}
                        renderSlider={(c, v, onChange) => (
                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                  values={values} onChange={onChange} />

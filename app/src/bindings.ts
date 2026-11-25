@@ -129,8 +129,9 @@ export const commands = {
 	maskMap: (name: string | null, op: string | null, width: number, height: number, view: MapView | null) => __TAURI_INVOKE<ArrayBuffer>("mask_map", { name, op, width, height, view }),
 	rangeMap: (ranges: Value[], width: number, height: number) => __TAURI_INVOKE<ArrayBuffer>("range_map", { ranges, width, height }),
 	zones: (width: number, height: number, transition: number, stage: string) => __TAURI_INVOKE<ArrayBuffer>("zones", { width, height, transition, stage }),
-	spots: (spots: Spot[] | null) => __TAURI_INVOKE<Spot[]>("spots", { spots }),
+	spots: (spots: Spot[] | null) => __TAURI_INVOKE<SpotsReply>("spots", { spots }),
 	spotsEnable: (on: boolean) => __TAURI_INVOKE<null>("spots_enable", { on }),
+	spotsFill: (blend: string | null, opacity: number | null, ranges: Value[] | null) => __TAURI_INVOKE<FillSettings>("spots_fill", { blend, opacity, ranges }),
 	spotSource: (spot: NewSpot) => __TAURI_INVOKE<SpotSource>("spot_source", { spot }),
 	upright: (mode: string, guides: number[] | null, aspect: number) => __TAURI_INVOKE<UprightReply>("upright", { mode, guides, aspect }),
 	looksList: () => __TAURI_INVOKE<LookInfo[]>("looks_list"),
@@ -500,6 +501,12 @@ export type FacetReply = {
 };
 
 export type FetchState = "idle" | "running" | "done" | "failed";
+
+export type FillSettings = {
+	blend: string,
+	opacity: number,
+	ranges: Value[],
+};
 
 export type FilmFetch = {
 	state: FetchState,
@@ -1399,13 +1406,47 @@ export type SharedImport = {
 	failed: string[],
 };
 
-export type Spot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number };
+export type Spot = {
+	type: "circle",
+} & {
+	x: number,
+	y: number,
+	r: number,
+	mode: SpotMode,
+	sx?: number | null,
+	sy?: number | null,
+	feather: number,
+	opacity: number,
+} & SpotFill | {
+	type: "brush",
+} & {
+	points: ([number, number])[],
+	size: number,
+	mode: SpotMode,
+	sx?: number | null,
+	sy?: number | null,
+	feather: number,
+	opacity: number,
+} & SpotFill;
 
-export type SpotMode = "heal" | "clone";
+export type SpotFill = {
+	fill_mode?: number | null,
+	fill_color?: [number, number, number] | null,
+	fill_brightness?: number | null,
+	blur_type?: number | null,
+	blur_radius?: number | null,
+};
+
+export type SpotMode = "heal" | "clone" | "fill" | "blur";
 
 export type SpotSource = {
 	sx: number,
 	sy: number,
+};
+
+export type SpotsReply = {
+	spots: Spot[],
+	fill?: FillSettings | null,
 };
 
 export type Status = {

@@ -1877,6 +1877,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 /* the brush's circles and center dot stand in for the pointer; pins and
    outlines bring back their own */
 .mask-svg.drawing.spot-svg { cursor: none; }
+.mask-svg.drawing.spot-svg.picking { cursor: crosshair; }
 .mask-svg .brush-cursor .dot { fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1; }
 .spot-svg .spot-pin {
   fill: var(--accent, #fff); stroke: var(--panel, #181818); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: pointer;
@@ -1893,6 +1894,10 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .heal-show { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .heal-show > span { color: var(--text-2); }
 .heal-actions { display: flex; gap: 6px; margin-top: 6px; }
+.heal-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.heal-row > span:first-child { flex: none; color: var(--text-2); min-inline-size: 64px; }
+.heal-swatch { flex: 1; block-size: 22px; border-radius: 4px; border: 1px solid var(--border, #444); }
+.heal-sub { margin-block: 10px 4px; color: var(--text-2); font-weight: 600; }
 .note-plain.warn { color: #f5b041; }
 
 /* Preferences: tabs down the left, a pane of cards on the right */

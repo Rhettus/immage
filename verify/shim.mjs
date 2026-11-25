@@ -220,7 +220,8 @@ const COMMANDS = {
     return request(req);
   },
   masks: async ({ fields }) => (await request({ cmd: "masks", fields })).masks,
-  spots: async ({ spots } = {}) => (await request({ cmd: "spots", ...(spots ? { spots } : {}) })).spots,
+  spots: async ({ spots } = {}) => await request({ cmd: "spots", ...(spots ? { spots } : {}) }),
+  spots_fill: async ({ blend, opacity, ranges } = {}) => (await request({ cmd: "spots_fill", ...(blend != null ? { blend } : {}), ...(opacity != null ? { opacity } : {}), ...(ranges != null ? { ranges } : {}) })).fill,
   spots_enable: ({ on }) => request({ cmd: "spots_enable", on }),
   mask_shapes: ({ name, shapes }) => request({ cmd: "mask", name, shapes }),
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),

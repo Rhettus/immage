@@ -1051,6 +1051,11 @@ static gboolean _cmd_spots_enable(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_spots_fill(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return masks_fill_set(req, b, err);
+}
+
 static gboolean _cmd_spot_source(JsonObject *req, JsonBuilder *b, char **err)
 {
   JsonObject *spot = json_object_has_member(req, "spot") ? json_object_get_object_member(req, "spot") : NULL;
@@ -1079,6 +1084,8 @@ static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
                 ? json_object_get_array_member(req, "box") : NULL,
               !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor") ? _STAGE_NEGADOCTOR
                 : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "temperature") ? _STAGE_TEMPERATURE
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "retouch") ? _STAGE_RETOUCH
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "retouch_in") ? _STAGE_RETOUCH_IN
                 : _STAGE_ANCHOR,
               b, err))
     return FALSE;
@@ -1405,6 +1412,7 @@ static const eng_cmd_t _commands[] =
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spots", _cmd_spots, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spots_enable", _cmd_spots_enable, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "spots_fill", _cmd_spots_fill, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spot_source", _cmd_spot_source, _CMD_NEEDS_OPEN },
   { "masks", _cmd_masks, _CMD_NEEDS_OPEN },
   { "sample", _cmd_sample, _CMD_NEEDS_OPEN },

@@ -12,7 +12,7 @@ import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, loca
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
 import { planMerge, type MergePlan } from "./localMerge";
-import type { Spot } from "./spots";
+import { DEFAULT_FILL, orderSpots, type FillSettings, type Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
@@ -227,8 +227,11 @@ export class Session {
   // mask, some 9 ms a brush stroke, while the others' stays in darktable's
   // drawn mask cache and their instances' output in the pipe's
   private lifted: string | null = null;
-  // heal and clone spots: all of them go whenever one changes, being few
+  // heal, clone, fill and blur spots, in the engine's order (heal and clone
+  // first): all of them go whenever one changes, being few
   spots: Spot[] = [];
+  // what the fill and blur spots share (the engine's second retouch instance)
+  fill: FillSettings = DEFAULT_FILL;
   // whether the image had an edit when it was opened, which decides whether
   // the new-photos defaults apply
   wasEdited = true;
@@ -360,6 +363,7 @@ export class Session {
     }
   }
   private spotsDirty = false;
+  private fillDirty = false;
   // whether the engine has them on: the Before view takes them off
   private spotsOn = true;
   // masks and spots are kept in the shown frame, which a turn, a crop or a
@@ -471,7 +475,7 @@ export class Session {
     }
     await s.loadMasks();
     s.chooseModules();
-    s.spots = await traced("spots", () => commands.spots(null));
+    s.readSpots(await traced("spots", () => commands.spots(null)));
     await s.refreshWb();
     s.requestRender();
     return s;
@@ -726,7 +730,13 @@ export class Session {
   }
 
   private get spotsPending() {
-    return this.spotsDirty || this.spotsOn !== !this.before;
+    return this.spotsDirty || this.fillDirty || this.spotsOn !== !this.before;
+  }
+
+  // the engine's spots and the settings its fill and blur ones share
+  private readSpots(r: { spots: Spot[]; fill?: FillSettings | null }) {
+    this.spots = orderSpots(r.spots);
+    this.fill = r.fill ?? DEFAULT_FILL;
   }
 
   // the engine's view changed with no edit (the soft proof): the frames
@@ -738,8 +748,16 @@ export class Session {
   }
 
   setSpots(spots: Spot[]) {
-    this.spots = spots;
+    this.spots = orderSpots(spots);
     this.spotsDirty = true;
+    this.needRender = true;
+    void this.pump();
+  }
+
+  // the fill and blur settings, those given
+  setFill(patch: Partial<FillSettings>) {
+    this.fill = { ...this.fill, ...patch };
+    this.fillDirty = true;
     this.needRender = true;
     void this.pump();
   }
@@ -2150,9 +2168,16 @@ export class Session {
           continue;
         }
         if (this.spotsPending) {
-          const dirty = this.spotsDirty, on = !this.before;
+          const dirty = this.spotsDirty, fillDirty = this.fillDirty, on = !this.before;
           this.spotsDirty = false;
+          this.fillDirty = false;
           if (dirty) await this.pumpTyped("spots", () => commands.spots(this.spots));
+          // after the spots: the first fill or blur spot makes the instance
+          // these are the settings of
+          if (fillDirty) {
+            const { blend, opacity, ranges } = this.fill;
+            await this.pumpTyped("spots_fill", () => commands.spotsFill(blend, opacity, ranges));
+          }
           // a new set of spots comes on with them; the Before view turns
           // them off after
           if (dirty || on !== this.spotsOn) await this.pumpTyped("spots_enable", () => commands.spotsEnable(on));
@@ -2399,7 +2424,7 @@ export class Session {
           this.reshape = false;
           const task = perf.begin("pump.task", { operation:"loadMasks", blockingPump:true });
           try { await this.loadMasks(); } finally { perf.finish(task); }
-          this.spots = await this.pumpTyped("spots", () => commands.spots(null));
+          this.readSpots(await this.pumpTyped("spots", () => commands.spots(null)));
           this.onShapes?.();
           continue;
         }

@@ -1,0 +1,34 @@
+[
+ {
+  "label": "3 open / spots_fill read",
+  "reply": {
+   "fill": {
+    "blend": "chromaticity",
+    "opacity": 100.0,
+    "ranges": []
+   },
+   "ms": 0.0,
+   "ok": true
+  }
+ },
+ {
+  "label": "3 open / spots_fill set",
+  "reply": {
+   "fill": {
+    "blend": "normal",
+    "opacity": 49.0,
+    "ranges": [
+     {
+      "chroma": 0.0020000000949949026,
+      "feather": 0.04999999701976776,
+      "hue": 0.050000011920928955,
+      "type": "color",
+      "width": 0.1000000387430191
+     }
+    ]
+   },
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

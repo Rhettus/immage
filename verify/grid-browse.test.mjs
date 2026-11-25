@@ -108,7 +108,7 @@ test('fresh RAW baseline defaults render without saving or invalidating search u
     }
     if (cmd === 'get_params') return { modules: state };
     if (cmd === 'history') return [];
-    if (cmd === 'spots') return [];
+    if (cmd === 'spots') return { spots: [] };
     if (cmd === 'save') return { edited: false };
     return {};
   };

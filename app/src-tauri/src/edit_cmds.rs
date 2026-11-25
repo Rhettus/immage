@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, OrderEntry, OrderInfoReply, OrderReply, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, OrderEntry, OrderInfoReply, OrderReply, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsFillReply, SpotsReply, FillSettings, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -326,17 +326,39 @@ pub(crate) async fn spektra_fetch(state: State<'_, AppState>, action: String) ->
     serde_json::from_value(reply).map_err(|e| format!("spektra_fetch: unexpected reply: {e}"))
 }
 
-// the image's heal and clone spots: replaced by `spots` when given, and
-// replied as the engine keeps them
+// the image's spots (heal and clone, then fill and blur): replaced by
+// `spots` when given, and replied as the engine keeps them, with the settings
+// its fill and blur spots share
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn spots(state: State<'_, AppState>, spots: Option<Vec<Spot>>) -> Result<Vec<Spot>, String> {
+pub(crate) async fn spots(state: State<'_, AppState>, spots: Option<Vec<Spot>>) -> Result<SpotsReply, String> {
     let mut req = json!({ "cmd": "spots" });
     if let Some(s) = spots {
         req["spots"] = json!(s);
     }
     let reply = state.request("spots", req)?;
-    serde_json::from_value::<SpotsReply>(reply).map(|r| r.spots).map_err(|e| format!("spots: unexpected reply: {e}"))
+    serde_json::from_value::<SpotsReply>(reply).map_err(|e| format!("spots: unexpected reply: {e}"))
+}
+
+// the settings the image's fill and blur spots share, those given: `blend`
+// ("chromaticity" or "normal"), `opacity` (0-100) and `ranges` (the color
+// range it is limited to, as a mask's; empty for none)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn spots_fill(state: State<'_, AppState>, blend: Option<String>, opacity: Option<serde_json::Number>,
+                               ranges: Option<Vec<Value>>) -> Result<FillSettings, String> {
+    let mut req = json!({ "cmd": "spots_fill" });
+    if let Some(b) = blend {
+        req["blend"] = json!(b);
+    }
+    if let Some(o) = opacity {
+        req["opacity"] = json!(o);
+    }
+    if let Some(r) = ranges {
+        req["ranges"] = json!(r);
+    }
+    let reply = state.request("spots_fill", req)?;
+    serde_json::from_value::<SpotsFillReply>(reply).map(|r| r.fill).map_err(|e| format!("spots_fill: unexpected reply: {e}"))
 }
 
 // the spots off for the Before view, and back on

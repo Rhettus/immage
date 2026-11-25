@@ -293,6 +293,8 @@ export const cases = {
     limitation: 'Needs a JPEG fixture (copied to advanced-second.jpg, with a sidecar and LUT folder made by a headless engine in the run folder). The LUT file button, the Choose button of the LUT folder and the color buttons open native dialogs and are not exercised. Restores the starting mode in a finally.' },
   'colorzones-curves': { liveValidated: false, scope: 'Advanced mode Color zones curve editor: Lightness, Chroma and Hue page tabs (Hue first) and the color band; a click adds a hue node and a drag up changes the frame and adds history; the interpolation select redraws the path; each page keeps its own curve; Reset Hue restores default nodes and interpolation; a double-click removes a node',
     limitation: 'Needs a JPEG fixture. Written, not yet run live. Runs in English. Restores the starting mode in a finally.' },
+  'heal-fill': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating/maximized, original workspace 1 restored. Run 2026-11-25T14-14-38.034Z_a5b4ff2_a868143d (JPEG fixture stairs-to-mountain.jpg).', scope: 'Heal Fill and Blur spots: Fill shows the shared Fill and blur section (Color only, Limit Off by default); a click fills a spot with no source and changes the frame; Color and tone, a Range limit and Off change it (Off returns the unlimited frame); a Blur spot beside it changes the frame; Before takes the spots away and After brings them back; Clear all removes them',
+    limitation: 'Runs in English. The color eyedroppers, Erase, Brightness, Bilateral, Radius and the Custom limit are not exercised.' },
   ...generated,
 };
 export const suites = {

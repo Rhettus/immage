@@ -248,6 +248,8 @@ typedef enum _stage_t
   _STAGE_TEMPERATURE,
   _STAGE_CHECKER_INPUT,
   _STAGE_CHECKER_OUTPUT,
+  _STAGE_RETOUCH,
+  _STAGE_RETOUCH_IN,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -500,6 +502,7 @@ void masks_add_num(JsonBuilder *b, const char *name, const double v);
 gboolean masks_spots_set(JsonArray *spots, char **err);
 gboolean masks_spots_json(JsonBuilder *b, char **err);
 gboolean masks_spots_enable(const gboolean on, char **err);
+gboolean masks_fill_set(JsonObject *req, JsonBuilder *b, char **err);
 gboolean masks_spot_source(JsonObject *o, JsonBuilder *b, char **err);
 gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err);
 gboolean masks_mask_delete(const char *name, char **err);

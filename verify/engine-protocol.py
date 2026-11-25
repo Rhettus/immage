@@ -61,7 +61,7 @@ mask_delete mask_map mask_rename masks merge_cancel meta meta_set module_schema 
 open opencl order order_info pano_merge pano_preview parity paste_batch points prefetch preview
 presets print print_profile_add print_profiles printer printers quit range_map
 remove_copy render sample save set sidecars softproof spektra_fetch
-spektra_stocks spot_source spots spots_enable style_forget thumb thumb_threads tone_key watermarks wb_presets
+spektra_stocks spot_source spots spots_enable spots_fill style_forget thumb thumb_threads tone_key watermarks wb_presets
 unpack upright version zones
 '''.split())
 
@@ -289,7 +289,23 @@ def photo_edits(img):
                            'sy': 0.6, 'mode': 'heal', 'feather': 0.5, 'opacity': 100}],
           label='spots set'),
         R('spots', label='spots read'),
-        R('spots', spots=[], label='spots clear'),
+        R('spots', spots=[{'type': 'circle', 'x': 0.5, 'y': 0.5, 'r': 0.1, 'sx': 0.3, 'sy': 0.3,
+                           'mode': 'heal', 'feather': 0.5, 'opacity': 1},
+                          {'type': 'circle', 'x': 0.4, 'y': 0.4, 'r': 0.1, 'mode': 'fill', 'fill_mode': 1,
+                           'fill_color': [0.5, 0.3, 0.2], 'fill_brightness': 0.1, 'feather': 0.5, 'opacity': 1},
+                          {'type': 'brush', 'points': [[0.2, 0.2], [0.4, 0.3]], 'size': 0.05, 'mode': 'blur',
+                           'blur_type': 1, 'blur_radius': 12.5, 'feather': 0.5, 'opacity': 1}],
+          label='spots set with fill and blur'),
+        R('spots_fill', label='spots_fill read'),
+        R('spots_fill', blend='normal', opacity=49, ranges=[{'type': 'color', 'hue': 0.05, 'width': 0.1,
+                                                          'feather': 0.05, 'chroma': 0.002}],
+          label='spots_fill set'),
+        R('spots_fill', blend='screen', label='spots_fill unknown blend'),
+        R('spot_source', spot={'type': 'circle', 'x': 0.5, 'y': 0.5, 'r': 0.1, 'mode': 'fill'},
+          label='spot_source fill'),
+        R('sample', stage='retouch', label='sample retouch'),
+        R('spots_enable', on=False, label='spots_enable off with fill'),
+        R('spots', spots=[], label='spots clear with fill'),
         R('spot_source', label='spot_source none'),
         R('spot_source', spot={'type': 'circle', 'x': 0.5, 'y': 0.5, 'radius': 0.1},
           label='spot_source circle'),

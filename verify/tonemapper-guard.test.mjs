@@ -172,7 +172,7 @@ test('Session on LDR remaps Simple controls, blocks tm_mode, and preserves legac
     if (cmd === 'open_image') return openReply;
     if (cmd === 'get_params') return { modules: state };
     if (cmd === 'history') return historyItems;
-    if (cmd === 'spots') return [];
+    if (cmd === 'spots') return { spots: [] };
     if (cmd === 'set_params') { sentParams.push(args); return {}; }
     return {};
   };

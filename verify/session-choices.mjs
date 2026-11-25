@@ -38,7 +38,8 @@ let state,edited=false;
 perf.command=async command=>{
   if(command==='open_image')return {imgid:1,sensor_width:128,sensor_height:96,orientation:0,raw:true,ldr:false,fresh:!edited,edited,look:null};
   if(command==='get_params')return {modules:state};
-  if(command==='history'||command==='spots')return [];
+  if(command==='history')return [];
+  if(command==='spots')return {spots:[]};
   throw Error(`Unexpected command ${command}`);
 };
 Session.prototype.loadMasks=async()=>{};

@@ -15,6 +15,11 @@ Improvements
 - **Color zones curves:** Color zones in Advanced mode now has its hue,
   chroma and lightness curves, so you can shift, saturate or brighten chosen
   colors, on the whole photo or under a mask.
+- **Fill and Blur in Heal:** Heal now also has **Fill** and **Blur** spots, so
+  you can even out skin tones and other color blotches on part of a photo. Fill
+  paints a spot with a color (picked from the photo) or a flat tone, changing
+  only the color by default so light and texture stay; set its strength, and
+  limit it to a hue range to leave the rest of the spot alone.
 - **Module order in Advanced mode:** A new **Module order** button lets you
   drag modules to change the order they run in for a photo.
 - **Find searches the whole library:** Under **All folders**, Find's filter

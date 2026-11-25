@@ -68,11 +68,33 @@ pub struct MapView {
 pub enum SpotMode {
     Heal,
     Clone,
+    Fill,
+    Blur,
 }
 
-// a heal or clone spot, in shown-image units: 0-1 across the width and
-// height, sizes as fractions of the width. (sx, sy) is where the center, or
-// a stroke's first point, copies from
+// what a fill or blur spot adds to a spot, retouch's own settings: fill_mode
+// 0 erase (a flat neutral tone of fill_brightness) or 1 color (fill_color,
+// the pipe's RGB as darktable's picker takes it, plus fill_brightness);
+// blur_type 0 gaussian or 1 bilateral, blur_radius 0.1-200 full-size pixels
+#[derive(Serialize, Deserialize, Type, Default)]
+pub struct SpotFill {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_mode: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_color: Option<(Number, Number, Number)>,
+    // -1 to 1
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_brightness: Option<Number>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blur_type: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blur_radius: Option<Number>,
+}
+
+// a heal, clone, fill or blur spot, in shown-image units: 0-1 across the
+// width and height, sizes as fractions of the width. (sx, sy) is where the
+// center, or a stroke's first point, copies from; a fill or blur spot has
+// none
 #[derive(Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Spot {
@@ -81,19 +103,27 @@ pub enum Spot {
         y: Number,
         r: Number,
         mode: SpotMode,
-        sx: Number,
-        sy: Number,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sx: Option<Number>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sy: Option<Number>,
         feather: Number,
         opacity: Number,
+        #[serde(flatten)]
+        fill: SpotFill,
     },
     Brush {
         points: Vec<(Number, Number)>,
         size: Number,
         mode: SpotMode,
-        sx: Number,
-        sy: Number,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sx: Option<Number>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sy: Option<Number>,
         feather: Number,
         opacity: Number,
+        #[serde(flatten)]
+        fill: SpotFill,
     },
 }
 
@@ -118,9 +148,30 @@ pub enum NewSpot {
     },
 }
 
-#[derive(Deserialize)]
+// the settings the fill and blur spots of a photo share, as one retouch
+// instance holds them: how it blends ("chromaticity": color only, "normal":
+// color and tone, "other": something set in darktable), its strength 0-100,
+// and the color range it is limited to (a mask's ranges)
+#[derive(Serialize, Deserialize, Type)]
+pub struct FillSettings {
+    pub blend: String,
+    pub opacity: Number,
+    pub ranges: Vec<Value>,
+}
+
+// `spots`' reply: heal and clone spots first, then fill and blur ones, and
+// the shared fill settings once the photo has any
+#[derive(Serialize, Deserialize, Type)]
 pub struct SpotsReply {
     pub spots: Vec<Spot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<FillSettings>,
+}
+
+// `spots_fill`'s reply
+#[derive(Serialize, Deserialize, Type)]
+pub struct SpotsFillReply {
+    pub fill: FillSettings,
 }
 
 // where a new spot copies from

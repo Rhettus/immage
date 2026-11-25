@@ -9,9 +9,18 @@
 // image is replaced by its edges, where dust and specks stand out
 import { useEffect, useRef, useState } from "react";
 import { overlayPixels, type Region, type Rgb } from "./masks";
-import { anchorOf, moveSpot, radiusOf, sourceOf, type NewSpot, type Spot } from "./spots";
+import { anchorOf, hasSource, moveSpot, radiusOf, sourceOf, type NewSpot, type Spot } from "./spots";
 
-export type SpotTool = { mode: "heal" | "clone"; size: number; feather: number; opacity: number };
+// the brush for new spots: heal and clone copy from a source; fill and blur
+// carry settings of their own (fill_color null is the color of the photo
+// where the spot is made)
+export type SpotTool = {
+  mode: Spot["mode"]; size: number; feather: number; opacity: number;
+  fill_mode: number; fill_color: [number, number, number] | null; fill_brightness: number;
+  blur_type: number; blur_radius: number;
+};
+// what a new fill or blur spot takes from the brush besides its shape
+export type NewSpotFill = Pick<Spot, "fill_mode" | "fill_color" | "fill_brightness" | "blur_type" | "blur_radius">;
 // which spots the overlay shows: all, only the selected one, or none. a
 // hidden spot can't be clicked, so a click there heals a new one
 export type ShowSpots = "always" | "selected" | "never";
@@ -19,7 +28,7 @@ export type ShowSpots = "always" | "selected" | "never";
 const PIN = 6;  // a pin's radius, in CSS pixels
 
 export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show, visualize, base, baseTick,
-                              overlayColor, onSelect, onCreate, onChange }: {
+                              overlayColor, picking, onSelect, onCreate, onChange, onPickPoint }: {
   boxRef: React.RefObject<HTMLDivElement | null>;
   image: { w: number; h: number };       // the shown image at 100%, for its aspect
   region: Region | null;                 // zoomed in, the part of the image the sharp render shows
@@ -31,6 +40,8 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
   base: React.RefObject<HTMLCanvasElement | null>;  // the whole image as shown
   baseTick: number;                      // bumped when the base is redrawn
   overlayColor: Rgb;                     // the stroke's color, the masks' overlay's
+  picking: boolean;                      // the eyedropper is on: a click reads the photo, no spot is made
+  onPickPoint: (x: number, y: number) => void;
   onSelect: (k: number | null) => void;
   onCreate: (spot: NewSpot) => void;
   onChange: (spots: Spot[], done: boolean) => void;
@@ -145,13 +156,17 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
       <canvas ref={edges} className="spot-edges" />
       <canvas ref={paint} className="mask-tint" />
       <canvas ref={fine} className="mask-tint" />
-      <svg ref={svg} className="mask-svg drawing spot-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+      <svg ref={svg} className={`mask-svg drawing spot-svg${picking ? " picking" : ""}`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
            onPointerDown={(e) => {
              e.stopPropagation();
-             (e.target as Element).setPointerCapture(e.pointerId);
              const p = at(e);
+             if (picking) {
+               onPickPoint(Math.min(1, Math.max(0, p[0])), Math.min(1, Math.max(0, p[1])));
+               return;
+             }
+             (e.target as Element).setPointerCapture(e.pointerId);
              // the selected spot's ends first, then any pin, then a new spot
-             if (sel && near(p, sourceOf(sel))) {
+             if (sel && hasSource(sel) && near(p, sourceOf(sel))) {
                drag.current = { kind: "source", start: p, k: selected!, spot: sel, points: [] };
                return;
              }
@@ -189,7 +204,7 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
              const dx = p[0] - d.start[0], dy = p[1] - d.start[1];
              const moved = d.kind === "target"
                ? moveSpot(d.spot!, dx, dy, false)
-               : { ...d.spot!, sx: d.spot!.sx + dx, sy: d.spot!.sy + dy };
+               : { ...d.spot!, sx: (d.spot!.sx ?? 0) + dx, sy: (d.spot!.sy ?? 0) + dy };
              const next = spots.slice();
              next[d.k] = moved;
              onChange(next, false);
@@ -204,7 +219,10 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
              if (d.kind !== "new") {
                const done = spots.slice();
                const m = done[d.k];
-               if (m) done[d.k] = { ...(m.type === "circle" ? { ...m, x: on(m.x), y: on(m.y) } : m), sx: on(m.sx), sy: on(m.sy) };
+               if (m) {
+                 const moved = m.type === "circle" ? { ...m, x: on(m.x), y: on(m.y) } : m;
+                 done[d.k] = hasSource(m) && m.sx != null && m.sy != null ? { ...moved, sx: on(m.sx), sy: on(m.sy) } : moved;
+               }
                onChange(done, true);
                return;
              }
@@ -222,15 +240,20 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
         })}
         {sel && (
           <g className="spot-sel">
-            <line className="spot-link" x1={sel.sx * W} y1={sel.sy * H} x2={anchorOf(sel)[0] * W} y2={anchorOf(sel)[1] * H} />
-            {outline(sourceOf(sel), "spot-source")}
+            {hasSource(sel) && sel.sx != null && sel.sy != null && (
+              <>
+                <line className="spot-link" x1={sel.sx * W} y1={sel.sy * H} x2={anchorOf(sel)[0] * W} y2={anchorOf(sel)[1] * H} />
+                {outline(sourceOf(sel), "spot-source")}
+              </>
+            )}
             {outline(sel, "spot-target")}
-            {sel.type !== "circle" && <circle className="spot-pin source" cx={sel.sx * W} cy={sel.sy * H} r={PIN * unit} />}
+            {hasSource(sel) && sel.sx != null && sel.sy != null && sel.type !== "circle"
+              && <circle className="spot-pin source" cx={sel.sx * W} cy={sel.sy * H} r={PIN * unit} />}
             <circle className="spot-pin on" cx={anchorOf(sel)[0] * W} cy={anchorOf(sel)[1] * H} r={PIN * unit} />
           </g>
         )}
         {/* the brush's edge, the inner circle where its feather starts, and its center */}
-        {cursor && (!drag.current || drag.current.kind === "new") && (
+        {cursor && !picking && (!drag.current || drag.current.kind === "new") && (
           <g className="brush-cursor">
             <circle cx={cursor[0] * W} cy={cursor[1] * H} r={(tool.size / 2) * W} />
             {tool.feather > 0.02 && (

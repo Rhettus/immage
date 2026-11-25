@@ -23,6 +23,7 @@
 
 static void _apply_ranges(dt_iop_module_t *m, dt_masks_form_t *root, const gboolean invert);
 static void _ranges_json(JsonBuilder *b, const dt_develop_blend_params_t *bp);
+static void _channels_json(JsonBuilder *b, const GPtrArray *chans);
 
 // ------------------------------------------------------------------ masks
 // a client's mask (Lightroom's local adjustments) is a darktable mask group
@@ -1263,21 +1264,40 @@ static void _shape_json(JsonBuilder *b, const dt_masks_form_t *f, const gboolean
 // them: shapes in the module's mask group, each with its source (where it
 // copies from) in the shape, and its algorithm in the module's rt_forms.
 // the client edits heal and clone on the whole image; what else an edit
-// made in darktable holds (blur, fill, wavelet scales) is left as it was
+// made in darktable holds (wavelet scales) is left as it was.
+// fill and blur spots go to a second, named retouch instance: darktable
+// blends a retouch module as a whole, so the blend mode, strength and color
+// limit of fill and blur (retouch.c, a parametric blend) cannot be per spot
+// without touching heal and clone
 #define _SPOTS_GROUP "immage spots"
+#define _FILL_GROUP "immage fill spots"
+#define _FILL_NAME "fill and blur"
+// the name of the group the fill instance's color limit hangs under (only
+// its name is read: _ranges_group() and _channels_group() are named after it)
+#define _FILL_LIMIT "immage fill limit"
+
+// retouch's algorithm enum (retouch.c): clone 1, heal 2, blur 3, fill 4
+enum { _RT_CLONE = 1, _RT_HEAL = 2, _RT_BLUR = 3, _RT_FILL = 4 };
 
 // the retouch module's mask group, or one of ours not yet attached
-static dt_masks_form_t *_spots_group(const dt_iop_module_t *m)
+static dt_masks_form_t *_spots_group(const dt_iop_module_t *m, const char *name)
 {
   dt_masks_form_t *grp = m->blend_params ? dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id) : NULL;
   if(grp && (grp->type & DT_MASKS_GROUP)) return grp;
   for(GList *l = _s.dev.forms; l; l = g_list_next(l))
   {
     dt_masks_form_t *f = l->data;
-    if((f->type & DT_MASKS_GROUP) && !g_strcmp0(f->name, _SPOTS_GROUP))
+    if((f->type & DT_MASKS_GROUP) && !g_strcmp0(f->name, name))
       return f;
   }
   return NULL;
+}
+
+// the fill and blur instance, NULL when the photo has none yet
+static dt_iop_module_t *_fill_instance(void)
+{
+  dt_iop_module_t *m = session_find_named("retouch", _FILL_NAME);
+  return m && !g_list_find(_s.deleted, m) ? m : NULL;
 }
 
 // rt_forms in the module's params: where it starts, its elements' size and
@@ -1292,9 +1312,10 @@ static uint8_t *_rt_forms(dt_iop_module_t *m, size_t *size, size_t *count)
 }
 
 // the rt_forms index of a shape, -1 when it has none; with `ours`, whether
-// it is a spot the client edits: heal or clone, on the whole image
-static int _rt_index(dt_iop_module_t *m, const size_t count, const dt_mask_id_t formid, gboolean *ours,
-                     char **err)
+// it is a spot the client edits on this instance: heal or clone (`fill`
+// FALSE), or fill and blur, on the whole image
+static int _rt_index(dt_iop_module_t *m, const size_t count, const dt_mask_id_t formid, const gboolean fill,
+                     gboolean *ours, char **err)
 {
   gchar field[64];
   for(size_t k = 0; k < count; k++)
@@ -1307,8 +1328,8 @@ static int _rt_index(dt_iop_module_t *m, const size_t count, const dt_mask_id_t 
     if(!session_read_field(m, field, FALSE, &algo, err)) return -1;
     g_snprintf(field, sizeof(field), "rt_forms[%zu].scale", k);
     if(!session_read_field(m, field, FALSE, &scale, err)) return -1;
-    // retouch's algorithm enum: clone 1, heal 2
-    *ours = (algo == 1 || algo == 2) && scale == 0;
+    *ours = fill ? (algo == _RT_BLUR || algo == _RT_FILL) && scale == 0
+                 : (algo == _RT_CLONE || algo == _RT_HEAL) && scale == 0;
     return k;
   }
   return -1;
@@ -1317,9 +1338,9 @@ static int _rt_index(dt_iop_module_t *m, const size_t count, const dt_mask_id_t 
 // one spot from the client, in shown-image units:
 //   circle: x, y, r (radius, a fraction of the shown width)
 //   brush:  points [[x, y], ...], size (diameter, a fraction of the width)
-// both: sx, sy (where the center, or the first point, copies from),
-// feather (0-1)
-static dt_masks_form_t *_spot_shape(JsonObject *o, char **err)
+// both: sx, sy (where the center, or the first point, copies from; none
+// for a fill or blur spot, which copies from nowhere), feather (0-1)
+static dt_masks_form_t *_spot_shape(JsonObject *o, const gboolean fill, char **err)
 {
   const char *type = json_object_get_string_member_with_default(o, "type", "circle");
   const float feather = CLAMP(json_object_get_double_member_with_default(o, "feather", 0.5), 0.0, 0.95);
@@ -1341,7 +1362,7 @@ static dt_masks_form_t *_spot_shape(JsonObject *o, char **err)
     _to_input_vec(json_array_get_double_element(p0, 0), json_array_get_double_element(p0, 1),
                   json_object_get_double_member_with_default(o, "size", 0.05) / 2.0f, 0.0f, &len, &ang);
     const float border = MAX(0.0005f, len / imin);
-    f = dt_masks_create(DT_MASKS_BRUSH | DT_MASKS_CLONE);
+    f = dt_masks_create(DT_MASKS_BRUSH | (fill ? DT_MASKS_NON_CLONE : DT_MASKS_CLONE));
     for(guint k = 0; k < n; k++)
     {
       JsonArray *p = json_array_get_array_element(pts, k);
@@ -1363,7 +1384,7 @@ static dt_masks_form_t *_spot_shape(JsonObject *o, char **err)
     const float y = json_object_get_double_member_with_default(o, "y", 0.5);
     float len, ang;
     _to_input_vec(x, y, json_object_get_double_member_with_default(o, "r", 0.02), 0.0f, &len, &ang);
-    f = dt_masks_create(DT_MASKS_CIRCLE | DT_MASKS_CLONE);
+    f = dt_masks_create(DT_MASKS_CIRCLE | (fill ? DT_MASKS_NON_CLONE : DT_MASKS_CLONE));
     dt_masks_point_circle_t *c = calloc(1, sizeof(dt_masks_point_circle_t));
     _to_input(x, y, &c->center[0], &c->center[1]);
     // feathered inward, as Lightroom's: darktable's border lies outside
@@ -1371,14 +1392,55 @@ static dt_masks_form_t *_spot_shape(JsonObject *o, char **err)
     c->border = MAX(0.001f, len * feather / imin);
     f->points = g_list_append(f->points, c);
   }
-  _to_input(sx, sy, &f->source[0], &f->source[1]);
+  if(!fill) _to_input(sx, sy, &f->source[0], &f->source[1]);
   return f;
 }
 
-gboolean masks_spots_set(JsonArray *spots, char **err)
+// the values of retouch's enums: fill modes erase 0 and color 1, blur
+// types gaussian 0 and bilateral 1; blur_radius 0.1 to 200 and
+// fill_brightness -1 to 1 as its parameters declare them
+typedef struct { const char *name; double v; } _spot_kv_t;
+
+static gboolean _spot_fields(dt_iop_module_t *m, const size_t k, const dt_masks_form_t *f, JsonObject *o,
+                             char **err)
 {
-  dt_iop_module_t *m = session_module("retouch", err);
-  if(!m) return FALSE;
+  const char *mode = json_object_get_string_member_with_default(o, "mode", "heal");
+  const int algo = !g_strcmp0(mode, "clone") ? _RT_CLONE : !g_strcmp0(mode, "blur") ? _RT_BLUR
+                   : !g_strcmp0(mode, "fill") ? _RT_FILL : _RT_HEAL;
+  _spot_kv_t fields[12] = {
+    { "formid", f->formid }, { "scale", 0 }, { "algorithm", algo }, { "distort_mode", 2 },
+  };
+  int n = 4;
+  if(algo == _RT_BLUR)
+  {
+    fields[n++] = (_spot_kv_t){ "blur_type", json_object_get_int_member_with_default(o, "blur_type", 0) == 1 };
+    fields[n++] = (_spot_kv_t){ "blur_radius",
+      CLAMP(json_object_get_double_member_with_default(o, "blur_radius", 10.0), 0.1, 200.0) };
+  }
+  else if(algo == _RT_FILL)
+  {
+    JsonArray *rgb = json_object_has_member(o, "fill_color") ? json_object_get_array_member(o, "fill_color") : NULL;
+    static const char *const channel[3] = { "fill_color[0]", "fill_color[1]", "fill_color[2]" };
+    fields[n++] = (_spot_kv_t){ "fill_mode", json_object_get_int_member_with_default(o, "fill_mode", 0) == 1 };
+    for(int c = 0; c < 3; c++)
+      fields[n++] = (_spot_kv_t){ channel[c], rgb && json_array_get_length(rgb) == 3
+                                                       ? json_array_get_double_element(rgb, c) : 0.0 };
+    fields[n++] = (_spot_kv_t){ "fill_brightness",
+      CLAMP(json_object_get_double_member_with_default(o, "fill_brightness", 0.0), -1.0, 1.0) };
+  }
+  gchar field[64];
+  for(int i = 0; i < n; i++)
+  {
+    g_snprintf(field, sizeof(field), "rt_forms[%zu].%s", k, fields[i].name);
+    if(!session_write_field(m, field, fields[i].v, err)) return FALSE;
+  }
+  return TRUE;
+}
+
+// instance `m` (the base retouch, or the fill and blur one when `fill`) with
+// `spots` in place of the spots the client edits on it
+static gboolean _spots_write(dt_iop_module_t *m, GPtrArray *spots, const gboolean fill, char **err)
+{
   size_t esize = 0, count = 0;
   uint8_t *rt = _rt_forms(m, &esize, &count);
   if(!rt)
@@ -1386,11 +1448,12 @@ gboolean masks_spots_set(JsonArray *spots, char **err)
     *err = g_strdup("retouch has no rt_forms");
     return FALSE;
   }
-  dt_masks_form_t *grp = _spots_group(m);
+  const char *group = fill ? _FILL_GROUP : _SPOTS_GROUP;
+  dt_masks_form_t *grp = _spots_group(m, group);
   if(!grp)
   {
     grp = dt_masks_create(DT_MASKS_GROUP);
-    g_strlcpy(grp->name, _SPOTS_GROUP, sizeof(grp->name));
+    g_strlcpy(grp->name, group, sizeof(grp->name));
     _s.dev.forms = g_list_append(_s.dev.forms, grp);
   }
   // the spots the client edits go, to be made again; the others stay, in
@@ -1403,7 +1466,7 @@ gboolean masks_spots_set(JsonArray *spots, char **err)
     dt_masks_point_group_t *gp = l->data;
     dt_masks_form_t *f = dt_masks_get_from_id(&_s.dev, gp->formid);
     gboolean ours = TRUE;
-    const int k = f ? _rt_index(m, count, gp->formid, &ours, err) : -1;
+    const int k = f ? _rt_index(m, count, gp->formid, fill, &ours, err) : -1;
     // darktable's ellipse and path spots are not the client's to edit
     ours = ours && f && (f->type & (DT_MASKS_CIRCLE | DT_MASKS_BRUSH));
     if(*err)
@@ -1431,13 +1494,13 @@ gboolean masks_spots_set(JsonArray *spots, char **err)
   memcpy(rt, kept, esize * nk);
   g_free(kept);
 
-  const guint n = MIN(json_array_get_length(spots), count - nk);
+  const guint n = MIN(spots->len, count - nk);
   for(guint k = 0; k < n; k++)
   {
-    JsonObject *o = json_array_get_object_element(spots, k);
-    dt_masks_form_t *f = _spot_shape(o, err);
+    JsonObject *o = g_ptr_array_index(spots, k);
+    dt_masks_form_t *f = _spot_shape(o, fill, err);
     if(!f) return FALSE;
-    g_snprintf(f->name, sizeof(f->name), "immage spot #%u", k + 1);
+    g_snprintf(f->name, sizeof(f->name), fill ? "immage fill #%u" : "immage spot #%u", k + 1);
     _s.dev.forms = g_list_append(_s.dev.forms, f);
     dt_masks_point_group_t *gp = calloc(1, sizeof(dt_masks_point_group_t));
     gp->formid = f->formid;
@@ -1446,35 +1509,65 @@ gboolean masks_spots_set(JsonArray *spots, char **err)
     if(grp->points) gp->state |= DT_MASKS_STATE_UNION;
     gp->opacity = CLAMP(json_object_get_double_member_with_default(o, "opacity", 1.0), 0.0, 1.0);
     grp->points = g_list_append(grp->points, gp);
-    const gboolean clone = !g_strcmp0(json_object_get_string_member_with_default(o, "mode", "heal"), "clone");
-    gchar field[64];
-    // the values of retouch's algorithm enum (clone 1, heal 2)
-    const struct { const char *name; double v; } fields[] = {
-      { "formid", f->formid }, { "scale", 0 }, { "algorithm", clone ? 1 : 2 }, { "distort_mode", 2 },
-    };
-    for(int i = 0; i < 4; i++)
-    {
-      g_snprintf(field, sizeof(field), "rt_forms[%zu].%s", nk + k, fields[i].name);
-      if(!session_write_field(m, field, fields[i].v, err)) return FALSE;
-    }
+    if(!_spot_fields(m, nk + k, f, o, err)) return FALSE;
   }
   m->blend_params->mask_id = grp->formid;
   m->enabled = grp->points != NULL;
   dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
   // the piece's cache hash misses the shapes, as a mask's does (see masks_mask())
-  dt_dev_pixelpipe_cache_invalidate_later(&_s.pipe, m->iop_order, "spots ");
-  if(_s.ppipe_ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, m->iop_order, "spots ");
-  if(_s.drag.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.drag.pipe, m->iop_order, "spots ");
-  if(_s.base.ok) dt_dev_pixelpipe_cache_invalidate_later(&_s.base.pipe, m->iop_order, "spots ");
+  masks_invalidate_from(m->iop_order, "spots ");
+  return TRUE;
+}
+
+// the fill and blur instance, made (off) when the photo has none: blending
+// as the color change it is made for (chromaticity, which keeps the
+// photo's lightness and texture), whole strength, no color limit
+static dt_iop_module_t *_fill_make(char **err)
+{
+  dt_iop_module_t *m = _fill_instance();
+  if(m) return m;
+  m = masks_named_instance("retouch", _FILL_NAME, FALSE, err);
+  if(!m) return NULL;
+  // not the base instance's shapes and blend, which duplicating copies
+  memcpy(m->blend_params, m->default_blendop_params, sizeof(dt_develop_blend_params_t));
+  dt_develop_blend_params_t *bp = m->blend_params;
+  bp->blend_cst = DEVELOP_BLEND_CS_RGB_SCENE;
+  bp->blend_mode = DEVELOP_BLEND_CHROMATICITY;
+  bp->opacity = 100.0f;
+  bp->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
+  return m;
+}
+
+gboolean masks_spots_set(JsonArray *spots, char **err)
+{
+  dt_iop_module_t *m = session_module("retouch", err);
+  if(!m) return FALSE;
+  // heal and clone stay on the base instance, fill and blur go to theirs
+  GPtrArray *plain = g_ptr_array_new(), *fills = g_ptr_array_new();
+  for(guint k = 0; k < json_array_get_length(spots); k++)
+  {
+    JsonObject *o = json_array_get_object_element(spots, k);
+    const char *mode = json_object_get_string_member_with_default(o, "mode", "heal");
+    g_ptr_array_add(!g_strcmp0(mode, "fill") || !g_strcmp0(mode, "blur") ? fills : plain, o);
+  }
+  gboolean ok = TRUE;
+  // a photo with fill and blur spots only needs no heal instance of its own
+  if(plain->len || _spots_group(m, _SPOTS_GROUP))
+    ok = _spots_write(m, plain, FALSE, err);
+  dt_iop_module_t *fm = ok ? (fills->len ? _fill_make(err) : _fill_instance()) : NULL;
+  if(ok && fills->len && !fm) ok = FALSE;
+  if(ok && fm) ok = _spots_write(fm, fills, TRUE, err);
+  g_ptr_array_free(plain, TRUE);
+  g_ptr_array_free(fills, TRUE);
+  if(!ok) return FALSE;
   session_changed(DT_DEV_PIPE_SYNCH);
   return TRUE;
 }
 
-// the spots as _spot_shape() takes them, and whether the module is on
-gboolean masks_spots_json(JsonBuilder *b, char **err)
+// one instance's spots as _spot_shape() takes them, those it holds of the
+// client's kind
+static gboolean _spots_list(JsonBuilder *b, dt_iop_module_t *m, const gboolean fill, char **err)
 {
-  dt_iop_module_t *m = session_module("retouch", err);
-  if(!m) return FALSE;
   size_t esize = 0, count = 0;
   if(!_rt_forms(m, &esize, &count))
   {
@@ -1484,10 +1577,6 @@ gboolean masks_spots_json(JsonBuilder *b, char **err)
   const dt_masks_form_t *grp = m->blend_params ? dt_masks_get_from_id(&_s.dev, m->blend_params->mask_id) : NULL;
   const float pw = _s.pipe.processed_width;
   const float imin = MIN(_s.pipe.iwidth, _s.pipe.iheight);
-  json_builder_set_member_name(b, "enabled");
-  json_builder_add_boolean_value(b, m->enabled);
-  json_builder_set_member_name(b, "spots");
-  json_builder_begin_array(b);
   for(const GList *l = grp && (grp->type & DT_MASKS_GROUP) ? grp->points : NULL; l; l = g_list_next(l))
   {
     const dt_masks_point_group_t *gp = l->data;
@@ -1495,7 +1584,7 @@ gboolean masks_spots_json(JsonBuilder *b, char **err)
     if(!f || !f->points || !(f->type & (DT_MASKS_CIRCLE | DT_MASKS_BRUSH))) continue;
     // darktable's own spots too, those masks_spots_set() would remake
     gboolean ours = FALSE;
-    const int k = _rt_index(m, count, f->formid, &ours, err);
+    const int k = _rt_index(m, count, f->formid, fill, &ours, err);
     if(*err) return FALSE;
     if(k < 0 || !ours) continue;
     double algo = 0;
@@ -1505,11 +1594,47 @@ gboolean masks_spots_json(JsonBuilder *b, char **err)
     float x, y, len, ang;
     json_builder_begin_object(b);
     json_builder_set_member_name(b, "mode");
-    json_builder_add_string_value(b, algo == 1 ? "clone" : "heal");
+    json_builder_add_string_value(b, algo == _RT_CLONE ? "clone" : algo == _RT_BLUR ? "blur"
+                                                         : algo == _RT_FILL ? "fill" : "heal");
     masks_add_num(b, "opacity", gp->opacity);
-    _to_shown(f->source[0], f->source[1], &x, &y);
-    masks_add_num(b, "sx", x);
-    masks_add_num(b, "sy", y);
+    if(!fill)
+    {
+      _to_shown(f->source[0], f->source[1], &x, &y);
+      masks_add_num(b, "sx", x);
+      masks_add_num(b, "sy", y);
+    }
+    else
+    {
+      static const char *const names[] = { "blur_type", "blur_radius", "fill_mode", "fill_brightness" };
+      for(int i = 0; i < 4; i++)
+      {
+        double v = 0;
+        if((algo == _RT_BLUR) != (i < 2)) continue;
+        g_snprintf(field, sizeof(field), "rt_forms[%d].%s", k, names[i]);
+        if(!session_read_field(m, field, FALSE, &v, err)) return FALSE;
+        // the enums as whole numbers, as the client takes them
+        if(i == 0 || i == 2)
+        {
+          json_builder_set_member_name(b, names[i]);
+          json_builder_add_int_value(b, (gint64)v);
+        }
+        else
+          masks_add_num(b, names[i], v);
+      }
+      if(algo == _RT_FILL)
+      {
+        json_builder_set_member_name(b, "fill_color");
+        json_builder_begin_array(b);
+        for(int c = 0; c < 3; c++)
+        {
+          double v = 0;
+          g_snprintf(field, sizeof(field), "rt_forms[%d].fill_color[%d]", k, c);
+          if(!session_read_field(m, field, FALSE, &v, err)) return FALSE;
+          json_builder_add_double_value(b, v);
+        }
+        json_builder_end_array(b);
+      }
+    }
     if(f->type & DT_MASKS_CIRCLE)
     {
       const dt_masks_point_circle_t *c = f->points->data;
@@ -1546,21 +1671,123 @@ gboolean masks_spots_json(JsonBuilder *b, char **err)
     }
     json_builder_end_object(b);
   }
-  json_builder_end_array(b);
   return TRUE;
 }
 
-// the retouch module off and on again, shapes kept (the Before view)
+// the fill and blur instance's shared settings: how it blends, how much, and
+// the color range it is limited to (the ranges group under _FILL_LIMIT, read
+// as a mask's are)
+static void _fill_json(JsonBuilder *b, const dt_iop_module_t *m)
+{
+  const dt_develop_blend_params_t *bp = m->blend_params;
+  const uint32_t mode = bp->blend_mode & DEVELOP_BLEND_MODE_MASK;
+  json_builder_set_member_name(b, "fill");
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "blend");
+  json_builder_add_string_value(b, mode == DEVELOP_BLEND_CHROMATICITY ? "chromaticity"
+                                   : mode == (m->default_blendop_params->blend_mode & DEVELOP_BLEND_MODE_MASK)
+                                     ? "normal" : "other");
+  masks_add_num(b, "opacity", bp->mask_mode == DEVELOP_MASK_DISABLED ? 100.0f : bp->opacity);
+  json_builder_set_member_name(b, "ranges");
+  json_builder_begin_array(b);
+  dt_masks_form_t root = { 0 };
+  g_strlcpy(root.name, _FILL_LIMIT, sizeof(root.name));
+  const dt_masks_form_t *chg = _channels_group(&root);
+  GPtrArray *chans = g_ptr_array_new();
+  for(const GList *l = chg ? chg->points : NULL; l; l = g_list_next(l))
+  {
+    const dt_masks_point_group_t *pt = l->data;
+    const dt_masks_form_t *f = dt_masks_point_is_marker(pt) ? NULL : dt_masks_get_from_id(&_s.dev, pt->formid);
+    if(f && (f->type & DT_MASKS_PARAMETRIC)) g_ptr_array_add(chans, (gpointer)f);
+  }
+  _channels_json(b, chans);
+  g_ptr_array_free(chans, TRUE);
+  json_builder_end_array(b);
+  json_builder_end_object(b);
+}
+
+// the spots as _spot_shape() takes them, and whether the module is on: heal
+// and clone first, then fill and blur, the order masks_spots_set() takes
+gboolean masks_spots_json(JsonBuilder *b, char **err)
+{
+  dt_iop_module_t *m = session_module("retouch", err);
+  if(!m) return FALSE;
+  dt_iop_module_t *fm = _fill_instance();
+  json_builder_set_member_name(b, "enabled");
+  json_builder_add_boolean_value(b, m->enabled || (fm && fm->enabled));
+  json_builder_set_member_name(b, "spots");
+  json_builder_begin_array(b);
+  if(!_spots_list(b, m, FALSE, err)) return FALSE;
+  if(fm && !_spots_list(b, fm, TRUE, err)) return FALSE;
+  json_builder_end_array(b);
+  if(fm) _fill_json(b, fm);
+  return TRUE;
+}
+
+// the fill and blur settings, those given: `blend` ("chromaticity" or
+// "normal"), `opacity` (0-100, its blend strength) and `ranges` (the color
+// limit, as a mask's; empty for none). made, off, when the photo has none
+gboolean masks_fill_set(JsonObject *req, JsonBuilder *b, char **err)
+{
+  const char *blend = json_object_get_string_member_with_default(req, "blend", NULL);
+  if(blend && g_strcmp0(blend, "chromaticity") && g_strcmp0(blend, "normal"))
+  {
+    *err = g_strdup_printf("no fill blend '%s'", blend);
+    return FALSE;
+  }
+  dt_iop_module_t *m = _fill_make(err);
+  if(!m) return FALSE;
+  dt_develop_blend_params_t *bp = m->blend_params;
+  if(blend)
+    bp->blend_mode = !g_strcmp0(blend, "chromaticity") ? DEVELOP_BLEND_CHROMATICITY
+                                                       : m->default_blendop_params->blend_mode;
+  if(json_object_has_member(req, "opacity"))
+    bp->opacity = CLAMP(json_object_get_double_member(req, "opacity"), 0.0, 100.0);
+  JsonNode *rn = json_object_get_member(req, "ranges");
+  if(rn && JSON_NODE_HOLDS_ARRAY(rn))
+  {
+    dt_masks_form_t root = { 0 };
+    g_strlcpy(root.name, _FILL_LIMIT, sizeof(root.name));
+    GHashTable *old = _mask_forms(&root);
+    _set_ranges_group(&root, json_node_get_array(rn));
+    const dt_masks_form_t *ranges = _ranges_group(&root);
+    // as _apply_ranges() sets an instance, but in blend_mask_id, which a
+    // module with no masks of its own keeps apart from its shapes
+    bp->blend_cst = DEVELOP_BLEND_CS_RGB_SCENE;
+    bp->blendif = 0;
+    memset(bp->blendif_parameters, 0, sizeof(bp->blendif_parameters));
+    memset(bp->blendif_boost_factors, 0, sizeof(bp->blendif_boost_factors));
+    bp->mask_mode = DEVELOP_MASK_ENABLED | DEVELOP_MASK_FLEXI;
+    dt_develop_blend_set_mask_group_id(m, bp, ranges ? ranges->formid : NO_MASKID);
+    _free_unreached(old);
+  }
+  dt_dev_add_masks_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+  masks_invalidate_from(m->iop_order, "fill ");
+  session_changed(DT_DEV_PIPE_SYNCH);
+  _fill_json(b, m);
+  return TRUE;
+}
+
+// one instance off and on again, shapes kept; whether anything changed
+static gboolean _spots_enable_one(dt_iop_module_t *m, const char *group, const gboolean on)
+{
+  const dt_masks_form_t *grp = _spots_group(m, group);
+  const gboolean want = on && grp && grp->points;
+  if(m->enabled == want) return FALSE;
+  m->enabled = want;
+  dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
+  return TRUE;
+}
+
+// the retouch instances off and on again, shapes kept (the Before view)
 gboolean masks_spots_enable(const gboolean on, char **err)
 {
   dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
-  const dt_masks_form_t *grp = _spots_group(m);
-  const gboolean want = on && grp && grp->points;
-  if(m->enabled == want) return TRUE;
-  m->enabled = want;
-  dt_dev_add_history_item_ext(&_s.dev, m, m->enabled, TRUE);
-  session_changed(DT_DEV_PIPE_TOP_CHANGED);
+  dt_iop_module_t *fm = _fill_instance();
+  gboolean changed = _spots_enable_one(m, _SPOTS_GROUP, on);
+  if(fm) changed |= _spots_enable_one(fm, _FILL_GROUP, on);
+  if(changed) session_changed(DT_DEV_PIPE_TOP_CHANGED);
   return TRUE;
 }
 
@@ -1570,6 +1797,12 @@ gboolean masks_spots_enable(const gboolean on, char **err)
 // the spot, the spot itself kept clear of its source
 gboolean masks_spot_source(JsonObject *o, JsonBuilder *b, char **err)
 {
+  const char *spot_mode = json_object_get_string_member_with_default(o, "mode", "heal");
+  if(!g_strcmp0(spot_mode, "fill") || !g_strcmp0(spot_mode, "blur"))
+  {
+    *err = g_strdup("a fill or blur spot has no source");
+    return FALSE;
+  }
   int W = 0, H = 0;
   uint8_t *rgb = ai_shown_rgb(768, FALSE, &W, &H, err);
   if(!rgb) return FALSE;
@@ -2257,7 +2490,8 @@ static dt_dev_pixelpipe_iop_t *_stage_piece(const _stage_t stage, const dt_iop_m
     {
       if(pc->module->iop_order >= negadoctor->iop_order) break;
     }
-    else if(stage == _STAGE_COLORMAPPING || stage == _STAGE_TEMPERATURE || stage == _STAGE_CHECKER_INPUT)
+    else if(stage == _STAGE_COLORMAPPING || stage == _STAGE_TEMPERATURE || stage == _STAGE_CHECKER_INPUT
+            || stage == _STAGE_RETOUCH_IN)
     {
       // the anchor is the module itself: its input, not its output
       if(pc->module->iop_order >= anchor->iop_order) break;
@@ -2290,6 +2524,14 @@ static gboolean _working_at_module(_working_t *w, const _stage_t stage, dt_iop_m
   if(stage == _STAGE_NEGADOCTOR) anchor = negadoctor;
   if(stage == _STAGE_COLORMAPPING) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "colormapping", 0);
   if(stage == _STAGE_TEMPERATURE) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "temperature", 0);
+  // the fill and blur instance's output, as darktable's picker reads a
+  // retouch module's (the base instance's before there is one)
+  // and its input, which its color limit reads
+  if(stage == _STAGE_RETOUCH || stage == _STAGE_RETOUCH_IN)
+  {
+    anchor = _fill_instance();
+    if(!anchor) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "retouch", 0);
+  }
   if(!anchor || !session_ppipe_ready(err))
   {
     if(!*err) *err = g_strdup("no anchor module to sample at");
@@ -2687,7 +2929,7 @@ gboolean masks_sample(const float x, const float y, JsonArray *box, const _stage
   // negadoctor's pickers read the box as darktable's do, denoised: a raw
   // pixel's noise can read below zero, which its densities take for an
   // infinite one
-  if(stage == _STAGE_NEGADOCTOR)
+  if(stage == _STAGE_NEGADOCTOR || stage == _STAGE_RETOUCH)
   {
     const int pbox[4] = { i0, j0, i1 + 1, j1 + 1 };
     lib_colorpicker_stats pick;
