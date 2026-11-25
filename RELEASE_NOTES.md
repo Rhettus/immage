@@ -79,6 +79,9 @@ Performance
   TIFF or DNG from another app, other photos' imports and thumbnails no
   longer wait for it, so a folder with big edited TIFFs or panoramas fills in
   as fast as the rest.
+- **Less reading from slow drives:** Opening most RAW photos reads the file
+  from disk once instead of twice, and drawing the thumbnail of a panorama or
+  HDR merge reads its file once instead of three times.
 
 Bug fixes
 

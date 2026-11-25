@@ -20,7 +20,9 @@ check the result.
   libtiff read photos rather than memory-map them, so a network share
   dropping fails a read instead of killing the engine
   (`src/common/exif.cc`, `_open_read`; `src/imageio/imageio_tiff.c`).
-  Folder metadata also uses `_read_metadata`: it grows TIFF prefixes while
+  Folder metadata, the tag check of raw loads
+  (`dt_exif_img_check_additional_tags`) and the preview fallback of sized
+  thumbnails also use `_read_metadata`: it grows TIFF prefixes while
   Exiv2 reports missing metadata, ignoring missing pixel strips, then falls
   back to a heap-backed read that reuses the prefix. For TIFF and ORF
   signatures that whole-file read is done before darktable's global
@@ -30,7 +32,8 @@ check the result.
   heap-backed mapping fallback.
   Sized thumbnails use `_read_jpeg_thumbnail` to read absolute JPEG ranges
   or reuse previews already in metadata; unsupported layouts retain Exiv2's
-  full-file preview loader. The mipmap cache passes its requested size to
+  full-file preview loader, which reads the rest of the file through the
+  prefix parse's `ReadFileIo` only when a preview exists. The mipmap cache passes its requested size to
   `dt_imageio_thumbnail`, which uses JPEG scaled decoding. Existing full-size
   thumbnail entry points retain their behavior.
   On Windows, darktable's lock check (`src/common/database.c`,

@@ -45,7 +45,7 @@ index 30f0812a73..9839c70e3f 100644
      g_free(filename);
      CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index af5673480a..c88c60b55d 100644
+index af5673480a..916e600998 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
 @@ -30,6 +30,9 @@
@@ -284,17 +284,21 @@ index af5673480a..c88c60b55d 100644
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
  
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -2117,7 +2339,8 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+@@ -2117,9 +2339,11 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
  
    try
    {
 -    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(filename)));
++    // tags only: a prefix read, where a whole-file read cost every raw load
++    // a second read of the file
 +    FileData file;
-+    std::unique_ptr<Exiv2::Image> image(_open_read(filename, file));
++    std::unique_ptr<Exiv2::Image> image(_read_metadata(filename, file));
      assert(image.get() != 0);
-     read_metadata_threadsafe(image);
+-    read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -3273,19 +3496,154 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+     if(!exifData.empty())
+     {
+@@ -3273,19 +3497,157 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
    }
  }
  
@@ -448,7 +452,10 @@ index af5673480a..c88c60b55d 100644
 +      if(image && _read_jpeg_thumbnail(*image, target, buffer, size, mime_type))
 +        return FALSE;
 +    }
-+    if(!image || file.size)
++    // a prefix parse keeps its ReadFileIo, so the preview loaders below read
++    // the rest of the file only when there is a preview to load: a file
++    // without one, such as a merged DNG, is not read whole for nothing
++    if(!image)
 +    {
 +      image = _open_read(path, file);
 +      assert(image.get() != 0);
@@ -457,7 +464,7 @@ index af5673480a..c88c60b55d 100644
  
      // Get a list of preview images available in the image. The list is sorted
      // by the preview image pixel size, starting with the smallest preview.
-@@ -3298,10 +3656,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3298,10 +3660,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
        return TRUE;
      }
  
@@ -475,7 +482,7 @@ index af5673480a..c88c60b55d 100644
  
      // Get the selected preview image
      Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
-@@ -3332,6 +3694,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3332,6 +3698,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
    }
  }
  
@@ -487,7 +494,7 @@ index af5673480a..c88c60b55d 100644
  /* Read the metadata of an image.
   * XMP data trumps IPTC data trumps EXIF data.
   */
-@@ -3354,9 +3721,28 @@ gboolean dt_exif_read(dt_image_t *img,
+@@ -3354,9 +3725,28 @@ gboolean dt_exif_read(dt_image_t *img,
  
    try
    {
@@ -519,7 +526,7 @@ index af5673480a..c88c60b55d 100644
      bool res = true;
  
      // EXIF metadata
-@@ -3419,9 +3805,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+@@ -3419,9 +3809,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
@@ -531,7 +538,7 @@ index af5673480a..c88c60b55d 100644
      const int w = (int)image->pixelWidth();
      const int h = (int)image->pixelHeight();
      if(w <= 0 || h <= 0) return FALSE;
-@@ -3446,7 +3832,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+@@ -3446,7 +3836,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      if(!image.get()) return FALSE;
@@ -539,7 +546,7 @@ index af5673480a..c88c60b55d 100644
      image->xmpData()["Xmp.darktable.neural_restore"] = task;
      write_metadata_threadsafe(image);
      return TRUE;
-@@ -3469,7 +3854,6 @@ int dt_exif_write_blob(uint8_t *blob,
+@@ -3469,7 +3858,6 @@ int dt_exif_write_blob(uint8_t *blob,
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      assert(image.get() != 0);
@@ -547,7 +554,7 @@ index af5673480a..c88c60b55d 100644
      Exiv2::ExifData &imgExifData = image->exifData();
      Exiv2::ExifData blobExifData;
      Exiv2::ExifParser::decode(blobExifData, blob, size);
-@@ -3550,7 +3934,8 @@ int dt_exif_read_blob(uint8_t **buf,
+@@ -3550,7 +3938,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -557,7 +564,7 @@ index af5673480a..c88c60b55d 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6649,8 +7034,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6649,8 +7038,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -568,7 +575,7 @@ index af5673480a..c88c60b55d 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
-@@ -7117,6 +7503,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+@@ -7117,6 +7507,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
  static void _exif_log_handler(const int log_level,
                                const char *message)
  {
