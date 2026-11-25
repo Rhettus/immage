@@ -263,7 +263,15 @@ export class ThumbLoader {
   private visible = new Set<Id>();
   private seen = new Map<Id, number>();
   private clock = 0;
-  private queue: Id[] = [];
+  // asked for and not yet looked for on disk, and those the engine (or
+  // Immich) makes: looked for and missed, stale, remote or without an
+  // entry. sets keep the order asked and drop one in constant time; a
+  // 140,000-photo folder made array filters over the whole queue at every
+  // step quadratic. `urgent` are those asked for first, newest first, each
+  // still in one of the two; let go once in neither
+  private toDisk = new Set<Id>();
+  private toEngine = new Set<number>();
+  private urgent = new Set<Id>();
   private running = false;
   // engine thumbnails under way, and run() waiting for one to finish
   private inFlight = 0;
@@ -327,11 +335,35 @@ export class ThumbLoader {
     for (const id of ids) if (typeof id === "number") this.adopt(id);
     const wanted = ids.filter((id) => !this.rendering.has(id) &&
       (!this.cache.has(id) || (typeof id === "number" && this.unverified.has(id))));
-    wanted.forEach((id) => { if (typeof id === "number") this.asked.add(id); });
-    this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
-                       : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
+    const queued: Id[] = [];
+    for (const id of wanted) {
+      if (typeof id === "number") this.asked.add(id);
+      // looked for on disk already: a known one has had its only chance,
+      // an image goes to the engine
+      if (this.toDisk.has(id) || (typeof id === "number" && this.toEngine.has(id))) { /* queued */ }
+      else if (!this.tried.has(id)) this.toDisk.add(id);
+      else if (typeof id === "number") this.toEngine.add(id);
+      else continue;
+      queued.push(id);
+    }
+    if (first && queued.length) this.hurry(queued);
     if (wanted.length) this.progressed();
     void this.run();
+  }
+
+  // these go before the rest of their stage, the first of them first
+  private hurry(ids: Id[]) {
+    const first = new Set(ids);
+    // those queued nowhere are done with
+    for (const id of this.urgent) if (this.toDisk.has(id) || (typeof id === "number" && this.toEngine.has(id))) first.add(id);
+    this.urgent = first;
+  }
+
+  // an image that needs the engine, before the others
+  private toEngineFirst(id: number) {
+    this.toDisk.delete(id);
+    this.toEngine.add(id);
+    this.hurry([id]);
   }
 
   // an image just read takes its known thumbnail, unchecked
@@ -368,7 +400,7 @@ export class ThumbLoader {
     this.refreshTimers.set(imgid, window.setTimeout(() => {
       this.refreshTimers.delete(imgid);
       this.stale.add(imgid);
-      this.queue = [imgid, ...this.queue.filter((id) => id !== imgid)];
+      this.toEngineFirst(imgid);
       void this.run();
     }, 2000));
   }
@@ -393,7 +425,9 @@ export class ThumbLoader {
     this.bytes = 0;
     this.visible.clear();
     this.seen.clear();
-    this.queue = [];
+    this.toDisk.clear();
+    this.toEngine.clear();
+    this.urgent.clear();
     this.stale.clear();
     this.unverified.clear();
     this.adopted.clear();
@@ -403,25 +437,42 @@ export class ThumbLoader {
     this.progressed();
   }
 
-  // up to eight queued that may be on disk, with their entries (none for
-  // a known thumbnail)
-  private nextOnDisk(visibleOnly: boolean): [Id, ImageEntry | null][] {
+  // up to eight from `from` still to be looked for on disk, with their
+  // entries (none for a known thumbnail). each one looked at leaves
+  // toDisk: for the disk, for the engine, or done with
+  private nextOnDisk(from: Iterable<Id>): [Id, ImageEntry | null][] {
     const out: [Id, ImageEntry | null][] = [];
-    for (const id of this.queue) {
-      if (visibleOnly && !this.visible.has(id)) continue;
+    for (const id of from) {
       if (out.length === 8) break;
+      if (!this.toDisk.delete(id)) {
+        // an urgent one done with, or for the engine
+        if (from === this.urgent && !(typeof id === "number" && this.toEngine.has(id))) this.urgent.delete(id);
+        continue;
+      }
       if (typeof id === "string") {
+        // a known one has the disk or nothing
         if (this.tried.has(id) || this.cache.has(id) || this.adopted.has(id)) continue;
         this.tried.add(id);
         out.push([id, null]);
         continue;
       }
-      if (id < 0 || this.tried.has(id) || this.stale.has(id) || (this.cache.has(id) && !this.unverified.has(id))) continue;
+      if (this.cache.has(id) && !this.unverified.has(id) && !this.stale.has(id)) continue;
+      if (id < 0 || this.tried.has(id) || this.stale.has(id)) { this.toEngine.add(id); continue; }
       this.tried.add(id);
       const entry = this.entryOf(id);
       if (entry) out.push([id, entry]);
+      else this.toEngine.add(id);
     }
     return out;
+  }
+
+  // the first of `ids` in `set`, letting go of urgent ones queued nowhere
+  private firstIn<T extends Id>(ids: Iterable<Id>, set: Set<T>, prune = false): T | undefined {
+    for (const id of ids) {
+      if (set.has(id as T)) return id as T;
+      if (prune && !this.toDisk.has(id) && !(typeof id === "number" && this.toEngine.has(id))) this.urgent.delete(id);
+    }
+    return undefined;
   }
 
   private keep(id: Id, bitmap: ImageBitmap) {
@@ -466,13 +517,17 @@ export class ThumbLoader {
     if (this.running) return;
     this.running = true;
     try {
-      while (this.queue.length) {
+      while (this.toDisk.size || this.toEngine.size) {
         // Re-evaluate visibility after every await. Visible cache misses render
-        // before checking the rest of the folder's disk cache.
-        this.queue = [...this.queue.filter((id) => this.visible.has(id)),
-                      ...this.queue.filter((id) => !this.visible.has(id))];
-        const visiblePending = this.queue.some((id) => this.visible.has(id));
-        const disk = this.nextOnDisk(visiblePending);
+        // before checking the rest of the folder's disk cache: on screen, the
+        // disk then the engine; then the disk, then the engine, those asked
+        // for first before the rest
+        let disk = this.nextOnDisk(this.visible);
+        let id = disk.length ? undefined : this.firstIn(this.visible, this.toEngine);
+        if (!disk.length && id === undefined) {
+          disk = this.nextOnDisk(this.urgent);
+          if (!disk.length) disk = this.nextOnDisk(this.toDisk);
+        }
         if (disk.length) {
           const generation = this.generation;
           const got = await Promise.all(disk.map(([id, entry]) =>
@@ -485,13 +540,11 @@ export class ThumbLoader {
             const bitmap = got[k];
             // a known thumbnail is the disk's or none; the engine has no imgid for it
             if (typeof id === "string") {
-              this.queue = this.queue.filter((q) => q !== id);
               // its image was read meanwhile, and has it from the disk or the engine
               if (!bitmap || this.adopted.has(id)) return;
             } else {
-              // an edit while it was read wants a fresh render
-              if (!bitmap || this.stale.has(id)) return;
-              this.queue = this.queue.filter((q) => q !== id);
+              // none on disk, or an edit while it was read wants a fresh render
+              if (!bitmap || this.stale.has(id)) { bitmap?.close(); this.toEngine.add(id); return; }
               this.unverified.delete(id);
             }
             this.keep(id, bitmap);
@@ -504,8 +557,10 @@ export class ThumbLoader {
           await new Promise<void>((r) => { this.wake = r; });
           continue;
         }
-        const id = this.queue.shift()!;
-        if (typeof id === "string" || (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id))) continue;
+        id ??= this.firstIn(this.urgent, this.toEngine, true) ?? this.toEngine.values().next().value;
+        if (id === undefined) continue;
+        this.toEngine.delete(id);
+        if (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id)) continue;
         this.stale.delete(id);
         this.unverified.delete(id);
         this.inFlight++;
@@ -518,6 +573,9 @@ export class ThumbLoader {
           wake?.();
         });
       }
+      // nothing is queued, so no urgent one is: those served on screen are
+      // otherwise left in it
+      this.urgent.clear();
     } finally {
       this.running = false;
     }
@@ -538,7 +596,7 @@ export class ThumbLoader {
       // refused as background work (its share is slow, engine.rs `busy`)
       // but on screen by now: asked again, as one the user waits on
       if (background && this.visible.has(id)) {
-        this.queue = [id, ...this.queue.filter((q) => q !== id)];
+        this.toEngineFirst(id);
         // once this fetch's own cleanup in run() has let it go
         window.setTimeout(() => void this.run(), 0);
         return;
