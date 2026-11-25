@@ -67,6 +67,15 @@ unblocked:
 python3 -I verify/import-stall.py
 ```
 
+The exiv2 lock check (Linux, headless, no GUI) slows reads of a 480 MB TIFF
+whose directory follows its pixels (`verify/slowread.c`, LD_PRELOAD) and
+checks a small TIFF's thumbnail does not wait for that file's whole-file
+metadata read:
+
+```bash
+python3 -I verify/exiv2-lock.py
+```
+
 The 0.46.0 engine check (headless, no GUI) starts the engine with the app's
 `--thumb-threads` and `--configdir` arguments and checks the config folder is
 the one asked for, checks the `thumb_threads` range, and runs History's start

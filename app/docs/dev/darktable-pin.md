@@ -22,8 +22,12 @@ check the result.
   (`src/common/exif.cc`, `_open_read`; `src/imageio/imageio_tiff.c`).
   Folder metadata also uses `_read_metadata`: it grows TIFF prefixes while
   Exiv2 reports missing metadata, ignoring missing pixel strips, then falls
-  back to a heap-backed read that reuses the prefix. JPEG and other seekable
-  metadata readers use file I/O with the same heap-backed mapping fallback.
+  back to a heap-backed read that reuses the prefix. For TIFF and ORF
+  signatures that whole-file read is done before darktable's global
+  `exiv2_threadsafe` lock is taken, so only the parse holds it and one large
+  file does not stall other photos' metadata (`verify/exiv2-lock.py`).
+  JPEG and other seekable metadata readers use file I/O with the same
+  heap-backed mapping fallback.
   Sized thumbnails use `_read_jpeg_thumbnail` to read absolute JPEG ranges
   or reuse previews already in metadata; unsupported layouts retain Exiv2's
   full-file preview loader. The mipmap cache passes its requested size to

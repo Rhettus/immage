@@ -75,6 +75,10 @@ Performance
   and filmstrip now stay responsive while the photos are read, and a photo
   opened from your file manager in such a folder opens as soon as its folder
   lists it.
+- **Large TIFFs no longer hold up other photos:** While Immage reads a large
+  TIFF or DNG from another app, other photos' imports and thumbnails no
+  longer wait for it, so a folder with big edited TIFFs or panoramas fills in
+  as fast as the rest.
 
 Bug fixes
 
