@@ -258,6 +258,13 @@ async function sliders(photo) {
       record({ ...base, status: "skip", detail: "a tone mapper's: the photo has none" });
       continue;
     }
+    // the JPEG is rendered from a clean raw: noise reduction moves its pixels
+    // by less than half an 8-bit level, which the frame rounds away when no
+    // tone mapper stretches it. the 16-bit TIFF of the same photo tests it
+    if (c.id === "nr_luminance" && !o.s.toneMappable && /\.(jpe?g|png|webp)$/i.test(photo)) {
+      record({ ...base, status: "skip", detail: "an 8-bit photo with no tone mapper rounds the change away" });
+      continue;
+    }
     if (c.id.startsWith("sf_") && !pack.pack) { record({ ...base, status: "skip", detail: "no spektrafilm data pack" }); continue; }
     if (!m.mapOf.has(c.id)) { record({ ...base, status: "fail", detail: "no module map in manifest.ts" }); continue; }
     if ((c.rawOnly || spec.raw) && !o.s.raw) { record({ ...base, status: "skip", detail: "raws only" }); continue; }
