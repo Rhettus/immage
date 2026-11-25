@@ -285,8 +285,10 @@ impl Service {
 
     // whether work on this photo waits for a quiet spell (SHARE_QUIET). the
     // row stays pending and a later scan offers it again
+    // a network drive found slow (Tagged::slow) waits the same way
     fn deferred(&self, path: &str) -> bool {
-        self.engine.quiet_for() < SHARE_QUIET && crate::volumes::on_network(Path::new(path))
+        (self.engine.quiet_for() < SHARE_QUIET && crate::volumes::on_network(Path::new(path)))
+            || self.engine.slow(path)
     }
 
     fn scan(self: &Arc<Self>, job: &Job) -> Result<(), String> {

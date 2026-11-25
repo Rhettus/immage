@@ -528,6 +528,14 @@ export class ThumbLoader {
       else bitmap.close();
     } catch (e) {
       if (generation !== this.generation) return;
+      // refused as background work (its share is slow, engine.rs `busy`)
+      // but on screen by now: asked again, as one the user waits on
+      if (background && this.visible.has(id)) {
+        this.queue = [id, ...this.queue.filter((q) => q !== id)];
+        // once this fetch's own cleanup in run() has let it go
+        window.setTimeout(() => void this.run(), 0);
+        return;
+      }
       // an image without a thumbnail keeps its placeholder
       this.onFailed?.(id, e);
       if (this.asked.has(id)) this.done.add(id);

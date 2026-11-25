@@ -66,7 +66,12 @@ Open the **Folders** card in the **Library** panel.
   saved copy until you next open the folder. A folder whose listing doesn't come
   back within 10 seconds is reported as not answering. While a photo on a slow
   share is being read, the rest of Immage stays responsive: you can open
-  other folders, and photos from your own drive, and keep editing.
+  other folders, and photos from your own drive, and keep editing. The photos
+  you open or scroll to are read first. When a photo Immage has to read in
+  first, such as one from a morfPhoto catalog or a search result, takes 5
+  seconds or more on a network share, work you aren't waiting on (Smart
+  search, and thumbnails off screen) leaves that share for a minute, or until
+  a read is quick again; those thumbnails load when you scroll to them.
 - A drive or share that stops answering mid-folder doesn't freeze Immage. A
   file that doesn't answer within 5 seconds is skipped, and so is the rest of
   that drive until the stuck file answers or the drive is unplugged, so photos

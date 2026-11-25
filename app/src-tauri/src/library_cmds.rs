@@ -1391,6 +1391,10 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     if let Some(mount) = file.as_deref().and_then(|f| state.tagged.held(f)) {
         return Err(crate::engine::not_answering(&mount));
     }
+    // nor, for one no one waits on, a slow drive's (engine.rs, Slow)
+    if background == Some(true) && file.as_deref().is_some_and(|f| state.tagged.slow(f)) {
+        return Err(crate::engine::busy(file.as_deref().unwrap_or_default()));
+    }
     let thumbs = state.tagged.clone();
     let tag = thumbs.tag();
     // a file of its own, as several are built at once

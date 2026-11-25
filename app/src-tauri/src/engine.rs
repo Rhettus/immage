@@ -77,6 +77,9 @@ pub struct Link {
     // leaf, taken while the Engine mutex or a photo's import gate may be held,
     // with nothing taken under it and no I/O inside
     holds: Holds,
+    // network drives found slow, and those with a background import under
+    // way (Slow). LOCK ORDER: leaves, as `holds`
+    slow: Slow,
 }
 
 #[derive(Default)]
@@ -95,6 +98,59 @@ impl Holds {
         let holds = self.0.lock().unwrap();
         covering(holds.iter().filter(|(_, at)| now.duration_since(**at) < HOLD_HINT).map(|(m, _)| m), path)
     }
+}
+
+// a network drive an import took SLOW_IMPORT or more on is slow for
+// SLOW_HINT: background work there (Smart search, previews rendered ahead,
+// thumbnails off screen) is refused at once, so the one import thread and
+// the share are left to what the user waits on. one under FAST_IMPORT ends
+// it. and one background import at a time on each network drive, the
+// others waiting for its lane (a mutex of its own, taken before the photo's
+// import gate and never under it, nor under the Engine mutex). the times are the engine's own (`ms`), not the wait in
+// its queue, so a fast drive queued behind a slow one is not marked
+#[derive(Default)]
+struct Slow {
+    until: Mutex<HashMap<String, Instant>>,
+    lanes: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+}
+
+const SLOW_IMPORT: Duration = Duration::from_secs(5);
+const FAST_IMPORT: Duration = Duration::from_secs(1);
+const SLOW_HINT: Duration = Duration::from_secs(60);
+
+impl Slow {
+    fn is_slow(&self, mount: &str, now: Instant) -> bool {
+        self.until.lock().unwrap().get(mount).is_some_and(|until| now < *until)
+    }
+
+    fn note(&self, mount: &str, took: Duration, now: Instant) {
+        let mut until = self.until.lock().unwrap();
+        until.retain(|_, u| now < *u);
+        if took >= SLOW_IMPORT {
+            until.insert(mount.to_string(), now + SLOW_HINT);
+        } else if took < FAST_IMPORT {
+            until.remove(mount);
+        }
+    }
+
+    // the drive's background lane, to hold for one import
+    fn lane(&self, mount: &str) -> Arc<Mutex<()>> {
+        self.lanes.lock().unwrap().entry(mount.to_string()).or_default().clone()
+    }
+}
+
+// the network drive `path` is on, from the mount table alone; None on a
+// local disk, which is never marked slow
+fn network_mount(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    crate::volumes::on_network(path).then(|| crate::volumes::mount_identity(path)).flatten()
+}
+
+// the error for background work refused on a slow drive. the page never
+// shows it: a thumbnail keeps its placeholder until asked for again, and
+// Smart search tries the photo at a later pass
+pub fn busy(mount: &str) -> String {
+    format!("{mount} is slow: background work there waits")
 }
 
 // how long a drive the engine reported held is taken as still held
@@ -137,6 +193,7 @@ impl Link {
             started: Instant::now(),
             active_ms: AtomicU64::new(0),
             holds: Holds::default(),
+            slow: Slow::default(),
         })
     }
 
@@ -330,6 +387,12 @@ impl Tagged {
         self.link.held(path)
     }
 
+    // whether `path` is on a network drive found slow (Slow): Smart search
+    // leaves it, as for a quiet spell
+    pub fn slow(&self, path: &str) -> bool {
+        network_mount(path).is_some_and(|m| self.link.slow.is_slow(&m, Instant::now()))
+    }
+
     pub fn quiet_for(&self) -> Duration {
         let at = Duration::from_millis(self.link.active_ms.load(Ordering::Relaxed));
         self.link.started.elapsed().saturating_sub(at)
@@ -388,6 +451,19 @@ impl Tagged {
             // behind its stuck read, up to 30 s for each photo
             if let Some(mount) = self.link.held(&photo.path) { return Err(not_answering(&mount)); }
             if let Some(real) = self.link.library_ids.lock().unwrap().resolved(&photo) { return Ok(real); }
+            let mount = network_mount(&photo.path);
+            // background work: not on a slow drive, and one import at a time on
+            // each; the drive may have been found slow while this one waited
+            let lane = mount.as_deref().filter(|_| background).map(|m| self.link.slow.lane(m));
+            let _in_lane = match (&lane, &mount) {
+                (Some(lane), Some(m)) => {
+                    if self.link.slow.is_slow(m, Instant::now()) { return Err(busy(m)); }
+                    let held = lane.lock().map_err(|_| "background import lane poisoned")?;
+                    if self.link.slow.is_slow(m, Instant::now()) { return Err(busy(m)); }
+                    Some(held)
+                }
+                _ => None,
+            };
             let gate = self.link.library_ids.lock().unwrap().gate(&photo.path);
             let _importing = gate.lock().map_err(|_| "cached photo import lock poisoned")?;
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
@@ -406,6 +482,9 @@ impl Tagged {
             })();
             Self::forget_on(conn, tag);
             let reply = result?;
+            if let (Some(m), Some(ms)) = (&mount, reply["ms"].as_u64()) {
+                self.link.slow.note(m, Duration::from_millis(ms), Instant::now());
+            }
             if reply["unanswered"].as_array().is_some_and(|u| u.iter().any(|p| p.as_str() == Some(photo.path.as_str()))) {
                 let mount = reply["held"].as_array().and_then(|h| h.first()).and_then(Value::as_str);
                 return Err(not_answering(mount.unwrap_or(&photo.path)));
@@ -417,6 +496,15 @@ impl Tagged {
     }
 
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
+        // a background thumbnail or preview of a photo on a slow drive reads
+        // that drive too, imported or not: refused before it is sent
+        if req.get("background").and_then(Value::as_bool) == Some(true) {
+            let path = req["path"].as_str().map(str::to_string)
+                .or_else(|| req["imgid"].as_i64().and_then(|id| self.known_photo(id)).map(|p| p.path));
+            if let Some(m) = path.as_deref().and_then(network_mount) {
+                if self.link.slow.is_slow(&m, Instant::now()) { return Err(busy(&m)); }
+            }
+        }
         let conn = self.link.current();
         self.prepare(&mut req, &conn)?;
         self.request_on(&conn, tag, req)
@@ -1510,6 +1598,43 @@ for line in sys.stdin:
         assert_eq!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT), None);
         holds.note(&json!({"held": ["/Volumes/A"]}), t + HOLD_HINT);
         assert!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT).is_some());
+    }
+
+    #[test]
+    fn slow_drives_follow_the_engines_import_times() {
+        use std::time::{Duration, Instant};
+        let slow = super::Slow::default();
+        let now = Instant::now();
+        // a long wait in the queue is not the drive's: only `ms` counts
+        slow.note("/mnt/nas", Duration::from_millis(4999), now);
+        assert!(!slow.is_slow("/mnt/nas", now));
+        slow.note("/mnt/nas", super::SLOW_IMPORT, now);
+        assert!(slow.is_slow("/mnt/nas", now));
+        assert!(!slow.is_slow("/mnt/other", now));
+        // in between neither marks nor clears; under FAST_IMPORT clears
+        slow.note("/mnt/nas", Duration::from_secs(2), now);
+        assert!(slow.is_slow("/mnt/nas", now));
+        slow.note("/mnt/nas", Duration::from_millis(500), now);
+        assert!(!slow.is_slow("/mnt/nas", now));
+        // and it passes by itself
+        slow.note("/mnt/nas", Duration::from_secs(9), now);
+        assert!(!slow.is_slow("/mnt/nas", now + super::SLOW_HINT));
+        // the local disk is never a network drive to mark
+        assert_eq!(super::network_mount(std::env::temp_dir().to_str().unwrap()), None);
+    }
+
+    #[test]
+    fn a_drives_background_imports_take_turns() {
+        let slow = std::sync::Arc::new(super::Slow::default());
+        let first = slow.lane("/mnt/nas");
+        let held = first.lock().unwrap();
+        // another drive's lane is its own
+        assert!(slow.lane("/mnt/other").try_lock().is_ok());
+        let waiter = { let slow = slow.clone(); std::thread::spawn(move || drop(slow.lane("/mnt/nas").lock().unwrap())) };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!waiter.is_finished(), "the second import must wait for the lane");
+        drop(held);
+        waiter.join().unwrap();
     }
 
     #[test]

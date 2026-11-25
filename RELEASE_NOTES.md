@@ -93,7 +93,7 @@ Bug fixes
 - Reading a photo from a slow network share no longer freezes Immage: other
   folders, photos on your own drive and editing stay responsive meanwhile. The
   photos you open or scroll to are read before Smart search's and those off
-  screen.
+  screen, which pause for a minute on a share found to be slow.
 
 ## 0.47.1
 
