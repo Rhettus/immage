@@ -810,8 +810,7 @@ async fn refresh_search_metadata(state: &AppState, imgid: i64) {
             return;
         }
     };
-    let reply = match state.request("search_metadata_refresh", 
-        json!({ "cmd": "meta", "imgid": imgid }),
+    let reply = match state.request("search_metadata_refresh", json!({ "cmd": "meta", "imgid": imgid }),
     ) {
         Ok(reply) => reply,
         Err(error) => {
@@ -847,7 +846,7 @@ pub(crate) fn queue_search_metadata_refresh(state: &AppState, photo: crate::libr
     if !state.analysis_queue.submit(key, move |job| {
         if job.cancelled() { return }
         let handle = tagged.cached_photo(&path, version);
-        let reply = match tagged.request(tagged.tag(), json!({ "cmd": "meta", "imgid": handle })) {
+        let reply = match tagged.request(tagged.tag(), json!({ "cmd": "meta", "imgid": handle, "background": true })) {
             Ok(reply) => reply,
             Err(error) => {
                 eprintln!("search metadata refresh for {}: {error}", path);
@@ -1375,7 +1374,7 @@ pub(crate) struct PreviewKinds {
 #[specta::specta]
 pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>, imgid: i64, size: u32,
                path: Option<String>, version: Option<i64>, proof: Option<bool>,
-               foreground: Option<bool>, preview: Option<PreviewKinds>) -> Result<bindings::Frame, String> {
+               foreground: Option<bool>, preview: Option<PreviewKinds>, background: Option<bool>) -> Result<bindings::Frame, String> {
     let PreviewKinds { prefer_source, camera_preview, edited_preview } = preview.unwrap_or_default();
     // named before the render: a sidecar written during it makes the next
     // look a miss, never a stale hit. a proofed one is not the photo's
@@ -1405,6 +1404,8 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
         let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview, edited_preview)));
         let mut req = json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out });
         if let Some(file) = file { req["path"] = json!(file); }
+        // off screen or rendered ahead: its import waits behind the user's
+        if background == Some(true) { req["background"] = json!(true); }
         let got = thumbs.request(tag, req)
             .and_then(|reply| Ok((name, reply, frame_output::FrameOutput::read(&out).map_err(|e| format!("thumb: {e}"))?)));
         storage.remove(&out);

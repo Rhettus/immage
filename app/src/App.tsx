@@ -305,7 +305,7 @@ export default function App() {
     editedPreviews.configure({
       // a photo left without new edits may already have its preview on disk
       fetch: async (entry, size) => (await fetchCachedThumb(entry, size, false, false, true))
-        ?? fetchThumb(entry.imgid, size, entry, false, false, false, false, true),
+        ?? fetchThumb(entry.imgid, size, entry, false, false, false, false, true, true),
       idle: () => { const p = loader.current!.progress(); return p.done >= p.total; },
       loadSize: () => { try { return Number(settings.get(PREVIEW_SIZE_KEY)) || 0; } catch { return 0; } },
       kind: fileKind,

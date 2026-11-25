@@ -64,6 +64,7 @@ static gint64 _table_read = 0;
 #endif
 static struct { drives_t *drive; gint64 started; gboolean logged; } _slots[_IMPORT_SLOTS];
 static char *_test_stall = NULL;     // IMMAGE_TEST_STALL_DIR
+static char *_test_slow = NULL;      // IMMAGE_TEST_SLOW_DIR
 
 static gboolean _is_sep(const char c)
 {
@@ -399,12 +400,17 @@ void drives_init(void)
 {
   const char *dir = g_getenv("IMMAGE_TEST_STALL_DIR");
   if(dir && *dir) _test_stall = g_strdup(dir);
+  const char *slow = g_getenv("IMMAGE_TEST_SLOW_DIR");
+  if(slow && *slow) _test_slow = g_strdup(slow);
 }
 
 // test only (IMMAGE_TEST_STALL_DIR): a read under that folder blocks until
 // <dir>/.release exists, as a stuck drive's would
 void drives_test_stall(const char *path)
 {
+  // IMMAGE_TEST_SLOW_DIR: a read under that folder takes 2 s and then
+  // returns, as a slow share's does (verify/import-priority.py)
+  if(_test_slow && path && _under(path, _test_slow)) g_usleep(2 * G_USEC_PER_SEC);
   if(!_test_stall || !path || !_under(path, _test_stall)) return;
   gchar *release = g_build_filename(_test_stall, ".release", NULL);
   while(!g_file_test(release, G_FILE_TEST_EXISTS)) g_usleep(50 * 1000);

@@ -1494,11 +1494,29 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
 GThreadPool *library_import_pool = NULL;
 static GMutex _import_pool_lock;
 
+// an import the user waits on (a folder read, a photo opened or browsed)
+// before queued `background` ones (Smart search, previews rendered ahead,
+// thumbnails off screen), which a slow share's would otherwise keep from
+// the one import thread; equal ranks keep their arrival order
+static gint _import_rank(JsonParser *parser)
+{
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  return json_object_get_boolean_member_with_default(req, "background", FALSE) ? 1 : 0;
+}
+
+gint library_import_order(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+  return _import_rank((JsonParser *)a) - _import_rank((JsonParser *)b);
+}
+
 void library_import_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  // the import's own time, not its wait in the queue: the client tells a
+  // slow drive by it (engine.rs, Slow)
+  const gint64 started = g_get_monotonic_time();
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "tag");
@@ -1506,6 +1524,8 @@ void library_import_run(gpointer data, gpointer user_data)
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
   library_import_files(req, b, TRUE);
+  json_builder_set_member_name(b, "ms");
+  json_builder_add_int_value(b, (g_get_monotonic_time() - started) / 1000);
   json_builder_end_object(b);
   engine_reply(out, b);
   g_object_unref(b);

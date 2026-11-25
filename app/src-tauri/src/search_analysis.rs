@@ -402,7 +402,7 @@ impl Service {
         }
         let reply = self
             .engine
-            .request(self.engine.tag(), json!({"cmd":"meta","imgid":imgid}))?;
+            .request(self.engine.tag(), json!({"cmd":"meta","imgid":imgid,"background":true}))?;
         if job.cancelled() || before != photo_fingerprints(row, version) {
             return Ok(());
         }
@@ -461,7 +461,7 @@ impl Service {
             self.engine.request(
                 tag,
                 // the path lets the engine's reader refuse a held drive's at once
-                json!({"cmd":"analysis_preview", "imgid":imgid,"subject":subject,"out":out,"path":row.path}),
+                json!({"cmd":"analysis_preview", "background":true, "imgid":imgid,"subject":subject,"out":out,"path":row.path}),
             )?;
             FrameOutput::read(&out).map_err(|e| e.to_string())
         })();

@@ -91,7 +91,9 @@ Bug fixes
   on screen or not, instead of being checked and rendered from the share. When
   the server isn't answering, the copies Immage already has are shown.
 - Reading a photo from a slow network share no longer freezes Immage: other
-  folders, photos on your own drive and editing stay responsive meanwhile.
+  folders, photos on your own drive and editing stay responsive meanwhile. The
+  photos you open or scroll to are read before Smart search's and those off
+  screen.
 
 ## 0.47.1
 

@@ -549,6 +549,7 @@ extern gint64 library_import_latest;
 void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background);
 extern GThreadPool *library_import_pool;
 void library_import_run(gpointer data, gpointer user_data);
+gint library_import_order(gconstpointer a, gconstpointer b, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
 gboolean library_import_held_reply(JsonObject *req, JsonBuilder *b);
 gboolean library_thumb_held_reply(JsonObject *req, JsonBuilder *b);

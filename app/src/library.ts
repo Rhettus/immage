@@ -181,10 +181,13 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 
 // an image as darktable's thumbnail pipe renders it, edits and all, at the
 // cached size next up from this one. given its entry, the thumbnail is also
-// kept on disk for fetchCachedThumb()
+// kept on disk for fetchCachedThumb(). `background`: no one waits on it (off
+// screen, rendered ahead), so a photo it must import first waits behind the
+// imports the user waits on
 export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false,
-  foreground = false, preferSource = false, cameraPreview = false, editedPreview = false): Promise<ImageBitmap> {
-  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, { preferSource, cameraPreview, editedPreview });
+  foreground = false, preferSource = false, cameraPreview = false, editedPreview = false,
+  background = false): Promise<ImageBitmap> {
+  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, { preferSource, cameraPreview, editedPreview }, background);
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));
@@ -500,7 +503,7 @@ export class ThumbLoader {
         this.unverified.delete(id);
         this.inFlight++;
         this.rendering.add(id);
-        void this.fetch(id).finally(() => {
+        void this.fetch(id, !this.visible.has(id)).finally(() => {
           this.rendering.delete(id);
           this.inFlight--;
           const wake = this.wake;
@@ -515,12 +518,12 @@ export class ThumbLoader {
 
   // morfPhoto had none for a server row (nextOnDisk asked it), so the
   // engine renders it as any other
-  private async fetch(id: number) {
+  private async fetch(id: number, background: boolean) {
     const generation = this.generation;
     try {
       // below zero, an Immich result: the server's own thumbnail
       const entry = id >= 0 ? this.entryOf(id) : undefined;
-      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry);
+      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry, false, false, false, false, false, background);
       if (generation === this.generation) this.keep(id, bitmap);
       else bitmap.close();
     } catch (e) {

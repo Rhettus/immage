@@ -1807,6 +1807,7 @@ int main(int argc, char **argv)
   g_thread_pool_set_sort_function(library_thumb_pool, library_thumb_order, NULL);
   export_pool = g_thread_pool_new(export_run, out, 1, TRUE, NULL);
   library_import_pool = g_thread_pool_new(library_import_run, out, 1, FALSE, NULL);
+  g_thread_pool_set_sort_function(library_import_pool, library_import_order, NULL);
 #ifdef HAVE_AI
   ai_denoise_pool = g_thread_pool_new(ai_denoise_run, out, 1, TRUE, NULL);
   ai_pool = g_thread_pool_new(ai_run, out, 1, FALSE, NULL);

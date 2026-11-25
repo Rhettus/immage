@@ -378,6 +378,9 @@ impl Tagged {
     }
 
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
+        // work no one waits on (`background`: Smart search, previews rendered
+        // ahead, thumbnails off screen) imports behind what the user waits on
+        let background = req.get("background").and_then(Value::as_bool) == Some(true);
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;
             let Some(photo) = photo else { return Ok(id) };
@@ -394,6 +397,7 @@ impl Tagged {
             let tag = self.tag();
             let mut import = json!({"cmd":"import","files":[photo.path],"tag":tag});
             import["budget"] = json!(30000);
+            if background { import["background"] = json!(true); }
             let answer = self.expect_on(conn, tag)?;
             let result = (|| {
                 { let mut stdin = conn.stdin.lock().unwrap();
