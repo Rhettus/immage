@@ -422,6 +422,7 @@ fn run_library_smart_search(
         ActiveProviders {
             morfphoto_root: None,
             immich: providers.immich.clone(),
+            ..Default::default()
         }
     } else {
         providers.clone()

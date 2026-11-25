@@ -473,10 +473,12 @@ Searching the library and narrowing a folder both happen here.
   A still arc means photos are waiting but nothing is running just now, for
   example while waiting for a quiet spell on a network drive or between batches.
   Find checks photo availability in batches, including while analysis is paused.
-  The count excludes folders already served by morfPhoto or Immich CLIP as well
-  as photos found missing or offline, and photos in a folder on an unmounted
-  share (see [Folders](#folders)) until it is mounted again. It includes them
-  again if a server stops answering or files return. A pause symbol means
+  The count excludes folders already served by morfPhoto or Immich CLIP, photos
+  found missing or offline, and photos in a folder on an unmounted share (see
+  [Folders](#folders)) until it is mounted again. While morfPhoto is set up, it
+  also excludes every photo on a network drive, which Immage never analyzes
+  itself. It includes the others again if the Immich server stops answering or
+  files return. A pause symbol means
   analysis is paused, and a green check means no photo is waiting. While the
   count is being worked out the tooltip says so. Click it to pause or resume,
   the same pause as **Pause / Resume** in Preferences > General > Background

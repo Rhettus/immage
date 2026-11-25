@@ -188,8 +188,12 @@ The optional CLIP model that lets Find search by what is in a photo.
 
 Per-folder CLIP precedence is **morfPhoto**, then **Immich**, then **local CLIP**.
 Folders already served by morfPhoto or Immich CLIP skip local CLIP background
-analysis (including edited photos and virtual copies) and fall through
-automatically if a server stops answering.
+analysis (including edited photos and virtual copies). Immich folders fall
+through to local CLIP automatically if the Immich server stops answering.
+While morfPhoto is set up, Immage never analyzes photos in the morfPhoto folder
+or on any other network drive itself, even when the morfPhoto server is slow or
+not answering. Their Smart search comes from the morfPhoto server, and photos
+on drives in your computer are analyzed as before.
 
 While CLIP analyses your photos in the background, Immage's performance is
 impacted because the analysis uses the CPU. Pause background work under

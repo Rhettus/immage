@@ -82,6 +82,9 @@ Bug fixes
   reopened.
 - An offline Immich or morfPhoto share shows with a red dot in Folders instead
   of as an empty folder.
+- With morfPhoto set up, Immage no longer reads photos on network drives for
+  Smart search analysis, which could make the app unresponsive on a slow
+  connection.
 
 ## 0.47.1
 

@@ -74,9 +74,31 @@ impl ImmichCoverage {
 pub struct ActiveProviders {
     pub morfphoto_root: Option<PathBuf>,
     pub immich: Option<ImmichCoverage>,
+    /// The configured morfPhoto folder, whether or not its server answers.
+    pub morfphoto_folder: Option<PathBuf>,
+    /// Network mount points, filled only while morfPhoto is enabled.
+    pub network_mounts: Vec<PathBuf>,
+    /// Set by `ProbeCache::cached` before the first `resolve`: nothing is
+    /// known yet, so no local work.
+    pub unprimed: bool,
 }
 
 impl ActiveProviders {
+    /// Whether Immage may read this photo itself for background analysis.
+    /// With morfPhoto enabled it owns its folder and Immage leaves other
+    /// network drives alone, whatever the server's state: reading a share can
+    /// stall the engine's import thread. Pure in-memory; never touches a share.
+    pub fn local_work_allowed(&self, path: &Path) -> bool {
+        if self.unprimed {
+            return false;
+        }
+        let under = |root: &PathBuf| path_within(path, root);
+        !(self.morfphoto_folder.as_ref().is_some_and(under)
+            || self.network_mounts.iter().any(under)
+            || (!self.network_mounts.is_empty() || self.morfphoto_folder.is_some())
+                && crate::volumes::is_unc(path))
+    }
+
     /// Strict directory precedence: morfPhoto -> Immich -> local.
     pub fn for_path(&self, path: &Path) -> ClipProvider {
         if self
@@ -416,6 +438,9 @@ struct CacheState {
     primed: bool,
     morfphoto: Option<CachedProbe<Option<PathBuf>>>,
     immich: Option<CachedProbe<Option<ImmichCoverage>>>,
+    // the last values `resolve` read; plain data, no probe behind them
+    morfphoto_folder: Option<PathBuf>,
+    network_mounts: Vec<PathBuf>,
 }
 
 struct ProbingGuard(Arc<AtomicBool>);
@@ -444,6 +469,9 @@ impl ProbeCache {
         ActiveProviders {
             morfphoto_root: guard.morfphoto.as_ref().and_then(|p| p.value.clone()),
             immich: guard.immich.as_ref().and_then(|p| p.value.clone()),
+            morfphoto_folder: guard.morfphoto_folder.clone(),
+            network_mounts: guard.network_mounts.clone(),
+            unprimed: !guard.primed,
         }
     }
 
@@ -519,6 +547,13 @@ impl ProbeCache {
         // 1. morfPhoto
         let mp_config = morf_photo::load(runtime);
         let mp_fp = morfphoto_fingerprint(&mp_config);
+        // in-memory gate for local work: read before any lock, never probed
+        let morfphoto_folder = mp_config.configured_root();
+        let network_mounts = if morfphoto_folder.is_some() || mp_config.enabled {
+            crate::volumes::network_mounts()
+        } else {
+            Vec::new()
+        };
         let cached_mp = {
             let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
             guard
@@ -590,9 +625,14 @@ impl ProbeCache {
             });
         }
         guard.primed = true;
+        guard.morfphoto_folder = morfphoto_folder.clone();
+        guard.network_mounts = network_mounts.clone();
         ActiveProviders {
             morfphoto_root,
             immich: immich_value,
+            morfphoto_folder,
+            network_mounts,
+            unprimed: false,
         }
     }
 
@@ -600,6 +640,8 @@ impl ProbeCache {
     pub(crate) fn set_for_test(&self, active: ActiveProviders) {
         let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
         guard.primed = true;
+        guard.morfphoto_folder = active.morfphoto_folder;
+        guard.network_mounts = active.network_mounts;
         guard.morfphoto = Some(CachedProbe {
             fingerprint: "test".into(),
             checked_at: Instant::now(),
@@ -666,6 +708,7 @@ mod tests {
         let active = ActiveProviders {
             morfphoto_root: Some(PathBuf::from("/nas/photos")),
             immich: Some(immich_cov("/nas/photos", "/mnt/photos")),
+            ..Default::default()
         };
         assert_eq!(
             active.for_path(Path::new("/nas/photos/2026/a.orf")),
@@ -691,6 +734,7 @@ mod tests {
         let immich_only = ActiveProviders {
             morfphoto_root: None,
             immich: Some(immich_cov("/nas/photos", "/mnt/photos")),
+            ..Default::default()
         };
         assert_eq!(
             immich_only.for_path(Path::new("/nas/photos/2026/a.orf")),
@@ -702,12 +746,38 @@ mod tests {
         );
     }
 
+    fn gate(folder: Option<&str>, mounts: &[&str]) -> ActiveProviders {
+        ActiveProviders {
+            morfphoto_folder: folder.map(PathBuf::from),
+            network_mounts: mounts.iter().map(PathBuf::from).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn local_work_gate_follows_config_and_mounts_not_the_probe() {
+        // the folder is owned with no probe result (morfphoto_root is None)
+        let a = gate(Some("/mnt/Pic"), &["/mnt/nas"]);
+        assert!(a.morfphoto_root.is_none());
+        assert!(!a.local_work_allowed(Path::new("/mnt/Pic/a.orf")));
+        assert!(!a.local_work_allowed(Path::new("/mnt/nas/x/a.orf")));
+        assert!(a.local_work_allowed(Path::new("/home/me/a.orf")));
+        // whole components only
+        assert!(a.local_work_allowed(Path::new("/mnt/Pictures/a.orf")));
+        assert!(a.local_work_allowed(Path::new("/mnt/nas2/a.orf")));
+        // morfPhoto disabled: nothing is filled, everything is allowed
+        let off = gate(None, &[]);
+        assert!(off.local_work_allowed(Path::new("/mnt/Pic/a.orf")));
+        assert!(off.local_work_allowed(Path::new("/mnt/nas/a.orf")));
+    }
+
     #[test]
     fn nested_providers_resolve_strictly_by_precedence() {
         // morfPhoto covers a subfolder inside Immich's root
         let active = ActiveProviders {
             morfphoto_root: Some(PathBuf::from("/nas/archive")),
             immich: Some(immich_cov("/nas", "/mnt/nas")),
+            ..Default::default()
         };
         assert_eq!(
             active.for_path(Path::new("/nas/archive/a.orf")),
@@ -726,6 +796,7 @@ mod tests {
         let inverted = ActiveProviders {
             morfphoto_root: Some(PathBuf::from("/nas")),
             immich: Some(immich_cov("/nas/sub", "/mnt/sub")),
+            ..Default::default()
         };
         assert_eq!(
             inverted.for_path(Path::new("/nas/sub/a.orf")),
@@ -755,6 +826,7 @@ mod tests {
         let active = ActiveProviders {
             morfphoto_root: Some(PathBuf::from("/nas/archive")),
             immich: Some(immich_cov("/nas", "/mnt/nas")),
+            ..Default::default()
         };
 
         let plan = plan_library_scopes(&roots, &hidden, &active, false);
@@ -783,11 +855,14 @@ mod tests {
     fn probe_cache_invalidation_and_failure_recording() {
         let cache = ProbeCache::new();
         assert!(!cache.is_primed());
-        assert_eq!(cache.cached(), ActiveProviders::default());
+        // before the first resolve nothing is known, so no local work
+        assert!(cache.cached().unprimed);
+        assert!(!cache.cached().local_work_allowed(Path::new("/local/a.orf")));
 
         cache.set_for_test(ActiveProviders {
             morfphoto_root: Some(PathBuf::from("/nas")),
             immich: Some(immich_cov("/photos", "/mnt/photos")),
+            ..Default::default()
         });
         assert!(cache.is_primed());
         assert!(cache.cached().any_remote());

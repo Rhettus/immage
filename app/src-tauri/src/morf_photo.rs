@@ -388,6 +388,12 @@ impl Config {
         Ok(())
     }
 
+    // the configured local folder, with no mount-table or server check: what
+    // morfPhoto owns for local background work even while its server is down
+    pub(crate) fn configured_root(&self) -> Option<PathBuf> {
+        (self.enabled && self.validate_mapping().is_ok()).then(|| PathBuf::from(self.local_path.trim()))
+    }
+
     pub(crate) fn mapped_root(&self) -> Option<PathBuf> {
         let mount = PathBuf::from(self.local_path.trim());
         (self.enabled && self.validate_mapping().is_ok() && crate::volumes::on_network(&mount))

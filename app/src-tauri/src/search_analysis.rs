@@ -164,12 +164,19 @@ struct Service {
 /// - `morfPhoto`: skip both local metadata backfill and local CLIP analysis.
 /// - `Immich`: skip local CLIP analysis (all variants), keep local metadata backfill.
 /// - `Local`: run both as needed.
+///
+/// First, a photo morfPhoto owns by configuration, or on any network drive
+/// while morfPhoto is enabled, gets neither (`local_work_allowed`), even when
+/// the server's probe failed: reading it over a slow share stalls the engine.
 fn row_needs_local_work(
     path: &Path,
     needs_metadata: bool,
     needs_edited: bool,
     providers: &ActiveProviders,
 ) -> (bool, bool) {
+    if !providers.local_work_allowed(path) {
+        return (false, false);
+    }
     match providers.for_path(path) {
         ClipProvider::MorfPhoto => (false, false),
         ClipProvider::Immich => (needs_metadata, false),
@@ -372,6 +379,7 @@ impl Service {
         let path = Path::new(&row.path);
         if !selected(path, &library_selection(&self.runtime))
             || self.providers.cached().for_path(path) == ClipProvider::MorfPhoto
+            || !self.providers.cached().local_work_allowed(path)
             || self.deferred(&row.path)
             // as in analyze(): photo_fingerprints() stats the file
             || self.engine.held(&row.path).is_some()
@@ -388,6 +396,10 @@ impl Service {
         }
         let running = RunGuard::new(&self.progress);
         let imgid = self.engine.cached_photo(&row.path, version);
+        // the scan may have picked this row while the user was idle
+        if self.deferred(&row.path) || self.engine.held(&row.path).is_some() {
+            return Ok(());
+        }
         let reply = self
             .engine
             .request(self.engine.tag(), json!({"cmd":"meta","imgid":imgid}))?;
@@ -424,6 +436,7 @@ impl Service {
         let path = Path::new(&row.path);
         if !selected(path, &library_selection(&self.runtime))
             || self.providers.cached().for_path(path) != ClipProvider::Local
+            || !self.providers.cached().local_work_allowed(path)
             || self.deferred(&row.path)
             // a drive the engine said is stuck: not looked at (current() stats
             // the file), and tried again at a later scan
@@ -439,6 +452,11 @@ impl Service {
         let imgid = self.engine.cached_photo(&row.path, version);
         let tag = self.engine.tag();
         let out = self.output.path(&format!("analysis-{tag}.jpg"));
+        // the scan may have picked this row while the user was idle
+        if self.deferred(&row.path) || self.engine.held(&row.path).is_some() {
+            self.output.remove(&out);
+            return Ok(());
+        }
         let preview = (|| {
             self.engine.request(
                 tag,
@@ -791,6 +809,7 @@ mod tests {
                 canonical_root: None,
                 server_root: "/mnt/immich".into(),
             }),
+            ..Default::default()
         };
         // Only /nas/immich/needs-meta.jpg (metadata backfill) + /local/a.jpg (local CLIP) = 2
         assert_eq!(count_backlog(&cache, &config, &providers, &stop, &Mutex::default(), 8), Some(2));
@@ -799,6 +818,7 @@ mod tests {
         let immich_only = ActiveProviders {
             morfphoto_root: None,
             immich: providers.immich.clone(),
+            ..Default::default()
         };
         assert_eq!(count_backlog(&cache, &config, &immich_only, &stop, &Mutex::default(), 8), Some(5));
 
@@ -806,6 +826,44 @@ mod tests {
         assert_eq!(
             count_backlog(&cache, &config, &ActiveProviders::default(), &stop, &Mutex::default(), 8),
             Some(7)
+        );
+    }
+
+    #[test]
+    fn morfphoto_and_network_photos_need_no_local_work() {
+        let on = ActiveProviders {
+            morfphoto_folder: Some(PathBuf::from("/mnt/Pic")),
+            network_mounts: vec![PathBuf::from("/mnt/nas")],
+            ..Default::default()
+        };
+        for p in ["/mnt/Pic/a.orf", "/mnt/nas/b/a.orf"] {
+            assert_eq!(row_needs_local_work(Path::new(p), true, true, &on), (false, false), "{p}");
+        }
+        assert_eq!(row_needs_local_work(Path::new("/mnt/Pictures/a.orf"), true, true, &on), (true, true));
+        assert_eq!(
+            row_needs_local_work(Path::new("/mnt/Pic/a.orf"), true, true, &ActiveProviders::default()),
+            (true, true)
+        );
+    }
+
+    #[test]
+    fn backlog_leaves_out_morfphoto_folder_and_network_mounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SearchCache::open(&dir.path().join("cache.sqlite")).unwrap();
+        for p in ["/mnt/Pic/a.jpg", "/mnt/nas/b.jpg", "/mnt/Pictures/c.jpg", "/local/d.jpg"] {
+            cache.upsert_variant(p, "", "s", "e", None, None, None).unwrap();
+        }
+        let config = json!({"folders":["/mnt","/local"]});
+        let stop = AtomicBool::new(false);
+        let on = ActiveProviders {
+            morfphoto_folder: Some(PathBuf::from("/mnt/Pic")),
+            network_mounts: vec![PathBuf::from("/mnt/nas")],
+            ..Default::default()
+        };
+        assert_eq!(count_backlog(&cache, &config, &on, &stop, &Mutex::default(), 8), Some(2));
+        assert_eq!(
+            count_backlog(&cache, &config, &ActiveProviders::default(), &stop, &Mutex::default(), 8),
+            Some(4)
         );
     }
 
@@ -1231,7 +1289,12 @@ for line in sys.stdin:
             app: None,
             cache: cache.clone(),
             models: Arc::new(Models::new(dir.path().join("no-models"))),
-            providers: Arc::new(ProbeCache::new()),
+            providers: {
+                // primed, as after a resolve: an unprimed cache allows no local work
+                let cache = ProbeCache::new();
+                cache.set_for_test(ActiveProviders::default());
+                Arc::new(cache)
+            },
             queue: Arc::new(AnalysisQueue::new(1, 8)),
             engine: engine.tagged(),
             output: Arc::new(FrameOutput::new(&runtime)),
