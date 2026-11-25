@@ -555,7 +555,7 @@ impl Config {
             .filter(|value| !value.is_empty());
         let send_etag = cached_jpg.as_ref().and(cached_etag.as_deref());
         match api.thumbnail_with_etag(&server_path, send_etag)? {
-            ThumbnailOutcome::NotModified => cached_jpg,
+            ThumbnailOutcome::NotModified | ThumbnailOutcome::Unreachable => cached_jpg,
             ThumbnailOutcome::Ok { bytes, etag } => {
                 let _ = cache.write(&jpg_name, &bytes);
                 if let Some(etag) = etag {
@@ -1278,6 +1278,8 @@ pub(crate) enum PageOutcome {
 
 enum ThumbnailOutcome {
     NotModified,
+    // the request did not get through: the copy kept here stands in
+    Unreachable,
     Ok {
         bytes: Vec<u8>,
         etag: Option<String>,
@@ -1319,7 +1321,7 @@ impl Api {
     fn thumbnail(&mut self, server_path: &str) -> Option<Vec<u8>> {
         match self.thumbnail_with_etag(server_path, None)? {
             ThumbnailOutcome::Ok { bytes, .. } => Some(bytes),
-            ThumbnailOutcome::NotModified => None,
+            ThumbnailOutcome::NotModified | ThumbnailOutcome::Unreachable => None,
         }
     }
 
@@ -1348,8 +1350,10 @@ impl Api {
                     }
                 }
                 req
-            })
-            .ok()?;
+            });
+        let Ok(response) = response else {
+            return Some(ThumbnailOutcome::Unreachable);
+        };
         if response.status() == StatusCode::NOT_MODIFIED && if_none_match.is_some() {
             return Some(ThumbnailOutcome::NotModified);
         }
@@ -2557,13 +2561,18 @@ mod tests {
         );
         assert_eq!(
             config.thumbnail_cached_with_api(&photo_path, &caches.morfphoto_thumbs, &mut api),
-            Some(jpg2)
+            Some(jpg2.clone())
         );
 
         let requests = server.join().unwrap();
         assert!(!requests[0].to_ascii_lowercase().contains("if-none-match:"));
         assert!(requests[1].contains("if-none-match: \"thumb-1\""));
         assert!(requests[2].contains("if-none-match: \"thumb-1\""));
+        // the server gone, the copy kept here stands in
+        assert_eq!(
+            config.thumbnail_cached_with_api(&photo_path, &caches.morfphoto_thumbs, &mut api),
+            Some(jpg2)
+        );
     }
 
     #[test]

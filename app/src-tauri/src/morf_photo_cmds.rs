@@ -41,6 +41,8 @@ pub(crate) async fn morf_photo_thumbnail(
     caches: State<'_, crate::cache::Caches>,
     path: String,
 ) -> Result<crate::bindings::Frame, String> {
+    // browsing: Smart search waits, as for thumb_cached
+    state.tagged.mark_active();
     let runtime = state.runtime.clone();
     let cache = caches.morfphoto_thumbs.clone();
     let jpeg = worker(move || {

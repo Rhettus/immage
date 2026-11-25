@@ -197,6 +197,15 @@ export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSo
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
+// an unedited original in a morfPhoto folder: the server's thumbnail is
+// the one to show, and asking for it reads nothing on the share, where the
+// disk cache's check (fetchCachedThumb) looks at the file and the engine
+// reads it. edits and virtual copies are Immage's to render
+const serverThumb = (entry: ImageEntry) =>
+  !!entry.morfphotoPreview && !entry.edited && !entry.copy && (entry.version ?? 0) === 0;
+
+// morfPhoto's thumbnail, revalidated with the server, or the copy kept
+// here when the server does not answer; null when it has none
 async function fetchMorfPhotoThumb(path: string): Promise<ImageBitmap | null> {
   try {
     const jpeg = await commands.morfPhotoThumbnail(path);
@@ -233,7 +242,7 @@ export function storeThumbThreads(v: number) {
   commands.thumbThreads(v).catch(() => {});
 }
 
-// fetches thumbnails: those kept on disk first, several at a time, then
+// fetches thumbnails: those kept on disk (or morfPhoto's) first, several at a time, then
 // the rest from the engine, as many at a time as it has threads
 // (loadThumbThreads). the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
@@ -457,7 +466,9 @@ export class ThumbLoader {
         if (disk.length) {
           const generation = this.generation;
           const got = await Promise.all(disk.map(([id, entry]) =>
-            (entry ? fetchCachedThumb(entry, THUMB_SIZE) : fetchKnownThumb(id as string, THUMB_SIZE)).catch(() => null)));
+            (!entry ? fetchKnownThumb(id as string, THUMB_SIZE)
+              : serverThumb(entry) ? fetchMorfPhotoThumb(entry.path)
+              : fetchCachedThumb(entry, THUMB_SIZE)).catch(() => null)));
           if (generation !== this.generation) continue;
           let any = false;
           disk.forEach(([id], k) => {
@@ -485,12 +496,11 @@ export class ThumbLoader {
         }
         const id = this.queue.shift()!;
         if (typeof id === "string" || (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id))) continue;
-        const useServerPreview = this.visible.has(id) && !this.stale.has(id) && !this.unverified.has(id);
         this.stale.delete(id);
         this.unverified.delete(id);
         this.inFlight++;
         this.rendering.add(id);
-        void this.fetch(id, useServerPreview).finally(() => {
+        void this.fetch(id).finally(() => {
           this.rendering.delete(id);
           this.inFlight--;
           const wake = this.wake;
@@ -503,15 +513,14 @@ export class ThumbLoader {
     }
   }
 
-  private async fetch(id: number, useServerPreview: boolean) {
+  // morfPhoto had none for a server row (nextOnDisk asked it), so the
+  // engine renders it as any other
+  private async fetch(id: number) {
     const generation = this.generation;
     try {
       // below zero, an Immich result: the server's own thumbnail
       const entry = id >= 0 ? this.entryOf(id) : undefined;
-      const preview = useServerPreview && entry?.morfphotoPreview && !entry.edited && !entry.copy && (entry.version ?? 0) === 0
-        ? await fetchMorfPhotoThumb(entry.path) : null;
-      if (generation !== this.generation) { preview?.close(); return; }
-      const bitmap = preview ?? (id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry));
+      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry);
       if (generation === this.generation) this.keep(id, bitmap);
       else bitmap.close();
     } catch (e) {

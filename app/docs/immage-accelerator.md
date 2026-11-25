@@ -183,15 +183,16 @@ staying compatible with older morfPhoto servers:
   zero catalog re-download. The catalog cache clears automatically when you
   change the server URL or folder mapping, or when you select **Forget**. The
   [local catalog](#local-catalog) opens folders first when it has them.
-- **Local thumbnail caching:** For visible thumbnails of unedited originals,
-  Immage checks its own cache first, then checks its local morfPhoto thumbnail
-  cache (up to 256 MiB) and revalidates cached server previews via `ETag` /
-  `304 Not Modified` before downloading a new preview from morfPhoto. If no
-  server preview is available, Immage renders the thumbnail from the mounted
-  file. Edited photos and virtual copies always use Immage's rendered
-  thumbnails. Clearing **Library thumbnails** in **Preferences → Performance**
-  or selecting **Forget** in **Preferences → Immage Accelerator (Experimental)**
-  also clears the local morfPhoto thumbnail cache.
+- **Local thumbnail caching:** Thumbnails of unedited originals, on screen
+  or not, come from morfPhoto: Immage keeps them in a local morfPhoto thumbnail
+  cache (up to 256 MiB) and revalidates them via `ETag` / `304 Not Modified`
+  before downloading a new preview. Nothing is read from the share for them.
+  If the server isn't answering, the cached preview is shown; only a photo
+  with no server preview at all is rendered from the mounted file. Edited
+  photos and virtual copies always use Immage's rendered thumbnails. Clearing
+  **Library thumbnails** in **Preferences → Performance** or selecting
+  **Forget** in **Preferences → Immage Accelerator (Experimental)** also clears
+  the local morfPhoto thumbnail cache.
 
 While morfPhoto is turned on, Immage never reads a mapped folder's files from
 the share to list them. If the server isn't answering, the folder is shown from

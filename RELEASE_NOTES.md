@@ -87,6 +87,9 @@ Bug fixes
   connection.
 - With morfPhoto set up, a folder whose server isn't answering and that has no
   local copy yet shows as unavailable instead of being read from the share.
+- Thumbnails of unedited photos in a morfPhoto folder come from the server,
+  on screen or not, instead of being checked and rendered from the share. When
+  the server isn't answering, the copies Immage already has are shown.
 
 ## 0.47.1
 
