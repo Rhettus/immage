@@ -568,14 +568,19 @@ behavior; the GUI DNG case verifies the visible fallback thumbnail only.
 `edited-culling-preview` checks the render-ahead of an edited RAW's culling
 preview. The feature is RAW-only, so the runner ignores the configured fixture
 and copies a RAW from the local `benchmarking/corpus/` (`P6060404.ORF`, else any
-ORF/ARW/CR2/RW2; the case is blocked when there is none) as `ecp-a` and `ecp-b`,
+ORF/ARW/CR2/RW2; the case is blocked when there is none) as `ecp-a`, `ecp-b` and `ecp-c`,
 launching with `ecp-a`. The case opens culling once (which stores the preview
 size), edits `ecp-a`'s Exposure in the editor, moves to `ecp-b`, and polls this
 run's `cache/app.immage/thumbs` folder, read from the Node runner, for a new
 `edit-` file (up to 30 s). It then culls `ecp-a` from the grid and requires a
 non-blank preview within 3 s and no further `edit-` file. Last it edits `ecp-b`,
 presses G before the autosave (the photo stays open behind the grid), and
-requires `ecp-b`'s `edit-` file and the same quick cull. Timings are recorded.
+requires `ecp-b`'s `edit-` file and the same quick cull. Then it moves
+`ecp-a`'s Exposure to -1, copies its Tone settings and pastes them onto `ecp-b`
+and `ecp-c` (unedited). It requires both grid thumbnails to darken, new `edit-`
+files for both (up to 60 s), then, back in the grid, a new `edit-` file for the
+open `ecp-a` (the paste saved it too), and quick culls with no further `edit-` file, with
+`ecp-b`'s culling preview darker than before the paste. Timings are recorded.
 It runs alone, after startup, and is left out of `all`:
 `node verify/gui/run.mjs --config verify/gui/local.json --case edited-culling-preview`.
 

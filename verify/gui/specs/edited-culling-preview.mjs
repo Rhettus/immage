@@ -6,15 +6,19 @@
 // name starting "edit-". Culling that RAW then reads the file instead of
 // rendering. run.mjs copies one corpus RAW as ecp-a / ecp-b and launches with
 // ecp-a; the runner reads the profile's thumbs folder (t.thumbCacheNames).
+// Pasting settings onto photos prepares their previews too, refreshes their
+// grid thumbnails, and culling then shows them as pasted, not as before
+// (ecp-c, unedited until the paste).
 import assert from 'node:assert/strict';
 import { until, pause } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
 import { reveal, rangeSelector } from '../support/controls.mjs';
-import { Blocked, panel } from '../support/scenario.mjs';
+import { click } from '../support/controls.mjs';
+import { Blocked, panel, textButton } from '../support/scenario.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { lightboxDrawn } from './grid-culling.mjs';
 
-export const ECP_NAMES = ['ecp-a', 'ecp-b'];
+export const ECP_NAMES = ['ecp-a', 'ecp-b', 'ecp-c'];
 const APPEAR_LIMIT_MS = 30000;
 const DRAW_LIMIT_MS = 3000;
 const hasPreview = () => !!document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
@@ -41,6 +45,19 @@ const tile = (t, prefix) => until(() => t.driver.observe(p => {
   return r && r.width && r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight
     ? { x: r.x + r.width / 2, y: r.y + r.height / 2, title: e.title } : null;
 }, prefix), `thumbnail ${prefix}`);
+
+// read-only: mean luma of a filmstrip thumbnail's canvas, by title prefix
+const thumbLuma = prefix => {
+  const e = [...document.querySelectorAll('.filmstrip .thumb[data-imgid]')].find(c => c.title.startsWith(prefix));
+  const canvas = e?.querySelector('.thumb-image canvas');
+  if (!canvas?.width || !canvas.height) return null;
+  const copy = document.createElement('canvas'); copy.width = 32; copy.height = 32;
+  const context = copy.getContext('2d'); context.drawImage(canvas, 0, 0, 32, 32);
+  const rgba = context.getImageData(0, 0, 32, 32).data;
+  let luma = 0;
+  for (let i = 0; i < rgba.length; i += 4) luma += rgba[i] * .2126 + rgba[i + 1] * .7152 + rgba[i + 2] * .0722;
+  return luma / 1024;
+};
 
 const activeTitle = () => document.querySelector('.filmstrip .thumb.active')?.title ?? null;
 const edits = async t => (await t.thumbCacheNames()).filter(n => n.startsWith('edit-'));
@@ -85,6 +102,15 @@ async function cullFromGrid(t, name, settled) {
   await t.driver.keys('\uE00C');
   await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'culling preview closes');
   return { drawMs, pixels, canvas: [drawn.width, drawn.height], after };
+}
+
+// opens `name` in the editor from the grid or filmstrip by double-click
+async function openInEditor(t, name) {
+  const c = await tile(t, name);
+  await t.driver.point(c.x, c.y, 2);
+  await until(() => t.driver.observe(() => !document.querySelector('.filmstrip.grid')), `double-click opens ${name} in the editor`);
+  await until(async () => (await t.driver.observe(activeTitle)) === c.title, `${name} active`);
+  return c;
 }
 
 // waits for an edit- file not in `known`
@@ -166,4 +192,59 @@ export async function editedCullingPreview(t) {
   const settledB = await edits(t);
   const second = await cullFromGrid(t, 'ecp-b', settledB);
   t.measure({ name: 'grid-edited-culling-preview', limitMs: DRAW_LIMIT_MS, ...second, editFilesSettled: settledB });
+
+  // 7. paste: ecp-a's Exposure moves from +1 to -1 and is copied onto ecp-b
+  // (+1, with an edit- file from step 6) and ecp-c (unedited)
+  const thumbsBefore = { b: await t.driver.observe(thumbLuma, 'ecp-b'), c: await t.driver.observe(thumbLuma, 'ecp-c') };
+  await openInEditor(t, 'ecp-a');
+  const exposureA = await editExposure(t, 1800);
+  assert(exposureA < 0, `ecp-a Exposure is now negative (${exposureA})`);
+  await click(t, '[data-action="copy-settings"]');
+  await textButton(t, '.copy-settings', 'Check None');
+  await click(t, '[data-copy-group="basic:Tone"]');
+  await textButton(t, '.copy-settings .modal-foot', 'Copy');
+  const modifier = await t.driver.observe(() => /Mac/.test(navigator.userAgent) ? '\uE03D' : '\uE009');
+  for (const name of ['ecp-b', 'ecp-c']) {
+    const c = await tile(t, name);
+    await t.driver.modifiedPoint(modifier, c.x, c.y);
+  }
+  await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb.selected').length === 3), 'ecp-a, ecp-b and ecp-c selected');
+  const known = await edits(t);
+  const pasted = Date.now();
+  await click(t, '[data-action="paste-settings"]');
+  await until(() => t.driver.observe(() => !document.querySelector('[data-batch-paste="busy"]')), 'paste completed', 120000);
+  await settledPhoto(t);
+  await t.evidence('pasted');
+
+  // 8. both pasted photos' grid thumbnails are rendered again, darker
+  const thumbsAfter = await until(async () => {
+    const b2 = await t.driver.observe(thumbLuma, 'ecp-b'), c2 = await t.driver.observe(thumbLuma, 'ecp-c');
+    return b2 !== null && c2 !== null && b2 < thumbsBefore.b - 4 && c2 < thumbsBefore.c - 4 && { b: b2, c: c2 };
+  }, 'ecp-b and ecp-c thumbnails darker after the paste', APPEAR_LIMIT_MS);
+  t.measure({ name: 'pasted-thumbnails', before: thumbsBefore, after: thumbsAfter, sincePasteMs: Date.now() - pasted });
+
+  // 9. their culling previews are rendered ahead: new edit- files for both
+  const ahead = await until(async () => {
+    const f = (await edits(t)).filter(n => !known.includes(n));
+    return f.length >= 2 ? f : null;
+  }, 'edit- previews of ecp-b and ecp-c after the paste', APPEAR_LIMIT_MS * 2);
+  t.measure({ name: 'pasted-edit-previews', files: ahead, sincePasteMs: Date.now() - pasted });
+  await pause(1500);
+
+  // 10. culling shows them as pasted: quick, no further edit- file, and ecp-b
+  // darker than its culling preview from before the paste. The paste rewrote
+  // the open ecp-a's sidecar too (it is selected), so G queues its preview:
+  // wait for that file before counting
+  const beforeGrid = await edits(t);
+  await t.driver.keys('g');
+  await until(() => t.driver.observe(inGrid), 'grid view after the paste');
+  const createdA = await newEditFile(t, beforeGrid, 'an edit- preview of the pasted ecp-a after returning to the grid');
+  t.measure({ name: 'pasted-open-photo-edit-preview', files: createdA.fresh, sinceGridMs: createdA.ms });
+  await pause(1500);
+  const settledP = await edits(t);
+  const pastedB = await cullFromGrid(t, 'ecp-b', settledP);
+  assert(pastedB.pixels.luma < second.pixels.luma - 4,
+    `ecp-b culling preview shows the paste (luma ${pastedB.pixels.luma} vs ${second.pixels.luma} before)`);
+  const pastedC = await cullFromGrid(t, 'ecp-c', settledP);
+  t.measure({ name: 'pasted-culling-previews', limitMs: DRAW_LIMIT_MS, b: pastedB, c: pastedC, lumaBeforePaste: second.pixels.luma });
 }

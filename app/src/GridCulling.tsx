@@ -13,10 +13,14 @@ import { formatNumber, t } from "./i18n";
 import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
 import { settings } from "./settings";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, prepare, onEdit, onMeta, onKeywords }: {
+export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, revisionOf, refreshPending, prepare, onEdit, onMeta, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
   activeEditorId?: number;
+  // bumped when a paste, reset, undo or redo saves the photo
+  revisionOf?: (imgid: number) => number;
+  // the photo's thumbnail is still to be rendered again after such a save
+  refreshPending?: (imgid: number) => boolean;
   prepare: (id: number) => Promise<void>; onEdit: (image: ImageEntry) => void;
   onMeta: (image: ImageEntry, fields: Partial<ImageEntry>) => void;
   onKeywords: (id: number, keywords: string[]) => void;
@@ -278,7 +282,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
     const editedPreviewFor = (entry: ImageEntry, requested: number) =>
       requested > 0 && entry.edited && !cameraPreviewFor(entry, requested);
     const key = (entry: ImageEntry, requested: number) =>
-      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, requested, cameraPreviewFor(entry, requested), editedPreviewFor(entry, requested)]);
+      JSON.stringify([entry.imgid, entry.path, entry.version, entry.edited, revisionOf?.(entry.imgid) ?? 0, requested, cameraPreviewFor(entry, requested), editedPreviewFor(entry, requested)]);
     const load = async (entry: ImageEntry, requested: number, foreground = false) => {
       const id = key(entry, requested);
       const cached = previews.current.get(id);
@@ -296,7 +300,11 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
         const preferSource = requested > 0 && !entry.edited && (kind === "RAW" || kind === "JPEG");
         const cameraPreview = cameraPreviewFor(entry, requested);
         const editedPreview = editedPreviewFor(entry, requested);
-        const disk = await fetchCachedThumb(entry, requested, preferSource, cameraPreview, editedPreview);
+        // saved by a paste whose thumbnail refresh has not rendered yet: until
+        // then its cache names go by the folder's listing from before the
+        // save (cache.rs `refresh`), so the disk could give the old preview
+        const saved = refreshPending?.(entry.imgid) ?? false;
+        const disk = saved ? null : await fetchCachedThumb(entry, requested, preferSource, cameraPreview, editedPreview);
         const bitmap = disk ?? await fetchThumb(entry.imgid, requested, entry, false, foreground, preferSource, cameraPreview, editedPreview);
         if (epoch !== previewEpoch.current) { bitmap.close(); return null; }
         if (requested === 0) return bitmap;
@@ -347,7 +355,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
     };
     void show().catch(e => { if (!stale) { setError(String(e)); setBusy(false); } });
     return () => { stale = true; clearTimeout(timer); q.replace(); };
-  }, [current?.imgid, current?.path, current?.version, current?.edited, activeEditorId, detailed, cameraFit, retry]);
+  }, [current?.imgid, current?.path, current?.version, current?.edited, current && revisionOf?.(current.imgid), activeEditorId, detailed, cameraFit, retry]);
   useEffect(() => { setZoom(null); }, [photo]);
   useEffect(() => () => { queue.current.replace(); ++previewEpoch.current; pendingPreviews.current.clear(); for (const bitmap of previews.current.values()) bitmap.close(); previews.current.clear(); ++keywordGeneration.current; }, []);
   useEffect(() => {

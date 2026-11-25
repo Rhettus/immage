@@ -71,8 +71,9 @@ export function createEditedPreviews() {
     configure(d: EditedPreviewDeps) { deps = d; },
     // after the photo is closed and saved
     schedule(entry: ImageEntry) {
-      if (!deps || open || !entry.edited || deps.kind(entry.filename) !== "RAW" || camera || !(deps.loadSize() > 0)) return;
+      // a job queued for the photo as it was (edited, say, before an undo) goes
       pending.delete(entry.imgid);
+      if (!deps || open || !entry.edited || deps.kind(entry.filename) !== "RAW" || camera || !(deps.loadSize() > 0)) return;
       pending.set(entry.imgid, entry);
       pump();
     },

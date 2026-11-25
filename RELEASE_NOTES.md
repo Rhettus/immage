@@ -61,8 +61,9 @@ Improvements
 Performance
 
 - **Faster culling of edited photos:** Immage prepares an edited photo's
-  culling preview in the background, and keeps edited photos' previews longest
-  when the thumbnail cache fills up.
+  culling preview in the background, including each photo you paste settings
+  onto, and keeps edited photos' previews longest when the thumbnail cache
+  fills up.
 - **Lighter Grid browsing:** Stepping through photos in Grid view no longer
   loads the full RAW until you open a photo to edit.
 - **Faster Immage Accelerator folders and thumbnails:** Folders and thumbnails
@@ -78,6 +79,8 @@ Performance
 Bug fixes
 
 - Renaming a photo in the Library grid keeps it selected.
+- Culling no longer shows a photo as it was before you pasted settings onto
+  it, reset it, or undid or redid a paste.
 - Exporting photos that share a name, such as a raw and its JPEG or a
   virtual copy, with **Replace it** or **Skip it** no longer leaves some of
   them out; the second gets a number.

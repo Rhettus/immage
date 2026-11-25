@@ -306,7 +306,9 @@ export default function App() {
       // a photo left without new edits may already have its preview on disk
       fetch: async (entry, size) => (await fetchCachedThumb(entry, size, false, false, true))
         ?? fetchThumb(entry.imgid, size, entry, false, false, false, false, true, true),
-      idle: () => { const p = loader.current!.progress(); return p.done >= p.total; },
+      // after a saved edit, wait for its thumbnail: that render brings the
+      // cache names up to date, so the disk check above is not a stale hit
+      idle: () => { const p = loader.current!.progress(); return p.done >= p.total && !loader.current!.refreshing(); },
       loadSize: () => { try { return Number(settings.get(PREVIEW_SIZE_KEY)) || 0; } catch { return 0; } },
       kind: fileKind,
       setTimer: (fn, ms) => window.setTimeout(fn, ms),
@@ -562,6 +564,9 @@ export default function App() {
   const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
   const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
+  // how many times a paste, reset, undo or redo saved each photo: part of
+  // GridCulling's in-memory preview key, so it lets go of the one from before
+  const pasteRevisions = useRef(new Map<number, number>());
   // the selection's photos by identity, for an id that changes (selectionIdentity.ts)
   const followed = useRef<Followed>(NO_FOLLOW);
   const selectionRef = useRef(selection);
@@ -5071,11 +5076,17 @@ export default function App() {
     setHasClip(true);
     setStatus(t("app.status.settingsCopied"));
   };
+  // a photo a paste, reset, undo or redo saved: its thumbnail is rendered
+  // again, culling forgets the preview it holds, and an edited one has its
+  // culling preview rendered ahead (editedPreviews.ts)
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
+    pasteRevisions.current.set(i.imgid, (pasteRevisions.current.get(i.imgid) ?? 0) + 1);
     patchImage(i.imgid, { edited: i.edited });
     void syncEditedKeywords(i.imgid, i.edited);
     if (i.edited) void fillEditedMeta(i.imgid);
+    const entry = imagesRef.current.find((e) => e.imgid === i.imgid);
+    if (entry) editedPreviews.schedule(entry);
   };
   const pauseForPaste = async () => {
     window.clearTimeout(baseTimer.current);
@@ -7150,6 +7161,8 @@ export default function App() {
       anchor={pickAnchor.current}
       thumbnail={id => loader.current?.get(id)}
       activeEditorId={session.current?.imgid}
+      revisionOf={id => pasteRevisions.current.get(id) ?? 0}
+      refreshPending={id => loader.current?.refreshPending(id) ?? false}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
       onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === inspectedId) setKeywords(list); }} />}

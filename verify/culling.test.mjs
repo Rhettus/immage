@@ -195,6 +195,7 @@ const loaderEnd = component.indexOf('    const show = async', loaderStart);
 const loaderSource = transformSync('loader.ts', component.slice(loaderStart, loaderEnd)).code;
 const makeLoader = env => new Function('env', `with(env) { ${loaderSource}; return load; }`)({
   activeEditorId: undefined, pendingPreviews: {current: new Map()}, cameraFit: false,
+  revisionOf: undefined, refreshPending: undefined,
   fileKind: filename => filename?.endsWith('.ORF') ? 'RAW' : 'JPEG', ...env,
 });
 test('camera preview mode keeps edited RAW Fit previews separate and leaves detail edited', async () => {
@@ -233,6 +234,24 @@ test('Fit requests source pixels for unedited RAW and JPEG files', async () => {
   await load({imgid:1, filename:'photo.ORF', edited:false}, 0);
   await load({imgid:4, filename:'photo.JPG', edited:true}, 800);
   assert.deepEqual(calls, [true, false, true, false, false].flatMap(source => [['disk', source], ['engine', source]]));
+});
+test('a paste replaces the held preview and skips the disk until its thumbnail refresh', async () => {
+  const calls = [], revisions = new Map(), pending = new Set();
+  const load = makeLoader({
+    previews:{current:new Map()}, epoch:0, previewEpoch:{current:0},
+    revisionOf: id => revisions.get(id) ?? 0, refreshPending: id => pending.has(id),
+    fetchCachedThumb:async () => { calls.push('disk'); return {close() {}}; },
+    fetchThumb:async () => { calls.push('engine'); return {close() {}}; },
+  });
+  const entry = {imgid:1, path:'raw', version:0, filename:'photo.ORF', edited:true};
+  const before = await load(entry, 800);
+  revisions.set(1, 1); pending.add(1);
+  const pasted = await load(entry, 800);
+  assert.notEqual(pasted, before, 'the pasted photo is not shown its old preview');
+  assert.equal(await load(entry, 800), pasted);
+  pending.delete(1); revisions.set(1, 2);
+  await load(entry, 800);
+  assert.deepEqual(calls, ['disk', 'engine', 'disk'], 'after the refresh the disk (render-ahead) is used');
 });
 test('preview memory cache reuses pixels, bounds ownership and separates virtual copies', async () => {
   let reads = 0, closes = 0;

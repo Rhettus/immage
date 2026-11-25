@@ -376,6 +376,13 @@ export class ThumbLoader {
   // how many of the folder's thumbnails are ready, of how many
   progress() { return { done: this.done.size, total: this.asked.size }; }
 
+  // an edit's refresh is waiting or under way, or an engine render is: until
+  // that render, the photo's cache names still go by the folder's listing,
+  // from before the edit (cache.rs `refresh`)
+  refreshing() { return this.refreshTimers.size > 0 || this.stale.size > 0 || this.rendering.size > 0; }
+  // the same for one photo: its edit's refresh is waiting or under way
+  refreshPending(imgid: number) { return this.refreshTimers.has(imgid) || this.stale.has(imgid) || this.rendering.has(imgid); }
+
   clear() {
     this.generation++;
     this.tried.clear();

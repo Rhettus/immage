@@ -261,9 +261,9 @@ try {
     const source = names.includes('P6060404.ORF') ? 'P6060404.ORF' : names.find(n => /\.(orf|arw|cr2|rw2)$/i.test(n));
     if (!source) throw new Blocked('edited-culling-preview needs a RAW (*.ORF, *.ARW, *.CR2 or *.RW2) in the local benchmarking/corpus/');
     const ext = source.match(/\.[^.]+$/)[0];
-    for (const stem of ['ecp-a', 'ecp-b']) await copyFile(join(corpus, source), join(fixtures, stem + ext));
+    for (const stem of ['ecp-a', 'ecp-b', 'ecp-c']) await copyFile(join(corpus, source), join(fixtures, stem + ext));
     copiedFixture = join(fixtures, 'ecp-a' + ext);
-    report.editedCullingPreviewFixture = { source, copies: ['ecp-a' + ext, 'ecp-b' + ext] };
+    report.editedCullingPreviewFixture = { source, copies: ['ecp-a' + ext, 'ecp-b' + ext, 'ecp-c' + ext] };
   }
   if (selectedCases.includes('advanced-presets')) {
     await copyFile(join(root, 'verify/gui/support/exposure.dtpreset'), join(fixtures, 'exposure.dtpreset'));
