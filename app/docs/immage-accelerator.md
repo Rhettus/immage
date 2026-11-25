@@ -27,10 +27,12 @@ Search, too.
 Your original photos stay on the photo share, and their XMP sidecars remain
 the system of record for edits and other sidecar metadata. Accelerator stores
 only data it can rebuild from the photos and sidecars: the metadata index,
-cached thumbnails, and optional CLIP embeddings. If Accelerator is unavailable
-or its stored data is lost, Immage reads metadata from the photos and XMP
-sidecars and generates thumbnails from the mounted share using its usual
-file-based workflow.
+cached thumbnails, and optional CLIP embeddings. If its stored data is lost,
+morfPhoto rebuilds it from the photos. While the server isn't answering,
+Immage shows mapped folders from its local copy of the catalog and the
+thumbnails it already has, rather than reading the share (see below); Find
+leaves out mapped folders it can't list. Turn morfPhoto off in Preferences to
+read the share as an ordinary folder instead.
 
 morfPhoto was created by Frédéric Biron (morfredus) and is licensed GPL-3.0-only.
 The Docker image and Compose files below come from the Rhettus morfPhoto fork.

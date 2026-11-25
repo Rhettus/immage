@@ -409,7 +409,7 @@
   "morfphoto.coverage": "La recherche intelligente du NAS a indexé {indexed} originaux sur {eligible} correspondant aux filtres",
   "morfphoto.semanticFallback": "La recherche sémantique morfPhoto a échoué ({reason}). Immage utilise la recherche locale.",
   "morfphoto.semanticFallbackImmich": "La recherche sémantique morfPhoto a échoué ({reason}). Immage utilise Immich à la place.",
-  "morfphoto.fallback": "morfPhoto est indisponible pour {path}. Immage utilise son mode de lecture à partir des fichiers.",
+  "morfphoto.fallback": "morfPhoto ne répond pas : cette recherche laisse de côté {path} jusqu’à ce qu’il réponde.",
   "immich.semanticFallback": "La recherche intelligente Immich a échoué ({reason}). Immage utilise la recherche locale.",
   "immich.store.mac": "le trousseau macOS",
   "immich.store.windows": "le Gestionnaire d’identifiants Windows",
