@@ -288,9 +288,23 @@ export default function App() {
   // copies share its path; until the engine has said, the file's original
   const isOpen = (i: ImageEntry, o = currentRef.current) =>
     !!o && (o.imgid !== null ? i.imgid === o.imgid : i.path === o.path && !i.copy);
+  // the listed photos by imgid, built again when the list is replaced: the
+  // loader looks one up for every thumbnail, and a scan of a 140,000-photo
+  // list for each made a folder read quadratic
+  const imageById = useRef<{ of: ImageEntry[]; map: Map<number, ImageEntry> }>({ of: [], map: new Map() });
+  const entryOf = (imgid: number) => {
+    const list = imagesRef.current;
+    if (imageById.current.of !== list) {
+      const map = new Map<number, ImageEntry>();
+      // the first of an imgid wins, as find() did
+      for (const i of list) if (!map.has(i.imgid)) map.set(i.imgid, i);
+      imageById.current = { of: list, map };
+    }
+    return imageById.current.map.get(imgid);
+  };
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
-    loader.current = new ThumbLoader((imgid) => imagesRef.current.find((i) => i.imgid === imgid),
+    loader.current = new ThumbLoader(entryOf,
                                      () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
