@@ -71,7 +71,9 @@ Performance
 - **Very large folders no longer freeze Immage:** Opening a folder with
   tens of thousands of photos, or a whole library with **Include
   subfolders**, used to lock the window for minutes or longer. The grid
-  and filmstrip now stay responsive while the photos are read.
+  and filmstrip now stay responsive while the photos are read, and a photo
+  opened from your file manager in such a folder opens as soon as its folder
+  lists it.
 
 Bug fixes
 

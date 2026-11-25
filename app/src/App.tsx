@@ -3641,12 +3641,19 @@ export default function App() {
 
   // a photo handed over from outside (the command line, or macOS's open
   // and Finder): its folder is shown and kept in the list, and it opens
+  // the photo opens once its folder lists it, not after the whole folder:
+  // a folder of thousands of photos takes minutes to read
   const openLaunched = async (path: string) => {
     const dir = parentDir(path);
     addPathToLibrary(dir);
-    const list = await showFolder(dir);
+    let opening: Promise<boolean> | null = null;
+    const tryOpen = (list: ImageEntry[]) => {
+      if (!opening && list.some((i) => i.path === path)) opening = openFile(path);
+    };
+    const list = await showFolder(dir, false, tryOpen);
     if (!list) return;
-    if (list.some((i) => i.path === path)) await openFile(path);
+    tryOpen(list);
+    if (opening) await opening;
     else setStatus(t("app.status.notOpenable", { path }));
   };
 
