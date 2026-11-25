@@ -29,7 +29,7 @@ fn queue_refresh_off_thread(app: AppHandle, photo: crate::library_ids::Photo) {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
-    let reply = state.engine("open_image").request(json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
+    let reply = state.request("open_image", json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 
@@ -39,7 +39,7 @@ pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn close_image(state: State<'_, AppState>) -> Result<(), String> {
-    match state.engine("close_image").request(json!({ "cmd": "close" })) {
+    match state.request("close_image", json!({ "cmd": "close" })) {
         Ok(_) => Ok(()),
         Err(e) if e == "no image open" => Ok(()),
         Err(e) => Err(e),
@@ -51,7 +51,7 @@ pub(crate) async fn close_image(state: State<'_, AppState>) -> Result<(), String
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn history(state: State<'_, AppState>, saved: Option<bool>) -> Result<Vec<HistoryItem>, String> {
-    let reply = state.engine("history").request(json!({ "cmd": "history", "saved": saved.unwrap_or(false) }))?;
+    let reply = state.request("history", json!({ "cmd": "history", "saved": saved.unwrap_or(false) }))?;
     let reply: HistoryReply = serde_json::from_value(reply).map_err(|e| format!("history: unexpected reply: {e}"))?;
     Ok(reply.items)
 }
@@ -81,7 +81,7 @@ pub(crate) async fn module_state(
     if let Some(p) = preset {
         req["preset"] = json!(p);
     }
-    let reply = state.engine("module_state").request(req)?;
+    let reply = state.request("module_state", req)?;
     serde_json::from_value(reply).map_err(|e| format!("module_state: unexpected reply: {e}"))
 }
 
@@ -89,14 +89,14 @@ pub(crate) async fn module_state(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn get_params(state: State<'_, AppState>, modules: std::collections::BTreeMap<String, Vec<String>>) -> Result<GetReply, String> {
-    let reply = state.engine("get_params").request(json!({ "cmd": "get", "modules": modules }))?;
+    let reply = state.request("get_params", json!({ "cmd": "get", "modules": modules }))?;
     serde_json::from_value(reply).map_err(|e| format!("get: unexpected reply: {e}"))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn set_params(state: State<'_, AppState>, edit: ModuleEdit) -> Result<(), String> {
-    state.engine("set_params").request(edit.request(false)).map(|_| ())
+    state.request("set_params", edit.request(false)).map(|_| ())
 }
 
 // the working-space values at a point of the shown image, or over a box of
@@ -105,7 +105,7 @@ pub(crate) async fn set_params(state: State<'_, AppState>, edit: ModuleEdit) -> 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn sample(state: State<'_, AppState>, x: serde_json::Number, y: serde_json::Number, area: Option<Vec<serde_json::Number>>, stage: Option<String>) -> Result<SampleReply, String> {
-    let reply = state.engine("sample").request(json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))?;
+    let reply = state.request("sample", json!({ "cmd": "sample", "x": x, "y": y, "box": area, "stage": stage }))?;
     serde_json::from_value(reply).map_err(|e| format!("sample: unexpected reply: {e}"))
 }
 
@@ -113,7 +113,7 @@ pub(crate) async fn sample(state: State<'_, AppState>, x: serde_json::Number, y:
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn tone_key(state: State<'_, AppState>) -> Result<ToneKeyReply, String> {
-    let reply = state.engine("tone_key").request(json!({ "cmd": "tone_key" }))?;
+    let reply = state.request("tone_key", json!({ "cmd": "tone_key" }))?;
     serde_json::from_value(reply).map_err(|e| format!("tone_key: unexpected reply: {e}"))
 }
 
@@ -121,7 +121,7 @@ pub(crate) async fn tone_key(state: State<'_, AppState>) -> Result<ToneKeyReply,
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn color_profiles(state: State<'_, AppState>) -> Result<ColorProfiles, String> {
-    let reply = state.engine("color_profiles").request(json!({ "cmd": "color_profiles" }))?;
+    let reply = state.request("color_profiles", json!({ "cmd": "color_profiles" }))?;
     serde_json::from_value(reply).map_err(|e| format!("color_profiles: unexpected reply: {e}"))
 }
 
@@ -130,7 +130,7 @@ pub(crate) async fn color_profiles(state: State<'_, AppState>) -> Result<ColorPr
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn agx_auto(state: State<'_, AppState>) -> Result<AgxAutoReply, String> {
-    let reply = state.engine("agx_auto").request(json!({ "cmd": "agx_auto" }))?;
+    let reply = state.request("agx_auto", json!({ "cmd": "agx_auto" }))?;
     serde_json::from_value(reply).map_err(|e| format!("agx_auto: unexpected reply: {e}"))
 }
 
@@ -139,7 +139,7 @@ pub(crate) async fn agx_auto(state: State<'_, AppState>) -> Result<AgxAutoReply,
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn points(state: State<'_, AppState>, points: Value, to: String) -> Result<Value, String> {
-    let reply = state.engine("points").request(json!({ "cmd": "points", "points": points, "to": to }))?;
+    let reply = state.request("points", json!({ "cmd": "points", "points": points, "to": to }))?;
     Ok(reply["points"].clone())
 }
 
@@ -192,7 +192,8 @@ pub(crate) async fn render(
     let ms = |t: Instant| t.elapsed().as_secs_f64() * 1000.0;
     let t0 = Instant::now();
     let operation = if base == Some(true) { "base" } else { "render" };
-    let mut engine = state.engine.lock(operation, diagnostic_request);
+    // the open photo's: nothing to import first (AppState::request)
+    let mut engine = crate::blocking(|| state.engine.lock(operation, diagnostic_request));
     engine.set_operation(operation);
     let lock_ms = ms(t0);
     // a move's module edits (Session.moduleEdit), sent as set_params would,
@@ -440,7 +441,7 @@ pub(crate) async fn cancel_base(state: State<'_, AppState>) -> Result<(), String
 #[specta::specta]
 pub(crate) async fn save(app: AppHandle, state: State<'_, AppState>) -> Result<SaveReply, String> {
     let active = state.tagged.active_photo();
-    let reply = state.engine("save").request(json!({ "cmd": "save" }))?;
+    let reply = state.request("save", json!({ "cmd": "save" }))?;
     let reply: SaveReply = serde_json::from_value(reply).map_err(|e| format!("save: unexpected reply: {e}"))?;
     if let Some(photo) = active {
         // the local copy of the catalog shows the edit status at once
@@ -456,7 +457,7 @@ pub(crate) async fn save(app: AppHandle, state: State<'_, AppState>) -> Result<S
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn history_discard(state: State<'_, AppState>, imgid: i64) -> Result<SaveReply, String> {
-    let reply = state.engine("history_discard").request(json!({ "cmd": "history_discard", "imgid": imgid }))?;
+    let reply = state.request("history_discard", json!({ "cmd": "history_discard", "imgid": imgid }))?;
     let reply: SaveReply = serde_json::from_value(reply).map_err(|e| format!("history_discard: unexpected reply: {e}"))?;
     crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), crate::mirror_notes::edited_fields(reply.edited));
     Ok(reply)
@@ -466,7 +467,7 @@ pub(crate) async fn history_discard(state: State<'_, AppState>, imgid: i64) -> R
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn paste_batch(state: State<'_, AppState>, action: String, token: Option<u64>, imgids: Option<Vec<i64>>) -> Result<PasteBatchReply, String> {
-    let reply = state.engine("paste_batch").request(json!({ "cmd": "paste_batch", "action": action,
+    let reply = state.request("paste_batch", json!({ "cmd": "paste_batch", "action": action,
         "token": token.unwrap_or(0), "imgids": imgids.unwrap_or_default() }))?;
     let reply: PasteBatchReply = serde_json::from_value(reply).map_err(|e| format!("paste_batch: unexpected reply: {e}"))?;
     for update in reply.updates.iter().flatten().filter(|u| u.error.is_none()) {
@@ -480,7 +481,7 @@ pub(crate) async fn paste_batch(state: State<'_, AppState>, action: String, toke
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn baseline_end(state: State<'_, AppState>) -> Result<(), String> {
-    state.engine("baseline_end").request(json!({ "cmd": "baseline_end" })).map(|_| ())
+    state.request("baseline_end", json!({ "cmd": "baseline_end" })).map(|_| ())
 }
 
 // whether the engine holds the Before view's settings, which it must not
@@ -488,7 +489,7 @@ pub(crate) async fn baseline_end(state: State<'_, AppState>) -> Result<(), Strin
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn before_view(state: State<'_, AppState>, on: bool) -> Result<(), String> {
-    state.engine("before_view").request(json!({ "cmd": "before", "on": on })).map(|_| ())
+    state.request("before_view", json!({ "cmd": "before", "on": on })).map(|_| ())
 }
 
 // a small render of the open image with edits and, if `with_look`, `look`

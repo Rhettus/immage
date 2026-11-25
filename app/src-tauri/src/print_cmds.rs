@@ -15,7 +15,7 @@ use crate::export_cmds::merge;
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn fonts(state: State<'_, AppState>) -> Result<Vec<FontFamily>, String> {
-    let reply = state.engine("fonts").request(json!({ "cmd": "fonts" }))?;
+    let reply = state.request("fonts", json!({ "cmd": "fonts" }))?;
     serde_json::from_value::<FontsReply>(reply).map(|r| r.families).map_err(|e| format!("fonts: unexpected reply: {e}"))
 }
 
@@ -31,7 +31,7 @@ fn without_ok(mut reply: Value) -> Value {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn print_profiles(state: State<'_, AppState>) -> Result<Vec<PrintProfile>, String> {
-    let reply = state.engine("print_profiles").request(json!({ "cmd": "print_profiles" }))?;
+    let reply = state.request("print_profiles", json!({ "cmd": "print_profiles" }))?;
     serde_json::from_value::<PrintProfilesReply>(reply).map(|r| r.profiles)
         .map_err(|e| format!("print_profiles: unexpected reply: {e}"))
 }
@@ -43,7 +43,7 @@ pub(crate) async fn print_profiles(state: State<'_, AppState>) -> Result<Vec<Pri
 pub(crate) async fn print_profile_add(app: AppHandle, state: State<'_, AppState>) -> Result<Option<PrintProfile>, String> {
     let picked = pick_files(&app, "ICC profile", &["icc", "icm", "ICC", "ICM"], false).await?;
     let Some(path) = picked.first() else { return Ok(None) };
-    let reply = state.engine("print_profile_add").request(json!({ "cmd": "print_profile_add", "path": path }))?;
+    let reply = state.request("print_profile_add", json!({ "cmd": "print_profile_add", "path": path }))?;
     serde_json::from_value(reply).map(Some).map_err(|e| format!("print_profile_add: unexpected reply: {e}"))
 }
 
@@ -53,7 +53,7 @@ pub(crate) async fn print_profile_add(app: AppHandle, state: State<'_, AppState>
 #[specta::specta]
 pub(crate) async fn softproof(state: State<'_, AppState>, mode: String, profile: Option<String>, intent: Option<i64>)
     -> Result<bool, String> {
-    let reply = state.engine("softproof").request(json!({
+    let reply = state.request("softproof", json!({
         "cmd": "softproof", "mode": mode, "profile": profile.unwrap_or_default(), "intent": intent.unwrap_or(0),
     }))?;
     Ok(reply["changed"].as_bool().unwrap_or(false))
@@ -63,14 +63,14 @@ pub(crate) async fn softproof(state: State<'_, AppState>, mode: String, profile:
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn printers(state: State<'_, AppState>) -> Result<PrintersReply, String> {
-    let reply = state.engine("printers").request(json!({ "cmd": "printers" }))?;
+    let reply = state.request("printers", json!({ "cmd": "printers" }))?;
     serde_json::from_value(reply).map_err(|e| format!("printers: unexpected reply: {e}"))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn printer_info(state: State<'_, AppState>, name: String) -> Result<PrinterInfoReply, String> {
-    let reply = state.engine("printer_info").request(json!({ "cmd": "printer", "name": name }))?;
+    let reply = state.request("printer_info", json!({ "cmd": "printer", "name": name }))?;
     serde_json::from_value(reply).map_err(|e| format!("printer: unexpected reply: {e}"))
 }
 
@@ -124,7 +124,7 @@ pub(crate) async fn print_photo(app: AppHandle, state: State<'_, AppState>, imgi
     };
     let tagged = state.tagged.clone();
     let held = tagged.tag();
-    state.engine("print_photo").request(json!({ "cmd": "export_hold", "job": held, "imgids": [imgid] }))?;
+    state.request("print_photo", json!({ "cmd": "export_hold", "job": held, "imgids": [imgid] }))?;
     req["cmd"] = json!("print");
     req["job"] = json!(held);
     req["imgid"] = json!(imgid);
@@ -158,7 +158,7 @@ pub(crate) async fn print_sheet(app: AppHandle, state: State<'_, AppState>, job:
         None => None,
     };
     let tagged = state.tagged.clone();
-    state.engine("print_sheet").request(json!({ "cmd": "export_hold", "job": job, "imgids": imgids }))?;
+    state.request("print_sheet", json!({ "cmd": "export_hold", "job": job, "imgids": imgids }))?;
     req["cmd"] = json!("print");
     let t = tagged.clone();
     // each photo placed reaches the page as a merge's progress, and Stop as a merge's

@@ -73,6 +73,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use serde_json::Value;
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "linux")]
 use crate::session_cmds::shm_frame;
@@ -132,11 +134,86 @@ struct AppState {
 }
 
 impl AppState {
-    // the engine for a request its main loop serves, one at a time
+    // the engine for requests its main loop serves, one at a time. request()
+    // is the one to use for a single request; this is for a few in a row on
+    // the open photo, which import nothing. LOCK ORDER: the Engine mutex is
+    // never taken with a photo's import gate held, nor the gate under it
+    // (Tagged::resolve)
     fn engine(&self, operation: &'static str) -> perf_trace::Guard<'_, Engine> {
-        let mut guard = self.engine.lock(operation, None);
+        let mut guard = blocking(|| self.engine.lock(operation, None));
         guard.set_operation(operation);
         guard
+    }
+
+    // one request its main loop serves. its cached photos are imported first,
+    // without the engine lock (Tagged::resolve), so nothing waits for the
+    // lock behind a slow share's import. waiting for the lock, and the
+    // request, give up their async worker (blocking), so a queue of them
+    // cannot stall every other command. the ids' bookkeeping follows the
+    // engine's order, under the lock; the search cache's SQLite update runs
+    // once it is let go. a respawn between the import and the lock imports
+    // again, twice at most; nothing has been sent by then
+    fn request(&self, operation: &'static str, req: Value) -> Result<Value, String> {
+        self.request_then(operation, req, Ok)
+    }
+
+    // request(), with `then` run on the reply while the lock is still held:
+    // for a reply whose output file the next request would overwrite. an
+    // import that met a respawn waits for it (the respawn holds the lock)
+    // and imports again
+    fn request_then<T>(&self, operation: &'static str, req: Value,
+                       then: impl FnOnce(Value) -> Result<T, String>) -> Result<T, String> {
+        blocking(|| {
+            let mut then = Some(then);
+            for attempt in 0..3 {
+                match self.tagged.resolve(&req) {
+                    Err(e) if attempt < 2 && self.tagged.restarted(&e) => {
+                        drop(self.engine.lock(operation, None));
+                        continue;
+                    }
+                    other => other?,
+                }
+                let asked = Instant::now();
+                let mut engine = self.engine.lock(operation, None);
+                engine.set_operation(operation);
+                let waited = asked.elapsed();
+                let result = engine.request_unsettled(req.clone());
+                let link = engine.link();
+                let result = result.and_then(|(sent, reply)| {
+                    let affected = link.note_ids(&sent, &reply);
+                    Ok((affected, then.take().expect("run once")(reply)?))
+                });
+                let log = engine.log_sink();
+                drop(engine);
+                let held = asked.elapsed() - waited;
+                if waited > SLOW_LOCK || held > SLOW_LOCK {
+                    log.note(&format!("[immage] {operation}: waited {} ms for the engine, then {} ms",
+                                      waited.as_millis(), held.as_millis()));
+                }
+                match result {
+                    Ok((affected, out)) => {
+                        link.update_search_cache(affected);
+                        return Ok(out);
+                    }
+                    Err(e) if e == engine::NEEDS_IMPORT => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Err("the photo is no longer available to the engine; open its folder again".into())
+        })
+    }
+}
+
+// an engine lock wait or request this long is noted in engine.log
+const SLOW_LOCK: Duration = Duration::from_secs(1);
+
+// runs `f`, which blocks, without holding up the async runtime: on one of
+// its workers, tokio first hands the worker's other tasks to another
+// thread (block_in_place). elsewhere `f` just runs
+pub(crate) fn blocking<T>(f: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => tokio::task::block_in_place(f),
+        _ => f(),
     }
 }
 
@@ -420,5 +497,27 @@ mod tests {
         let windows = setup.find("for config in app.config().app.windows.clone()").unwrap();
         assert!(settings < windows, "windows must wait for the settings store");
         assert!(state < windows, "windows must wait for application state");
+    }
+
+    // a command waiting for the engine lock gives up its worker: with one
+    // worker and the lock held, another command still runs
+    #[test]
+    fn a_wait_for_the_engine_leaves_the_runtime_free() {
+        use std::sync::{mpsc, Arc, Mutex};
+        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(1).build().unwrap();
+        let lock = Arc::new(Mutex::new(()));
+        let held = lock.lock().unwrap();
+        let (waiting, waited) = mpsc::channel();
+        let waiter = lock.clone();
+        runtime.spawn(async move {
+            super::blocking(|| drop(waiter.lock().unwrap()));
+            waiting.send(()).unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let (ran, done) = mpsc::channel();
+        runtime.spawn(async move { ran.send(()).unwrap(); });
+        assert!(done.recv_timeout(std::time::Duration::from_secs(5)).is_ok(), "the runtime stalled");
+        drop(held);
+        assert!(waited.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
     }
 }

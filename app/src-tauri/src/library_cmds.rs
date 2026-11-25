@@ -810,7 +810,7 @@ async fn refresh_search_metadata(state: &AppState, imgid: i64) {
             return;
         }
     };
-    let reply = match state.engine("search_metadata_refresh").request(
+    let reply = match state.request("search_metadata_refresh", 
         json!({ "cmd": "meta", "imgid": imgid }),
     ) {
         Ok(reply) => reply,
@@ -1081,7 +1081,7 @@ pub(crate) async fn path_kind(path: String) -> Option<&'static str> {
 pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<Vec<String>, String> {
     let mut checked = Vec::new();
     for id in imgids {
-        let reply = state.engine("trash_files").request(json!({ "cmd": "meta", "imgid": id }))?;
+        let reply = state.request("trash_files", json!({ "cmd": "meta", "imgid": id }))?;
         let image = &reply["image"];
         let path = image["path"].as_str().unwrap_or_default().to_string();
         if image["rejected"].as_bool() != Some(true) || path.is_empty() {
@@ -1096,7 +1096,7 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
     let mut copies = Vec::new();
     for (id, path, copy, version) in checked {
         let cmd = if copy { "remove_copy" } else { "sidecars" };
-        let reply = state.engine("trash_files").request(json!({ "cmd": cmd, "imgid": id }))?;
+        let reply = state.request("trash_files", json!({ "cmd": cmd, "imgid": id }))?;
         if copy {
             copies.push(crate::library_ids::Photo { path, version });
         } else {
@@ -1116,7 +1116,7 @@ pub(crate) async fn trash_files(state: State<'_, AppState>, imgids: Vec<i64>) ->
     // only once the files are gone: a new file at the same path then
     // imports fresh, not as the deleted one, rejected
     for id in forget {
-        state.engine("trash_files").request(json!({ "cmd": "forget", "imgid": id }))?;
+        state.request("trash_files", json!({ "cmd": "forget", "imgid": id }))?;
     }
     Ok(gone)
 }
@@ -1190,7 +1190,7 @@ pub(crate) async fn on_network_share(paths: Vec<String>) -> Vec<bool> {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<LibraryImage, String> {
-    let reply = state.engine("create_virtual_copy").request(json!({ "cmd": "copy", "imgid": imgid }))?;
+    let reply = state.request("create_virtual_copy", json!({ "cmd": "copy", "imgid": imgid }))?;
     if let Some(image)=reply.get("image") {
         index_imported_metadata(state.search_cache.as_deref(), &Mutex::new(cache::Listed::default()), std::slice::from_ref(image));
     }
@@ -1207,7 +1207,7 @@ pub(crate) async fn create_virtual_copy(state: State<'_, AppState>, imgid: i64) 
 #[specta::specta]
 pub(crate) async fn remove_virtual_copy(state: State<'_, AppState>, imgid: i64) -> Result<Option<String>, String> {
     let photo = state.tagged.known_photo(imgid);
-    let reply = state.engine("remove_virtual_copy").request(json!({ "cmd": "remove_copy", "imgid": imgid }))?;
+    let reply = state.request("remove_virtual_copy", json!({ "cmd": "remove_copy", "imgid": imgid }))?;
     crate::mirror_notes::copy_removed(&state, photo);
     let reply: FilesReply = serde_json::from_value(reply).map_err(|e| format!("remove_copy: unexpected reply: {e}"))?;
     Ok(trash_existing(reply.files.into_iter().map(PathBuf::from).collect()).await.err())
@@ -1353,7 +1353,7 @@ pub(crate) async fn thumb_threads(state: State<'_, AppState>, settings: State<'_
         return Err(format!("thumbnail threads must be 1 to {}", crate::engine::THUMB_THREADS_MAX));
     }
     settings.set(crate::settings::THUMB_THREADS, &threads.to_string())?;
-    state.engine("thumb_threads").request(json!({ "cmd": "thumb_threads", "threads": threads })).map(|_| ())
+    state.request("thumb_threads", json!({ "cmd": "thumb_threads", "threads": threads })).map(|_| ())
 }
 
 // which kind of culling preview a thumb asks for (see preview_cache_name); one
@@ -1541,7 +1541,7 @@ pub(crate) async fn cache_clear(caches: State<'_, Caches>, which: String) -> Res
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindings::MetaReply, String> {
-    let reply = state.engine("meta").request(json!({ "cmd": "meta", "imgid": imgid }))?;
+    let reply = state.request("meta", json!({ "cmd": "meta", "imgid": imgid }))?;
     if let (Some(index), Some(image)) = (state.search_cache.clone(), reply.get("image").cloned()) {
         tauri::async_runtime::spawn_blocking(move || index_imported_metadata(Some(&index), &Mutex::new(cache::Listed::default()), &[image]))
             .await.map_err(|e| e.to_string())?;
@@ -1550,18 +1550,21 @@ pub(crate) async fn meta(state: State<'_, AppState>, imgid: i64) -> Result<bindi
 }
 
 // the photos likely opened next, their raws decoded ahead in this order on
-// the engine's own thread; the reply does not wait for them
+// the engine's own thread; the reply does not wait for them. a cached photo
+// not imported yet is left out: a guess is not worth an import from a share
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn prefetch(state: State<'_, AppState>, imgids: Vec<i64>) -> Result<(), String> {
-    state.engine("prefetch").request(json!({ "cmd": "prefetch", "imgids": imgids })).map(|_| ())
+    let imgids = state.tagged.imported_only(&imgids);
+    if imgids.is_empty() { return Ok(()); }
+    state.request("prefetch", json!({ "cmd": "prefetch", "imgids": imgids })).map(|_| ())
 }
 
 // every keyword ever used, for the Keywording panel's suggestions
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn keywords(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    let reply = state.engine("keywords").request(json!({ "cmd": "keywords" }))?;
+    let reply = state.request("keywords", json!({ "cmd": "keywords" }))?;
     serde_json::from_value::<KeywordsReply>(reply).map(|r| r.keywords).map_err(|e| format!("keywords: unexpected reply: {e}"))
 }
 
@@ -1571,7 +1574,7 @@ pub(crate) async fn keywords(state: State<'_, AppState>) -> Result<Vec<String>, 
 pub(crate) async fn keywords_set(state: State<'_, AppState>, imgid: i64, add: Vec<String>, remove: Vec<String>)
     -> Result<Vec<String>, String> {
     let req = json!({ "cmd": "keywords_set", "imgid": imgid, "add": add, "remove": remove });
-    let reply = state.engine("keywords_set").request(req)?;
+    let reply = state.request("keywords_set", req)?;
     refresh_search_metadata(&state, imgid).await;
     let reply = serde_json::from_value::<KeywordsReply>(reply).map_err(|e| format!("keywords_set: unexpected reply: {e}"))?;
     crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), crate::mirror_notes::keywords_fields(reply.keywords.clone()));
@@ -1587,7 +1590,7 @@ pub(crate) async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map
     for (k, v) in fields {
         req[k] = v;
     }
-    state.engine("meta_set").request(req)?;
+    state.request("meta_set", req)?;
     refresh_search_metadata(&state, imgid).await;
     crate::mirror_notes::fields(&state, state.tagged.known_photo(imgid), patch);
     Ok(())
@@ -1596,7 +1599,7 @@ pub(crate) async fn meta_set(state: State<'_, AppState>, imgid: i64, fields: Map
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn capture_times(state: State<'_, AppState>, entries: Vec<CaptureTimeEntry>) -> Result<CaptureTimesReply, String> {
-    let reply = state.engine("capture_times").request(json!({ "cmd": "capture_times", "entries": entries }))?;
+    let reply = state.request("capture_times", json!({ "cmd": "capture_times", "entries": entries }))?;
     let result: CaptureTimesReply = serde_json::from_value(reply).map_err(|e| format!("capture_times: unexpected reply: {e}"))?;
     for update in &result.updates {
         if update.error.is_none() {

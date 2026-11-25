@@ -90,6 +90,8 @@ Bug fixes
 - Thumbnails of unedited photos in a morfPhoto folder come from the server,
   on screen or not, instead of being checked and rendered from the share. When
   the server isn't answering, the copies Immage already has are shown.
+- Reading a photo from a slow network share no longer freezes Immage: other
+  folders, photos on your own drive and editing stay responsive meanwhile.
 
 ## 0.47.1
 

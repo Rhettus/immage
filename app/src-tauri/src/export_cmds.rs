@@ -54,7 +54,7 @@ pub(crate) async fn positive_export(state: State<'_, AppState>, plugins: State<'
     };
     let t = state.tagged.clone();
     let held = t.tag();
-    if let Err(e) = state.engine("positive_export").request(json!({
+    if let Err(e) = state.request("positive_export", json!({
         "cmd": "export_hold", "job": held, "imgids": [imgid],
     })) {
         let _ = std::fs::remove_file(&target);
@@ -132,7 +132,7 @@ pub(crate) async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine("hdr_can_align").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("hdr_can_align", json!({ "cmd": "version" }))?;
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
 }
 
@@ -182,7 +182,7 @@ pub(crate) async fn pano_preview(app: AppHandle, state: State<'_, AppState>, job
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine("pano_can_merge").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("pano_can_merge", json!({ "cmd": "version" }))?;
     Ok(reply["pano"].as_bool().unwrap_or(false))
 }
 
@@ -294,7 +294,7 @@ pub(crate) async fn export_images(
     let tagged = state.tagged.clone();
     let held = tagged.tag();
     let imgids: Vec<i64> = items.iter().map(|i| i.imgid).collect();
-    state.engine("export_images").request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
+    state.request("export_images", json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
     let cancel = Arc::new(AtomicBool::new(false));
     state.export_cancels.lock().unwrap().insert(job, cancel.clone());
     // removed on every exit, including an early return, a panic or a dropped future
@@ -349,7 +349,7 @@ pub(crate) async fn export_images(
                     .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
-                    match state.engine("export_images").request(req) {
+                    match state.request("export_images", req) {
                         Err(e) => failed.push(ExportFailure { file: path_text(&target),
                             error: format!("exported, but the keywords were not added to the original: {e}") }),
                         Ok(reply) => if let Ok(reply) = serde_json::from_value::<crate::typed_library::KeywordsReply>(reply) {
@@ -538,8 +538,8 @@ pub(crate) async fn export_preview(
         "px_long_edge": options.long_edge.unwrap_or(0), "draft": true, "transient": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-    let mut engine = state.engine("export_preview");
-    let result = engine.request(req).and_then(|_| {
+    // read while the engine is still ours, so no other preview overwrites it
+    let result = state.request_then("export_preview", req, |_| {
         frame_output::FrameOutput::read(&out).map(|b| bindings::Frame(Response::new(b))).map_err(|e| format!("preview: {e}"))
     });
     state._frame_output.remove(&out);

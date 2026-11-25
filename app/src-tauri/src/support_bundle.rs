@@ -130,11 +130,11 @@ fn engine_facts(app: &AppHandle) -> (Value, Option<Value>) {
     let handle = app.clone();
     std::thread::spawn(move || {
         let state = handle.state::<crate::AppState>();
-        let version = match state.engine("support_bundle").request(json!({ "cmd": "version" })) {
+        let version = match state.request("support_bundle", json!({ "cmd": "version" })) {
             Ok(r) => r["version"].clone(),
             Err(e) => json!(format!("the engine did not answer: {e}")),
         };
-        let opencl = state.engine("support_bundle").request(json!({ "cmd": "opencl" })).ok().map(|mut r| {
+        let opencl = state.request("support_bundle", json!({ "cmd": "opencl" })).ok().map(|mut r| {
             if let Some(o) = r.as_object_mut() {
                 o.remove("ok");
             }

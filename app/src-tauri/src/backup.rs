@@ -725,7 +725,7 @@ pub async fn backup_create(app: AppHandle, path: String, components: Vec<String>
         let created = chrono::Local::now().to_rfc3339();
         create(&state.runtime, &app.state::<Settings>(), &components, Path::new(&path), env!("CARGO_PKG_VERSION"), &created,
                &|to| {
-                   let reply = state.engine("backup_create").request(json!({ "cmd": "data_backup", "path": to.to_string_lossy() }))?;
+                   let reply = state.request("backup_create", json!({ "cmd": "data_backup", "path": to.to_string_lossy() }))?;
                    match reply["error"].as_str() {
                        Some(e) => Err(e.to_string()),
                        None => Ok(()),

@@ -100,6 +100,10 @@ impl Holds {
 // how long a drive the engine reported held is taken as still held
 const HOLD_HINT: Duration = Duration::from_secs(10);
 
+// Engine::request's error for a cached photo not imported yet: the caller
+// imports it with the engine lock let go (Tagged::resolve) and asks again
+pub const NEEDS_IMPORT: &str = "cached photo not imported yet";
+
 // the error for a photo on a drive that is not answering, as the folder
 // read words it (library_cmds.rs, open_folder)
 pub fn not_answering(at: &str) -> String {
@@ -152,7 +156,19 @@ impl Link {
     }
 
     fn after_success(&self, req: &Value, reply: &Value) {
-        let affected=self.library_ids.lock().unwrap().changed(req, reply);
+        let affected = self.note_ids(req, reply);
+        self.update_search_cache(affected);
+    }
+
+    // what the request changed of the photos' ids, and which is open: in the
+    // engine's order, so under the Engine mutex
+    pub(crate) fn note_ids(&self, req: &Value, reply: &Value) -> Vec<(crate::library_ids::Photo, bool)> {
+        self.library_ids.lock().unwrap().changed(req, reply)
+    }
+
+    // the search cache's SQLite work for those photos, once the Engine mutex
+    // is let go (AppState::request)
+    pub(crate) fn update_search_cache(&self, affected: Vec<(crate::library_ids::Photo, bool)>) {
         let cache=self.search_cache.lock().unwrap().clone();
         if let Some(cache)=cache {
             for (photo,removed) in affected {
@@ -319,6 +335,48 @@ impl Tagged {
         self.link.started.elapsed().saturating_sub(at)
     }
 
+    // imports the request's cached photos the engine has no id for yet, so
+    // that Engine::request finds them (prepare_cached). LOCK ORDER: never
+    // with the Engine mutex held, as an import waits on the photo's gate and
+    // on the engine's one import thread, behind any slow share's
+    pub fn resolve(&self, req: &Value) -> Result<(), String> {
+        let mut copy = req.clone();
+        self.prepare(&mut copy, &self.link.current())
+    }
+
+    // an error resolve() gives when the engine went, or was replaced, while
+    // it imported: worth asking again once the respawn is done
+    pub fn restarted(&self, e: &str) -> bool {
+        e == self.link.exited || e == "engine restarted" || e.starts_with("engine write")
+    }
+
+    // these ids less the cached photos not imported yet, which a prefetch
+    // leaves out rather than import
+    pub fn imported_only(&self, ids: &[i64]) -> Vec<i64> {
+        let library = self.link.library_ids.lock().unwrap();
+        ids.iter().copied().filter(|&id| match library.photo(id) {
+            Ok(None) => true,
+            Ok(Some(photo)) => library.resolved(&photo).is_some(),
+            Err(_) => false,
+        }).collect()
+    }
+
+    // the request's cached photos as the engine's ids, without importing:
+    // NEEDS_IMPORT for one that resolve() has not imported (a respawn since
+    // cleared it), so that the caller imports it with the engine lock let go
+    fn prepare_cached(&self, req: &mut Value) -> Result<(), String> {
+        crate::library_ids::request_ids(req, &mut |id| {
+            let library = self.link.library_ids.lock().unwrap();
+            let Some(photo) = library.photo(id)? else { return Ok(id) };
+            if let Some(real) = library.resolved(&photo) { return Ok(real); }
+            drop(library);
+            match self.link.held(&photo.path) {
+                Some(mount) => Err(not_answering(&mount)),
+                None => Err(NEEDS_IMPORT.into()),
+            }
+        })
+    }
+
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;
@@ -326,6 +384,7 @@ impl Tagged {
             // a drive known to be stuck is not asked: this import would wait
             // behind its stuck read, up to 30 s for each photo
             if let Some(mount) = self.link.held(&photo.path) { return Err(not_answering(&mount)); }
+            if let Some(real) = self.link.library_ids.lock().unwrap().resolved(&photo) { return Ok(real); }
             let gate = self.link.library_ids.lock().unwrap().gate(&photo.path);
             let _importing = gate.lock().map_err(|_| "cached photo import lock poisoned")?;
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
@@ -682,6 +741,25 @@ struct PerfLog {
 struct Perf {
     log: Mutex<PerfLog>,
     marked: Condvar,
+    // engine.log, written by read_stderr and by LogSink::note. LOCK ORDER:
+    // a leaf; its write goes to the local runtime folder
+    file: Mutex<Option<File>>,
+}
+
+// engine.log's time of day for each line, so a support bundle shows how far
+// apart its requests and imports were
+fn log_line(file: &mut File, line: &str) {
+    let _ = writeln!(file, "{} {line}", chrono::Local::now().format("%H:%M:%S%.3f"));
+}
+
+// writes Immage's own lines into engine.log beside the engine's
+#[derive(Clone)]
+pub struct LogSink(Arc<Perf>);
+
+impl LogSink {
+    pub fn note(&self, line: &str) {
+        if let Some(file) = self.0.file.lock().unwrap().as_mut() { log_line(file, line); }
+    }
 }
 
 // "     1.6279 [dev_pixelpipe] took 0.004 secs (0.018 CPU) [full] processed `exposure' on CPU"
@@ -707,7 +785,7 @@ fn parse_timing(line: &str) -> Option<Timing> {
 
 // the engine's stderr, to its log: darktable's timings are kept apart, each
 // request's from its start ("[engine] > ...") to the mark after it
-fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
+fn read_stderr(stderr: ChildStderr, perf: Arc<Perf>) {
     let mut reader = BufReader::new(stderr);
     let mut buf = Vec::new();
     loop {
@@ -742,7 +820,7 @@ fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
             perf.log.lock().unwrap().current.push(t);
             continue;
         }
-        let _ = writeln!(log, "{line}");
+        if let Some(file) = perf.file.lock().unwrap().as_mut() { log_line(file, line); }
     }
 }
 
@@ -901,9 +979,9 @@ impl Engine {
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
-        let perf = Arc::new(Perf::default());
+        let perf = Arc::new(Perf { file: Mutex::new(Some(log)), ..Perf::default() });
         let shared = perf.clone();
-        std::thread::spawn(move || read_stderr(stderr, log, shared));
+        std::thread::spawn(move || read_stderr(stderr, shared));
         let (tx, replies) = channel();
         let conn = Arc::new(Conn {
             epoch,
@@ -957,6 +1035,10 @@ impl Engine {
 
     pub fn epoch(&self) -> u64 {
         self.conn.epoch
+    }
+
+    pub fn log_sink(&self) -> LogSink {
+        LogSink(self.perf.clone())
     }
 
     pub fn link(&self) -> Arc<Link> {
@@ -1016,11 +1098,21 @@ impl Engine {
         report
     }
 
-    pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
+    pub fn request(&mut self, req: Value) -> Result<Value, String> {
+        let (sent, reply) = self.request_unsettled(req)?;
+        self.link.after_success(&sent, &reply);
+        Ok(reply)
+    }
+
+    // request() without its id and search cache work, which the caller does
+    // (Link::note_ids under the lock, update_search_cache after it): the
+    // request as sent, and the reply. a cached photo not imported yet is
+    // NEEDS_IMPORT, before anything is sent
+    pub fn request_unsettled(&mut self, mut req: Value) -> Result<(Value, Value), String> {
         if matches!(req.get("cmd").and_then(Value::as_str), Some("open" | "render")) {
             self.tagged().mark_active();
         }
-        self.tagged().prepare(&mut req, &self.conn)?;
+        self.tagged().prepare_cached(&mut req)?;
         if self.cache_trace { req["cache_trace"] = json!(true); }
         self.last_id += 1;
         let id = self.last_id;
@@ -1070,8 +1162,7 @@ impl Engine {
             if slow {
                 self.link.emit(json!({ "state": "ready", "epoch": self.conn.epoch }));
             }
-            if let Ok(reply) = &result { self.link.after_success(&req, reply); }
-            return result;
+            return result.map(|reply| (req, reply));
         }
     }
 
@@ -1252,7 +1343,15 @@ for line in sys.stdin:
         assert_eq!(held["job"], b);
         // Missing copy cannot silently open the original.
         let missing = tagged.cached_photo("/photo.raw", 9);
-        assert!(engine.request(json!({"cmd":"open","imgid":missing})).unwrap_err().contains("version 9"));
+        let open = json!({"cmd":"open","imgid":missing});
+        // under the engine lock nothing is imported: the caller is told to
+        // import first (AppState::request), and nothing is sent
+        let sent = requests.len();
+        assert_eq!(engine.request(open.clone()).unwrap_err(), super::NEEDS_IMPORT);
+        assert_eq!(std::fs::read_to_string(root.join("requests")).unwrap().lines().count(), sent);
+        assert!(tagged.resolve(&open).unwrap_err().contains("version 9"));
+        // a prefetch leaves out what is not imported yet
+        assert_eq!(tagged.imported_only(&[a, b, missing, 3]), vec![a, b, 3]);
         drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }

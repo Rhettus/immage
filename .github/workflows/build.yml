@@ -102,6 +102,7 @@ jobs:
             verify/agx-profiles.test.mjs \
             verify/ai-mask-paste.test.mjs \
             verify/batch-reset.test.mjs \
+            verify/blocking-commands.test.mjs \
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/locales.test.mjs \

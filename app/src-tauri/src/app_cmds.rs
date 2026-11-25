@@ -274,7 +274,7 @@ pub(crate) fn machine_block(dir: Option<&Path>, opencl: Option<Value>) -> Value 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
-    let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
+    let opencl = state.request("perf_machine", json!({ "cmd": "opencl" })).ok()
         .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
     let dir = app.path().app_data_dir().ok();
     tauri::async_runtime::spawn_blocking(move || machine_block(dir.as_deref(), opencl))
@@ -360,7 +360,7 @@ pub(crate) fn build(app: AppHandle) -> bindings::BuildInfo {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<bindings::AboutInfo, String> {
-    let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("about", json!({ "cmd": "version" }))?;
     Ok(bindings::AboutInfo {
         app: app.package_info().version.to_string(),
         commit: build_label(),

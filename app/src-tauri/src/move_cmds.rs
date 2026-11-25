@@ -589,7 +589,7 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
     for s in &req.sources {
         let sub = subfolder(s.subdir.as_deref())?;
         if let Some(id) = s.imgid.filter(|i| *i > 0) {
-            let reply = state.engine("move_plan").request(json!({ "cmd": "meta", "imgid": id }))?;
+            let reply = state.request("move_plan", json!({ "cmd": "meta", "imgid": id }))?;
             let path = reply["image"]["path"].as_str().unwrap_or_default();
             if path.is_empty() {
                 continue;
@@ -606,7 +606,7 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
     }
     let mut local = Vec::new();
     for (path, ids, sub) in by_path {
-        let reply = state.engine("move_plan").request(json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
+        let reply = state.request("move_plan", json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
         let sidecars: Vec<PathBuf> = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
         local.push((path, ids, sidecars, sub));
     }
@@ -1331,7 +1331,7 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
             let _ = app.emit("move-progress", json!({ "job": job, "done": p.done, "total": p.total,
                 "bytes": p.bytes, "bytesTotal": p.bytes_total, "file": p.file }));
         }, |ids| {
-            for id in ids { let _ = forgotten.state::<AppState>().engine("move_files").request(json!({ "cmd": "forget", "imgid": id })); }
+            for id in ids { let _ = forgotten.state::<AppState>().request("move_files", json!({ "cmd": "forget", "imgid": id })); }
         })
     }).await.map_err(|e| e.to_string())
 }
@@ -1544,14 +1544,14 @@ fn plan_rename(app: &AppHandle, items: Vec<RenameItem>) -> Vec<PlannedRename> {
                 return Err(format!("Folder is unavailable: {}", dir.display()));
             }
             if item.imgid <= 0 { return Err("Expected a local photo".into()); }
-            let meta = state.engine("rename").request(json!({ "cmd": "meta", "imgid": item.imgid }))?;
+            let meta = state.request("rename", json!({ "cmd": "meta", "imgid": item.imgid }))?;
             if meta["image"]["path"].as_str() != Some(item.path.as_str()) {
                 return Err("The selected photo has changed".into());
             }
             if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
                 return Err("The source is no longer a regular file".into());
             }
-            let sidecars = state.engine("rename").request(json!({ "cmd": "sidecars", "imgid": item.imgid }))?;
+            let sidecars = state.request("rename", json!({ "cmd": "sidecars", "imgid": item.imgid }))?;
             let files = sidecars["files"].as_array().ok_or("Could not list sidecars")?
                 .iter().filter_map(|file| file.as_str()).map(PathBuf::from).collect();
             let unit = local_unit(path, vec![item.imgid], files, dir, false);
@@ -1686,7 +1686,7 @@ pub(crate) async fn rename_files(app: AppHandle, items: Vec<RenameItem>) -> Resu
             crate::mirror_notes::now(&state.mirror, &state.runtime, |mirror, config| {
                 mirror.file_placed(config, source, target, true);
             });
-            if let Err(e) = state.engine("rename_files").request(json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
+            if let Err(e) = state.request("rename_files", json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
                 eprintln!("could not forget renamed photo {}: {e}", source.display());
             }
             if let Some(index) = index {
