@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 
 import { useEffect, useState } from "react";
-import { commands } from "./bindings";
+import { commands } from "./commands";
 import { formatNumber, t } from "./i18n";
 import { PrefRow } from "./PrefsUI";
 import "./morfPhotoMetrics.css";

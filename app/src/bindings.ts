@@ -174,6 +174,7 @@ export const commands = {
 	engineRestart: () => __TAURI_INVOKE<void>("engine_restart"),
 	menuSet: (menus: NativeMenu[]) => __TAURI_INVOKE<null>("menu_set", { menus }),
 	cspViolation: (directive: string, blocked: string, source: string, line: number, sample: string) => __TAURI_INVOKE<void>("csp_violation", { directive, blocked, source, line, sample }),
+	stallBeat: (beat: Beat) => __TAURI_INVOKE<void>("stall_beat", { beat }),
 	previewFullscreen: (on: boolean) => __TAURI_INVOKE<null>("preview_fullscreen", { on }),
 	perfSet: (on: boolean) => __TAURI_INVOKE<null>("perf_set", { on }),
 	perfTraceStart: () => __TAURI_INVOKE<null>("perf_trace_start"),
@@ -329,6 +330,15 @@ export type BackupSummary = {
 	created: string,
 	newer: boolean,
 	components: BackupHeld[],
+};
+
+export type Beat = {
+	pending: PendingCall[],
+	slow: SlowCall[],
+	slowMore: number,
+	gapMs: number,
+	beforeGap: string[],
+	visible: boolean,
 };
 
 export type BuildInfo = {
@@ -1096,6 +1106,12 @@ export type PathMap = {
 	local?: string,
 };
 
+export type PendingCall = {
+	id: number,
+	name: string,
+	ms: number,
+};
+
 export type Phase = "off" | "unavailable" | "idle" | "syncing" | "error";
 
 export type PickerStats = {
@@ -1404,6 +1420,12 @@ export type SharedImport = {
 	presets: Value[],
 	looks: number,
 	failed: string[],
+};
+
+export type SlowCall = {
+	name: string,
+	ms: number,
+	failed: boolean,
 };
 
 export type Spot = {

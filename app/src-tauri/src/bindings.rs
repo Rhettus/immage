@@ -180,6 +180,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::app_cmds::engine_restart,
         crate::app_cmds::menu_set,
         crate::app_cmds::csp_violation,
+        crate::stall_watch::stall_beat,
         crate::app_cmds::preview_fullscreen,
         crate::app_cmds::perf_set,
         crate::app_cmds::perf_trace_start,
@@ -241,7 +242,10 @@ pub fn commands() -> Commands<tauri::Wry> {
 // the app's invoke handler, which serves the commands above
 pub fn handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     let commands = commands().0;
-    move |invoke| commands(invoke)
+    move |invoke| {
+        let name = invoke.message.command().to_string();
+        crate::stall_watch::dispatch(name, || commands(invoke))
+    }
 }
 
 #[cfg(test)]

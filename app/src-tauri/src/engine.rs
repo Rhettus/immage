@@ -995,7 +995,12 @@ impl Engine {
         // started after it; begun afresh once it passes 5 MB
         let path = runtime.join("engine.log");
         let fresh = std::fs::metadata(&path).map(|m| m.len() > 5_000_000).unwrap_or(true);
-        let mut log = std::fs::OpenOptions::new().create(true).append(!fresh).write(true).truncate(fresh).open(&path)?;
+        if fresh {
+            std::fs::File::create(&path)?;
+        }
+        // always O_APPEND: stall_watch.rs appends its lines through its own
+        // handle, which a positioned write here would overwrite
+        let mut log = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
         let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         writeln!(log, "\n===== engine start ({since} s since 1970) =====")?;
         let mut cmd = Command::new(bin);

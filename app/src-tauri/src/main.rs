@@ -6,6 +6,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cache;
+mod stall_watch;
 mod search_cache;
 mod search_analysis;
 mod library_ids;
@@ -350,6 +351,8 @@ fn main() {
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            // after the spawn, which may start engine.log afresh
+            stall_watch::start(app.handle().clone(), runtime.join("engine.log"));
             engine.set_search_cache(search_cache.clone());
             let analysis_queue = Arc::new(analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256));
             analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));

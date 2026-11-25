@@ -117,6 +117,11 @@ Support bundle: [scrub.rs](../../src-tauri/src/scrub.rs) (the scrubber),
 [SupportBundleDialog.tsx](../../src/SupportBundleDialog.tsx) (review and remove lines); opened from Help
 (`support-bundle` in menu.ts) and from the engine-exit status in App.tsx.
 
+Stall watch: [stall_watch.rs](../../src-tauri/src/stall_watch.rs) notes in
+engine.log (`[stall]`) when the window's event loop or the page stops
+answering, a sync command holds the loop, or a page call waits; the page side
+is the call tracking and `watchStalls` in [commands.ts](../../src/commands.ts).
+
 GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.

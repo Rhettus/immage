@@ -1118,6 +1118,19 @@ a system block (`machine_block` in app_cmds.rs, plus versions) and the page's
 lines and returns removed line indexes, never text. `support_bundle_add_benchmark`
 scrubs a report picked from the GUI benchmark folder with the same scrubber.
 
+Stall watch: [stall_watch.rs](../../src-tauri/src/stall_watch.rs) writes
+`[stall]` lines into engine.log when the interface stops answering. A watcher
+thread posts a probe to the window's event loop every 500 ms and notes a loop
+silent for over 2 s (with the sync command running on it, if any) and its
+recovery; `bindings::handler` times each dispatch on the loop and notes one
+over 250 ms. The page ([commands.ts](../../src/commands.ts)) wraps every
+command, and `watchStalls` (started by boot.tsx) sends `stall_beat` each
+second with the calls pending over 2 s, those that came back after over 1 s,
+and any time its timer was held up over 1.5 s (its script blocked) with the
+calls started just before; no beat for 3 s while the loop answers is noted
+too. Always on: it writes only when something is slow. Its lock is a leaf and
+no file is written on the event loop.
+
 GUI benchmark resource sampling: [resources.rs](../../src-tauri/src/resources.rs)
 records CPU, process memory, Linux threads and available GPU counters on a
 background worker; `App.tsx` attaches phase timestamps to report version 5.
