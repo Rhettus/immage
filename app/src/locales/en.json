@@ -4941,6 +4941,7 @@
   "app.status.fileNotFound": "file not found: {path}. it was moved or deleted outside Immage",
   "app.status.photoCount": "{count} photos",
   "app.status.localCatalog": "Showing the local catalog, synced {time}",
+  "app.status.morfphotoUnavailable": "morfPhoto is not answering and has no local copy of {path} yet. Try again once the server is reachable",
   "app.status.photoOffline": "{name} is on a drive that is offline",
   "app.status.similarPhotosError": "Similar photos: {error}",
   "app.status.immichOpening": "opening…",

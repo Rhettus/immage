@@ -4941,6 +4941,7 @@
   "app.status.fileNotFound": "fichier introuvable : {path}. Il a été déplacé ou supprimé en dehors d’Immage",
   "app.status.photoCount": "{count} photos",
   "app.status.localCatalog": "Catalogue local affiché, synchronisé le {time}",
+  "app.status.morfphotoUnavailable": "morfPhoto ne répond pas et n’a pas encore de copie locale de {path}. Réessayez quand le serveur sera joignable",
   "app.status.photoOffline": "{name} se trouve sur un disque hors ligne",
   "app.status.similarPhotosError": "Photos similaires : {error}",
   "app.status.immichOpening": "ouverture…",

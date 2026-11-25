@@ -85,6 +85,8 @@ Bug fixes
 - With morfPhoto set up, Immage no longer reads photos on network drives for
   Smart search analysis, which could make the app unresponsive on a slow
   connection.
+- With morfPhoto set up, a folder whose server isn't answering and that has no
+  local copy yet shows as unavailable instead of being read from the share.
 
 ## 0.47.1
 

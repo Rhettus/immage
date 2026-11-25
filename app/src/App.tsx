@@ -3275,7 +3275,10 @@ export default function App() {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
       setReading(null);
-      if (String(e).startsWith("Reading photos timed out")) {
+      if (String(e).startsWith("morfphoto-unavailable:")) {
+        // neither the server nor a local copy can list it, and the share is not read instead
+        setStatus(t("app.status.morfphotoUnavailable", { path: dir }));
+      } else if (String(e).startsWith("Reading photos timed out")) {
         setStatus(t("app.status.error", { error: e }));
       } else if (!(await commands.pathExists(dir))) {
         updateImages([]);

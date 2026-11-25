@@ -128,7 +128,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
             let local = |fallback: Option<(crate::morf_mirror::MirrorListing, PathBuf)>| fallback.map(|(listing, scope)|
                 mirror_supplied(&handle, listing, scope, &dir, &skip, token, true));
             let Some(mapped) = mapped_folder_scope(&config, &dir, recursive, &skip) else {
-                return local(fallback);
+                return Ok(local(fallback));
             };
             let stream_emit = mapped == dir;
             let overlay = Overlay { config: &config, overrides: &overrides, mapped: &mapped, recursive, dir: &dir,
@@ -196,7 +196,7 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                             let _ = handle.emit("folder-progress", json!({
                                 "token": token, "done": count, "total": count, "images": batch }));
                         }
-                        Some(Supplied { mapped, images: streamed_images, files: Some(streamed_files), cache_write, streamed: true, note })
+                        Ok(Some(Supplied { mapped, images: streamed_images, files: Some(streamed_files), cache_write, streamed: true, note }))
                     } else {
                         images.retain(|image| visible_morf_path(Path::new(&image.path), &dir, &skip));
                         overlay.apply(&mut images, &mut seen);
@@ -204,22 +204,22 @@ pub(crate) async fn open_folder(app: AppHandle, state: State<'_, AppState>, path
                         if let Some(index) = state.search_cache.as_deref() {
                             supplement_morf_folder_metadata(index, &mut images, cancelled);
                         }
-                        Some(Supplied { mapped, images, files: None, cache_write, streamed: false, note })
+                        Ok(Some(Supplied { mapped, images, files: None, cache_write, streamed: false, note }))
                     }
                 }
                 Err(reason) => {
                     eprintln!("morfPhoto catalog request failed: {reason}");
-                    if cancelled() {
-                        None
-                    } else if fallback.is_some() {
-                        local(fallback)
-                    } else {
-                        let _ = handle.emit("morfphoto-fallback", mapped.to_string_lossy());
-                        None
+                    match failed_listing(cancelled(), fallback.is_some(), mapped == dir) {
+                        FailedListing::Cancelled => Ok(None),
+                        FailedListing::LocalCopy => Ok(local(fallback)),
+                        FailedListing::Unavailable => Err(format!("morfphoto-unavailable:{}", mapped.display())),
+                        // the rest of the folder is read here; the mapped subtree is left out, never scanned
+                        FailedListing::SkipMapped => Ok(Some(Supplied { mapped, images: Vec::new(), files: None,
+                                                                         cache_write: None, streamed: false, note: None })),
                     }
                 }
             }
-        }).await.map_err(|e| e.to_string())?
+        }).await.map_err(|e| e.to_string())??
         }
     };
     if state.folder_token.load(Ordering::SeqCst) != token {
@@ -457,6 +457,19 @@ struct Supplied {
     cache_write: Option<crate::morf_photo::CatalogCacheWrite>,
     streamed: bool,
     note: Option<SourceNote>,
+}
+
+// What a mapped folder read does when the server could not list it. The share
+// is never scanned in its place: a folder with neither server nor local copy
+// is unavailable, and a mapped subtree of a wider read is left out.
+#[derive(Debug, PartialEq)]
+enum FailedListing { Cancelled, LocalCopy, Unavailable, SkipMapped }
+
+fn failed_listing(cancelled: bool, has_copy: bool, mapped_is_dir: bool) -> FailedListing {
+    if cancelled { FailedListing::Cancelled }
+    else if has_copy { FailedListing::LocalCopy }
+    else if mapped_is_dir { FailedListing::Unavailable }
+    else { FailedListing::SkipMapped }
 }
 
 // where a published mapped listing came from
@@ -1639,6 +1652,32 @@ pub(crate) fn launch_file(launch: State<'_, Launch>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_mapped_listing_never_reads_the_share() {
+        use FailedListing::*;
+        assert_eq!(failed_listing(true, false, true), Cancelled);
+        assert_eq!(failed_listing(false, true, true), LocalCopy);
+        assert_eq!(failed_listing(false, true, false), LocalCopy);
+        assert_eq!(failed_listing(false, false, true), Unavailable);
+        assert_eq!(failed_listing(false, false, false), SkipMapped);
+    }
+
+    #[test]
+    fn a_disabled_morfphoto_folder_is_read_locally() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = crate::morf_photo::Config {
+            enabled: false,
+            server_path: "/srv/photos/".into(),
+            local_path: temp.path().to_str().unwrap().into(),
+            ..crate::morf_photo::Config::default()
+        };
+        assert!(!config.covers(temp.path()));
+        assert!(config.mapped_root().is_none());
+        let skip = HashSet::new();
+        assert!(mapped_folder_scope(&config, temp.path(), false, &skip).is_none());
+        assert!(mapped_folder_scope(&config, temp.path().parent().unwrap(), true, &skip).is_none());
+    }
 
     #[test]
     fn preview_names_tell_the_kinds_apart() {

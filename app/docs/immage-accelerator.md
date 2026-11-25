@@ -193,8 +193,12 @@ staying compatible with older morfPhoto servers:
   or selecting **Forget** in **Preferences → Immage Accelerator (Experimental)**
   also clears the local morfPhoto thumbnail cache.
 
-If Immage cannot read the API for a mapped folder, it shows a notice and uses
-its usual file-based workflow for that scope. Refresh to try morfPhoto again.
+While morfPhoto is turned on, Immage never reads a mapped folder's files from
+the share to list them. If the server isn't answering, the folder is shown from
+Immage's local copy of the catalog. If it has no local copy of that folder yet,
+the folder is shown as unavailable, with a message in the status bar, until the
+server can be reached; refresh to try again. With morfPhoto turned off in
+**Preferences**, its folder is read like any other folder.
 Local similarity search still depends on Immage's local image analysis.
 
 ## Smart Search on the NAS

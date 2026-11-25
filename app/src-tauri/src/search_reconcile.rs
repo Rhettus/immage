@@ -10,7 +10,7 @@ use crate::{
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 #[derive(Default)]
 struct Scan {
@@ -312,7 +312,7 @@ fn reconcile(
     Ok(())
 }
 
-pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &AnalysisQueue, app: &AppHandle) {
+pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &AnalysisQueue, _app: &AppHandle) {
     let Some(index) = index else { return };
     let config = crate::settings::read_key(runtime, "immage.library")
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
@@ -336,7 +336,7 @@ pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &Analysis
         }
         let expected = config["volumes"][root]["mount"].as_str().map(str::to_owned);
         let (root, index, mut hidden) = (root.to_string(), index.clone(), hidden.clone());
-        let (runtime, app) = (runtime.to_path_buf(), app.clone());
+        let runtime = runtime.to_path_buf();
         let key = format!("reconcile:{root}");
         let accepted = queue.submit(key, move |job| {
             if job.cancelled() {
@@ -352,11 +352,17 @@ pub fn startup(index: Option<Arc<SearchCache>>, runtime: &Path, queue: &Analysis
             if let Some(mapped) = mapped.filter(|mapped| !hidden.iter().any(|p| mapped.starts_with(p))) {
                 match config.catalog_available(&mapped) {
                     // The remote catalog owns discovery in this subtree. Preserve the
-                    // file-backed cache for fallback and existing similarity analyses.
+                    // file-backed cache for existing similarity analyses. When the
+                    // server does not answer the share is still not walked: the
+                    // subtree waits for the next pass.
                     Ok(()) if mapped == path => return,
                     Ok(()) => hidden.push(mapped),
                     Err(_) if job.cancelled() => return,
-                    Err(reason) => { eprintln!("morfPhoto catalog request failed: {reason}"); let _ = app.emit("morfphoto-fallback", mapped.to_string_lossy()); }
+                    Err(reason) => {
+                        eprintln!("morfPhoto catalog request failed: {reason}");
+                        if mapped == path { return; }
+                        hidden.push(mapped);
+                    }
                 }
             }
             let volume = crate::volumes::volume(&root);
