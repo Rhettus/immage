@@ -3294,11 +3294,32 @@ export default function App() {
       updateImages([]);
       setFolderSource(null);
     }
-    let got: ImageEntry[] = [];
+    // the photos in the order they were read, sorted and shown together:
+    // sorting and drawing a 140,000-photo folder at every batch of a few
+    // photos froze the page for minutes, so after the first batch they show
+    // at most every few times the last showing took (`cost`), within 150 ms
+    // to 2 s
+    const read: ImageEntry[] = [];
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
     let source: FolderSource | null = null;
+    let progress = { done: 0, total: 0 };
+    let timer = 0, dirty = false, newPhotos = false, shownAt = 0, cost = 0;
+    const show = () => {
+      timer = 0;
+      if (!dirty) return;
+      dirty = false;
+      const start = performance.now();
+      if (!again && newPhotos) {
+        const got = byCaptureTime(edits.apply(read));
+        updateImages(got);
+        seen?.(got);
+      }
+      newPhotos = false;
+      setReading({ ...progress, files: again ? [] : files, listed, known });
+      requestAnimationFrame(() => { shownAt = performance.now(); cost = shownAt - start; });
+    };
     const edits = new FolderEdits<ImageEntry>();
     folderEdits.current.add(edits);
     try {
@@ -3315,10 +3336,15 @@ export default function App() {
           files = all;
           listed = true;
         }
-        got = byCaptureTime(edits.apply([...got, ...batch]));
-        if (!again && batch.length) { updateImages(got); seen?.(got); }
+        for (const image of batch) read.push(image);
+        if (batch.length) newPhotos = true;
         loader.current!.request(batch.map((i) => i.imgid));
-        setReading({ done, total, files: again ? [] : files, listed, known });
+        progress = { done, total };
+        dirty = true;
+        if (!timer) {
+          const wait = shownAt + Math.min(2000, Math.max(150, cost * 4)) - performance.now();
+          timer = window.setTimeout(show, Math.max(0, wait));
+        }
       }, (from) => {
         if (immichRef.current) return;
         source = from;
@@ -3353,6 +3379,8 @@ export default function App() {
       } else setStatus(t("app.status.error", { error: e }));
       return null;
     } finally {
+      // a showing still to come would put back the progress the end cleared
+      window.clearTimeout(timer);
       folderEdits.current.delete(edits);
     }
   };
@@ -6831,9 +6859,18 @@ export default function App() {
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
   // folder is listed, those no longer in it go
-  const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+  // kept while the read's progress stands: a folder's listing can be 140,000
+  // files, and the page draws again far more often than the read moves on
+  const readingSets = useMemo(() => {
+    const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+    return {
+      knownPaths,
+      listedPaths: knownPaths && reading!.listed ? new Set(reading!.files) : null,
+      rawNames: stackPairs && reading ? pairedRaws(reading.files) : null,
+    };
+  }, [reading, stackPairs]);
+  const { knownPaths, listedPaths } = readingSets;
   const readPaths = knownPaths && new Set(images.map((i) => i.path));
-  const listedPaths = knownPaths && reading!.listed ? new Set(reading!.files) : null;
   const unread = !readPaths ? []
     : reading!.known.filter((k) => !readPaths.has(k.path) && (!listedPaths || listedPaths.has(k.path)) && passes(k, filter));
   // a raw not yet read stacks its companions too, read or not
@@ -6866,7 +6903,7 @@ export default function App() {
   // the files still to be read and not known, as empty cells after the
   // photos: unless the filters ask for what only reading tells (ratings,
   // labels, rejects)
-  const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
+  const { rawNames } = readingSets;
   const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => kindsInclude(filter.kinds, p))
         .filter((p) => !knownPaths?.has(p))
