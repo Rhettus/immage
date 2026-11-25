@@ -248,11 +248,11 @@ pub async fn stall_beat(beat: Beat) {
     inner.page_ms.store(inner.now_ms(), Ordering::Release);
     if !lines.is_empty() {
         let inner = inner.clone();
-        let _ = tauri::async_runtime::spawn_blocking(move || {
+        drop(tauri::async_runtime::spawn_blocking(move || {
             for line in lines {
                 inner.note(&line);
             }
-        });
+        }));
     }
 }
 
