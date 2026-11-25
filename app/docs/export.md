@@ -55,7 +55,10 @@ For a folder:
   is replaced only once the new one is complete, so an export that fails,
   such as on a full disk, leaves it as it was. If the destination folder is
   on a drive or share that is not answering, **Ask me** stops the export
-  before anything is written.
+  before anything is written. **Replace it** and **Skip it** apply to files
+  that were there before the export: when two photos in one export get the
+  same name, such as a raw and its JPEG or a virtual copy, the second gets
+  a number so every photo has its own file.
 - **Show in Finder when done**.
 
 For Immich, choose an album, or **New album…**. A photo Immich already has

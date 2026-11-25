@@ -78,6 +78,9 @@ Performance
 Bug fixes
 
 - Renaming a photo in the Library grid keeps it selected.
+- Exporting photos that share a name, such as a raw and its JPEG or a
+  virtual copy, with **Replace it** or **Skip it** no longer leaves some of
+  them out; the second gets a number.
 - Find's file type and **Serial not recorded** filters no longer return
   nothing.
 - Moving or copying with only raws showing no longer takes the stacked JPEGs

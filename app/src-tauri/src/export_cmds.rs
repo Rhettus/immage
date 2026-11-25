@@ -238,16 +238,29 @@ pub(crate) async fn export_existing(items: Vec<ExportItem>, dir: String, subfold
     }).await.unwrap_or_default()
 }
 
-// the target for one image, or None when an existing file is to be left alone
-fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str) -> Option<PathBuf> {
+// a target's key among this export's, without case: macOS and Windows names ignore it
+fn target_key(p: &Path) -> String {
+    p.to_string_lossy().to_lowercase()
+}
+
+// the target for one image, or None when an existing file is to be left alone.
+// `taken` holds the targets this export has already given out: overwrite and
+// skip are for files that were there before, so a second photo with the same
+// name (a raw and its JPEG, a virtual copy) gets a number instead of
+// replacing the first or being dropped. `asked` is a choice the dialog asked
+// the user for that photo, which stands
+fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str, asked: bool,
+                 taken: &std::collections::HashSet<String>) -> Option<PathBuf> {
     let first = dir.join(format!("{stem}.{ext}"));
-    if !first.exists() || conflict == "overwrite" {
+    let repeat = !asked && taken.contains(&target_key(&first));
+    if !repeat && (!first.exists() || conflict == "overwrite") {
         return Some(first);
     }
-    if conflict == "skip" {
+    if !repeat && conflict == "skip" {
         return None;
     }
-    (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}"))).find(|p| !p.exists())
+    (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}")))
+        .find(|p| !p.exists() && !taken.contains(&target_key(p)))
 }
 
 // export images one at a time on the engine's export thread (main.c,
@@ -300,6 +313,7 @@ pub(crate) async fn export_images(
     // removed on every exit, including an early return, a panic or a dropped future
     let _registered = CancelEntry { map: &state.export_cancels, job };
     let mut cancelled = false;
+    let mut taken = std::collections::HashSet::<String>::new();
     for (n, item) in items.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             cancelled = true;
@@ -323,9 +337,11 @@ pub(crate) async fn export_images(
                 continue;
             }
         };
-        match export_target(&item_dir, &stem, ext, conflict) {
+        let asked = immich.is_none() && item.conflict.is_some();
+        match export_target(&item_dir, &stem, ext, conflict, asked, &taken) {
             None => skipped.push(path_text(&item_dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
+                taken.insert(target_key(&target));
                 let mut req = json!({
                     "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
                     "color_space": options.color_space,
@@ -657,6 +673,33 @@ mod tests {
         assert_eq!(files.len(), 2);
         assert!(Path::new(&files[0].path).ends_with("2026/11/18/a.jpg") && files[0].exists);
         assert!(Path::new(&files[1].path).ends_with("2026/11/19/a.jpg") && !files[1].exists);
+    }
+
+    #[test]
+    fn photos_named_alike_in_one_export_all_get_a_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("old.jpg"), b"x").unwrap();
+        for conflict in ["overwrite", "skip", "unique"] {
+            let mut taken = std::collections::HashSet::new();
+            let mut got = vec![];
+            // a raw and its JPEG, and a virtual copy: three photos, one name
+            for _ in 0..3 {
+                let t = export_target(dir, "IMG_1", "jpg", conflict, false, &taken).unwrap();
+                taken.insert(target_key(&t));
+                got.push(t.file_name().unwrap().to_string_lossy().into_owned());
+            }
+            assert_eq!(got, ["IMG_1.jpg", "IMG_1-1.jpg", "IMG_1-2.jpg"], "{conflict}");
+        }
+        // a file there before the export still follows the choice
+        let none = std::collections::HashSet::new();
+        assert_eq!(export_target(dir, "old", "jpg", "overwrite", false, &none).unwrap(), dir.join("old.jpg"));
+        assert!(export_target(dir, "old", "jpg", "skip", false, &none).is_none());
+        // and an answer the dialog asked for stands, even for a repeat
+        let taken = std::collections::HashSet::from([target_key(&dir.join("IMG_1.jpg"))]);
+        assert_eq!(export_target(dir, "IMG_1", "jpg", "overwrite", true, &taken).unwrap(), dir.join("IMG_1.jpg"));
+        // names differing only in case are one name
+        assert_eq!(export_target(dir, "img_1", "jpg", "overwrite", false, &taken).unwrap(), dir.join("img_1-1.jpg"));
     }
 
     #[test]
