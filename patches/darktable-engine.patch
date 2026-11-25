@@ -45,7 +45,7 @@ index 30f0812a73..9839c70e3f 100644
      g_free(filename);
      CloseHandle(h);
 diff --git a/src/common/exif.cc b/src/common/exif.cc
-index af5673480a..916e600998 100644
+index af5673480a..4806ff0412 100644
 --- a/src/common/exif.cc
 +++ b/src/common/exif.cc
 @@ -30,6 +30,9 @@
@@ -58,7 +58,7 @@ index af5673480a..916e600998 100644
  #include <cassert>
  #include <cmath>
  #include <cstdlib>
-@@ -432,6 +435,225 @@ public:
+@@ -432,6 +435,227 @@ public:
    image->writeMetadata();                                     \
  }
  
@@ -156,6 +156,8 @@ index af5673480a..916e600998 100644
 +  const bool tiff = have_header && (!memcmp(header, "II*\0", 4) || !memcmp(header, "MM\0*", 4));
 +  const bool orf = have_header && (!memcmp(header, "IIRO", 4) || !memcmp(header, "IIRS", 4)
 +                                   || !memcmp(header, "MMOR", 4) || !memcmp(header, "MMSR", 4));
++  // Panasonic RW2 has no prefix support, but Rw2Image maps the file as well
++  const bool rw2 = have_header && !memcmp(header, "IIU\0", 4);
 +  if((tiff || orf) && Exiv2::LogMsg::level() <= Exiv2::LogMsg::warn)
 +  {
 +    size_t used = 0;
@@ -201,7 +203,7 @@ index af5673480a..916e600998 100644
 +  // TIFF-like parsers read the whole file through mmap(): do that read here,
 +  // before the global exiv2 lock, so one large file does not stall every
 +  // other photo's metadata. other formats seek and read, and skip it
-+  if(tiff || orf) io->mmap();
++  if(tiff || orf || rw2) io->mmap();
 +  std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(std::move(io)));
 +  // the BasicIo overload returns null for an unknown type where the path
 +  // overload throws, and callers assume a non-null image
@@ -284,7 +286,7 @@ index af5673480a..916e600998 100644
  static void _exif_import_tags(dt_image_t *img, Exiv2::XmpData::iterator &pos);
  
  static void _read_xmp_timestamps(Exiv2::XmpData &xmpData,
-@@ -2117,9 +2339,11 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
+@@ -2117,9 +2341,11 @@ void dt_exif_img_check_additional_tags(dt_image_t *img,
  
    try
    {
@@ -298,7 +300,7 @@ index af5673480a..916e600998 100644
      Exiv2::ExifData &exifData = image->exifData();
      if(!exifData.empty())
      {
-@@ -3273,19 +3497,157 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
+@@ -3273,19 +3499,157 @@ gboolean dt_exif_read_from_blob(dt_image_t *img,
    }
  }
  
@@ -464,7 +466,7 @@ index af5673480a..916e600998 100644
  
      // Get a list of preview images available in the image. The list is sorted
      // by the preview image pixel size, starting with the smallest preview.
-@@ -3298,10 +3660,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3298,10 +3662,14 @@ gboolean dt_exif_get_thumbnail(const char *path,
        return TRUE;
      }
  
@@ -482,7 +484,7 @@ index af5673480a..916e600998 100644
  
      // Get the selected preview image
      Exiv2::PreviewImage preview = loader.getPreviewImage(selected);
-@@ -3332,6 +3698,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
+@@ -3332,6 +3700,11 @@ gboolean dt_exif_get_thumbnail(const char *path,
    }
  }
  
@@ -494,7 +496,7 @@ index af5673480a..916e600998 100644
  /* Read the metadata of an image.
   * XMP data trumps IPTC data trumps EXIF data.
   */
-@@ -3354,9 +3725,28 @@ gboolean dt_exif_read(dt_image_t *img,
+@@ -3354,9 +3727,28 @@ gboolean dt_exif_read(dt_image_t *img,
  
    try
    {
@@ -526,7 +528,7 @@ index af5673480a..916e600998 100644
      bool res = true;
  
      // EXIF metadata
-@@ -3419,9 +3809,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
+@@ -3419,9 +3811,9 @@ gboolean dt_exif_get_dimensions(const char *path, int *width, int *height)
  {
    try
    {
@@ -538,7 +540,7 @@ index af5673480a..916e600998 100644
      const int w = (int)image->pixelWidth();
      const int h = (int)image->pixelHeight();
      if(w <= 0 || h <= 0) return FALSE;
-@@ -3446,7 +3836,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
+@@ -3446,7 +3838,6 @@ gboolean dt_exif_xmp_write_neural_restore(const char *path, const char *task)
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      if(!image.get()) return FALSE;
@@ -546,7 +548,7 @@ index af5673480a..916e600998 100644
      image->xmpData()["Xmp.darktable.neural_restore"] = task;
      write_metadata_threadsafe(image);
      return TRUE;
-@@ -3469,7 +3858,6 @@ int dt_exif_write_blob(uint8_t *blob,
+@@ -3469,7 +3860,6 @@ int dt_exif_write_blob(uint8_t *blob,
    {
      std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
      assert(image.get() != 0);
@@ -554,7 +556,7 @@ index af5673480a..916e600998 100644
      Exiv2::ExifData &imgExifData = image->exifData();
      Exiv2::ExifData blobExifData;
      Exiv2::ExifParser::decode(blobExifData, blob, size);
-@@ -3550,7 +3938,8 @@ int dt_exif_read_blob(uint8_t **buf,
+@@ -3550,7 +3940,8 @@ int dt_exif_read_blob(uint8_t **buf,
    *buf = NULL;
    try
    {
@@ -564,7 +566,7 @@ index af5673480a..916e600998 100644
      assert(image.get() != 0);
      read_metadata_threadsafe(image);
      Exiv2::ExifData &exifData = image->exifData();
-@@ -6649,8 +7038,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
+@@ -6649,8 +7040,9 @@ gboolean dt_exif_xmp_attach_export(const dt_imgid_t imgid,
      try
      {
        // Initialize XMP and IPTC data with the one from the original file.
@@ -575,7 +577,7 @@ index af5673480a..916e600998 100644
        if(input_image.get() != 0)
        {
          read_metadata_threadsafe(input_image);
-@@ -7117,6 +7507,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
+@@ -7117,6 +7509,15 @@ void dt_exif_get_basic_data(const uint8_t *data,
  static void _exif_log_handler(const int log_level,
                                const char *message)
  {

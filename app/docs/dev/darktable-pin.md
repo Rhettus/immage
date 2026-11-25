@@ -24,18 +24,20 @@ check the result.
   (`dt_exif_img_check_additional_tags`) and the preview fallback of sized
   thumbnails also use `_read_metadata`: it grows TIFF prefixes while
   Exiv2 reports missing metadata, ignoring missing pixel strips, then falls
-  back to a heap-backed read that reuses the prefix. For TIFF and ORF
+  back to a heap-backed read that reuses the prefix. For TIFF, ORF and RW2
   signatures that whole-file read is done before darktable's global
   `exiv2_threadsafe` lock is taken, so only the parse holds it and one large
-  file does not stall other photos' metadata (`verify/exiv2-lock.py`).
+  file does not stall other photos' metadata (`verify/exiv2-lock.py`). CRW
+  and EPS, which exiv2 also maps, are left out as rare.
   JPEG and other seekable metadata readers use file I/O with the same
   heap-backed mapping fallback.
   Sized thumbnails use `_read_jpeg_thumbnail` to read absolute JPEG ranges
   or reuse previews already in metadata; unsupported layouts retain Exiv2's
   full-file preview loader, which reads the rest of the file through the
-  prefix parse's `ReadFileIo` only when a preview exists. The mipmap cache passes its requested size to
-  `dt_imageio_thumbnail`, which uses JPEG scaled decoding. Existing full-size
-  thumbnail entry points retain their behavior.
+  prefix parse's `ReadFileIo` only when a preview exists. The mipmap cache
+  passes its requested size to `dt_imageio_thumbnail`, which uses JPEG
+  scaled decoding. Existing full-size thumbnail entry points retain their
+  behavior.
   On Windows, darktable's lock check (`src/common/database.c`,
   `pid_is_alive`) counts only a running `darktable.exe` as the holder of
   `data.db.lock`; the patch also accepts `darktable-engine.exe`, so a
