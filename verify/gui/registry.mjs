@@ -59,6 +59,7 @@ import { healFill } from './specs/heal-fill.mjs';
 import { panelPeek } from './specs/panel-peek.mjs';
 import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
+import { largeFolder } from './specs/large-folder.mjs';
 import { movePhotos, moveCopy } from './specs/move-photos.mjs';
 import { moveFolders } from './specs/move-folders.mjs';
 import { moveCompanions, moveSubfolders, moveMenuItems } from './specs/move-options.mjs';
@@ -91,6 +92,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'panel-peek': panelPeek,
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,
+  'large-folder': largeFolder,
   'grid-culling': gridCulling,
   'grid-culling-controls': gridCullingControls,
   'grid-culling-priority': gridCullingPriority,

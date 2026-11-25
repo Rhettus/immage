@@ -4,7 +4,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
-import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp, rm, link } from 'node:fs/promises';
 import { constants, rmSync, readFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
@@ -323,6 +323,13 @@ try {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
     report.gridZoomFixtures = gridZoomFixtures.length;
+  }
+  // a folder of 20,000 photos: hard links to the run's own copy, never the original
+  if (selectedCases.includes('large-folder')) {
+    const { largeFolderCount, largeFolderName } = await import('./specs/large-folder.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 0; i < largeFolderCount; i++) await link(copiedFixture, join(fixtures, largeFolderName(i) + ext));
+    report.largeFolderFixtures = largeFolderCount;
   }
   if (selectedCases.includes('library-menu-rate')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
