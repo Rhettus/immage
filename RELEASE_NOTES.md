@@ -12,6 +12,9 @@ Improvements
   before a second tone mapper is turned on. JPEGs you edited in earlier
   versions keep their look; to get the new rendering, reset them (**Reset
   Photo** in Grid view, or **Start Over** in History) and edit them again.
+- **Color zones curves:** Color zones in Advanced mode now has its hue,
+  chroma and lightness curves, so you can shift, saturate or brighten chosen
+  colors, on the whole photo or under a mask.
 - **Module order in Advanced mode:** A new **Module order** button lets you
   drag modules to change the order they run in for a photo.
 - **Find searches the whole library:** Under **All folders**, Find's filter

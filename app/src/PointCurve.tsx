@@ -25,7 +25,8 @@ export function CurveMarkView({ mark: { x, y }, W, H }: { mark: CurveMark; W: nu
 }
 
 export function PointCurve({ points, disabled, histogram, channel = null, draw = monotone, mark = null,
-                             guide = "identity", label, onChange }: {
+                             guide = "identity", label, edit = "pinned", minNodes = 2, keepEnds = false, gap = GAP,
+                             onChange }: {
   points: Point[]; disabled: boolean; histogram: Histogram | null;
   mark?: CurveMark | null;                        // the photo under the pointer, on the curve
   channel?: 0 | 1 | 2 | null;                     // whose histogram, and the curve's color
@@ -33,6 +34,14 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
   // the curve that changes nothing: the diagonal, or a factor curve's line at 0.5
   guide?: "identity" | "flat";
   label?: string;
+  // pinned: the end points keep x 0 and 1 and cannot be removed. free: any
+  // point moves between its neighbors, and one can be added before the first
+  // or after the last, while more than `minNodes` remain (`keepEnds` keeps
+  // the first and last from being removed). periodic: free, and the x axis
+  // wraps, so the first and last stay `gap` apart across the seam and a
+  // click near one edge finds a point at the other
+  edit?: "pinned" | "free" | "periodic";
+  minNodes?: number; keepEnds?: boolean; gap?: number;
   onChange: (p: Point[]) => void;
 }) {
   const hist = histogramPath(histogram, W, H, channel);
@@ -44,18 +53,29 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
     return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height];
   };
   const clampAt = (pts: Point[], k: number, [x, y]: Point): Point => {
-    const lo = k === 0 ? 0 : pts[k - 1][0] + GAP;
-    const hi = k === pts.length - 1 ? 1 : pts[k + 1][0] - GAP;
+    const last = pts.length - 1;
+    let lo = k === 0 ? 0 : pts[k - 1][0] + gap;
+    let hi = k === last ? 1 : pts[k + 1][0] - gap;
+    if (edit === "periodic" && last > 0) {
+      if (k === 0) lo = Math.max(lo, pts[last][0] + gap - 1);
+      if (k === last) hi = Math.min(hi, pts[0][0] + 1 - gap);
+    }
     return [Math.min(hi, Math.max(lo, x)), Math.min(1, Math.max(0, y))];
   };
   const nearest = (p: Point) => {
     let best = -1, dist = Infinity;
     points.forEach(([x, y], k) => {
-      const d = Math.hypot((x - p[0]) * W, (y - p[1]) * H);
+      let dx = Math.abs(x - p[0]);
+      if (edit === "periodic") dx = Math.min(dx, 1 - dx);
+      const d = Math.hypot(dx * W, (y - p[1]) * H);
       if (d < dist) { dist = d; best = k; }
     });
     return dist <= 3 * R ? best : -1;
   };
+
+  const removable = (k: number) => k >= 0 && (edit === "pinned"
+    ? k > 0 && k < points.length - 1
+    : points.length > minNodes && !(keepEnds && (k === 0 || k === points.length - 1)));
 
   const f = draw(points);
   const d = Array.from({ length: 101 }, (_, i) => i / 100)
@@ -74,7 +94,12 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
              if (points.length >= MAX_NODES) return;
              // a new point lands where clicked, between its neighbors
              k = points.findIndex(([x]) => x > p[0]);
-             if (k <= 0) return;
+             if (edit === "pinned" ? k <= 0 : k < 0) {
+               if (edit === "pinned") return;
+               k = points.length;
+             }
+             // too close to a neighbor to fit between them
+             if (edit !== "pinned" && ((k > 0 && p[0] - points[k - 1][0] <= gap) || (k < points.length && points[k][0] - p[0] <= gap))) return;
              const next = [...points.slice(0, k), p, ...points.slice(k)];
              next[k] = clampAt(next, k, p);
              onChange(next);
@@ -86,7 +111,7 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
            const k = drag.current;
            if (k === null) return;
            const p = at(e);
-           const inner = k > 0 && k < points.length - 1;
+           const inner = removable(k);
            // dragged well off the graph: an inner point goes
            if (inner && (p[1] < -0.15 || p[1] > 1.15)) {
              drag.current = null;
@@ -100,7 +125,7 @@ export function PointCurve({ points, disabled, histogram, channel = null, draw =
          onPointerUp={() => { drag.current = null; }}
          onDoubleClick={(e) => {
            const k = nearest(at(e));
-           if (k > 0 && k < points.length - 1) onChange(points.filter((_, i) => i !== k));
+           if (removable(k)) onChange(points.filter((_, i) => i !== k));
          }}>
       {hist && <path d={hist} className="hist" />}
       {[0.25, 0.5, 0.75].map((g) => (

@@ -18,6 +18,7 @@ import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve
          nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Parametric,
          type Point } from "./tonecurve";
 import { autoCrop } from "./transform";
+import { CZ_CATMULL_ROM, CZ_HUE, CZ_MAX_NODES, czDefaultPoints, czMinNodes, type CzPage } from "./colorzones";
 import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
@@ -477,6 +478,62 @@ export const satcurveMap: ModuleMap = {
     return out;
   })),
   enabled: (v) => SATCURVE_IDS.some((id) => Math.abs((v[id] ?? SATCURVE_NEUTRAL[id]) - SATCURVE_NEUTRAL[id]) > 1e-6),
+};
+
+// ---------------------------------------------------- Color zones (colorzones)
+// darktable's three curves (lightness, chroma, hue), each over the "select by"
+// axis. the keys are cz<page>n (node count), cz<page>t (interpolation),
+// cz<page>p<k>x and y (the wrap is the select-by channel's, on every page); cz_channel and cz_version (splines_version) are read
+// only: the graph needs them, and the map never writes them, so a V1 history
+// keeps its splines_version as read
+const czKey = (ch: number, k: number, a: "x" | "y") => `cz${ch}p${k}${a}`;
+const czField = (ch: number, k: number, a: "x" | "y") => `curve[${ch}][${k}].${a}`;
+const CZ_PAGE_IDS = [0, 1, 2] as const;
+export const czPointsOf = (v: Values, ch: CzPage): Point[] => {
+  const flat = czDefaultPoints(v.cz_version ?? 1, (v.cz_channel ?? CZ_HUE) === CZ_HUE);
+  const n = Math.max(czMinNodes(v.cz_version ?? 1), Math.min(CZ_MAX_NODES, v[`cz${ch}n`] ?? flat.length));
+  return Array.from({ length: n }, (_, k): Point => [v[czKey(ch, k, "x")] ?? flat[k]?.[0] ?? 1, v[czKey(ch, k, "y")] ?? 0.5]);
+};
+export const czPointValues = (points: Point[], ch: CzPage, type?: number): Values => {
+  const out: Values = { [`cz${ch}n`]: points.length };
+  if (type !== undefined) out[`cz${ch}t`] = type;
+  for (let k = 0; k < CZ_MAX_NODES; k++) {
+    const [x, y] = points[k] ?? [0, 0];
+    out[czKey(ch, k, "x")] = x;
+    out[czKey(ch, k, "y")] = y;
+  }
+  return out;
+};
+export const colorzonesMap: ModuleMap = {
+  op: "colorzones", keepOn: false,
+  controls: [],
+  fields: ["channel", "splines_version",
+    ...CZ_PAGE_IDS.flatMap((ch) => [`curve_num_nodes[${ch}]`, `curve_type[${ch}]`,
+      ...Array.from({ length: CZ_MAX_NODES }, (_, k) => [czField(ch, k, "x"), czField(ch, k, "y")]).flat()])],
+  read: (p) => {
+    const version = p.splines_version ?? 1;
+    const out: Values = { cz_channel: p.channel ?? CZ_HUE, cz_version: version };
+    // the select-by channel, not the page, makes the x axis wrap (colorzones.c, p->channel == h)
+    const flat = czDefaultPoints(version, out.cz_channel === CZ_HUE);
+    for (const ch of CZ_PAGE_IDS) {
+      const n = Math.max(czMinNodes(version), Math.min(CZ_MAX_NODES, p[`curve_num_nodes[${ch}]`] ?? flat.length));
+      Object.assign(out, czPointValues(Array.from({ length: n }, (_, k): Point =>
+        [p[czField(ch, k, "x")] ?? flat[k]?.[0] ?? 1, p[czField(ch, k, "y")] ?? 0.5]), ch,
+        p[`curve_type[${ch}]`] ?? CZ_CATMULL_ROM));
+    }
+    return out;
+  },
+  // the slots past the last node are zeroed, as darktable's _delete_node leaves them
+  write: (v) => Object.assign({}, ...CZ_PAGE_IDS.map((ch) => {
+    const points = czPointsOf(v, ch);
+    const out: Params = { [`curve_num_nodes[${ch}]`]: points.length, [`curve_type[${ch}]`]: v[`cz${ch}t`] ?? CZ_CATMULL_ROM };
+    for (let k = 0; k < CZ_MAX_NODES; k++) {
+      const [x, y] = points[k] ?? [0, 0];
+      out[czField(ch, k, "x")] = x;
+      out[czField(ch, k, "y")] = y;
+    }
+    return out;
+  })),
 };
 
 // ------------------------------------------------------- module choices

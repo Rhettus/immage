@@ -103,9 +103,9 @@ export type ModuleLayout = {
   // edge is the chroma slider's soft end
   wheels?: { section: string; hue: string; chroma: string }[];
   // Simple's graph for the module (ModuleGraph), written through the
-  // module's manifest map: the contrast equalizer's bands or the
-  // saturation and brilliance curves
-  graph?: "equalizer" | "satcurve";
+  // module's manifest map: the contrast equalizer's bands, the
+  // saturation and brilliance curves or color zones' three curves
+  graph?: "equalizer" | "satcurve" | "colorzones";
   // Simple's lens picker above the fields (LensPicker), for the Lensfun
   // method. `lens_pick` is the engine's own field, read and written per
   // instance like a param, so the card loads it with its other fields
@@ -709,14 +709,13 @@ export const LAYOUTS: ModuleLayout[] = [
   },
   {
     // colorzones.c gui_init: the three from_params widgets under the graph
-    // (select by, process mode, mix); gui_changed hides nothing. left out:
-    // curve, curve_num_nodes and curve_type (the three channel curves, which
-    // need a custom curve editor with the lightness, chroma and hue pages,
-    // node add, drag and remove, and the interpolation combobox that edits
-    // curve_type of the shown channel), splines_version (no widget), and the
-    // channel notebook, pickers, edit by area and display selection (not
+    // (select by, process mode, mix); gui_changed hides nothing. the graph is
+    // ModuleGraph's ColorZonesCurve: the lightness, chroma and hue pages,
+    // node add, drag and remove, and the interpolation combobox editing
+    // curve_type of the shown page. splines_version (no widget) is kept as
+    // read. left out: the pickers, edit by area and display selection (not
     // params). enum value 3 of channel has no description and is not offered
-    op: "colorzones", group: "hsl", title: "Color zones",
+    op: "colorzones", group: "hsl", title: "Color zones", graph: "colorzones",
     fields: [
       { path: "channel", label: "Select by", options: [0, 1, 2] },
       { path: "mode", label: "Process mode" },

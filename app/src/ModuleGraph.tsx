@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// Simple's contrast equalizer or saturation curve on an Advanced card (the
-// layout's `graph`), over the module's own manifest map: the card's params
+// Simple's contrast equalizer or saturation curve, or the color zones curves,
+// on an Advanced card (the layout's `graph`), over the module's own manifest map: the card's params
 // are read into the graph's values, and an edit is written back through the
 // map, so the two modes edit the same params the same way
+import { ColorZonesCurve } from "./ColorZonesCurve";
 import { ContrastEqualizer } from "./ContrastEqualizer";
 import { SaturationCurve } from "./SaturationCurve";
 import type { ImageContext } from "./manifest";
 import { GRAPHS } from "./graphMaps";
 import type { AdvancedState } from "./session";
 
-// these two maps ignore the image, so a card with no photo's context reads and writes the same
+// these maps ignore the image, so a card with no photo's context reads and writes the same
 const NO_IMAGE: ImageContext = { sensorWidth: 1, sensorHeight: 1, orientation: 0, camera: 0 };
 
 export function ModuleGraph({ kind, state, disabled, onFields }: {
@@ -32,7 +33,9 @@ export function ModuleGraph({ kind, state, disabled, onFields }: {
     <div className="module-card-graph" data-graph={map.op}>
       {kind === "equalizer"
         ? <ContrastEqualizer values={values} disabled={disabled} onChange={onChange} heading={false} />
-        : <SaturationCurve values={values} disabled={disabled} onChange={onChange} heading={false} />}
+        : kind === "colorzones"
+          ? <ColorZonesCurve values={values} disabled={disabled} onChange={onChange} />
+          : <SaturationCurve values={values} disabled={disabled} onChange={onChange} heading={false} />}
     </div>
   );
 }

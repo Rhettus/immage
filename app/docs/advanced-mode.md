@@ -299,8 +299,16 @@ The HSL / Color group has these darktable modules:
   module.
 - **Velvia**: **Strength** and **Mid-tones bias**.
 - **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
-- **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
-  are not on the card yet.
+- **Color zones**: a graph with **Hue**, **Chroma** and **Lightness** pages,
+  then **Select by**, **Process mode** and **Mix**. Each page is a curve
+  across the colors chosen by **Select by**, shown by the color strip under
+  it. On **Lightness** and **Chroma**, raise a point to brighten or saturate
+  those colors and lower it to darken or mute them; on **Hue**, move a point
+  up or down to shift those colors toward neighboring hues. Click to add a point; double-click or drag a point off
+  the graph to remove it. The interpolation menu sets the curve shape of the
+  page shown, and **Reset** returns that page to flat. When selecting by hue,
+  the curve wraps around from the right edge to the left. The same graph is on
+  Color zones' mask card.
 - **Color harmonizer**: **Harmony rule** (and **Nodes** for a custom rule),
   **Pull strength**, **Pull width**, **Neutral color protection** and
   **Smoothing**, then a saturation slider for each of the rule's hues. The
