@@ -36,7 +36,9 @@ Open the **Folders** card in the **Library** panel.
   are; adding or dragging the folder in again brings it back.
 - **Include subfolders** shows the photos in a folder's subfolders too.
   It is off unless you
-  turn it on.
+  turn it on. Even a folder with hundreds of thousands of photos stays
+  responsive while it is read: the first photos show at once, and the rest
+  join the grid every second or two until the read finishes.
 - The refresh button reads the folders, and the open folder's photos,
   again: use it after adding files from outside Immage.
 - The **×** beside a top-level folder takes it off the list. Nothing is

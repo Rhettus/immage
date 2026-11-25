@@ -68,6 +68,10 @@ Performance
 - **Faster Immage Accelerator folders and thumbnails:** Folders and thumbnails
   are kept on this computer, so unchanged folders open without downloading
   again, and the first photos show while the rest load.
+- **Very large folders no longer freeze Immage:** Opening a folder with
+  tens of thousands of photos, or a whole library with **Include
+  subfolders**, used to lock the window for minutes or longer. The grid
+  and filmstrip now stay responsive while the photos are read.
 
 Bug fixes
 

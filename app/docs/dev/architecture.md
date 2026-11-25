@@ -134,6 +134,7 @@ identifiers.
 | [icons.tsx](../../src/icons.tsx) | `icon()` and every outline icon component (`FolderIcon`, `SlidersIcon`, `PanelIcon`, ...). |
 | [Toolbar.tsx](../../src/Toolbar.tsx) | The bar under the filmstrip (`Toolbar`), `ZoomBar`, `ResetAll` and the panel `Splitter`. |
 | [Filmstrip.tsx](../../src/Filmstrip.tsx) | The filmstrip and grid (`Filmstrip`, `FilmCell`, `KnownCell`, `GhostCell`), the thumbnail canvases (`ThumbCanvas`, `CellCanvas`), `ThumbProgress`, `InfoOverlay` and `pairedRaws`. |
+| [filmWindow.ts](../../src/filmWindow.ts) | Which of the filmstrip's and grid's cells are drawn: only those in view and a few lines either side, with spacers for the rest, and the scroll that reveals a cell (`filmWindow`, `revealAt`). The cells are all one size, so positions are arithmetic. |
 | [ActivityBar.tsx](../../src/ActivityBar.tsx) | The activity line's progress bar and a background job's row (`ActivityBar`, `JobActivity`). |
 | [FileMenu.tsx](../../src/FileMenu.tsx) | A photo's right-click menu, with `hdrBrackets` and `panoFrames` for its merge items. |
 | [HistogramView.tsx](../../src/HistogramView.tsx) | The histogram and darktable's other scopes, and the scope menu (`HistogramView`, `ScopeMenu`, `loadScope`). |

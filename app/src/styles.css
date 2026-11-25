@@ -1316,6 +1316,9 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   margin: 0 8px; padding: 10px; overflow-x: hidden; overflow-y: auto; background: var(--ui-window-161616, #161616);
 }
 .filmstrip.grid.empty { display: flex; align-items: center; justify-content: center; }
+/* the space of the cells not drawn (filmWindow.ts): a whole row in the grid */
+.film-spacer { flex: none; }
+.filmstrip.grid .film-spacer { grid-column: 1 / -1; }
 .grid-empty { color: var(--text-3); font-size: var(--fs-body); }
 .strip-slot.floating.revealed {
   transform: none; visibility: visible;

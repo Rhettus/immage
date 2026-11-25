@@ -15,6 +15,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "./i18n";
 import { isOffline, type FolderSource } from "./folderSource";
+import { type FilmWindow, cellStart, filmGeometry, filmWindow, revealAt } from "./filmWindow";
 
 // the pair names (pairKey()) that have a raw among these files
 export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPrimaryRaw(p)).map(pairKey));
@@ -47,6 +48,57 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   source?: FolderSource | null;           // the morfPhoto folder's drive: photos on it offline get a red dot
 }) {
   const strip = useRef<HTMLDivElement>(null);
+  // a grid's cells are a fixed height, and share each row's width
+  // (styles.css, .filmstrip.grid); the strip's follow its height
+  const cellSize = grid ? Math.round(gridSize) : Math.round((height - 12) * 1.15);
+  const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
+  // the cells in view and a few lines either side are drawn, the rest stand
+  // as two spacers (filmWindow.ts). `more`'s cell after the last is one of them
+  const count = images.length + pending.length + (more ? 1 : 0);
+  const geometry = (root: HTMLElement) => {
+    const css = getComputedStyle(root);
+    const gap = parseFloat(grid ? css.rowGap : css.columnGap) || 0;
+    const pad = parseFloat(grid ? css.paddingTop : css.paddingInlineStart) || 0;
+    const crossPad = parseFloat(css.paddingInlineStart) || 0;
+    return filmGeometry(grid, cellSize, Math.round(gridSize * 1.15), gap, pad, crossPad, root.clientWidth);
+  };
+  // the scroll position along the strip, from its start: a right-to-left
+  // strip's scrollLeft runs negative
+  const scrollPos = (root: HTMLElement) => grid ? root.scrollTop : Math.abs(root.scrollLeft);
+  const viewLength = (root: HTMLElement) => grid ? root.clientHeight : root.clientWidth;
+  const scrollTo = (root: HTMLElement, pos: number) => {
+    const max = grid ? root.scrollHeight - root.clientHeight : root.scrollWidth - root.clientWidth;
+    pos = Math.max(0, Math.min(max, pos));
+    if (grid) root.scrollTop = pos;
+    else root.scrollLeft = getComputedStyle(root).direction === "rtl" ? -pos : pos;
+  };
+  const [win, setWin] = useState<FilmWindow>({ first: 0, last: Math.min(count, 60), before: 0, after: 0 });
+  const winRef = useRef(win);
+  winRef.current = win;
+  const measure = useRef(() => {});
+  measure.current = () => {
+    const root = strip.current;
+    if (!root) return;
+    const next = filmWindow(geometry(root), count, scrollPos(root), viewLength(root), grid ? 3 : 12);
+    setWin((w) => (w.first === next.first && w.last === next.last && w.before === next.before && w.after === next.after
+      ? w : next));
+  };
+  useLayoutEffect(() => { measure.current(); }, [count, grid, gridSize, height]);
+  useEffect(() => {
+    const root = strip.current;
+    if (!root) return;
+    const update = () => measure.current();
+    const ro = new ResizeObserver(update);
+    ro.observe(root);
+    root.addEventListener("scroll", update, { passive: true });
+    return () => {
+      ro.disconnect();
+      root.removeEventListener("scroll", update);
+    };
+  }, [grid, !images.length && !pending.length]);
+  // a drawn cell's index among all the cells
+  const cellIndex = (root: HTMLElement, el: Element) =>
+    winRef.current.first + Array.prototype.indexOf.call(root.querySelectorAll(":scope > .thumb"), el);
   // the cell after the last, which asks for the next page of results
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -56,48 +108,40 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
                                           { root, rootMargin: grid ? "600px 0px" : "0px 600px" });
     seen.observe(el);
     return () => seen.disconnect();
-  }, [more, images, grid]);
+  }, [more, images, grid, win.last]);
+  // the open photo's index, to scroll to: its cell may not be drawn
+  const activeIndex = () => current === null ? -1 : images.findIndex((i) => "imgid" in i && i.imgid === current);
   // keep the open image in view as the arrows step through the folder.
   // the strip alone scrolls: scrollIntoView would also scroll its
   // ancestors, and a hidden floating strip, parked below the center
   // column, then pushes the whole column up out of its overflow: hidden
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = strip.current;
-    const cell = root?.querySelector(".thumb.active");
-    if (!root || !cell) return;
-    const r = root.getBoundingClientRect();
-    const c = cell.getBoundingClientRect();
-    if (c.left < r.left) root.scrollLeft -= r.left - c.left;
-    else if (c.right > r.right) root.scrollLeft += c.right - r.right;
-    if (c.top < r.top) root.scrollTop -= r.top - c.top;
-    else if (c.bottom > r.bottom) root.scrollTop += c.bottom - r.bottom;
+    const index = activeIndex();
+    if (!root || index < 0) return;
+    const to = revealAt(geometry(root), index, scrollPos(root), viewLength(root), false);
+    if (to !== null) { scrollTo(root, to); measure.current(); }
   }, [current, grid]);
   // explicit jump ("Show in Library"): center the active thumbnail inside the
   // strip even if its numeric imgid did not change across folder reload
   const lastReveal = useRef(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!revealThumb || revealThumb === lastReveal.current || current === null) return;
     const root = strip.current;
-    const cell = root?.querySelector(".thumb.active");
-    if (!root || !cell) return;
+    const index = activeIndex();
+    if (!root || index < 0) return;
     lastReveal.current = revealThumb;
-    const r = root.getBoundingClientRect();
-    const c = cell.getBoundingClientRect();
-    if (grid) {
-      const targetTop = root.scrollTop + (c.top + c.bottom) / 2 - (r.top + r.bottom) / 2;
-      root.scrollTop = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, targetTop));
-    } else {
-      if (c.left < r.left) root.scrollLeft -= r.left - c.left;
-      else if (c.right > r.right) root.scrollLeft += c.right - r.right;
-    }
+    const to = revealAt(geometry(root), index, scrollPos(root), viewLength(root), grid);
+    if (to !== null) { scrollTo(root, to); measure.current(); }
   }, [revealThumb, current, grid, images]);
   // a grid resized keeps one photo where it was: the one under the pointer
   // for a pinch, otherwise the open photo when it shows, or the top left one.
   // the column count changes as the size does, so without this the rows
   // under the pointer would run off. a scroll the page makes itself (`set`)
   // keeps the anchor; any other picks a new one, so it is there before the
-  // next resize
-  const anchor = useRef<{ el: Element; offset: number; set: number } | null>(null);
+  // next resize. the anchor is the cell's index, as its element may not be
+  // drawn at the new size
+  const anchor = useRef<{ index: number; offset: number; set: number } | null>(null);
   const takeAnchor = (x?: number, y?: number) => {
     const root = strip.current;
     if (!root) return;
@@ -109,7 +153,9 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
       const c = active?.getBoundingClientRect();
       el = c && c.top >= r.top && c.bottom <= r.bottom ? active : at(r.left + 30, r.top + 30);
     }
-    anchor.current = el && root.contains(el) ? { el, offset: el.getBoundingClientRect().top - r.top, set: -1 } : null;
+    const index = el && el.parentElement === root ? cellIndex(root, el) : -1;
+    anchor.current = el && index >= winRef.current.first
+      ? { index, offset: el.getBoundingClientRect().top - r.top, set: -1 } : null;
   };
   const zoom = useRef(onGridZoom);
   zoom.current = onGridZoom;
@@ -141,12 +187,12 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   useLayoutEffect(() => {
     const root = strip.current;
     if (!root || !grid) return;
-    if (!anchor.current || !anchor.current.el.isConnected) takeAnchor();
+    if (!anchor.current) takeAnchor();
     const a = anchor.current;
     if (!a) return;
-    const top = a.el.getBoundingClientRect().top - root.getBoundingClientRect().top;
-    root.scrollTop += top - a.offset;
+    root.scrollTop = cellStart(geometry(root), a.index) - a.offset;
     a.set = root.scrollTop;
+    measure.current();
   }, [gridSize, grid]);
   // thumbnails scrolled into view jump the loader's queue
   useEffect(() => {
@@ -172,11 +218,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
       seen.disconnect();
       loader.show([...visible], false);
     };
-  }, [images, loader, grid]);
-  // a grid's cells are a fixed height, and share each row's width
-  // (styles.css, .filmstrip.grid); the strip's follow its height
-  const cellSize = grid ? Math.round(gridSize) : Math.round((height - 12) * 1.15);
-  const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
+  }, [images, loader, grid, win.first, win.last]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
   const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress, onToggleStack });
@@ -193,7 +235,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
          style={grid ? { "--grid-column": `${Math.round(gridSize * 1.15)}px` } as React.CSSProperties : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
-      {images.map((i) => !("imgid" in i)
+      {win.before > 0 && <div className="film-spacer" style={grid ? { height: win.before } : { width: win.before }} />}
+      {images.slice(win.first, win.last).map((i) => !("imgid" in i)
         ? <KnownCell key={`k${knownKey(i)}`} entry={i} loader={loader} cell={cell} open={openKnown} doubleOpens={grid}
                      offline={isOffline(i.path, source)} />
         : (
@@ -209,8 +252,10 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
           );
         })()
       ))}
-      {pending.map((p) => <GhostCell key={p} path={p} cell={cell} />)}
-      {more && <div ref={end} className="thumb ghost more" style={cell} />}
+      {pending.slice(Math.max(0, win.first - images.length), Math.max(0, win.last - images.length))
+        .map((p) => <GhostCell key={p} path={p} cell={cell} />)}
+      {more && win.last === count && <div ref={end} className="thumb ghost more" style={cell} />}
+      {win.after > 0 && <div className="film-spacer" style={grid ? { height: win.after } : { width: win.after }} />}
     </div>
   );
 }
