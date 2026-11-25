@@ -130,7 +130,8 @@ async function open(path) {
   s.previewMode = () => "quality";
   // drafts at the view's size, however long they take
   s.draftLimits = () => ({ target: 60, smallest: 1 });
-  if (!s.wasEdited) {
+  // JPEGs, TIFFs and other non-RAW photos get no tone mapper (toneMappable)
+  if (!s.wasEdited && s.toneMappable) {
     const defaults = [];
     if (s.values.tm_mode !== 1) defaults.push(["tm_mode", 1]);
     if (defaults.length) s.setMany(defaults);
@@ -142,9 +143,12 @@ async function open(path) {
     if (errors.length) throw new Error(errors.splice(0).join("; "));
     return last;
   };
-  // every change gets a frame of its own, as a slider's release does
+  // every change gets a frame of its own, as a slider's release does. it is
+  // the user's own, as App.tsx's record() says: a photo still on its new-photo
+  // baseline is not saved (Session.markUnsaved)
   const after = async (change) => {
     last = null;
+    s.endBaseline();
     change();
     s.requestRender();
     return frame();
@@ -173,6 +177,12 @@ const controls = () => {
 // tone equalizer, the other shadows and highlights, and only the chosen one
 // takes a move
 const active = (s, id) => m.mapsWith(id).some((map) => m.choiceOn(map, s.values));
+// a JPEG, TIFF or other non-RAW photo has no tone mapper (Session.toneMappable):
+// the controls only a tone mapper runs are not shown for it (PanelView.tsx).
+// Highlight Brilliance is AgX's only, and Negative's working profile has
+// nothing left to change without one
+const toneMapperOnly = (id) => id === "tm_mode" || id === "whites_brilliance" || id === "neg_working_profile"
+  || (m.mapsWith(id).length > 0 && m.mapsWith(id).every((map) => m.TONE_MAPPER_OPS.has(map.op)));
 const activeLocal = (s, id) => m.localMaps.some((map) => map.controls.includes(id) && m.choiceOn(map, s.values));
 
 const optionsOf = (c, s) => (c.optionsFor ? c.optionsFor(s.context, s.values[c.id])
@@ -237,9 +247,17 @@ async function sliders(photo) {
       // change from the dynamically populated menu.
       spec = { ...spec, anyChoice: true };
     }
+    // without a tone mapper, Profile offers None and the color balance rgb looks
+    if (c.id === "profile" && !o.s.toneMappable) {
+      c = { ...c, options: m.NON_RAW_PROFILE_OPTIONS, optionGroups: m.NON_RAW_PROFILE_GROUPS };
+    }
     if (!wanted(c.id)) continue;
     const base = { check: "sliders", photo: basename(photo), id: c.id };
     if (spec.skip) { record({ ...base, status: "skip", detail: spec.skip }); continue; }
+    if (!o.s.toneMappable && toneMapperOnly(c.id)) {
+      record({ ...base, status: "skip", detail: "a tone mapper's: the photo has none" });
+      continue;
+    }
     if (c.id.startsWith("sf_") && !pack.pack) { record({ ...base, status: "skip", detail: "no spektrafilm data pack" }); continue; }
     if (!m.mapOf.has(c.id)) { record({ ...base, status: "fail", detail: "no module map in manifest.ts" }); continue; }
     if ((c.rawOnly || spec.raw) && !o.s.raw) { record({ ...base, status: "skip", detail: "raws only" }); continue; }
@@ -1878,7 +1896,10 @@ async function decisions(photo) {
   // brilliance together, as a mask's Whites does; an edit from before that
   // opens on its shoulder alone and gains no brilliance until Whites moves
   // (manifest.ts, WHITES_BRILLIANCE)
-  await decide("whites adds brilliance on agx", async () => {
+  if (/\.(jpe?g|tiff?|png|webp|heic)$/i.test(photo)) {
+    record({ check: "decisions", photo: basename(photo), id: "whites adds brilliance on agx", status: "skip",
+             detail: "a photo with no tone mapper never opens on AgX" });
+  } else await decide("whites adds brilliance on agx", async () => {
     const get = async () => (await request({ cmd: "get", modules: {
       agx: ["curve_shoulder_power"], colorbalancergb: ["brilliance_highlights"] } })).modules;
     const brilliance = (got) => (got.colorbalancergb?.enabled ? got.colorbalancergb.params.brilliance_highlights : 0);
