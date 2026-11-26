@@ -1401,13 +1401,22 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     let storage = state._frame_output.clone();
     let out = storage.path(&format!("thumb-{tag}.rgba"));
     let listed = caches.listed.clone();
+    let known = caches.thumbs.clone();
     let (name, reply, mut pixels) = tauri::async_runtime::spawn_blocking(move || {
         // the cache name stats the photo and its sidecar: here, off the async
         // runtime, as a stuck drive's stat would hold its worker
         let name = path.filter(|_| !proof).and_then(|p| cache::refresh(&listed, Path::new(&p), version.unwrap_or(0), size).map(|n| (p, n)));
+        // a thumbnail was kept for the photo under another name: its file
+        // (or sidecar) changed since, so the engine checks the file before
+        // answering from the pixels it holds, which may be the old ones
+        let recheck = name.as_ref().is_some_and(|(photo, n)| {
+            known.read(&cache::known_name(Path::new(photo), version.unwrap_or(0), size)).is_some_and(|k| k != n.as_bytes())
+        });
+        drop(known);
         let name = name.map(|(photo, name)| (photo, preview_cache_name(name, prefer_source, camera_preview, edited_preview)));
         let mut req = json!({ "cmd": "thumb", "imgid": imgid, "size": size, "proof": proof, "foreground": foreground.unwrap_or(false), "prefer_source": prefer_source, "camera_preview": camera_preview, "out": out });
         if let Some(file) = file { req["path"] = json!(file); }
+        if recheck { req["recheck"] = json!(true); }
         // off screen or rendered ahead: its import waits behind the user's
         if background == Some(true) { req["background"] = json!(true); }
         let got = thumbs.request(tag, req)
@@ -1418,6 +1427,9 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     })
     .await
     .map_err(|e| e.to_string())??;
+    // the photo's file changed but its old pixels were in use (open,
+    // exporting), or were served unchecked: shown, not kept
+    let stale = reply.get("stale").and_then(|v| v.as_bool()).unwrap_or(false);
     // Native-resolution previews may come from the independent export pipe.
     // Normalize both sources to the same RGBA frame protocol.
     let reply = if reply.get("encoding").and_then(|v| v.as_str()) == Some("jpeg") {
@@ -1437,7 +1449,7 @@ pub(crate) async fn thumb(state: State<'_, AppState>, caches: State<'_, Caches>,
     out.extend_from_slice(&height.to_le_bytes());
     out.extend_from_slice(&pixels);
     // encoded and written after the reply, which need not wait for it
-    if let Some((photo, name)) = name {
+    if let Some((photo, name)) = name.filter(|_| !stale) {
         let thumbs = caches.thumbs.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Ok(jpeg) = cache::encode_jpeg(&pixels, width, height) {

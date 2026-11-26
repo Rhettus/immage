@@ -50,6 +50,11 @@ photo like any other.
 Immage stops waiting when every photo is back, when you click **Stop
 waiting**, or after three hours.
 
+If you save over a photo again in another program, Immage shows the new
+version the next time you open the photo, and its thumbnail updates when you
+refresh the folder. A photo that is open while you save it updates when you
+switch to another photo and back.
+
 ## When Edit In is grayed out
 
 | Reason shown | Why |
@@ -167,6 +172,8 @@ estimated uncompressed layers and composite fit under 2 GiB. Larger stacks use
 PSB. If PhotoCraft cannot write the layered TIFF, Immage tries PSB.
 
 Use **Save** in PhotoCraft to update the document. Immage shows the TIFF beside
-the source photos and edits its composite through an XMP sidecar. Use PhotoCraft
+the source photos and edits its composite through an XMP sidecar. Each time you
+save it again in PhotoCraft, Immage picks up the new composite the next time you
+open the TIFF, keeping your edits. Use PhotoCraft
 to edit individual layers. If you are working on a PSB, save a flattened
 16-bit TIFF copy beside the photos to continue editing the composite in Immage.

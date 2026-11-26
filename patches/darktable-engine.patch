@@ -28,6 +28,78 @@ index 277ad84d46..63106dc4dd 100644
  # have a command line utility to generate all the thumbnails
  add_subdirectory(generate-cache)
  
+diff --git a/src/common/cache.c b/src/common/cache.c
+index d6196071c0..5d5b6ba4ea 100644
+--- a/src/common/cache.c
++++ b/src/common/cache.c
+@@ -309,6 +309,54 @@ restart:
+   return FALSE;
+ }
+ 
++// as dt_cache_remove, but gives up instead of waiting while the entry is
++// locked: TRUE when the entry is gone (or was never there), FALSE when a
++// reader or writer holds it
++gboolean dt_cache_try_remove(dt_cache_t *cache,
++                             const uint32_t key)
++{
++  gpointer orig_key, value;
++  dt_pthread_mutex_lock(&cache->lock);
++  if(!g_hash_table_lookup_extended(cache->hashtable, GINT_TO_POINTER(key), &orig_key, &value))
++  {
++    dt_pthread_mutex_unlock(&cache->lock);
++    return TRUE;
++  }
++  dt_cache_entry_t *entry = (dt_cache_entry_t *)value;
++  if(dt_pthread_rwlock_trywrlock(&entry->lock))
++  {
++    dt_pthread_mutex_unlock(&cache->lock);
++    return FALSE;
++  }
++  if(entry->_lock_demoting)
++  {
++    dt_pthread_rwlock_unlock(&entry->lock);
++    dt_pthread_mutex_unlock(&cache->lock);
++    return FALSE;
++  }
++
++  g_hash_table_remove(cache->hashtable, GINT_TO_POINTER(key));
++  cache->lru = g_list_delete_link(cache->lru, entry->link);
++
++  if(cache->cleanup)
++  {
++    assert(entry->data_size);
++    ASAN_UNPOISON_MEMORY_REGION(entry->data, entry->data_size);
++
++    cache->cleanup(cache->cleanup_data, entry);
++  }
++  else
++    dt_free_align(entry->data);
++
++  dt_pthread_rwlock_unlock(&entry->lock);
++  dt_pthread_rwlock_destroy(&entry->lock);
++  cache->cost -= entry->cost;
++  g_slice_free1(sizeof(*entry), entry);
++
++  dt_pthread_mutex_unlock(&cache->lock);
++  return TRUE;
++}
++
+ // best-effort garbage collection. never blocks, never fails. well,
+ // sometimes it just doesn't free anything.
+ void dt_cache_gc(dt_cache_t *cache,
+diff --git a/src/common/cache.h b/src/common/cache.h
+index c3f308508a..e994855f1e 100644
+--- a/src/common/cache.h
++++ b/src/common/cache.h
+@@ -97,6 +97,8 @@ void dt_cache_release_with_caller(dt_cache_t *cache,
+ gboolean dt_cache_contains(dt_cache_t *cache, const uint32_t key);
+ // returns FALSE on success, TRUE if the key was not found.
+ gboolean dt_cache_remove(dt_cache_t *cache, const uint32_t key);
++// non-blocking remove: FALSE when the entry is locked and so stays
++gboolean dt_cache_try_remove(dt_cache_t *cache, const uint32_t key);
+ // removes from the tip of the lru list, until the fill ratio of the hashtable
+ // goes below the given parameter, in terms of the user defined cost measure.
+ // will never lock and never fail, but sometimes not free memory (in case all
 diff --git a/src/common/database.c b/src/common/database.c
 index 30f0812a73..9839c70e3f 100644
 --- a/src/common/database.c

@@ -979,6 +979,19 @@ static struct
 // denoise may load or use it
 static gint _dn_busy = 0;
 
+// the models' results for a photo whose file changed. only the image ids
+// go: the AI thread reads its results without the lock (_mask_cache[].p),
+// and replaces them, under it, on its next run
+void ai_forget_image(const dt_imgid_t imgid)
+{
+  eng_lock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
+  if(_seg_imgid == imgid) _seg_imgid = NO_IMGID;
+  for(size_t k = 0; k < G_N_ELEMENTS(_mask_cache); k++)
+    if(_mask_cache[k].imgid == imgid) _mask_cache[k].imgid = NO_IMGID;
+  if(_guide.imgid == imgid) _guide.imgid = NO_IMGID;
+  eng_unlock(&_ai_cache_lock, ENG_LOCK_AI_CACHE);
+}
+
 void ai_denoise_forget(void)
 {
   if(_dn.linear) dt_free_align(_dn.full);

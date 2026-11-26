@@ -270,7 +270,8 @@ typedef enum _stage_t
 //   6  ai_cache        segmentation and mask caches
 //   7  pool            the five thread-pool pointers, and the prefetch queue
 //   8  probe           quarantine table; a folder probe's finished flag; the
-//                      drive table and import slots (drives.c). each rank-8
+//                      drive table and import slots (drives.c); the file
+//                      stamps (library.c, library_refresh_changed). each rank-8
 //                      lock is taken alone, never with another of them
 //   9  cancel, fg      base and merge cancel flags; foreground busy flag
 //   10 reply           stdout line writes (taken from everywhere, leaf)
@@ -529,6 +530,7 @@ gboolean masks_attach_mask(dt_iop_module_t *m, const char *name, const gboolean 
 // library.c
 void library_prefetch(const dt_imgid_t *imgids, const guint n);
 void library_prefetch_wait(void);
+gboolean library_refresh_changed(const dt_imgid_t imgid);
 extern gchar *library_sidecar_error;
 gboolean library_write_sidecar(const dt_imgid_t imgid);
 dt_imgid_t library_import(const char *path);
@@ -599,6 +601,7 @@ void ai_run(gpointer data, gpointer user_data);
 void ai_wait(void);
 gboolean ai_select(JsonObject *req, JsonBuilder *b, char **err);
 void ai_denoise_forget(void);
+void ai_forget_image(const dt_imgid_t imgid);
 gboolean ai_denoise_preview(const float u, const float v, const int size, const char *out,
                             JsonBuilder *b, char **err);
 extern GThreadPool *ai_denoise_pool;

@@ -1574,7 +1574,12 @@ gboolean export_hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err
   {
     const dt_imgid_t id = json_array_get_int_element(ids, k);
     if(dt_is_valid_imgid(id) && !g_list_find(imgids, GINT_TO_POINTER(id)))
+    {
+      // the merge reads the frames by their own ids: a frame saved over by
+      // another program would otherwise merge from its old pixels
+      library_refresh_changed(id);
       imgids = g_list_append(imgids, GINT_TO_POINTER(id));
+    }
   }
   const gint64 t0 = g_get_monotonic_time();
   _merge_progress_t progress = _merge_progress(req, out, "merging");
@@ -1633,6 +1638,8 @@ static gboolean _pano_kept(const dt_iop_module_t *m)
 static gboolean _pano_frame(pano_t *p, const dt_imgid_t imgid, dt_image_t *first, const gboolean rendered,
                              const int max_edge, char **err)
 {
+  // read by its own id, as an HDR merge's frames are (export_hdr_merge)
+  library_refresh_changed(imgid);
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
   dt_dev_load_image(&dev, imgid);
@@ -2002,6 +2009,9 @@ typedef struct _sheet_ctx_t
 static dt_imgid_t _sheet_take(gpointer ctx, const dt_imgid_t imgid)
 {
   engine_background_yield();
+  // the snapshot is a new id, so its pixels are read afresh, but it copies
+  // the photo's EXIF (size, orientation) from the library
+  library_refresh_changed(imgid);
   return session_hold_take(((_sheet_ctx_t *)ctx)->job, imgid);
 }
 
@@ -2047,6 +2057,8 @@ void export_run(gpointer data, gpointer user_data)
   {
     // before each photo: a batch export is one request per photo
     engine_background_yield();
+    // as _sheet_take: the snapshot's EXIF comes from the photo's
+    library_refresh_changed(json_object_get_int_member_with_default(req, "imgid", 0));
     const dt_imgid_t snap = session_hold_take(job, json_object_get_int_member_with_default(req, "imgid", 0));
     if(dt_is_valid_imgid(snap) && !g_strcmp0(cmd, "print"))
       ok = print_image(snap, req, b, &err);

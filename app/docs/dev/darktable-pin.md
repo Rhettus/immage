@@ -38,6 +38,10 @@ check the result.
   passes its requested size to `dt_imageio_thumbnail`, which uses JPEG
   scaled decoding. Existing full-size thumbnail entry points retain their
   behavior.
+  `dt_cache_try_remove` (`src/common/cache.c`) removes a cache entry
+  unless it is locked, without `dt_cache_remove`'s wait, so the engine can
+  drop the pixels of a photo saved over by another program
+  (`library_refresh_changed`) without waiting on a reader of them.
   On Windows, darktable's lock check (`src/common/database.c`,
   `pid_is_alive`) counts only a running `darktable.exe` as the holder of
   `data.db.lock`; the patch also accepts `darktable-engine.exe`, so a

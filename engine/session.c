@@ -402,6 +402,10 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
   if(ids) imgid = GPOINTER_TO_INT(ids->data);
   if(g_list_find(ids, GINT_TO_POINTER(version))) imgid = version;
   g_list_free(ids);
+  // a file saved over by another program since its pixels were cached; the
+  // session was closed above, so it holds none of them. before the export
+  // snapshots below, which copy the photo's EXIF
+  library_refresh_changed(imgid);
   _hold_open(imgid);
 
   // a sidecar saved before history was compressed is compressed now, once,

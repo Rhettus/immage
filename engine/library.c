@@ -38,6 +38,177 @@
 // print runs: the task is dropped otherwise, with the list, since the page
 // sends a new one on its next step. dropping never blocks a shutdown, as
 // waiting on an export would in library_prefetch_wait
+// a photo's file as the engine last saw it. darktable keys its image and
+// mipmap caches by image id and never looks at the file again, so a photo
+// saved over by another program opened and thumbnailed from the old pixels
+// until a restart
+typedef struct _stamp_t
+{
+  gint64 size, mtime_ns;
+  guint64 inode;
+  // the cached pixels may be older than the file, from when an eviction
+  // starts until one succeeds: every check tries again meanwhile
+  gboolean stale;
+  // the file changed: its EXIF is read again once the old pixels are gone
+  gboolean exif_due;
+  // eviction attempts, so a late success cannot clear a newer one's failure
+  guint gen;
+} _stamp_t;
+static GMutex _stamp_lock;      // rank 8 (probe), taken alone
+static GHashTable *_stamps = NULL;
+
+// drop one level of a photo's pixels unless a reader holds it: TRUE when
+// it is gone. dt_mipmap_cache_remove() covers only the 8-bit levels, and
+// skips one in use without saying so. the key is mipmap_cache.c's
+// _get_key(). never waits: a reader (the open photo, an export) keeps it,
+// and the next check tries again. the disk backend is off (main.c), so an
+// 8-bit level needs no file removed
+static gboolean _evict(const dt_imgid_t imgid, const dt_mipmap_size_t mip)
+{
+  dt_mipmap_cache_t *c = darktable.mipmap_cache;
+  dt_cache_t *cache = mip == DT_MIPMAP_FULL ? &c->mip_full.cache
+                      : mip == DT_MIPMAP_F  ? &c->mip_f.cache
+                                            : &c->mip_thumbs.cache;
+  return dt_cache_try_remove(cache, ((uint32_t)mip << 28) | ((imgid - 1) & 0xfffffff));
+}
+
+static gboolean _float_cached(const dt_imgid_t imgid)
+{
+  dt_mipmap_cache_t *c = darktable.mipmap_cache;
+  const uint32_t id = (imgid - 1) & 0xfffffff;
+  return dt_cache_contains(&c->mip_full.cache, ((uint32_t)DT_MIPMAP_FULL << 28) | id)
+         || dt_cache_contains(&c->mip_f.cache, ((uint32_t)DT_MIPMAP_F << 28) | id);
+}
+
+// the file's stamp now; FALSE when it cannot be looked at
+static gboolean _stamp_now(const char *path, _stamp_t *now)
+{
+  GStatBuf st;
+  if(!*path || g_stat(path, &st)) return FALSE;
+  *now = (_stamp_t){ .size = st.st_size, .mtime_ns = (gint64)st.st_mtime * G_GINT64_CONSTANT(1000000000) };
+  // an editor that saves by replacing the file gives it a new inode, which
+  // tells a save within the same mtime tick apart; Windows has neither
+  // (seconds only there)
+#if defined(__APPLE__)
+  now->mtime_ns += st.st_mtimespec.tv_nsec;
+#elif !defined(_WIN32)
+  now->mtime_ns += st.st_mtim.tv_nsec;
+#endif
+#ifndef _WIN32
+  now->inode = st.st_ino;
+#endif
+  return TRUE;
+}
+
+// the file as an import of it found it: its EXIF was read then, so a later
+// change is told apart from the first sight
+static void _stamp_record(const dt_imgid_t imgid, const _stamp_t *at)
+{
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!_stamps) _stamps = g_hash_table_new_full(NULL, NULL, NULL, g_free);
+  if(!g_hash_table_contains(_stamps, GINT_TO_POINTER(imgid)))
+  {
+    _stamp_t *seen = g_new(_stamp_t, 1);
+    *seen = *at;
+    g_hash_table_insert(_stamps, GINT_TO_POINTER(imgid), seen);
+  }
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+}
+
+// never checked, or its pixels may be old: a thumbnail in memory is not
+// served without a look at the file
+static gboolean _stamp_unsure(const dt_imgid_t imgid)
+{
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  const _stamp_t *seen = _stamps ? g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid)) : NULL;
+  const gboolean unsure = !seen || seen->stale;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  return unsure;
+}
+
+// called where the file is about to be read anyway, never where its drive
+// may not answer. FALSE while the cached pixels may still be the old ones
+gboolean library_refresh_changed(const dt_imgid_t imgid)
+{
+  if(!dt_is_valid_imgid(imgid) || !darktable.mipmap_cache) return TRUE;
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+  _stamp_t now;
+  if(!_stamp_now(path, &now)) return TRUE;
+
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!_stamps) _stamps = g_hash_table_new_full(NULL, NULL, NULL, g_free);
+  _stamp_t *seen = g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid));
+  // nothing recorded: pixels may be cached by a path that does not check
+  // (an import records the stamp it read the EXIF at), so they are dropped
+  const gboolean known = seen != NULL;
+  const gboolean same_time = known && seen->size == now.size && seen->mtime_ns == now.mtime_ns;
+  const gboolean changed = known && (!same_time || seen->inode != now.inode);
+  if(!seen) g_hash_table_insert(_stamps, GINT_TO_POINTER(imgid), seen = g_new0(_stamp_t, 1));
+  seen->size = now.size;
+  seen->mtime_ns = now.mtime_ns;
+  seen->inode = now.inode;
+  if(changed) seen->exif_due = TRUE;
+  const gboolean evict = !known || changed || seen->stale;
+  // stale from here, so a check that runs meanwhile does not take the old
+  // pixels for current ones
+  if(evict) seen->stale = TRUE;
+  const guint gen = evict ? ++seen->gen : 0;
+  const gboolean exif = seen->exif_due;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!evict) return TRUE;
+
+  // an inode alone can change on some network shares (CIFS, FUSE) without a save
+  if(changed)
+    fprintf(stderr, "[engine] %s changed on disk%s, reloading it\n", path, same_time ? " (its inode only)" : "");
+  // while the full pixels are in use, the thumbnail levels stay: rebuilt
+  // now, they would come from the old ones
+  const gboolean floats = _evict(imgid, DT_MIPMAP_FULL) && _evict(imgid, DT_MIPMAP_F);
+  gboolean gone = floats;
+  if(floats)
+  {
+    if(exif)
+    {
+      // as darktable's refresh EXIF (control_jobs.c, _control_refresh_exif_run),
+      // keeping the photo's own metadata; the sidecar is the engine's to write.
+      // the sizes the pipe found are for the old file: 0 has them found
+      // again. the entry's lock is held across the read, as upstream does
+      dt_image_t *img = dt_image_cache_get(imgid, 'w');
+      if(img)
+      {
+        img->job_flags |= DT_IMAGE_JOB_NO_METADATA;
+        dt_exif_read(img, path);
+        img->final_width = img->final_height = img->p_width = img->p_height = 0;
+        dt_image_cache_write_release_info(img, DT_IMAGE_CACHE_RELAXED, "library_refresh_changed");
+      }
+      // a decode started before the EXIF went in (another check, a
+      // prefetch) writes back the image fields it copied (mipmap_cache.c),
+      // the old ones: the next check does it all again
+      if(_float_cached(imgid)) gone = FALSE;
+    }
+    // after the EXIF, so a thumbnail built meanwhile is dropped too
+    for(dt_mipmap_size_t k = DT_MIPMAP_0; k <= DT_MIPMAP_LDR_MAX; k++)
+      if(!_evict(imgid, k)) gone = FALSE;
+#ifdef HAVE_AI
+    ai_forget_image(imgid);
+#endif
+  }
+  else if(changed)
+    fprintf(stderr, "[engine] %s: its old pixels are in use (open or exporting), kept until they are free\n", path);
+
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  seen = g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid));
+  if(seen && gone && seen->gen == gen)
+  {
+    seen->stale = FALSE;
+    seen->exif_due = FALSE;
+  }
+  const gboolean current = !seen || !seen->stale;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  return current;
+}
+
 #define _PREFETCH_THREADS 3
 static GThreadPool *_prefetch_pool = NULL;
 
@@ -63,6 +234,7 @@ static void _prefetch_run(gpointer data, gpointer user_data)
   const dt_imgid_t imgid = g_array_index(_prefetch_queue, dt_imgid_t, 0);
   g_array_remove_index(_prefetch_queue, 0);
   eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
+  library_refresh_changed(imgid);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   dt_mipmap_cache_release(&buf);
@@ -291,6 +463,13 @@ dt_imgid_t library_import(const char *path)
   // darktable finds a file's image by its name alone (image.c,
   // dt_image_get_id()), which can be a snapshot once the version before it
   // has been removed
+  // a first import reads the file's EXIF: its stamp, taken before (a save
+  // during the import then counts as a change), is what that EXIF is of
+  gchar *base = g_path_get_basename(path);
+  _stamp_t read_at;
+  const gboolean fresh = dt_is_valid_filmid(filmid) && !dt_is_valid_imgid(dt_image_get_id(filmid, base))
+                         && _stamp_now(path, &read_at);
+  g_free(base);
   const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
   if(dt_is_valid_imgid(imgid))
   {
@@ -298,6 +477,7 @@ dt_imgid_t library_import(const char *path)
     for(GList *l = versions; l; l = l->next)
     {
       const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+      if(fresh) _stamp_record(id, &read_at);
       char sidecar[PATH_MAX] = { 0 };
       gboolean from_cache = FALSE;
       dt_image_full_path(id, sidecar, sizeof(sidecar), &from_cache);
@@ -1897,18 +2077,35 @@ static gboolean _thumb_in_memory(const dt_imgid_t imgid, const int size)
 // probe, which may hold the drive. a stuck decode cannot be abandoned, so
 // a stuck drive's photos are not started at all. the system disk is never
 // probed here, so it works as before
-static char *_thumb_unanswered(const dt_imgid_t imgid, const int size, const gboolean plain, JsonBuilder *b)
+//
+// `answered`: the file may be read now, the system disk's or one that
+// answered the probe, so whether it changed can be checked. a thumbnail in
+// memory is served without the probe, unless `recheck`: the app's own
+// thumbnail of the photo missed because its file or sidecar changed
+static char *_thumb_unanswered(const dt_imgid_t imgid, const int size, const gboolean plain,
+                               const gboolean recheck, JsonBuilder *b, gboolean *answered)
 {
+  *answered = FALSE;
   if(!dt_is_valid_imgid(imgid)) return NULL;
   char path[PATH_MAX] = { 0 };
   gboolean from_cache = FALSE;
   dt_image_full_path(imgid, path, sizeof(path), &from_cache);
   drives_t *drive = *path ? drives_of(path) : NULL;
-  if(!drive) return NULL;
+  if(!drive)
+  {
+    *answered = *path != '\0';
+    return NULL;
+  }
   if(!drives_held(drive))
   {
-    if(plain && _thumb_in_memory(imgid, size)) return NULL;
-    if(_file_answers(path, _PROBE_TIMEOUT_US)) return NULL;
+    const gboolean in_memory = plain && _thumb_in_memory(imgid, size);
+    if(in_memory && !recheck && !_stamp_unsure(imgid)) return NULL;
+    if(_file_answers(path, _PROBE_TIMEOUT_US))
+    {
+      *answered = TRUE;
+      return NULL;
+    }
+    if(in_memory) return NULL;
   }
   if(drives_held(drive))
   {
@@ -1953,6 +2150,7 @@ void library_thumb_run(gpointer data, gpointer user_data)
   const gboolean metadata = !g_strcmp0(cmd, "meta");
   const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
   gboolean ok = FALSE;
+  gboolean answered = FALSE;
   if(metadata)
   {
     if(dt_is_valid_imgid(imgid) && dt_image_exists(imgid))
@@ -1966,15 +2164,28 @@ void library_thumb_run(gpointer data, gpointer user_data)
   else if(dest && (err = _thumb_unanswered(imgid, analysis ? 0 : json_object_get_int_member_with_default(req, "size", 256),
                                            !analysis && !json_object_get_boolean_member_with_default(req, "proof", FALSE)
                                            && !json_object_get_boolean_member_with_default(req, "prefer_source", FALSE)
-                                           && !json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), b)))
+                                           && !json_object_get_boolean_member_with_default(req, "camera_preview", FALSE),
+                                           json_object_get_boolean_member_with_default(req, "recheck", FALSE), b, &answered)))
     ok = FALSE;
-  else if(dest && analysis)
-    ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
   else if(dest)
-    ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
-                       json_object_get_boolean_member_with_default(req, "proof", FALSE),
-                       json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
-                       json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, &err);
+  {
+    // the old pixels still in use (the photo open or exporting): the app
+    // shows this thumbnail but does not keep it,
+    // or served from memory unchecked, after a recheck its drive did not answer
+    if(answered ? !library_refresh_changed(imgid)
+                : json_object_get_boolean_member_with_default(req, "recheck", FALSE))
+    {
+      json_builder_set_member_name(b, "stale");
+      json_builder_add_boolean_value(b, TRUE);
+    }
+    if(analysis)
+      ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
+    else
+      ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
+                         json_object_get_boolean_member_with_default(req, "proof", FALSE),
+                         json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
+                         json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, &err);
+  }
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)
