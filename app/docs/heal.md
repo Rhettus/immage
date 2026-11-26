@@ -59,7 +59,8 @@ new ones.
   flat neutral tone, set by **Brightness**, not a transparent hole.
 - **Color**: the swatch shows the stored color. Click the eyedropper, then
   the photo, to take the color from there. Without a pick, a new spot
-  takes the average color of the photo where you made it.
+  takes the average color of the photo where you made it. Both sample
+  from the visible area of a cropped photo.
 - **Brightness**: -100 to 100, added to the color.
 
 ### Blur
@@ -79,8 +80,9 @@ heal or clone spots. They apply to every fill and blur spot on the photo.
 - **Limit to color**: restricts the spots to a range of color inside them.
   **Off** applies everywhere; **Range** takes a hue, a hue width, a minimum
   chroma and a smoothness, like a mask's color range, and the eyedropper sets
-  them from the photo; **Custom** limits with darktable's parametric channels,
-  as a mask's parametric component does (without its pickers).
+  them from the visible photo, including after cropping. **Custom** limits
+  with darktable's parametric channels, as a mask's parametric component
+  does (without its pickers).
 
 To even out skin redness: choose Fill, drag a circle over the blotch with
 **Color** and a skin color picked beside it, leave **Affects** on **Color

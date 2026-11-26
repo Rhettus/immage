@@ -30,7 +30,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   files, save or delete your own module presets, including within masks, and
   change the order a photo's modules run in.
   Copied AI masks are recalculated for each destination photo.
-- Heal, clone, fill and blur, [simulate film stocks and papers](app/docs/film-simulation.md)
+- [Heal, clone, fill and blur](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
   and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Headless Upright regression; optionally retain synthetic corpus photos."""
+"""Headless Upright and Heal Fill sampling checks with synthetic photos."""
 import argparse
 import json
 import math
@@ -85,6 +85,23 @@ def main():
                 for name, width, height, orientation in cases:
                     opened = request({'cmd': 'open', 'path': str(work / (name + '.tif'))})
                     assert (opened['height'] > opened['width']) == name.startswith('portrait'), opened
+                    for cropped in [False, True]:
+                        request({'cmd': 'set', 'op': 'crop', 'enabled': cropped,
+                                 'params': {'cx': .1, 'cy': .15, 'cw': .9, 'ch': .85}})
+                        request({'cmd': 'render', 'width': 400, 'height': 300,
+                                 'rgba': str(work / 'frame.rgba')})
+                        for stage in ['retouch', 'retouch_in']:
+                            result = request({'cmd': 'sample', 'stage': stage, 'x': .25, 'y': .5})
+                            assert math.isfinite(result['hue']), result
+                        result = request({'cmd': 'sample', 'stage': 'retouch',
+                                          'box': [.2, .45, .3, .55]})
+                        assert all(math.isfinite(v) for v in result['picker']['mean']), result
+                        color = result['picker']['mean']
+                        request({'cmd': 'spots', 'spots': [{'type': 'circle', 'mode': 'fill',
+                                 'x': .25, 'y': .5, 'r': .05, 'fill_mode': 1, 'fill_color': color}]})
+                        for stage in ['retouch', 'retouch_in']:
+                            request({'cmd': 'sample', 'stage': stage, 'x': .25, 'y': .5})
+                        request({'cmd': 'spots', 'spots': []})
                     # Render first to populate caches at a different scale. Then
                     # repeat after geometry edits, as the Transform panel does.
                     for cropped in [False, True, False]:
@@ -104,7 +121,7 @@ def main():
                                      'params': {key: result[key] for key in
                                                 ['rotation', 'lensshift_v', 'lensshift_h']}})
                             count += 1
-                    print(f'{name}: full frame, crop and restored frame passed', flush=True)
+                    print(f'{name}: Fill sampling and Upright passed', flush=True)
                 request({'cmd': 'quit'})
                 child.wait(timeout=15)
                 assert child.returncode == 0

@@ -2552,16 +2552,18 @@ static gboolean _working_at_module(_working_t *w, const _stage_t stage, dt_iop_m
   dt_iop_module_t *reader = NULL;
   _stage_piece(stage, anchor, placement, ashift, negadoctor, &reader);
   dt_iop_module_t *last = _s.dev.history_last_module;
+  // Upright and both retouch pickers map coordinates into the producer's
+  // region, which can start away from the origin after a crop.
+  const gboolean allow_offset = stage == _STAGE_ASHIFT || stage == _STAGE_RETOUCH || stage == _STAGE_RETOUCH_IN;
   // a render served from the cache leaves pieces made since (a new
   // instance remakes them all) with no region and their output uncached,
   // and the others with the region of the last render that ran them, such
   // as a zoomed mask_map's: the second pass makes them run
   for(int pass = 0; pass < 2 && !data; pass++)
   {
-    // upright reads before geometry: crop, orientation and perspective can
-    // request an offset input region. force its producer to run so that a
-    // previous render's region cannot be mistaken for this sample's
-    if(pass || stage == _STAGE_ASHIFT)
+    // force the producer to run when accepting offsets, so a previous
+    // zoomed render's region cannot be mistaken for this sample's
+    if(pass || allow_offset)
     {
       if(!piece) piece = _stage_piece(stage, anchor, placement, ashift, negadoctor, NULL);
       if(piece) dt_dev_pixelpipe_cache_invalidate_later(&_s.ppipe, piece->module->iop_order, "working ");
@@ -2586,11 +2588,10 @@ static gboolean _working_at_module(_working_t *w, const _stage_t stage, dt_iop_m
     // only the whole image at this render's scale: another region's output
     // can still be in the cache, and points outside it are clamped to its
     // edges (the range map's stripes)
-    // upright_detect uses the region's origin when locating its lines;
-    // mask sampling still needs an image starting at the origin
+    // mask maps still need an image starting at the origin
     // white balance reads the sensor's data, which is scaled only after demosaic
     const gboolean whole = stage == _STAGE_TEMPERATURE ? roi.x == 0 && roi.y == 0
-      : (stage == _STAGE_ASHIFT || (roi.x == 0 && roi.y == 0)) && fabs(roi.scale - scale) < 1e-6 * scale;
+      : (allow_offset || (roi.x == 0 && roi.y == 0)) && fabs(roi.scale - scale) < 1e-6 * scale;
     const size_t size = (size_t)roi.width * roi.height
       * (stage == _STAGE_TEMPERATURE ? piece->dsc_out.channels : 4) * sizeof(float);
     const dt_hash_t hash = dt_dev_pixelpipe_cache_hash(&roi, &_s.ppipe, piece->module->position);

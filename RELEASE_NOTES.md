@@ -92,6 +92,7 @@ Performance
 
 Bug fixes
 
+- Heal Fill can sample colors and pick a color range on cropped photos.
 - Export's size fields (long edge, width and height) and the Frame editor's
   numbers can be typed into again: typing 5128 no longer snaps to 16 at the
   first digit. Out-of-range values are corrected when you leave the field.

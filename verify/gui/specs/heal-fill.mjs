@@ -6,7 +6,7 @@
 // takes both away. Selectors and labels come from fields.heal.* in en.json;
 // the case runs in English, which the isolated profile defaults to.
 import assert from 'node:assert/strict';
-import { click, inspect, openTool } from '../support/controls.mjs';
+import { click, inspect, openTool, reveal } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import * as read from '../support/observations.mjs';
@@ -43,6 +43,12 @@ async function mode(t, label) {
 }
 
 export async function healFill(t) {
+  const uncropped = (await settledPhoto(t)).hash;
+  await click(t, 'button[data-tour="crop"]');
+  const corner = await reveal(t, '.crop-handle.nw');
+  await t.driver.drag(corner, { x: corner.x + 80, y: corner.y + 60 });
+  await textButton(t, '.crop-buttons', 'Done');
+  await changed(t, uncropped, 'the offset crop changes the frame');
   await openTool(t, 'heal');
   if (await t.driver.observe(spotCount)) { await click(t, CLEAR); await until(async () => !await t.driver.observe(spotCount), 'spots cleared'); }
   const start = (await settledPhoto(t)).hash;
@@ -85,8 +91,7 @@ export async function healFill(t) {
   const blurred = await changed(t, unranged, 'the blur spot changes the frame');
   await t.evidence('heal-blur-spot');
 
-  // Before (backslash) takes both spots away, and back; Before is the photo
-  // with no edits at all, which matches `start` only on an unedited fixture
+  // Before (backslash) takes both spots and the crop away, and back.
   await t.driver.keys('\\');
   await changed(t, blurred, 'Before shows the photo without the spots');
   await t.driver.keys('\\');
