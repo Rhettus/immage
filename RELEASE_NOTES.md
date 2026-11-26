@@ -7,25 +7,11 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- **Auto white balance on paste:** Choose **Auto on Paste** under White
-  Balance in Copy Settings to calculate temperature and tint for each destination.
-- **See which graphics card edits use:** Preferences → Performance now opens
-  with a **GPU** section. **Edit on the GPU** comes first and names the
-  graphics card photo processing runs on, or says the CPU is used because none
-  was found. The former GPU row is now **AI upscaling**, which makes clear that it
-  only covers AI upscaling at export (on Linux, AI always runs on the CPU).
-  The rest of the editing speed settings are now under **Previews**.
-- **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
-  in the Library grid ask before resetting edits. Check **Don’t show this
-  confirmation again** when confirming to skip both prompts in the future.
 - **Better results on JPEGs and other non-RAW photos:** They no longer get a
   RAW tone mapper applied, so they open looking as shot. Immage also warns
   before a second tone mapper is turned on. JPEGs you edited in earlier
   versions keep their look; to get the new rendering, reset them (**Reset
   Photo** in Grid view, or **Start Over** in History) and edit them again.
-- **Color zones curves:** Color zones in Advanced mode now has its hue,
-  chroma and lightness curves, so you can shift, saturate or brighten chosen
-  colors, on the whole photo or under a mask.
 - **Fill and Blur in Heal:** Heal now also has **Fill** and **Blur** spots, so
   you can even out skin tones and other color blotches on part of a photo. Fill
   paints a spot with a color (picked from the photo) or a flat tone, changing
@@ -36,39 +22,23 @@ Improvements
   eyedropper to sample an average, then adjust the replacement Hue and
   Saturation. The eye beside Strength compares the Fill and Blur effect on
   and off.
-- **Edit several Heal spots together:** Use **Select spots** to change
-  brush settings or delete multiple spots in one Undo step.
-- **Range mask previews:** Hover over Color Range, Luminance Range,
-  Parametric or Depth Range controls in Masks to see the selection. Press
-  **O** to show or hide the overlay in Masks or Heal.
-- **Module order in Advanced mode:** A new **Module order** button lets you
-  drag modules to change the order they run in for a photo.
 - **Find searches the whole library:** Under **All folders**, Find's filter
   lists show every camera, lens, keyword, file type, month and exposure setting
   in your library, with photo counts. With a morfPhoto library, filters answer
   almost instantly even across very large libraries.
-- **Zoom out past Fit:** Zoom out to half the size of Fit with the wheel, pinch,
-  **⌘-** or the zoom slider. The Navigator has a new **1:2** button.
-- **Expandable RAW+JPEG stacks:** Stacked pairs show as a layered thumbnail.
-  Click the format badge to spread the pair out and pick or edit either file on
-  its own.
 - **Move, copy and export into dated folders:** **Move to Folder…** and **Copy
   to Folder…** are in the Photo and right-click menus. Moves, copies and
   exports can sort photos into folders named from their metadata, such as
   year/month/day, in one step.
-- **PhotoCraft and Helicon Focus in Edit In:** Send photos to PhotoCraft as
-  full-quality layers, or to Helicon Focus (Windows and macOS) for focus
-  stacking. The results come back into Immage to keep editing.
+- **Module order in Advanced mode:** A new **Module order** button lets you
+  drag modules to change the order they run in for a photo.
 - **Smoother panoramas:** Panorama Merge evens out exposure, color and
   vignetting between photos, so skies no longer show bands where they overlap.
-- **More in Grid view:** Right-click to **Reset Photo** on edited photos, or
-  **Show in Library** to jump to a photo's folder from search results or the
-  filmstrip. **Copy…**, **Paste** and **Previous** now stay at the bottom of
-  the panel.
-- **Drag past the photo's edge:** Mask shapes, Heal spots and guide lines can
-  be dragged past the edge of the photo and snap back to it on release.
-- **Search in Keyboard Shortcuts:** Type to filter the shortcuts list.
-- **Export themes:** Preferences > General > Theme can export any theme.
+- **Expandable RAW+JPEG stacks:** Stacked pairs show as a layered thumbnail.
+  Click the format badge to spread the pair out and pick or edit either file on
+  its own.
+- **Auto white balance on paste:** Choose **Auto on Paste** under White
+  Balance in Copy Settings to calculate temperature and tint for each destination.
 - **Your morfPhoto library, on this computer:** With Immage Accelerator on,
   Immage keeps a local copy of the server's catalog and keeps it up to date in
   the background. Folders open at once, stay browsable when the server or share
@@ -78,6 +48,36 @@ Improvements
   morfPhoto or Immich are not analyzed again on this computer, and Smart search
   asks the server for them. Preferences > Performance shows which source each
   folder uses.
+- **Range mask previews:** Hover over Color Range, Luminance Range,
+  Parametric or Depth Range controls in Masks to see the selection. Press
+  **O** to show or hide the overlay in Masks or Heal.
+- **Color zones curves:** Color zones in Advanced mode now has its hue,
+  chroma and lightness curves, so you can shift, saturate or brighten chosen
+  colors, on the whole photo or under a mask.
+- **Edit several Heal spots together:** Use **Select spots** to change
+  brush settings or delete multiple spots in one Undo step.
+- **Zoom out past Fit:** Zoom out to half the size of Fit with the wheel, pinch,
+  **⌘-** or the zoom slider. The Navigator has a new **1:2** button.
+- **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
+  in the Library grid ask before resetting edits. Check **Don’t show this
+  confirmation again** when confirming to skip both prompts in the future.
+- **More in Grid view:** Right-click to **Reset Photo** on edited photos, or
+  **Show in Library** to jump to a photo's folder from search results or the
+  filmstrip. **Copy…**, **Paste** and **Previous** now stay at the bottom of
+  the panel.
+- **See which graphics card edits use:** Preferences → Performance now opens
+  with a **GPU** section. **Edit on the GPU** comes first and names the
+  graphics card photo processing runs on, or says the CPU is used because none
+  was found. The former GPU row is now **AI upscaling**, which makes clear that it
+  only covers AI upscaling at export (on Linux, AI always runs on the CPU).
+  The rest of the editing speed settings are now under **Previews**.
+- **PhotoCraft and Helicon Focus in Edit In:** Send photos to PhotoCraft as
+  full-quality layers, or to Helicon Focus (Windows and macOS) for focus
+  stacking. The results come back into Immage to keep editing.
+- **Drag past the photo's edge:** Mask shapes, Heal spots and guide lines can
+  be dragged past the edge of the photo and snap back to it on release.
+- **Search in Keyboard Shortcuts:** Type to filter the shortcuts list.
+- **Export themes:** Preferences > General > Theme can export any theme.
 
 Performance
 
