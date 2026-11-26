@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, inspect } from '../support/controls.mjs';
-import { choose, panel, expandSections, textButton } from '../support/scenario.mjs';
+import { Blocked, choose, panel, expandSections, textButton } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { startup, settledPhoto } from './smoke.mjs';
 
@@ -14,6 +14,7 @@ const selected = t => t.driver.observe(s => document.querySelector(s)?.selectedO
 const closed = t => until(() => t.driver.observe(s => !document.querySelector(s), dialog), 'AgX loader closed');
 
 export async function agxPresets(t) {
+  if (!t.fixture.raw) throw new Blocked('AgX preset controls require a RAW fixture');
   const root = await panel(t, 'basic');
   await expandSections(t, root);
   await click(t, menu);

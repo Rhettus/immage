@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click,reveal,inspect, openTool } from '../support/controls.mjs';
-import { textButton,choose,panel,Blocked } from '../support/scenario.mjs';
+import { resetAll, textButton,choose,panel,Blocked } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
@@ -83,23 +83,23 @@ export async function exportOptions(t) {
 export async function filters(t) {
   await click(t,'.find-button');
   await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
-  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row .fr-title')].map(e=>e.textContent));
+  const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row')].map(e=>({
+    id:e.id,name:e.querySelector('.fr-title').textContent,
+  })));
   assert(categories.length>0);
-  for(const name of categories){
-    // observe() sends only each callback's source, so every callback finds its row itself
-    if(!await t.driver.observe(name=>[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name)?.getAttribute('aria-expanded')==='true',name)){
-      const point=await until(()=>t.driver.observe(name=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent===name);if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};},name),'filter row');
-      await t.driver.point(point.x,point.y);
-    }
+  for(const [index,{id,name}] of categories.entries()){
+    const row=`.find-pop .fr-row[id=${JSON.stringify(id)}]`;
+    if(!await t.driver.observe(s=>document.querySelector(s)?.getAttribute('aria-expanded')==='true',row))
+      await click(t,row);
     const open=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row[aria-expanded="true"] .fr-title')].map(e=>e.textContent));assert.deepEqual(open,[name]);
     assert(await t.driver.observe(()=>!!document.querySelector('.find-pop .fr-editor')),'the editor is under its row');
-    await t.evidence(`filter-${categories.indexOf(name)}`);
+    await t.evidence(`filter-${index}`);
   }
   await t.driver.keys('\uE00C');
 }
 export async function presets(t) {
   // the baseline is the photo's defaults: Reset All clears the New Photos preset by design
-  await openTool(t,'adjust');await click(t,'button[aria-label="reset all"]');await pause(300);
+  await openTool(t,'adjust');await resetAll(t);await pause(300);
   const baseline=await settledPhoto(t);await openTool(t,'presets');
   const tiles=await t.driver.observe(()=>[...document.querySelectorAll('.tile')].map(e=>e.title));
   if(!tiles.length)throw new Blocked('No expanded preset tiles; requires a preset fixture/group');
@@ -108,6 +108,6 @@ export async function presets(t) {
     const selector=`.tile[title=${JSON.stringify(name)}]`;const p=await reveal(t,selector);await t.driver.point(p.x,p.y);
     last=await settledPhoto(t);await t.evidence(`preset-${tiles.indexOf(name)}`);
   }
-  await openTool(t,'adjust');await click(t,'button[aria-label="reset all"]');await settledReset(t,baseline,last,'reset-all');await t.evidence('reset-all');
+  await openTool(t,'adjust');await resetAll(t);await settledReset(t,baseline,last,'reset-all');await t.evidence('reset-all');
 }
 export async function shortcuts(t){await click(t,'button[title^="keyboard shortcuts"]');await reveal(t,'.shortcuts');await t.evidence('shortcuts');await textButton(t,'.shortcuts .modal-foot','Done');}

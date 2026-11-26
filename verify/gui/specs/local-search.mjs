@@ -52,7 +52,8 @@ export async function localSearch(t) {
     if (!e) return null;
     const id = Number(e.dataset.imgid);
     const canvas = e.querySelector('.thumb-image canvas');
-    return { id, canvas: canvas && { width: canvas.width, height: canvas.height }, stars: e.querySelectorAll('.thumb-stars button').length };
+    return { id, canvas: canvas && { width: canvas.width, height: canvas.height },
+      stars: e.querySelectorAll('.thumb-stars button').length, rating: e.querySelectorAll('.thumb-stars button.on').length };
   }, cell).then(x => x && x.id > 0 && x.canvas?.width > 0 && x.canvas?.height > 0 ? x : null),
   `indexed local result and cached thumbnail for ${filename}`, 60000);
   assert.equal(found.stars, 5, 'the local result exposes editable rating controls');
@@ -69,7 +70,7 @@ export async function localSearch(t) {
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, cell);
   await t.driver.move(hover.x, hover.y);
-  await click(t, `${cell} .thumb-stars button:nth-child(3)`);
+  if (found.rating !== 3) await click(t, `${cell} .thumb-stars button:nth-child(3)`);
   await until(() => t.driver.observe(s => document.querySelector(`${s} .thumb-stars button:nth-child(3)`)?.classList.contains('on'), cell),
     'the copied result is rated three stars');
   await click(t, '.toolbar .filter button[title="3 stars and up"]');
@@ -104,4 +105,20 @@ export async function localSearch(t) {
   }, cell, searchBox, searchIn), 'folder navigation clears the filename query and preserves the rating filter');
   await t.evidence('local-search-folder');
   t.measure({ name: 'local-search', filename, result: found, filtered, returnedToFolder: true });
+
+  // Leave the fixture folder ready for subsequent Find cases.
+  const clear = '.toolbar .filter button[title="clear filters"]';
+  await click(t, clear);
+  await until(() => t.driver.observe(s => !document.querySelector(s), clear), 'rating filter cleared');
+  if (found.rating !== 3) {
+    const thumb = await t.driver.observe(s => {
+      const r = document.querySelector(s)?.getBoundingClientRect();
+      return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, cell);
+    assert(thumb, 'the copied result remains visible after clearing the filter');
+    await t.driver.move(thumb.x, thumb.y);
+    await click(t, `${cell} .thumb-stars button:nth-child(${found.rating || 3})`);
+    await until(() => t.driver.observe((s, rating) => document.querySelectorAll(`${s} .thumb-stars button.on`).length === rating,
+      cell, found.rating), 'original rating restored');
+  }
 }

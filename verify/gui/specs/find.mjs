@@ -76,14 +76,9 @@ const near = (a, b, label, tolerance = 1.5) => {
 async function category(t, name) {
   if (await t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
     .find(c => c.querySelector('.fr-title')?.textContent === n)?.getAttribute('aria-expanded') === 'true', name)) return;
-  const point = await until(() => t.driver.observe(n => {
-    const e = [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === n);
-    if (!e) return null;
-    e.scrollIntoView({ block: 'nearest' });
-    const r = e.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }, name), `${name} row`);
-  await t.driver.point(point.x, point.y);
+  const id = await until(() => t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
+    .find(c => c.querySelector('.fr-title')?.textContent === n)?.id, name), `${name} row`);
+  await click(t, `.find-pop .fr-row[id=${JSON.stringify(id)}]`);
   await until(() => t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
     .find(c => c.querySelector('.fr-title')?.textContent === n)?.getAttribute('aria-expanded') === 'true', name), `${name} editor`);
 }

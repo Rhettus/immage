@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 const inventory=JSON.parse(readFileSync(new URL('../inventory.json',import.meta.url),'utf8'));
 import {locateControl,restoreAdvanced} from './ranges.mjs';
 import { click,reveal,inspect,tabTo, openTool } from '../support/controls.mjs';
-import { choose,textButton,Blocked,panel,expandSections,openMaskGroup } from '../support/scenario.mjs';
+import { choose,textButton,Blocked,panel,expandSections,openMaskGroup,resetAll } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 import { readSetting, waitSetting } from '../support/settings.mjs';
@@ -43,6 +43,7 @@ async function satcurveOutput(t,scope){
 }
 export async function moduleOutput(t,definition){
  const {scope,choice,option}=definition;
+ if(definition.fixture==='RAW'&&!t.fixture.raw)throw new Blocked(`${option.name} requires a RAW fixture`);
  await chooseModule(t,scope,choice.label,option.value);
  if(scope==='global')await openTool(t,'adjust');
  if(scope==='masks'){
@@ -117,6 +118,7 @@ const choices=t=>t.driver.observe(()=>JSON.parse(document.querySelector('.window
 const menuOptions=t=>t.driver.observe(()=>[...document.querySelectorAll('.module-menu [data-module-option]')]
   .map(e=>({value:+e.dataset.moduleOption,checked:e.getAttribute('aria-checked')==='true',text:e.textContent})));
 export async function moduleSwitch(t){
+ await openTool(t,'adjust');await resetAll(t);await settledPhoto(t);
  const basic=await panel(t,'basic');await expandSections(t,basic);
  const icon=id=>`[data-module-switch=${JSON.stringify(id)}]`;
  // every tool with several modules has one icon, dim until pointed at; a tool with one module has none
@@ -143,13 +145,14 @@ export async function moduleSwitch(t){
  await until(()=>t.driver.observe(()=>!document.querySelector('.module-menu')),'menu closed by Escape');
  assert.equal((await choices(t)).mod_contrast,before.mod_contrast,'Escape changes nothing');
  // picking another module changes the photo's choice and the rendered photo
- const other=listed.find(o=>!o.checked).value,photo=await settledPhoto(t);
+ const equalizer=2;
+ const other=listed.find(o=>!o.checked&&o.value!==equalizer)?.value ?? equalizer;
+ const photo=await settledPhoto(t);
  await click(t,icon('contrast'));
  await click(t,`.module-menu [data-module-option="${other}"]`);
  await until(async()=>(await choices(t)).mod_contrast===other,'module picked');
  await t.evidence('module-switch-picked');
- // a module sharing the tool's sliders takes the edits along, so no other module is flagged
- assert(await t.driver.observe(i=>!document.querySelector(`[data-module-switch="${i}"]`)?.classList.contains('others'),'contrast'),'the Contrast icon shows no dot after a switch between modules sharing its slider');
+ assert(await t.driver.observe(i=>!document.querySelector(`[data-module-switch="${i}"]`)?.classList.contains('others'),'contrast'),'the Contrast icon shows no dot when neither module has edits');
  // the switch stays reachable when the new module hides the slider: it moves to the equalizer's or curve's heading
  await reveal(t,icon('contrast'));
  // Set as default stores the Preferences choice, in Custom
@@ -181,30 +184,32 @@ export async function moduleSwitch(t){
  }
  await click(t,icon('contrast'));await click(t,`.module-menu [data-module-option="${before.mod_contrast}"]`);
  await settledPhoto(t,p=>p.hash===photo.hash);
- // Contrast edited on AgX, then the equalizer too: both modules are marked in the menu, and the icon shows a dot whichever is shown
+ // Edit the starting module (AgX or color balance rgb), then the equalizer too.
  {
+  const contrast=before.mod_contrast;
+  const both=[contrast,equalizer].sort((a,b)=>a-b);
   const cs='[data-control-id="contrast"]',cv=await reveal(t,`${cs} .value`);
   const dots=()=>t.driver.observe(()=>[...document.querySelectorAll('.module-menu [data-module-option]')].filter(e=>e.querySelector('.adjusted-dot')).map(e=>+e.dataset.moduleOption).sort());
   const iconDot=()=>t.driver.observe(()=>!!document.querySelector('[data-module-switch="contrast"]')?.classList.contains('others'));
   await t.driver.point(cv.x,cv.y,2);
   await until(()=>t.driver.observe(s=>!!document.querySelector(s+' .value-edit'),cs),'Contrast numeric editor');
   await t.driver.keys('3','0','\uE007');
-  await click(t,icon('contrast'));await click(t,'.module-menu [data-module-option="2"]');
-  await until(async()=>(await choices(t)).mod_contrast===2,'equalizer picked');
+  await click(t,icon('contrast'));await click(t,`.module-menu [data-module-option="${equalizer}"]`);
+  await until(async()=>(await choices(t)).mod_contrast===equalizer,'equalizer picked');
   await until(iconDot,'dot on the Contrast icon under the equalizer');
   await click(t,icon('contrast'));
-  assert.deepEqual(await dots(),[0],'AgX alone is marked after leaving it');
+  assert.deepEqual(await dots(),[contrast],'the edited Contrast module alone is marked after leaving it');
   await t.driver.keys('\uE00C');
   const p=await reveal(t,'.equalizer-graph circle:nth-of-type(3)');
   await t.driver.point(p.x,p.y);await t.driver.keys('\uE013');
   await click(t,icon('contrast'));
-  await until(async()=>(await dots()).join()==='0,2','AgX and the equalizer both marked');
+  await until(async()=>(await dots()).join()===both.join(),'both edited Contrast modules are marked');
   await t.evidence('module-switch-dot-equalizer');
-  await click(t,`.module-menu [data-module-option="0"]`);
-  await until(async()=>(await choices(t)).mod_contrast===0,'AgX picked back');
-  await until(iconDot,'dot on the Contrast icon on AgX, the equalizer being adjusted');
+  await click(t,`.module-menu [data-module-option="${contrast}"]`);
+  await until(async()=>(await choices(t)).mod_contrast===contrast,'starting Contrast module picked back');
+  await until(iconDot,'dot on the Contrast icon, the equalizer being adjusted');
   await click(t,icon('contrast'));
-  assert.deepEqual(await dots(),[0,2],'both stay marked with AgX shown');
+  assert.deepEqual(await dots(),both,'both stay marked with the starting Contrast module shown');
   await t.driver.keys('\uE00C');
   const cl=await reveal(t,`${cs} label`);await t.driver.point(cl.x,cl.y,2);
  }

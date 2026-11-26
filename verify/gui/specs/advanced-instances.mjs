@@ -2,10 +2,11 @@
 // Copyright (C) 2026 the Immage authors
 import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
-import { click, openTool, reveal } from '../support/controls.mjs';
+import { click, openTool } from '../support/controls.mjs';
 import { panel } from '../support/scenario.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { setMode } from './editing-mode.mjs';
+import { addCard } from './advanced-exposure.mjs';
 import { waitSetting } from '../support/settings.mjs';
 
 const KEY = 'immage.editMode';
@@ -59,6 +60,7 @@ export async function advancedInstances(t) {
     if (original === 'Simple') await setMode(t, 'Advanced');
     await openTool(t, 'adjust');
     await panel(t, 'basic');
+    await addCard(t, 'basic', 'exposure', CARDS);
     const start = await until(async () => { const c = await cards(t); return c?.length === 1 && c; }, 'one Exposure card');
     const first = start[0].id;
     const baseline = await settledPhoto(t);
@@ -75,8 +77,7 @@ export async function advancedInstances(t) {
 
     // 2. move the new card's Exposure slider: the frame changes
     const slider = `${cardSel(second)} [data-control-id="adv:exposure"]`;
-    const value = await reveal(t, `${slider} .value`);
-    await t.driver.point(value.x, value.y, 2);
+    await click(t, `${slider} .value`, 2);
     await until(() => t.driver.observe(s => !!document.querySelector(`${s} .value-edit`), slider), 'numeric editor');
     await t.driver.keys('1', '\uE007'); // Enter
     await until(async () => Math.abs(((await cards(t)).find(c => c.id === second)?.value ?? 0) - 1) < .02, 'new card Exposure typed as +1 EV');

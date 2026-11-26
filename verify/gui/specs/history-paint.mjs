@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { until, pause } from '../support/webdriver.mjs';
 import { Blocked } from '../support/scenario.mjs';
-import { inspect, reveal, rangeSelector } from '../support/controls.mjs';
+import { click, reveal, rangeSelector } from '../support/controls.mjs';
 import { decodePNG } from '../support/pixels.mjs';
 import { settledPhoto } from './smoke.mjs';
 import * as read from '../support/observations.mjs';
@@ -144,23 +144,23 @@ export async function historyPaint(t) {
   for (let i = 0; i < 8; i++) { const a = await leftAt(); await t.driver.wheel(a.x, a.y, 400); await pause(120); }
   const row = await t.driver.observe(() => {
     const list = document.querySelector('.panel.history .history-list');
-    const lr = list?.getBoundingClientRect();
-    const rows = [...(list?.querySelectorAll(':scope > li > button:not(:disabled)') ?? [])]
-      .map((b) => b.getBoundingClientRect()).filter((r) => r.top >= lr.top && r.bottom <= lr.bottom && r.bottom <= innerHeight);
+    if (!list) return null;
+    const lr = list.getBoundingClientRect();
+    const left = list.closest('aside.left').getBoundingClientRect();
+    const rows = [...list.querySelectorAll(':scope > li > button:not(:disabled)')]
+      .map(b => b.getBoundingClientRect())
+      .filter(r => r.top >= Math.max(lr.top, left.top) && r.bottom <= Math.min(lr.bottom, left.bottom));
     const r = rows[Math.floor(rows.length / 2)];
     return r && { x: r.left + 60, y: r.top + r.height / 2 };
   });
   if (row) { await t.driver.point(row.x, row.y); await check('row-picked'); }
 
   // compress: the list shrinks to a few rows while scrolled
-  const compress = await t.driver.observe(() => {
-    const b = document.querySelectorAll('.panel.history > .panel-title > button.compress')[1];
-    const r = b?.getBoundingClientRect();
-    return b && !b.disabled && { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  });
-  if (compress) {
-    await t.driver.point(compress.x, compress.y);
-    await until(async () => (await t.driver.observe(geometry))?.rows < 15, 'History compressed', 10000).catch(() => {});
+  const compress = '.panel.history > .panel-title > button.compress[title^="compress history"]';
+  if (await t.driver.observe(s => !!document.querySelector(`${s}:enabled`), compress)) {
+    const before = (await t.driver.observe(geometry)).rows;
+    await click(t, compress);
+    await until(async () => (await t.driver.observe(geometry))?.rows < before, 'History compressed', 10000);
     await check('compressed');
   }
 

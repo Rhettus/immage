@@ -34,12 +34,14 @@ const alphaNear = async (t, want, label) => {
 export async function overlayOpacity(t) {
   await settledPhoto(t);
   await openTool(t, 'masks');
+  const maskCount = () => t.driver.observe(() => document.querySelectorAll('.mask-list > li').length);
+  const initialCount = await maskCount();
   await click(t, '.create-mask');
   await textButton(t, '.shape-menu-list', 'Linear Gradient');
   const photo = await reveal(t, 'svg.mask-svg');
   await t.driver.drag({ x: photo.x, y: photo.bounds.y + photo.bounds.height * .08 },
     { x: photo.x, y: photo.bounds.y + photo.bounds.height * .42 });
-  await until(() => t.driver.observe(() => document.querySelectorAll('.mask-list > li').length > 0), 'created mask');
+  await until(async () => await maskCount() === initialCount + 1, 'created mask');
   // a new mask's overlay shows until the first adjustment: O brings it back
   if (!(await t.driver.observe(overlayAlpha) > 0)) await t.driver.keys('o');
   await alphaNear(t, 140, 'default overlay alpha 140 (55%)');
@@ -69,5 +71,5 @@ export async function overlayOpacity(t) {
   assert((await reveal(t, reset)).disabled, 'Reset disabled again');
   await textButton(t, '.prefs-foot', 'Done');
   await click(t, '.mask-list > li.on .mask-del');
-  await until(() => t.driver.observe(() => !document.querySelector('.mask-list > li')), 'mask deleted');
+  await until(async () => await maskCount() === initialCount, 'created mask deleted');
 }

@@ -5149,7 +5149,7 @@
               "kind": "choice",
               "rawOnly": false,
               "min": 0,
-              "max": 1,
+              "max": 2,
               "step": 1,
               "nonlinear": false,
               "options": [
@@ -5160,6 +5160,10 @@
                 [
                   "AgX",
                   1
+                ],
+                [
+                  "None",
+                  2
                 ]
               ],
               "status": "pending"

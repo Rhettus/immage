@@ -33,7 +33,9 @@ export const hiddenPanelCoverage={
  'tonecurve-points':'curves',crop:'crop-options',orientation:'crop-options',zones:'zones',negative:'negative',film:'film',
  modules:'module-options',upright:null,'vignette-center':null,'exposure-compensation':null,tonemapper:null,
 };
-for(const control of inventory.localControls)if(!onGraph(control.id))generated[`local-${control.id}`]={kind:control.kind==='slider'?'range':'choice',scope:'local',panel:'masks',control,module:owner(control.id,'masks'),liveValidated:false,fixture:'configured'};
+// The mask contrast pivot is stored in the manifest but has no independent widget.
+for(const control of inventory.localControls)if(!onGraph(control.id)&&control.id!=='l_fulcrum')generated[`local-${control.id}`]={kind:control.kind==='slider'?'range':'choice',scope:'local',panel:'masks',control,module:owner(control.id,'masks'),liveValidated:false,fixture:'configured'};
 for(const [scope,choices] of [['global',inventory.globalModules],['masks',inventory.maskModules]])for(const choice of choices)for(const option of choice.options)
- generated[`module-${scope}-${choice.id}-${option.value}`]={kind:'module',scope,choice,option,liveValidated:false,fixture:'configured'};
+ generated[`module-${scope}-${choice.id}-${option.value}`]={kind:'module',scope,choice,option,liveValidated:false,
+  fixture:scope==='global'&&option.op==='agx'?'RAW':'configured'};
 export const generatedNames=Object.keys(generated);

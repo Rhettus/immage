@@ -11,7 +11,7 @@ export async function histogramEndpoints(t){
  // the tone mapper puts the white half near 86%: Exposure at its top clips it
  // to the histogram's last column, and the black half stays in the first
  await panel(t,'basic');const before=await settledPhoto(t),ev=await reveal(t,'[data-control-id="exposure"] input[type=range]');
- await t.driver.point(ev.x,ev.y);await t.driver.keys('\uE010');await settledPhoto(t,p=>p.hash!==before.hash);
+ await t.driver.point(ev.x,ev.y);await t.driver.keys('\uE010');await until(()=>t.driver.observe(s=>document.querySelector(s)?.value==document.querySelector(s)?.max,'[data-control-id="exposure"] input[type=range]'),'Exposure at its top');await settledPhoto(t);
  const pixels=await until(()=>t.driver.observe(()=>{
   const c=document.querySelector('.hist-area canvas');if(!c?.width)return null;
   const ctx=c.getContext('2d'),d=ctx.getImageData(0,0,c.width,c.height).data;
@@ -124,10 +124,10 @@ export async function detailFitDrag(t){
 export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');
  await click(t,'.find-button');
- await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
  // the filter rows are in the Find column; Camera body opens its editor beneath its row
- const category=await until(()=>t.driver.observe(()=>{const e=[...document.querySelectorAll('.find-pop .fr-row')].find(e=>e.querySelector('.fr-title')?.textContent==='Camera body');if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};}),'Camera body row');
- await t.driver.point(category.x,category.y);
+ const row='.find-pop #find-row-bodies';
+ await until(()=>t.driver.observe(s=>!!document.querySelector(s),row),'Camera body row');
+ await click(t,row);
  const names=await until(()=>t.driver.observe(()=>[...document.querySelectorAll('.find-pop .filter-ticks .name')].map(e=>e.textContent)),'body options');
  assert(names.some(s=>s.includes('BODY-A'))&&names.some(s=>s.includes('BODY-B')),'same model serials independently listed');
  assert(names.some(s=>/without|missing|none|unknown|not recorded/i.test(s)),'missing serial category listed');

@@ -87,12 +87,11 @@ async function openFixtureFolder(t, dest) {
 
 // the confirmation's checkbox by a part of its label, with a point to click
 const checkbox = (t, text) => t.driver.observe((w, d) => {
-  const l = [...document.querySelectorAll(`${d} label`)].find(x => x.textContent.includes(w));
-  const i = l?.querySelector('input[type=checkbox]');
-  if (!i) return null;
-  i.scrollIntoView({ block: 'nearest' });
-  const r = i.getBoundingClientRect();
-  return { checked: i.checked, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  const labels = [...document.querySelectorAll(`${d} .modal-body > label`)];
+  const index = labels.findIndex(label => label.textContent.includes(w));
+  const input = labels[index]?.querySelector('input[type=checkbox]');
+  return input ? { checked: input.checked,
+    selector: `${d} .modal-body > label:nth-of-type(${index + 1}) input[type=checkbox]` } : null;
 }, text, dialog);
 const primary = t => t.driver.observe(d => {
   const b = document.querySelector(`${d} .btn.primary`);
@@ -129,25 +128,15 @@ async function rawFilter(t, on) {
     return;
   }
   if (!await rowOpen('File type')) {
-    const p = await until(() => t.driver.observe(w => {
-      const e = [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === w);
-      if (!e) return null;
-      e.scrollIntoView({ block: 'nearest' });
-      const r = e.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    }, 'File type'), 'File type row');
-    await t.driver.point(p.x, p.y);
+    const row = '.find-pop #find-row-kinds';
+    await until(() => present(t, row), 'File type row');
+    await click(t, row);
     await until(() => rowOpen('File type'), 'File type editor');
   }
   // the "All RAW" tick
-  const tick = await until(() => t.driver.observe(() => {
-    const b = [...document.querySelectorAll('.find-pop .fr-editor .filter-ticks button')].find(x => /All RAW/.test(x.textContent));
-    if (!b) return null;
-    b.scrollIntoView({ block: 'nearest' });
-    const r = b.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }), 'the All RAW tick');
-  await t.driver.point(tick.x, tick.y);
+  const tick = '.find-pop .fr-editor .filter-ticks button:has(.name[title="All RAW"])';
+  await until(() => present(t, tick), 'the All RAW tick');
+  await click(t, tick);
   await until(() => present(t, `${pop} .fr-x[aria-label="Remove File type"]`), 'the File type row shows a value');
 }
 
@@ -189,7 +178,7 @@ export async function moveCompanions(t) {
   await dragOnto(t, `pair-b${ext}`, dest);
   box = await checkbox(t, 'stacked JPEG, HEIF or ORI');
   assert(box && !box.checked, 'pair-b: unticked under the RAW filter');
-  await t.driver.point(box.x, box.y);
+  await click(t, box.selector);
   await until(async () => (await checkbox(t, 'stacked JPEG, HEIF or ORI'))?.checked === true, 'the companion box ticked');
   await until(async () => /^Move 2 photos$/.test((await primary(t))?.text ?? ''), 'two photos to move after ticking', 30000);
   await t.evidence('companions-ticked');
@@ -226,7 +215,7 @@ export async function moveSubfolders(t) {
   assert.match(await t.driver.observe(dialogText), /Copy Photos/, 'Alt makes it a copy');
   let sort = await checkbox(t, 'Sort into subfolders');
   assert(sort, 'the confirmation has Sort into subfolders');
-  if (!sort.checked) await t.driver.point(sort.x, sort.y);
+  if (!sort.checked) await click(t, sort.selector);
   await until(async () => (await checkbox(t, 'Sort into subfolders'))?.checked === true, 'Sort into subfolders ticked');
   const field = `${dialog} .move-pattern input.field`;
   await until(() => present(t, field), 'the pattern field');
@@ -275,7 +264,7 @@ export async function moveSubfolders(t) {
   assert(sort?.checked === true, 'the subfolder choice is remembered for the next confirmation');
   await until(async () => /Into 1 folder: 2022\/11\/05/.test(await text()), `the example for sort-b (${await text()})`, 30000);
   // Cancel creates nothing; unticking first leaves the remembered choice off for later cases
-  await t.driver.point(sort.x, sort.y);
+  await click(t, sort.selector);
   await until(async () => (await checkbox(t, 'Sort into subfolders'))?.checked === false, 'Sort into subfolders unticked');
   await textButton(t, `${dialog} .modal-foot`, 'Cancel');
   await until(() => t.driver.observe(s => !document.querySelector(s), dialog), 'the confirmation closed');

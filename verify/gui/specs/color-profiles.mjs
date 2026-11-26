@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, inspect, openTool } from '../support/controls.mjs';
-import { choose, openStep } from '../support/scenario.mjs';
+import { resetAll, choose, openStep } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
 import { startup, settledPhoto, settledReset } from './smoke.mjs';
 import { prepareNegative } from './workflows.mjs';
@@ -54,7 +54,7 @@ export async function colorProfiles(t) {
   assert.equal((await settledPhoto(t)).hash, icc.hash, 'ICC render survives restart');
   await t.evidence('profiles-after-restart');
   // Reset all includes both profiles, and undo brings back the conversion.
-  await click(t, 'button[aria-label="reset all"]');
+  await resetAll(t);
   await until(async () => !(await t.driver.observe(converted)), 'Reset all turns conversion off');
   assert.deepEqual(await values(), defaults, 'Reset all restores profile defaults');
   await settledPhoto(t, p => p.hash !== icc.hash);

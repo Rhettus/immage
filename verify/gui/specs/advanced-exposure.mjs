@@ -72,8 +72,7 @@ export async function advancedExposure(t) {
     if (!initial.open) await click(t, `${CARD} .module-card-head .module-card-title`);
     await until(async () => (await card(t))?.open && (await card(t)).value !== null, 'Exposure card unfolded with its slider');
     const neutral = (await card(t)).value;
-    const value = await reveal(t, `${SLIDER} .value`);
-    await t.driver.point(value.x, value.y, 2);
+    await click(t, `${SLIDER} .value`, 2);
     await until(() => t.driver.observe(s => !!document.querySelector(`${s} .value-edit`), SLIDER), 'numeric editor');
     await t.driver.keys('1', ''); // Enter
     const edited = await until(async () => { const c = await card(t); return Math.abs(c.value - 1) < .02 && c; }, 'Exposure typed as +1 EV');

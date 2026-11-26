@@ -394,9 +394,10 @@ node --input-type=module -e 'import { availableMemory } from "./verify/gui/suppo
 
 List cases without starting an app with `node verify/gui/run.mjs --list`.
 Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, `search`, `find`, and `inventory`.
-`--suite all` selects every declaration, but mixes incompatible prerequisites;
-it excludes the standalone `startup-restore` and `dng-thumbnail` cases and is
-not a turnkey full-coverage run. Prefer one case and its required fixture:
+`--suite all` selects most declarations, including cases with incompatible
+prerequisites. Run `startup-restore`, `dng-thumbnail`,
+`edited-culling-preview`, and `morfphoto-mirror` separately. Group the
+remaining cases by compatible fixtures and profile setup.
 
 ```sh
 # GUI commands: obtain fresh approval for each command first.
@@ -722,7 +723,8 @@ the workspace and memory preparation above.
 ## AgX preset import
 
 `node verify/gui/run.mjs --config verify/gui/local.json --case agx-presets`
-runs the visible Profile > Load AgX Preset workflow on the copied photo. Before
+runs the visible Profile > Load AgX Preset workflow. Set the config fixture
+to a RAW photo before running this case. Before
 launch, `support/agx-fixture.py` generates an AgX v8 user preset and two rows
 that must be excluded (a builtin and a different module) in the run's isolated
 darktable `data.db`. It never reads or changes the user's darktable database.

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
 import { click, openTool } from '../support/controls.mjs';
-import { panel } from '../support/scenario.mjs';
+import { Blocked, panel } from '../support/scenario.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { setMode } from './editing-mode.mjs';
 import { addCard } from './advanced-exposure.mjs';
@@ -24,6 +24,7 @@ const cards = t => t.driver.observe((basic, ops) => {
 }, BASIC, OPS);
 
 export async function advancedTonemapper(t) {
+  if (!t.fixture.raw) throw new Blocked('Advanced tone-mapper switching requires a RAW fixture');
   await settledPhoto(t);
   await openTool(t, 'adjust');
   const originalValue = await waitSetting(t, KEY, () => true, 'settings file readable');

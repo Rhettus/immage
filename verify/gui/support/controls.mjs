@@ -95,7 +95,7 @@ export async function tabTo(t, selector, max = 200) {
   }
   throw Error(`Tab did not reach ${selector}`);
 }
-export async function click(t, selector) {
+export async function click(t, selector, count = 1) {
   let c = await reveal(t, selector);
   // a wheel scroll can still be gliding when the control is first seen in view:
   // aim only once its position has stopped moving, or the click lands on
@@ -107,7 +107,7 @@ export async function click(t, selector) {
     c = await reveal(t, selector);
   }
   assert(!c.disabled, `${selector} must be enabled`);
-  await t.driver.point(c.x, c.y);
+  await t.driver.point(c.x, c.y, count);
   return c;
 }
 export const rangeSelector = id => `[data-control-id=${JSON.stringify(id)}] input[type=range]`;
