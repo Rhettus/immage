@@ -167,6 +167,7 @@ export const commands = {
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
 	gpuEdits: () => __TAURI_INVOKE<GpuEditState>("gpu_edits"),
 	gpuEditsSet: (on: boolean) => __TAURI_INVOKE<null>("gpu_edits_set", { on }),
+	openclStatus: () => __TAURI_INVOKE<OpenclStatus>("opencl_status"),
 	webviewRenderer: () => __TAURI_INVOKE<WebviewRenderer | null>("webview_renderer"),
 	webviewRendererSet: (mode: string) => __TAURI_INVOKE<null>("webview_renderer_set", { mode }),
 	licenses: () => __TAURI_INVOKE<Licenses>("licenses"),
@@ -1005,6 +1006,17 @@ export type OpenReply = {
 	ldr?: boolean,
 	sensor: string | null,
 	fresh: boolean,
+};
+
+export type OpenclDevice = {
+	name: string,
+	disabled: boolean,
+};
+
+export type OpenclStatus = {
+	running: boolean,
+	stopped: boolean,
+	devices: OpenclDevice[],
 };
 
 export type OrderEntry = {

@@ -19,6 +19,23 @@ pub struct Level {
     pub next: String,
 }
 
+// Preferences' GPU card: the OpenCL devices darktable edits and exports on,
+// from the engine's opencl reply. running is false when no device was found
+// or darktable stopped OpenCL after repeated errors (stopped)
+#[derive(Serialize, Deserialize, Type)]
+#[serde(rename = "OpenclStatus")]
+pub struct OpenclReply {
+    pub running: bool,
+    pub stopped: bool,
+    pub devices: Vec<OpenclDevice>,
+}
+
+#[derive(Serialize, Deserialize, Type)]
+pub struct OpenclDevice {
+    pub name: String,
+    pub disabled: bool,
+}
+
 // Preferences' GPU edits: whether the engine runs with them, and whether its
 // next start will
 #[derive(Serialize, Type)]

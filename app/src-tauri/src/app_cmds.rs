@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use crate::typed_app::{Level, Licenses, ParityReply, Toggle};
+use crate::typed_app::{Level, Licenses, OpenclReply, ParityReply, Toggle};
 use tauri::{AppHandle, Manager, State};
 use crate::AppState;
 use crate::ai_cmds::no_console;
@@ -325,6 +325,15 @@ pub(crate) fn darktable_resources_set(settings: State<'_, settings::Settings>, l
 #[specta::specta]
 pub(crate) fn gpu_edits(state: State<'_, AppState>) -> Toggle {
     Toggle { running: state.gpu_edits.load(Ordering::Relaxed), next: engine::gpu_edits(&state.runtime) }
+}
+
+// the OpenCL devices the engine edits and exports on, for Preferences' GPU
+// card. async: it waits its turn at the engine
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn opencl_status(state: State<'_, AppState>) -> Result<OpenclReply, String> {
+    let reply = state.request("opencl_status", json!({ "cmd": "opencl" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("opencl: unexpected reply: {e}"))
 }
 
 #[tauri::command]

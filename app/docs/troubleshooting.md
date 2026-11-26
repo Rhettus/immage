@@ -55,6 +55,16 @@ See [Performance preferences](preferences.md#performance) for settings and
 Linux launch and rendering troubleshooting. If the benchmark fails, include its
 error and describe the slow action instead.
 
+### Is the graphics card used?
+
+**Preferences → Performance → GPU → Edit on the GPU** names the graphics
+card photo processing runs on, or says that none was found and the CPU is
+used. The **AI upscaling** row below it is only about AI upscaling at export.
+On Linux it is always empty, because AI runs on the CPU there; that does not
+mean the graphics card is missing. If **Edit on the GPU** finds no card on
+Linux, install your card's OpenCL driver (see
+[Performance preferences](preferences.md#performance)) and restart Immage.
+
 ## Support bundle
 
 **Help > Create Support Bundle…** collects what a bug report needs into one

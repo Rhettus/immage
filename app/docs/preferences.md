@@ -254,9 +254,29 @@ Immage keeps to make it so.
 
 **GPU**
 
-- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
-  first one found. If none is found, AI upscaling isn't offered.
-- **Device**: which graphics card, when there is more than one.
+- **Edit on the GPU**: renders the photo on the graphics card while you
+  edit. Exports and the whole-photo render behind the viewer use the
+  graphics card either way; turned off, edits stay on the CPU. A change
+  applies once Immage restarts. The line below the name says which graphics
+  card photo processing is using, or that none was found and the CPU does
+  the work. If the graphics card fails repeatedly, darktable stops using it
+  until Immage restarts, and the line says so.
+- **AI upscaling**: the graphics card AI upscaling at export runs on.
+  **Automatic** picks the first one found. When there is none it can use,
+  AI upscaling isn't offered. This list is separate from **Edit on the
+  GPU**: AI has its own GPU support, and current Linux builds run AI on the
+  CPU only, so the list is empty there even when edits and exports use the
+  graphics card.
+- **Device**: which graphics card AI upscaling uses, when there is more than
+  one.
+
+Photo processing uses the graphics card through OpenCL, from the drivers
+installed on your computer. On Linux, if **Edit on the GPU** reports no
+graphics card, check that the OpenCL loader and your card's OpenCL driver
+are installed. On Ubuntu and Linux Mint with an NVIDIA card these are the
+`ocl-icd-libopencl1` package and the `libnvidia-compute` package matching
+your driver; `clinfo -l` should list the card. **GPU check**, below, also
+names the graphics card it ran on.
 
 On Linux with an AMD graphics card, Immage uses AMD's ROCm OpenCL driver
 whenever it is installed, and leaves Mesa's RustiCL driver off so the card is
@@ -368,7 +388,7 @@ performance; results still vary by system.
   size and editing settings. The reports record the selected path,
   environment, WebKitGTK version and WebGL renderer.
 
-**Editing**
+**Previews**
 
 - **Performance profile**: how much the photo gives up for speed while you
   edit, chosen by the kind of computer. Export is never affected. Each

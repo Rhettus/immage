@@ -9,6 +9,12 @@ Improvements
 
 - **Auto white balance on paste:** Choose **Auto on Paste** under White
   Balance in Copy Settings to calculate temperature and tint for each destination.
+- **See which graphics card edits use:** Preferences → Performance now opens
+  with a **GPU** section. **Edit on the GPU** comes first and names the
+  graphics card photo processing runs on, or says the CPU is used because none
+  was found. The former GPU row is now **AI upscaling**, which makes clear that it
+  only covers AI upscaling at export (on Linux, AI always runs on the CPU).
+  The rest of the editing speed settings are now under **Previews**.
 - **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
   in the Library grid ask before resetting edits. Check **Don’t show this
   confirmation again** when confirming to skip both prompts in the future.
