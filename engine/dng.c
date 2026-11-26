@@ -61,6 +61,7 @@ static uint16_t _half(const float f)
 
 static int _write_half(const char *filename, const float *rgb, const int width, const int height,
                           const dt_image_t *img, const int stride, const void *exif, const int exif_len,
+                          const void *preview, const size_t preview_len, const gboolean compress,
                           void (*progress)(int done, int total, void *data), void *data)
 {
 #ifdef _WIN32
@@ -80,8 +81,13 @@ static int _write_half(const char *filename, const float *rgb, const int width, 
   TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_IEEEFP);
   TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
   TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 34892); // LinearRaw
-  TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_ADOBE_DEFLATE);
-  TIFFSetField(tif, TIFFTAG_PREDICTOR, PREDICTOR_FLOATINGPOINT);
+  if(compress)
+  {
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_ADOBE_DEFLATE);
+    TIFFSetField(tif, TIFFTAG_PREDICTOR, PREDICTOR_FLOATINGPOINT);
+  }
+  else
+    TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
   TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
   // strips of some 256 KB, each compressed on its own
   TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, (uint32_t)MAX(1, 262144 / (width * 6)));
@@ -137,16 +143,18 @@ static int _write_half(const char *filename, const float *rgb, const int width, 
   // Read back our metadata before merging the source EXIF. The generic
   // blob writer replaces it, dropping DNGVersion and the calibration tags;
   // a camera-labelled panorama is then mistaken for that camera's raw.
-  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE)) res = 1;
+  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE, preview, preview_len)) res = 1;
   if(res) g_unlink(filename);
   return res;
 }
 
 int dng_write_linear_half(const char *filename, const float *rgb, const int width, const int height,
                           const dt_image_t *img, const void *exif, const int exif_len,
+                          const void *preview, const size_t preview_len, const gboolean compress,
                           void (*progress)(int done, int total, void *data), void *data)
 {
-  return _write_half(filename, rgb, width, height, img, 3, exif, exif_len, progress, data);
+  return _write_half(filename, rgb, width, height, img, 3, exif, exif_len, preview, preview_len, compress,
+                     progress, data);
 }
 
 // Rendered positives use linear Rec.2020, not the original camera's RGB.
@@ -154,6 +162,7 @@ int dng_write_linear_half(const char *filename, const float *rgb, const int widt
 // pixels without applying the camera's profile or white balance again.
 static int _write_rendered_half(const char *filename, const float *rgba, const int width, const int height,
                                 const int channels, const void *exif, const int exif_len,
+                                const void *preview, const size_t preview_len, const gboolean compress,
                                 void (*progress)(int, int, void *), void *data)
 {
   dt_image_t img = { 0 };
@@ -165,8 +174,8 @@ static int _write_rendered_half(const char *filename, const float *rgba, const i
     img.wb_coeffs[c] = 1.0f;
     for(int k = 0; k < 3; k++) img.adobe_XYZ_to_CAM[c][k] = xyz_to_rec2020_d65[3 * c + k];
   }
-  int res = _write_half(filename, rgba, width, height, &img, channels, NULL, 0, progress, data);
-  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE))
+  int res = _write_half(filename, rgba, width, height, &img, channels, NULL, 0, NULL, 0, compress, progress, data);
+  if(!res && !rendered_metadata(filename, exif, exif_len, TRUE, preview, preview_len))
   {
     g_unlink(filename);
     res = 1;
@@ -177,12 +186,13 @@ static int _write_rendered_half(const char *filename, const float *rgba, const i
 int dng_write_rendered_half(const char *filename, const float *rgba, int width, int height,
                             const void *exif, int exif_len)
 {
-  return _write_rendered_half(filename, rgba, width, height, 4, exif, exif_len, NULL, NULL);
+  return _write_rendered_half(filename, rgba, width, height, 4, exif, exif_len, NULL, 0, TRUE, NULL, NULL);
 }
 
 int dng_write_rendered_rgb_half(const char *filename, const float *rgb, int width, int height,
-                                const void *exif, int exif_len,
-                                void (*progress)(int, int, void *), void *data)
+                                const void *exif, int exif_len, const void *preview, size_t preview_len,
+                                gboolean compress, void (*progress)(int, int, void *), void *data)
 {
-  return _write_rendered_half(filename, rgb, width, height, 3, exif, exif_len, progress, data);
+  return _write_rendered_half(filename, rgb, width, height, 3, exif, exif_len, preview, preview_len, compress,
+                              progress, data);
 }

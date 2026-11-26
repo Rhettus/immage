@@ -51,7 +51,10 @@ char *strip_jxl(const char *path, strip_t what);
 char *embed_profile(const char *path, const void *icc, size_t size);
 
 // Merge export EXIF while preserving the rendered file's layout and color tags.
-gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng);
+// `preview`, a JPEG of `preview_len` bytes or NULL, becomes the file's EXIF
+// thumbnail (IFD1), in the same rewrite
+gboolean rendered_metadata(const char *path, const void *blob, int size, gboolean dng,
+                           const void *preview, size_t preview_len);
 
 // Stamp the source orientation and raw denoise marker without replacing the
 // generated DNG's existing metadata. orientation is darktable's flip bits.

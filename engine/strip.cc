@@ -397,9 +397,10 @@ char *embed_profile(const char *path, const void *icc, const size_t size)
 
 // Read the generated file before merging EXIF, retaining its ICC profile
 // and, for DNG, its version and calibration tags.
-gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng)
+gboolean rendered_metadata(const char *path, const void *blob, const int size, const gboolean dng,
+                           const void *preview, const size_t preview_len)
 {
-  if(!blob || size <= 0) return TRUE;
+  if((!blob || size <= 0) && !preview) return TRUE;
   try
   {
     _lock lock;
@@ -412,7 +413,7 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
 #endif
     image->readMetadata();
     Exiv2::ExifData source;
-    Exiv2::ExifParser::decode(source, static_cast<const uint8_t *>(blob), size);
+    if(blob && size > 0) Exiv2::ExifParser::decode(source, static_cast<const uint8_t *>(blob), size);
     auto &dest = image->exifData();
     for(const auto &d : source)
     {
@@ -424,6 +425,17 @@ gboolean rendered_metadata(const char *path, const void *blob, const int size, c
       auto old = dest.findKey(key);
       if(old != dest.end()) dest.erase(old);
       dest.add(key, &d.value());
+    }
+    if(preview)
+    {
+      // IFD1, just after IFD0: exiv2's prefix parse holds its data, so a
+      // reader gets the preview without reading the rest of a large file
+      // (exif.cc, _read_metadata). marked reduced-resolution, which rawspeed
+      // never takes for the raw (DngDecoder.cpp, dropUnsuportedChunks)
+      Exiv2::ExifThumb thumb(dest);
+      thumb.erase();
+      thumb.setJpegThumbnail(static_cast<const Exiv2::byte *>(preview), preview_len);
+      dest["Exif.Thumbnail.NewSubfileType"] = uint32_t(1);
     }
     image->writeMetadata();
     return TRUE;

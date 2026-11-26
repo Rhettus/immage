@@ -82,6 +82,10 @@ Performance
 - **Less reading from slow drives:** Opening most RAW photos reads the file
   from disk once instead of twice, and drawing the thumbnail of a panorama or
   HDR merge reads its file once instead of three times.
+- **Merges carry a preview:** New HDR and panorama DNGs include a preview, as
+  a camera's raws do, so their thumbnails appear at once instead of after
+  reading the whole file, and other apps that show previews show them too.
+  Merging takes a moment longer to make it.
 
 Bug fixes
 

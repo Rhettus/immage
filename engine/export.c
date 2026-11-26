@@ -73,6 +73,15 @@ static gboolean _merge_report(const _merge_progress_t *pr, const char *stage, co
   return TRUE;
 }
 
+// whether the merge's Stop was pressed, without a progress line
+static gboolean _merge_stopped(const _merge_progress_t *pr)
+{
+  eng_lock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+  const gboolean stopped = pr->job && _merge_canceled == pr->job;
+  eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
+  return stopped;
+}
+
 // hdr_merge_step_t: `done` of `total` photos read
 static gboolean _merge_step(const int done, const int total, void *data)
 {
@@ -1102,7 +1111,7 @@ static int _positive_tiff_write(dt_imageio_module_data_t *data, const char *file
   const int res = fmt->write_image(data, filename, in, over_type, over_filename, NULL, 0,
                                    imgid, num, total, pipe, export_masks);
   if(res) return res;
-  return rendered_metadata(filename, exif, exif_len, FALSE) ? 0 : 1;
+  return rendered_metadata(filename, exif, exif_len, FALSE, NULL, 0) ? 0 : 1;
 }
 
 // preview_jpeg.h writes through transient_output.h, whose state main.c owns
@@ -1444,6 +1453,118 @@ static GMutex _export_pool_lock;
 // Merge to HDR: the brackets `imgids` into a float DNG beside the first
 // (hdrmerge.c), imported. replies { path, image }. it reads each bracket
 // through an export pipe of its own, as an export does, so a tagged one
+static gboolean _positive_import(const char *path, JsonBuilder *b, char **err);
+static void _neutral_history(const dt_imgid_t imgid);
+
+// a merge's embedded preview (strip.h, rendered_metadata). `write` puts a
+// small copy of the merge at the path it is given, by the merge's own writer
+// with the same EXIF, so the same presets apply to it: imported and exported
+// here, it is rendered as darktable renders the merge itself, then removed.
+// `neutral` gives it _positive_import's history first, as a rendered merge
+// opens with that. it goes in a folder of its own, as an import globs the
+// photo's folder for duplicates; its empty film roll stays in the in-memory
+// library, for the next merge. NULL when a step fails: no preview then
+// the JPEG without its APP1 segments (EXIF, XMP): the export copies the
+// photo's metadata, GPS and an Orientation of its own included, and a
+// reader taking the preview out must turn it by the DNG's orientation only
+static gsize _jpeg_without_app1(guint8 *jpeg, const gsize size)
+{
+  if(size < 4 || jpeg[0] != 0xff || jpeg[1] != 0xd8) return 0;
+  gsize in = 2, out = 2;
+  while(in + 4 <= size && jpeg[in] == 0xff && jpeg[in + 1] != 0xda)
+  {
+    const gsize length = 2 + ((gsize)jpeg[in + 2] << 8 | jpeg[in + 3]);
+    if(length < 4 || in + length > size) return 0;
+    if(jpeg[in + 1] != 0xe1)
+    {
+      memmove(jpeg + out, jpeg + in, length);
+      out += length;
+    }
+    in += length;
+  }
+  if(in + 4 > size || jpeg[in] != 0xff) return 0;
+  // the scan and everything after it, as it is
+  memmove(jpeg + out, jpeg + in, size - in);
+  return out + size - in;
+}
+
+// what a merge stopped by a crash or a kill left in the folder: not a merge
+// running now, which writes and removes its copy within seconds
+static void _merge_preview_sweep(const char *dir)
+{
+  GDir *listing = g_dir_open(dir, 0, NULL);
+  if(!listing) return;
+  const gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+  for(const gchar *name; (name = g_dir_read_name(listing));)
+  {
+    gchar *path = g_build_filename(dir, name, NULL);
+    GStatBuf st;
+    if(g_str_has_prefix(name, "preview-") && !g_stat(path, &st) && now - (gint64)st.st_mtime > 3600)
+      g_unlink(path);
+    g_free(path);
+  }
+  g_dir_close(listing);
+}
+
+static uint8_t *_merge_preview(gboolean (*write)(const char *path, void *data), void *data,
+                               const gboolean neutral, size_t *len)
+{
+  char cache[PATH_MAX] = { 0 };
+  dt_loc_get_user_cache_dir(cache, sizeof(cache));
+  gchar *dir = g_build_filename(cache, "merge-preview", NULL);
+  _merge_preview_sweep(dir);
+  gchar *name = g_strdup_printf("preview-%08x.dng", g_random_int());
+  gchar *dng = g_build_filename(dir, name, NULL);
+  gchar *jpeg = g_strdup_printf("%s.jpg", dng);
+  g_free(name);
+  uint8_t *bytes = NULL;
+  gsize size = 0;
+  char *err = NULL;
+  const dt_imgid_t imgid = !g_mkdir_with_parents(dir, 0700) && write(dng, data) ? library_import(dng) : NO_IMGID;
+  if(dt_is_valid_imgid(imgid))
+  {
+    if(neutral) _neutral_history(imgid);
+    JsonObject *req = json_object_new();
+    json_object_set_string_member(req, "out", jpeg);
+    json_object_set_string_member(req, "format", "jpeg");
+    json_object_set_string_member(req, "color_space", "srgb");
+    json_object_set_int_member(req, "quality", 90);
+    json_object_set_int_member(req, "long_edge", 0);
+    if(!export_export(imgid, req, &err)
+       || !g_file_get_contents(jpeg, (gchar **)&bytes, &size, NULL)
+       || !(size = _jpeg_without_app1(bytes, size)))
+    {
+      g_free(bytes);
+      bytes = NULL;
+    }
+    json_object_unref(req);
+    // dt_image_remove() clears only the 8-bit levels: the export's float
+    // buffers would hold cache memory the open photo may need
+    dt_mipmap_cache_evict_at_size(imgid, DT_MIPMAP_FULL);
+    dt_mipmap_cache_evict_at_size(imgid, DT_MIPMAP_F);
+    dt_image_remove(imgid);
+  }
+  if(!bytes)
+    dt_print(DT_DEBUG_ALWAYS, "[merge] no embedded preview: %s", err ? err : "could not write or import it");
+  g_free(err);
+  g_unlink(jpeg);
+  g_unlink(dng);
+  g_free(jpeg);
+  g_free(dng);
+  g_free(dir);
+  *len = bytes ? size : 0;
+  return bytes;
+}
+
+// hdr_merge_preview_t
+static guint8 *_hdr_preview(gboolean (*write)(const char *path, void *data), void *data, gsize *len)
+{
+  size_t size = 0;
+  guint8 *bytes = _merge_preview(write, data, FALSE, &size);
+  *len = size;
+  return bytes;
+}
+
 // runs on the export thread
 gboolean export_hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err)
 {
@@ -1458,7 +1579,7 @@ gboolean export_hdr_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **err
   const gint64 t0 = g_get_monotonic_time();
   _merge_progress_t progress = _merge_progress(req, out, "merging");
   gchar *path = hdr_merge(imgids, json_object_get_boolean_member_with_default(req, "align", TRUE), _merge_step,
-                          &progress, err);
+                          &progress, _hdr_preview, err);
   g_list_free(imgids);
   if(!path) return FALSE;
   const dt_imgid_t newid = library_import(path);
@@ -1602,7 +1723,50 @@ static void _pano_written(const int done, const int total, void *data)
   _merge_report(data, "writing the DNG", done, total, TRUE);
 }
 
-static gboolean _positive_import(const char *path, JsonBuilder *b, char **err);
+typedef struct _pano_small_t
+{
+  const float *rgb;
+  int width, height;
+  gboolean rendered;
+  const dt_image_t *img;
+  const void *exif;
+  int exif_len;
+} _pano_small_t;
+
+// the panorama shrunk to fit 3840 x 2160, darktable's 4K mip, so every
+// thumbnail up to that size comes from the preview (mipmap_cache.c,
+// _init_8), written as the panorama is
+static gboolean _pano_small(const char *path, void *data)
+{
+  const _pano_small_t *d = data;
+  const double scale = MIN(1.0, MIN(3840.0 / d->width, 2160.0 / d->height));
+  const int pw = MAX(1, (int)(d->width * scale)), ph = MAX(1, (int)(d->height * scale));
+  float *small = g_try_malloc((size_t)pw * ph * 3 * sizeof(float));
+  if(!small) return FALSE;
+  // box average in linear light; each output pixel covers whole input pixels
+  const float *rgb = d->rgb;
+  const int width = d->width, height = d->height;
+  DT_OMP_FOR()
+  for(int y = 0; y < ph; y++)
+  {
+    const int y0 = (int)((int64_t)y * height / ph), y1 = (int)((int64_t)(y + 1) * height / ph);
+    for(int x = 0; x < pw; x++)
+    {
+      const int x0 = (int)((int64_t)x * width / pw), x1 = (int)((int64_t)(x + 1) * width / pw);
+      double sum[3] = { 0.0, 0.0, 0.0 };
+      for(int j = y0; j < y1; j++)
+        for(int i = x0; i < x1; i++)
+          for(int c = 0; c < 3; c++) sum[c] += rgb[((size_t)j * width + i) * 3 + c];
+      const double n = (double)(y1 - y0) * (x1 - x0);
+      for(int c = 0; c < 3; c++) small[((size_t)y * pw + x) * 3 + c] = (float)(sum[c] / n);
+    }
+  }
+  const int res = d->rendered
+    ? dng_write_rendered_rgb_half(path, small, pw, ph, d->exif, d->exif_len, NULL, 0, FALSE, NULL, NULL)
+    : dng_write_linear_half(path, small, pw, ph, d->img, d->exif, d->exif_len, NULL, 0, FALSE, NULL, NULL);
+  g_free(small);
+  return !res;
+}
 
 // Photo Merge › Panorama: the photos `imgids` stitched (pano.cc) into a DNG
 // beside the first, <name>-pano.dng or -pano_01.dng..., that opens as the
@@ -1720,10 +1884,19 @@ gboolean export_pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **er
   // written under another name and renamed once whole, so a folder read
   // meanwhile never imports half of it. too late to stop by then
   gchar *part = g_strdup_printf("%s.part", pathname);
-  ok = !(rendered
-    ? dng_write_rendered_rgb_half(part, rgb, w, h, exif, exif_len, _pano_written, &progress)
-    : dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, _pano_written, &progress))
+  size_t thumb_len = 0;
+  _pano_small_t small = { rgb, w, h, rendered, &first_img, exif, exif_len };
+  uint8_t *thumb = _merge_preview(_pano_small, &small, rendered, &thumb_len);
+  // Stop still applies while the preview renders, up to the write
+  const gboolean stopped = _merge_stopped(&progress);
+  ok = !stopped
+    && !(rendered
+    ? dng_write_rendered_rgb_half(part, rgb, w, h, exif, exif_len, thumb, thumb_len, TRUE,
+                                  _pano_written, &progress)
+    : dng_write_linear_half(part, rgb, w, h, &first_img, exif, exif_len, thumb, thumb_len, TRUE,
+                            _pano_written, &progress))
     && !g_rename(part, pathname);
+  g_free(thumb);
   free(exif);
   g_free(rgb);
   if(!ok)
@@ -1731,7 +1904,7 @@ gboolean export_pano_merge(JsonObject *req, JsonBuilder *b, FILE *out, char **er
     g_unlink(part);
     g_free(part);
     g_free(original);
-    *err = g_strdup_printf("could not write '%s'", pathname);
+    *err = stopped ? g_strdup("stopped") : g_strdup_printf("could not write '%s'", pathname);
     return FALSE;
   }
   g_free(part);
@@ -1779,6 +1952,23 @@ static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
     *err = g_strdup_printf("wrote '%s', but could not import it", path);
     return FALSE;
   }
+  _neutral_history(imgid);
+  if(library_write_sidecar(imgid))
+  {
+    *err = g_strdup_printf("wrote '%s', but could not save its starting history", path);
+    return FALSE;
+  }
+  dt_mipmap_cache_remove(imgid);
+  json_builder_set_member_name(b, "path");
+  json_builder_add_string_value(b, path);
+  json_builder_set_member_name(b, "image");
+  library_image_json(b, imgid, FALSE);
+  return TRUE;
+}
+
+// only the modules a baked conversion needs, as its persistent history
+static void _neutral_history(const dt_imgid_t imgid)
+{
   dt_develop_t dev;
   dt_dev_init(&dev, FALSE);
   dt_dev_load_image(&dev, imgid);
@@ -1799,17 +1989,6 @@ static gboolean _positive_import(const char *path, JsonBuilder *b, char **err)
   dt_dev_write_history_ext(&dev, imgid);
   dt_dev_cleanup(&dev);
   dt_history_hash_write_from_history(imgid, DT_HISTORY_HASH_AUTO | DT_HISTORY_HASH_CURRENT);
-  if(library_write_sidecar(imgid))
-  {
-    *err = g_strdup_printf("wrote '%s', but could not save its starting history", path);
-    return FALSE;
-  }
-  dt_mipmap_cache_remove(imgid);
-  json_builder_set_member_name(b, "path");
-  json_builder_add_string_value(b, path);
-  json_builder_set_member_name(b, "image");
-  library_image_json(b, imgid, FALSE);
-  return TRUE;
 }
 
 // print_sheet's photos for a background print: the job's held snapshots,

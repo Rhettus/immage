@@ -76,6 +76,16 @@ metadata read:
 python3 -I verify/exiv2-lock.py
 ```
 
+The merge preview check (headless, no GUI) merges a panorama of the sample
+JPEG and, given a camera RAW, a panorama and an HDR merge of copies of it.
+Each DNG must carry its JPEG preview in IFD1 within the first 16 MB, with no
+EXIF of its own, and the preview, turned by the DNG's orientation, must match
+darktable's render of the merge. Use a portrait RAW to check the turn:
+
+```bash
+python3 -I verify/merge-preview.py --raw benchmarking/corpus/P9302114.ORF
+```
+
 The 0.46.0 engine check (headless, no GUI) starts the engine with the app's
 `--thumb-threads` and `--configdir` arguments and checks the config folder is
 the one asked for, checks the `thumb_threads` range, and runs History's start

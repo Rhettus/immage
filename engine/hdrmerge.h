@@ -31,9 +31,16 @@ gboolean hdr_merge_can_align(void);
 // all have; FALSE stops the merge
 typedef gboolean (*hdr_merge_step_t)(int done, int total, void *data);
 
+// called once the merge is whole, before it is written, with `write`,
+// which writes a small copy of it as a DNG at the path given. returns the
+// JPEG to embed as the DNG's preview (g_free), or NULL for none
+typedef guint8 *(*hdr_merge_preview_t)(gboolean (*write)(const char *path, void *data), void *data,
+                                       gsize *len);
+
 // the raw brackets `imgids` merged into a float DNG beside the first:
 // <name>-hdr.dng, or -hdr_01.dng, -hdr_02.dng... when taken. `align`
 // registers each onto the reference first, when the build can. `step`, if
-// any, follows the brackets as they are read. returns the DNG's path, or
-// NULL with *err
-gchar *hdr_merge(GList *imgids, gboolean align, hdr_merge_step_t step, void *data, char **err);
+// any, follows the brackets as they are read; `preview`, if any, gives the
+// embedded preview. returns the DNG's path, or NULL with *err
+gchar *hdr_merge(GList *imgids, gboolean align, hdr_merge_step_t step, void *data,
+                 hdr_merge_preview_t preview, char **err);

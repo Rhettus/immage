@@ -688,7 +688,10 @@ brackets themselves aren't changed.
 HDR DNGs preserve their format identification, color calibration and sensor
 pattern when copying the brackets' EXIF, and retain the camera's orientation
 so portrait and rotated brackets open upright in darktable and other photo
-applications.
+applications. Like a camera's raw, the DNG carries a preview of the merge as
+it first opens, so its thumbnail appears at once, here and in other apps
+that show previews, even on a slow drive. Editing the merge doesn't change
+that preview: Immage draws an edited photo's thumbnail from the edit.
 Regenerate an older merge if it shows a **?** thumbnail and cannot open.
 
 The brackets must be raws from the same camera, of the same size and
@@ -742,8 +745,10 @@ changed.
 
 Panorama DNGs can also be opened in darktable. RAW merges preserve the DNG's
 format identification, camera color matrix and white balance when copying
-the source photo's EXIF. If an older RAW merge shows a **?** thumbnail and
-cannot open, merge the original photos again with the updated version.
+the source photo's EXIF. Like an HDR merge, the DNG carries a preview of the
+panorama as it first opens, so its thumbnail appears at once. If an older RAW
+merge shows a **?** thumbnail and cannot open, merge the original photos
+again with the updated version.
 
 Before blending, Panorama Merge matches the photos' exposure and color, and
 evens out the lens's vignetting (corners darker than the middle), from
