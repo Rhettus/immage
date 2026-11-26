@@ -89,6 +89,9 @@ Performance
 
 Bug fixes
 
+- Export's size fields (long edge, width and height) and the Frame editor's
+  numbers can be typed into again: typing 5128 no longer snaps to 16 at the
+  first digit. Out-of-range values are corrected when you leave the field.
 - On Linux with an AMD graphics card and both AMD's ROCm and Mesa's RustiCL
   OpenCL drivers installed, Immage now uses ROCm and the GPU speeds up
   editing; before, it could be left with no working GPU and run on the CPU.

@@ -54,7 +54,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   [Immage Accelerator](app/docs/immage-accelerator.md) support, including camera thumbnails up
   to 400 × 400 pixels for unedited originals, optional NAS Smart Search, and NAS progress in
   Preferences → Immage Accelerator (Experimental).
-- Export to a folder or an Immich album, with borders and file-name templates.
+- [Export](app/docs/export.md) to a folder or an Immich album, with custom
+  dimensions, borders and file-name templates.
 - Use [Edit In](app/docs/edit-in.md#open-photos-as-layers-in-photocraft) to open
   edited photos as full-size 16-bit ProPhoto RGB layers in PhotoCraft.
   Continue editing the composite of a layered TIFF in Immage.

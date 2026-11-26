@@ -12,6 +12,7 @@ import {
   newBorder, newInner, newText, type BorderItem, type InnerItem, type Settings, type Sides, type TextItem,
 } from "./exportSettings";
 import { TEXT_TOKENS } from "./exportTokens";
+import { NumberField } from "./NumberField";
 
 
 // the installed fonts, read once from the engine, which draws the text
@@ -45,16 +46,10 @@ function ItemTools({ index, count, onMove, onRemove }: {
   );
 }
 
-function Num({ value, onChange, step = 0.1, min = 0, max = 10000 }: {
-  value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number;
+function Num({ value, onChange, min = 0, max = 10000 }: {
+  value: number; onChange: (v: number) => void; min?: number; max?: number;
 }) {
-  return (
-    <input className="field num-small" type="number" step={step} min={min} max={max} value={value}
-           onChange={(e) => {
-             const v = Number(e.target.value);
-             if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, v)));
-           }} />
-  );
+  return <NumberField className="field num-small" min={min} max={max} value={value} onChange={onChange} />;
 }
 
 export function ColorPick({ value, onChange }: { value: string; onChange: (v: string) => void }) {

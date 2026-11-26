@@ -17,6 +17,7 @@ import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, 
          MessageCircle, Monitor, Mountain, Palette, Proportions, Plus, Printer, Save, Share, Smartphone, Star, Tag, Trash, Users,
          type LucideIcon } from "lucide-react";
 import { ColorPick, FrameEditor } from "./ExportFrame";
+import { NumberField } from "./NumberField";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
 import { DATE_FORMATS, expand, fileTokenNames, folderPath, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
@@ -754,8 +755,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 </select>
                 {s.resize && !upscale && (
                   <>
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.longEdge}
-                           onChange={(e) => set("longEdge", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.longEdge}
+                                 onChange={(v) => set("longEdge", v)} />
                     {t("dialogs.export.pixels")}
                   </>
                 )}
@@ -764,11 +765,11 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 <>
                   <div className="row">
                     <span className="k">{t("dialogs.export.canvas")}</span>
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.canvasW}
-                           title={t("dialogs.print.width")} onChange={(e) => set("canvasW", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.canvasW}
+                                 title={t("dialogs.print.width")} onChange={(v) => set("canvasW", v)} />
                     ×
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.canvasH}
-                           title={t("dialogs.print.height")} onChange={(e) => set("canvasH", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.canvasH}
+                                 title={t("dialogs.print.height")} onChange={(v) => set("canvasH", v)} />
                     {t("dialogs.export.pixels")}
                   </div>
                   <div className="row">

@@ -102,6 +102,10 @@ Captions, is fitted inside and centered. **Turn for landscape photos**
 swaps the width and height for landscape photos. A photo smaller than
 the canvas is not enlarged; it sits in the middle at its own size.
 
+The long-edge and fixed-canvas fields accept 16 to 30,000 pixels. You can
+type the full number before the field applies those limits when you press
+Enter or leave it.
+
 AI upscale is offered only on a computer with a supported GPU. It makes a
 20 MP photo 80 MP (2×) or 320 MP (4×) and takes a few minutes for each
 photo. Its model (55 MB) downloads the first time.
@@ -110,6 +114,9 @@ photo. Its model (55 MB) downloads the first time.
 
 Three kinds of item, each added with its own **+** button. They fold to a
 summary and can be moved up or down.
+
+Frame & Captions number fields also keep your entry while you type and
+apply the field's limits when you press Enter or leave it.
 
 - **Frame**: space added around the photo; nothing is cropped. The same
   width all round, or each side on its own (a wider bottom, for a
