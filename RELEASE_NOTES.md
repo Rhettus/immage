@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
+  in the Library grid ask before resetting edits. Check **Don’t show this
+  confirmation again** when confirming to skip both prompts in the future.
 - **Better results on JPEGs and other non-RAW photos:** They no longer get a
   RAW tone mapper applied, so they open looking as shot. Immage also warns
   before a second tone mapper is turned on. JPEGs you edited in earlier

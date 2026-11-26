@@ -72,15 +72,22 @@ step: ⌘Z brings the whole history back, and ⇧⌘Z discards it again.
 
 In Library Grid view, you can also right-click an edited photo (or a selection
 containing edited photos) and choose **Reset Photo** (or **Reset N Photos…**)
-to discard their edit history and return them to unedited. When multiple edited
-photos are included, Immage asks for confirmation first; unedited photos in a
-mixed selection are skipped. When a photo is open in the editor, ⌘Z undoes the
-reset as one step.
+to discard their edit history and return them to unedited. Immage asks for
+confirmation whether you reset one photo or several. Check **Don’t show this
+confirmation again** and choose **Reset** to skip future prompts for grid
+resets and **Reset all**, including after restarting Immage. **Cancel** leaves
+your photos and the confirmation preference as they were. Immage skips
+unedited photos in a mixed selection. When a photo is open in the editor,
+⌘Z undoes the reset as one step.
 
 ![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
 ## Reset all
+
+Choose **Reset all** at the top of Adjustments, then confirm with **Reset**.
+Check **Don’t show this confirmation again** to skip future prompts here
+and in the Library grid.
 
 **Reset all**, in the Adjustments panel's head, takes the photo back to its
 defaults: sliders, crop, look, masks and spots. It also takes off what the

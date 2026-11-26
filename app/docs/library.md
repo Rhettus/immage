@@ -797,9 +797,10 @@ Right-click a photo, or a selection, for:
 - **Panorama Merge…**, for two photos or more
 - **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
 - **Reset Photo** / **Reset N Photos…**, in the grid when at least one selected
-  photo is edited: discards the edit history on the edited photos so they
-  return to unedited (multiple photos ask for confirmation first). Unedited
-  photos are ignored and the item does not appear when none are edited.
+  photo is edited. Confirm to discard the selected photos’ edits. Check
+  **Don’t show this confirmation again** before choosing **Reset** to skip
+  future prompts here and in Adjustments. Unedited photos are ignored and
+  the item does not appear when none are edited.
 - **Show in Library**: jumps to the photo's thumbnail in its folder view,
   expanding and scrolling to its folder in the left panel; useful after
   Smart/CLIP or **All folders** searches.

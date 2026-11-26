@@ -928,6 +928,9 @@ html.windows .tool, html.windows .tool * { cursor: default; }
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 6px; }
+.reset-photos-dialog { margin: auto; padding: 0; border: 0; color: var(--text); }
+.reset-photos-dialog:not([open]) { display: none; }
+.reset-photos-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .modal-head h2 { margin: 0; font-size: var(--fs-title); font-weight: 700; }
 .modal-body { padding: 0 18px 8px; overflow-y: auto; }
 .modal-body h3 { margin: 14px 0 8px; font-size: var(--fs-body); font-weight: 600; }

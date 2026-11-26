@@ -19,6 +19,7 @@ import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 import { filterValuesForPhoto, newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
 import { pasteTargets, replaceMasks, resetTargets, restorePaste, runPaste, runReset, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { ResetPhotosDialog } from "./ResetPhotosDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
 import { ModuleOrderDialog } from "./ModuleOrderDialog";
@@ -690,6 +691,7 @@ export default function App() {
   // photos dropped on a folder, waiting for the confirmation (MoveDialog).
   // `all` is what was dropped, stacked companions included; `list` is what
   // the request sends, without the companions when they are left out
+  const [resetConfirmation, setResetConfirmation] = useState<{ run: () => void; count?: number } | null>(null);
   const [moveDialog, setMoveDialog] = useState<(MoveAsk & { list: ImageEntry[]; req: MoveRequest;
                                                  plan: MovePlan | null; error: string | null }) | null>(null);
   const [folderMoveDialog, setFolderMoveDialog] = useState<{
@@ -1529,6 +1531,17 @@ export default function App() {
     if (rightMode !== "masks") showRight("masks");
     setMaskTool(t);
     setToolTarget(maskSel ? "add" : "new");
+  };
+  const requestReset = (run: () => void, count?: number) => {
+    if (settings.get("immage.skipResetConfirmation") === "1") run();
+    else setResetConfirmation({ run, count });
+  };
+  const requestResetAll = () => {
+    const activeSession = session.current;
+    if (!activeSession || croppingRef.current || pastingRef.current || aiBusy) return;
+    requestReset(() => {
+      if (session.current === activeSession && !croppingRef.current && !pastingRef.current) resetAll();
+    });
   };
   // everything back to the image's defaults: sliders, crop, look and masks
   // one undo step
@@ -5214,16 +5227,12 @@ export default function App() {
       setStatus(message);
     }
   };
+  const requestResetPhotos = (targets: ImageEntry[]) => {
+    if (!targets.length || croppingRef.current || pastingRef.current || aiBusy) return;
+    requestReset(() => void resetPhotos(targets), targets.length);
+  };
   const resetPhotos = async (targets: ImageEntry[]) => {
     if (!targets.length || croppingRef.current || pastingRef.current || aiBusy) return;
-    if (targets.length > 1) {
-      const ok = await ask(t("app.resetPhotos.confirm", { count: targets.length }), {
-        title: t("app.resetPhotos.title"),
-        kind: "warning",
-        okLabel: t("app.resetPhotos.okLabel"),
-      });
-      if (!ok || croppingRef.current || pastingRef.current || aiBusy) return;
-    }
     const active = currentRef.current;
     const hadSession = !!session.current && !!active;
     const before = hadSession ? snapshot(session.current!, targets.length === 1 ? "Reset photo" : `Reset ${targets.length} photos`) : null;
@@ -7712,7 +7721,7 @@ export default function App() {
             <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
-            <ResetAll disabled={!current} onReset={resetAll} />
+            <ResetAll disabled={!current} onReset={requestResetAll} />
           </div></div>
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
@@ -8195,6 +8204,12 @@ export default function App() {
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    {resetConfirmation && <ResetPhotosDialog count={resetConfirmation.count}
+      onClose={() => setResetConfirmation(null)} onConfirm={(skipConfirmation) => {
+        setResetConfirmation(null);
+        if (skipConfirmation) settings.set("immage.skipResetConfirmation", "1");
+        resetConfirmation.run();
+      }} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
     {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
       onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
@@ -8242,7 +8257,7 @@ export default function App() {
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
                   resetCount={resettable.length}
-                  onReset={resettable.length ? () => void resetPhotos(resettable) : undefined}
+                  onReset={resettable.length ? () => requestResetPhotos(resettable) : undefined}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
