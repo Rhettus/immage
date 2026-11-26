@@ -86,6 +86,8 @@ Performance
 Bug fixes
 
 - Renaming a photo in the Library grid keeps it selected.
+- Smart search no longer tries Immich, or reports that Immich failed, while
+  **Use Immich** is off in Preferences.
 - Culling no longer shows a photo as it was before you pasted settings onto
   it, reset it, or undid or redid a paste.
 - Exporting photos that share a name, such as a raw and its JPEG or a

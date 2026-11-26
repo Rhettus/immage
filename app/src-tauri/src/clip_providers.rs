@@ -344,6 +344,36 @@ pub fn refresh_share_roots(app: &AppHandle, runtime: &Path) {
     crate::volumes::set_share_roots(roots);
 }
 
+/// The saved Immich connection while Preferences > Immich > Use Immich is on.
+/// The importer's `immich_connection` ignores that switch (its duplicate
+/// checks read it themselves), so smart search and background analysis ask
+/// here: with the switch off they never reach the server. Reads the
+/// importer's SQLite: call off the event loop.
+pub fn immich_search_connection(app: &AppHandle) -> Option<tauri_plugin_immporter::ImmichConnection> {
+    let catalog = app.path().app_data_dir().ok()?.join("immporter").join("catalog.sqlite");
+    if !read_importer_immich_enabled(&catalog) {
+        return None;
+    }
+    tauri_plugin_immporter::immich_connection(app)
+}
+
+fn read_importer_immich_enabled(catalog_path: &Path) -> bool {
+    if !catalog_path.is_file() {
+        return false;
+    }
+    let Ok(conn) = Connection::open_with_flags(
+        catalog_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return false;
+    };
+    conn.query_row("SELECT value FROM settings WHERE key = 'immich'", [], |r| r.get::<_, String>(0))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|v| v.get("enabled")?.as_bool())
+        .unwrap_or(false)
+}
+
 fn read_importer_path_defaults(catalog_path: &Path) -> Option<(String, String)> {
     if !catalog_path.is_file() {
         return None;
@@ -509,7 +539,7 @@ impl ProbeCache {
     /// Immediately mark Immich CLIP unavailable for FAILURE_TTL so queries and
     /// background scans fall through to local CLIP immediately.
     pub fn record_immich_failure(&self, app: &AppHandle, runtime: &Path) {
-        let conn = tauri_plugin_immporter::immich_connection(app);
+        let conn = immich_search_connection(app);
         let map = effective_immich_path_map(app, runtime);
         let fp = immich_fingerprint(conn.as_ref(), &map);
         let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -579,8 +609,9 @@ impl ProbeCache {
 
         // 2. Immich
         let map = effective_immich_path_map(app, runtime);
-        // Fast-path: if Immich has no valid path mapping, skip keychain and network completely.
-        let (immich_value, immich_fp, immich_ttl) = if build_immich_coverage(&map).is_none() {
+        // without a valid path mapping, or with Use Immich off, skip the network
+        let conn = if build_immich_coverage(&map).is_some() { immich_search_connection(app) } else { None };
+        let (immich_value, immich_fp, immich_ttl) = if conn.is_none() {
             let fp = immich_fingerprint(None, &map);
             let cached_im = {
                 let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -596,7 +627,6 @@ impl ProbeCache {
                 (None, Some(fp), PROBE_TTL)
             }
         } else {
-            let conn = tauri_plugin_immporter::immich_connection(app);
             let fp = immich_fingerprint(conn.as_ref(), &map);
             let cached_im = {
                 let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -900,5 +930,29 @@ mod tests {
             Some(("/mnt/photos".into(), "/Volumes/photos".into()))
         );
         assert_eq!(read_importer_path_defaults(&dir.path().join("missing.sqlite")), None);
+    }
+
+    #[test]
+    fn read_importer_immich_enabled_follows_use_immich() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("catalog.sqlite");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)", [])
+            .unwrap();
+        assert!(!read_importer_immich_enabled(&db));
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES ('immich', ?1)",
+            [r#"{"enabled":false,"url":"http://immich","pathPrefix":"/mnt/photos"}"#],
+        )
+        .unwrap();
+        assert!(!read_importer_immich_enabled(&db));
+        conn.execute(
+            "UPDATE settings SET value = ?1 WHERE key = 'immich'",
+            [r#"{"enabled":true,"url":"http://immich"}"#],
+        )
+        .unwrap();
+        drop(conn);
+        assert!(read_importer_immich_enabled(&db));
+        assert!(!read_importer_immich_enabled(&dir.path().join("missing.sqlite")));
     }
 }

@@ -222,7 +222,7 @@ fn immich_client_for(
     providers: &ActiveProviders,
     allow_fallback_map: bool,
 ) -> Option<(Immich, ImmichCoverage)> {
-    let conn = tauri_plugin_immporter::immich_connection(app)?;
+    let conn = clip_providers::immich_search_connection(app)?;
     let cov = providers.immich.clone().or_else(|| {
         if !allow_fallback_map {
             return None;

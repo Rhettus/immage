@@ -463,7 +463,8 @@ Searching the library and narrowing a folder both happen here.
   the photo using per-folder precedence (**morfPhoto**, then **Immich**, then
   the optional local CLIP model on this computer); **Filename** searches file
   names. If a server does not answer or has CLIP/Smart Search turned off,
-  Immage falls through immediately to the next provider in that order. Until a
+  Immage falls through immediately to the next provider in that order. Immich
+  is used only while **Use Immich** is on in Preferences > Immich. Until a
   local CLIP model is downloaded and neither morfPhoto CLIP nor Immich is
   serving, Smart cannot run: Find then shows Filename as the active choice and
   Smart dimmed (hover it to see why; clicking does nothing), its box says it

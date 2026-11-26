@@ -1411,6 +1411,15 @@ paused or blocked. Four request tickets bound overlapping searches; cancellation
 retains admission until work exits and guards publication. Search UI integration
 and automatic embedding generation remain separate work.
 
+Smart search picks a CLIP provider per folder in `clip_providers.rs`:
+morfPhoto, then Immich, then local CLIP, each only while it is enabled and
+serving. morfPhoto counts only while its preference is on with a valid mapping
+(`mapped_root`); Immich only while Preferences > Immich > **Use Immich** is on,
+read from the importer's catalog by `immich_search_connection`. The importer's
+own `immich_connection` ignores that switch, so search code must not call it.
+A provider that fails is recorded for `FAILURE_TTL` and the query falls through
+to the next enabled one.
+
 Local analysis previews use a separate develop and the thumbnail worker pool.
 `analysis_preview` renders an sRGB JPEG at up to 1024 pixels on the long edge.
 Original analysis passes darktable’s `history_end=0` (no longer queued: only edited
