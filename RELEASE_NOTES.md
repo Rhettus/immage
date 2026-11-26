@@ -95,13 +95,13 @@ Bug fixes
 - On Linux with an AMD graphics card and both AMD's ROCm and Mesa's RustiCL
   OpenCL drivers installed, Immage now uses ROCm and the GPU speeds up
   editing; before, it could be left with no working GPU and run on the CPU.
-- Renaming a photo in the Library grid keeps it selected.
-- Smart search no longer tries Immich, or reports that Immich failed, while
-  **Use Immich** is off in Preferences.
 - A photo saved over in another program, such as a TIFF saved again in
   PhotoCraft, now shows its new version when you open it again or refresh
   its folder, and HDR and panorama merges use it, instead of only after
   restarting Immage.
+- Renaming a photo in the Library grid keeps it selected.
+- Smart search no longer tries Immich, or reports that Immich failed, while
+  **Use Immich** is off in Preferences.
 - Culling no longer shows a photo as it was before you pasted settings onto
   it, reset it, or undid or redid a paste.
 - Exporting photos that share a name, such as a raw and its JPEG or a
