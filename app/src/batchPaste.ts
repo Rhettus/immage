@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
-import { CONVERSIONS, TONE_MAPPER_ALL_OPS } from "./manifest";
+import { CONVERSIONS, TM_AGX, TM_SIGMOID, TONE_MAPPER_ALL_OPS } from "./manifest";
 import { filterValuesForPhoto } from "./pasteDefaults";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
@@ -56,6 +56,9 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
   // without it, turns off the modules it replaces that no slider covers
   const values = filterValuesForPhoto(c.values, s.toneMappable);
   const converts = CONVERSIONS.filter((v) => values[v.flag] === 1 && s.values[v.flag] !== 1);
+  if (values.tm_mode === TM_AGX || values.tm_mode === TM_SIGMOID) {
+    s.disableOtherToneMappers({ op: values.tm_mode === TM_AGX ? "agx" : "sigmoid", priority: 0 });
+  }
   s.setMany(Object.entries(values));
   if (converts.length) {
     const done = new Set<string>();

@@ -94,7 +94,12 @@ Performance
 
 Bug fixes
 
+- **Profile pastes include the tone mapper:** Copying **Profile** carries the
+  source tone mapper and AgX exposure range, so custom AgX presets transfer
+  to compatible photos.
 - Heal Fill can sample colors and pick a color range on cropped photos.
+- Moving or copying photos and folders onto NTFS and other FUSE drives on
+  Linux no longer fails at the end with "Invalid argument (os error 22)".
 - Export's size fields (long edge, width and height) and the Frame editor's
   numbers can be typed into again: typing 5128 no longer snaps to 16 at the
   first digit. Out-of-range values are corrected when you leave the field.

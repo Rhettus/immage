@@ -120,6 +120,12 @@ Corrections**, **Transform**, **Post-Crop Vignetting**, **Grain**,
 **Crop**, **Look**, **Masks** and **Advanced modules**. **Crop** and **Masks**
 start unticked. Your choice is remembered.
 
+**Profile**, the first checkbox, copies the Basic profile and its tone
+mapper setting to photos that support RAW tone mapping. For AgX, it also
+copies the source photo’s black and white relative exposure, including the
+range set by a custom AgX preset. JPEGs and other already tone-mapped photos
+accept Color Balance RGB profiles.
+
 Under **White Balance**, check **Auto on Paste** to calculate
 temperature and tint from each destination photo before applying the copied
 edits. This works with **Paste** and **Previous**. It skips destinations

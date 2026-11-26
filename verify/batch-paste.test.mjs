@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createRequire, registerHooks } from 'node:module';
 import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync, mkdirSync, renameSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,6 +44,7 @@ globalThis.cancelAnimationFrame = clearTimeout;
 const { Session } = await import('../app/src/session.ts');
 const { applyClip, pasteTargets, runPaste, runReset, restorePaste } = await import('../app/src/batchPaste.ts');
 const { makeClip } = await import('../app/src/CopySettings.tsx');
+const { AGX_FIELDS, profileSelection, setUserProfiles, TM_AGX, TM_NONE, TM_SIGMOID } = await import('../app/src/manifest.ts');
 const { commands } = await import('../app/src/commands.ts');
 const { startEngine, stopEngine, request, requestTagged, sent } = await import('./shim.mjs');
 const batch = (action, token, imgids) => request({ cmd:'paste_batch', action, token, imgids });
@@ -78,6 +81,55 @@ test('paste targets are exactly selected local versions, including a single non-
   assert.deepEqual(choose([]).targets,[images[0]]);
   assert.deepEqual(choose([-4]).targets,[]);
 });
+
+test('Profile alone pastes a custom AgX profile and range onto a Sigmoid RAW', { timeout: 120000 }, async () => fixture(async ({ dir, images }) => {
+  const sourcePath = join(dir, 'source.dng');
+  const targetPath = join(dir, 'target.dng');
+  await promisify(execFile)('python3', [join(root, 'verify/gui/hotpixels-fixture.py'), '--output', sourcePath]);
+  copyFileSync(sourcePath, targetPath);
+  const importPhoto = async (path) => ({ path, imgid: (await request({ cmd: 'open', path })).imgid });
+  const source = await importPhoto(sourcePath);
+  const target = await importPhoto(targetPath);
+  const jpeg = images[2];
+  let s = await open(source);
+  const { defaults } = (await commands.getParams({ agx: AGX_FIELDS })).modules.agx;
+  const params = { ...defaults, look_brightness: 1.17, range_black_relative_ev: -8, range_white_relative_ev: 5 };
+  setUserProfiles([{ value: 100, label: 'Custom AgX', params }]);
+  try {
+    s.endBaseline();
+    s.setMany(Object.entries(profileSelection(100)));
+    await s.close();
+    s = await open(source);
+    const clip = makeClip(new Set(['basic:Profile']), s.values, undefined, []);
+    assert.deepEqual(clip.values, { profile: 100, tm_mode: TM_AGX, agx_black: -8, agx_white: 5 });
+    assert.deepEqual(makeClip(new Set(), s.values, undefined, []).values, {});
+    await s.close();
+
+    s = await open(target);
+    s.endBaseline();
+    s.setMany([['tm_mode', TM_SIGMOID]]);
+    await s.close();
+    s = await open(target);
+    assert.equal(s.values.tm_mode, TM_SIGMOID);
+    await s.close();
+
+    const result = await runPaste([target, jpeg], clip, () => {}, () => {});
+    assert.equal(result.error, null);
+    s = await open(target);
+    assert.equal(s.values.profile, 100);
+    assert.equal(s.values.tm_mode, TM_AGX);
+    assert.equal(s.values.agx_black, -8);
+    assert.equal(s.values.agx_white, 5);
+    assert.deepEqual(s.activeToneMappers().map(({ op }) => op), ['agx']);
+    await s.close();
+    s = await open(jpeg);
+    assert.equal(s.values.tm_mode, TM_NONE);
+    assert.notEqual(s.values.profile, 100);
+    await s.close();
+  } finally {
+    setUserProfiles([]);
+  }
+}));
 
 test('Auto White Balance estimates the destination and is restored by batch undo and redo', { timeout: 120000 }, async () => fixture(async ({ images }) => {
   const groups = new Set(['basic:White Balance', 'auto-wb-on-paste', 'basic:Tone']);

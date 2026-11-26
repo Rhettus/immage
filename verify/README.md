@@ -224,13 +224,15 @@ Without `--load` it is the original import check. Prefetch has no completion
 reply, so its decode time is read from the engine's CPU use (Linux and macOS).
 
 The focused batch-paste regression check drives production Session and settings
-code through the real engine, with isolated photos and sidecars:
+code through the real engine, with isolated photos and sidecars. The Profile
+case uses Python 3 and ImageMagick (`magick`) to generate a RAW fixture:
 
 ```bash
 node --test --test-isolation=none verify/batch-paste.test.mjs
 ```
 
-It checks exact selection, untouched groups, look/strength, native history
+It checks exact selection, untouched groups, custom AgX profiles and tone
+mapper switching, look/strength, native history
 undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
