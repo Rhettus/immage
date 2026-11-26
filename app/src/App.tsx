@@ -293,6 +293,11 @@ export default function App() {
   // loader looks one up for every thumbnail, and a scan of a 140,000-photo
   // list for each made a folder read quadratic
   const imageById = useRef<{ of: ImageEntry[]; map: Map<number, ImageEntry> }>({ of: [], map: new Map() });
+  // the photos a folder read has asked thumbnails for but not shown yet
+  // (showFolder shows batches together, later): without them the loader
+  // skipped their disk cache and rendered them without a path, so they
+  // were never kept on disk
+  const readingById = useRef<Map<number, ImageEntry> | null>(null);
   const entryOf = (imgid: number) => {
     const list = imagesRef.current;
     if (imageById.current.of !== list) {
@@ -301,7 +306,7 @@ export default function App() {
       for (const i of list) if (!map.has(i.imgid)) map.set(i.imgid, i);
       imageById.current = { of: list, map };
     }
-    return imageById.current.map.get(imgid);
+    return imageById.current.map.get(imgid) ?? readingById.current?.get(imgid);
   };
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
@@ -3332,6 +3337,9 @@ export default function App() {
     // at most every few times the last showing took (`cost`), within 150 ms
     // to 2 s
     const read: ImageEntry[] = [];
+    // this read's, until it ends or another read takes over
+    const reading = new Map<number, ImageEntry>();
+    readingById.current = reading;
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
@@ -3368,7 +3376,11 @@ export default function App() {
           files = all;
           listed = true;
         }
-        for (const image of batch) read.push(image);
+        for (const image of batch) {
+          read.push(image);
+          // the first one read of an imgid wins
+          if (!reading.has(image.imgid)) reading.set(image.imgid, image);
+        }
         if (batch.length) newPhotos = true;
         loader.current!.request(batch.map((i) => i.imgid));
         progress = { done, total };
@@ -3414,6 +3426,7 @@ export default function App() {
       // a showing still to come would put back the progress the end cleared
       window.clearTimeout(timer);
       folderEdits.current.delete(edits);
+      if (readingById.current === reading) readingById.current = null;
     }
   };
 
