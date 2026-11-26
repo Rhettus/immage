@@ -774,7 +774,8 @@ fn sync_transfer_file(file: &File, path: &Path) -> Result<(), String> {
 
 // macOS SMB can reject both exclusive rename and hard links. Exclusive
 // creation still protects a destination that appeared after confirmation.
-#[cfg(any(target_os = "macos", test))]
+// So can Linux FUSE drives (see rename_no_replace).
+#[cfg(unix)]
 fn publish_by_exclusive_copy(part: &Path, target: &Path, expected: &str,
                              mtime: Option<std::time::SystemTime>, ctx: &Ctx) -> Result<(), String> {
     let mut input = File::open(part).map_err(|e| transfer_io_error("open verified temporary file", part, e))?;
@@ -898,8 +899,11 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
         std::fs::rename(&part, target)
             .map_err(|e| fail(transfer_io_error("rename temporary file", target, e)))?;
     } else if let Err(e) = rename_no_replace(&part, target) {
-        #[cfg(target_os = "macos")]
-        if matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EOPNOTSUPP)) {
+        // macOS SMB rejects RENAME_EXCL; Linux FUSE drives without hard
+        // links (exfat-fuse) reject RENAME_NOREPLACE with EINVAL.
+        #[cfg(unix)]
+        if matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EINVAL | libc::ENOSYS))
+            || e.raw_os_error() == Some(libc::EOPNOTSUPP) {
             publish_by_exclusive_copy(&part, target, &read, mtime, ctx).map_err(fail)?;
             if let Err(e) = std::fs::remove_file(&part) {
                 let _ = transfer_io_error("remove verified temporary file", &part, e);
@@ -1414,14 +1418,39 @@ fn rename_destinations(unit: &Unit, stem: &str) -> Result<Vec<PathBuf>, String> 
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+fn rename_no_replace(path: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
-    let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
+    let from = std::ffi::CString::new(path.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
     let result = unsafe {
         libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
     };
-    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    if result == 0 { return Ok(()); }
+    let error = std::io::Error::last_os_error();
+    // FUSE drives such as ntfs-3g reject the flag with EINVAL. A hard link
+    // fails with EEXIST rather than replacing, so link and unlink stands in
+    // for files; folders and drives without links keep the original error.
+    if !matches!(error.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)) {
+        return Err(error);
+    }
+    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+        return Err(error);
+    }
+    link_no_replace(&from, &to).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { e } else { error })
+}
+
+// rename for a file by hard link then unlink: never replaces `to`
+#[cfg(target_os = "linux")]
+fn link_no_replace(from: &std::ffi::CStr, to: &std::ffi::CStr) -> std::io::Result<()> {
+    if unsafe { libc::link(from.as_ptr(), to.as_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { libc::unlink(from.as_ptr()) } != 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe { libc::unlink(to.as_ptr()) };
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1806,6 +1835,24 @@ mod rename_tests {
         assert!(rename_no_replace(&source, &target).is_err());
         assert_eq!(std::fs::read(source).unwrap(), b"source");
         assert_eq!(std::fs::read(target).unwrap(), b"target");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn link_fallback_moves_files_without_replacing() {
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (source, target) = (dir.path().join("source"), dir.path().join("target"));
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&target, "target").unwrap();
+        let e = link_no_replace(&c(&source), &c(&target)).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&target).unwrap(), b"target");
+        std::fs::remove_file(&target).unwrap();
+        link_no_replace(&c(&source), &c(&target)).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"source");
     }
 }
 
