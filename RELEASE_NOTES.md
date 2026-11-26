@@ -114,6 +114,8 @@ Bug fixes
   source tone mapper and AgX exposure range, so custom AgX presets transfer
   to compatible photos.
 - Heal Fill can sample colors and pick a color range on cropped photos.
+- Overwriting the files a folder move skipped no longer fails at random with
+  "A transfer already uses one of these folders" right after the first pass.
 - Moving or copying photos and folders onto NTFS and other FUSE drives on
   Linux no longer fails at the end with "Invalid argument (os error 22)".
 - Export's size fields (long edge, width and height) and the Frame editor's

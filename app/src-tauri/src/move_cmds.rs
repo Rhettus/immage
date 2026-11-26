@@ -1226,6 +1226,10 @@ where F: Fn(&Unit, &Ctx) -> TransferResult + Send + Sync + 'static {
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task(&worker_unit, &worker_ctx)))
                     .unwrap_or_else(|_| Err("the transfer worker stopped unexpectedly".into()));
                 // All filesystem work and reservation cleanup have finished.
+                // The task can own a reservation (a folder move's Tree), so it
+                // goes before the result: once the batch has every result, a
+                // follow-up transfer of the same folders must not be refused.
+                drop(task);
                 drop(permit);
                 let _ = send.send((index, r));
             });
