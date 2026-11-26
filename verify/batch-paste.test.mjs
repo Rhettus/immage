@@ -14,7 +14,13 @@ registerHooks({
   load(url, ctx, next) {
     if (!url.startsWith('file:') || !/\.tsx?$/.test(url)) return next(url, ctx);
     const path = fileURLToPath(url);
-    return { format: 'module', source: transformSync(path, readFileSync(path, 'utf8'), { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
+    let source = readFileSync(path, 'utf8');
+    if (path === join(root, 'app/src/i18n.ts')) {
+      const english = readFileSync(join(root, 'app/src/locales/en.json'), 'utf8');
+      source = source.replace('import.meta.glob<Dict>("./locales/*.json", { eager: true, import: "default" })',
+        `{ "./locales/en.json": ${english} }`);
+    }
+    return { format: 'module', source: transformSync(path, source, { jsx: { runtime: 'automatic' } }).code, shortCircuit: true };
   },
   resolve(spec, ctx, next) {
     if (spec.startsWith('@tauri-apps/') || spec === '@immporter/api') return next(shim, ctx);
@@ -35,6 +41,7 @@ globalThis.requestAnimationFrame = f => setTimeout(() => f(performance.now()), 0
 globalThis.cancelAnimationFrame = clearTimeout;
 const { Session } = await import('../app/src/session.ts');
 const { applyClip, pasteTargets, runPaste, runReset, restorePaste } = await import('../app/src/batchPaste.ts');
+const { makeClip } = await import('../app/src/CopySettings.tsx');
 const { commands } = await import('../app/src/commands.ts');
 const { startEngine, stopEngine, request, requestTagged, sent } = await import('./shim.mjs');
 const batch = (action, token, imgids) => request({ cmd:'paste_batch', action, token, imgids });
@@ -71,6 +78,38 @@ test('paste targets are exactly selected local versions, including a single non-
   assert.deepEqual(choose([]).targets,[images[0]]);
   assert.deepEqual(choose([-4]).targets,[]);
 });
+
+test('Auto White Balance estimates the destination and is restored by batch undo and redo', { timeout: 120000 }, async () => fixture(async ({ images }) => {
+  const groups = new Set(['basic:White Balance', 'auto-wb-on-paste', 'basic:Tone']);
+  const source = { temp: 2400, tint: -120, exposure: 0.8 };
+  const clip = makeClip(groups, source, undefined, []);
+  assert.equal(clip.autoWB, true);
+  assert.deepEqual(clip.values, { exposure: source.exposure });
+  groups.delete('auto-wb-on-paste');
+  assert.deepEqual(makeClip(groups, source, undefined, []).values, source);
+  const [, color, mono] = images;
+  let s = await open(mono);
+  s.setMany([['bw_mode', 1]]);
+  await s.close();
+  const whiteBalance = async (image) => {
+    const session = await open(image);
+    const { temp, tint } = session.values;
+    await session.close();
+    return { temp, tint };
+  };
+  const before = await whiteBalance(color);
+  const monoBefore = await whiteBalance(mono);
+  const result = await runPaste([color, mono], clip, () => {}, () => {});
+  assert.equal(result.error, null);
+  const adjusted = await whiteBalance(color);
+  assert.notDeepEqual(adjusted, before);
+  assert.deepEqual(await whiteBalance(mono), monoBefore);
+
+  await restorePaste(result.token, 'undo');
+  assert.deepEqual(await whiteBalance(color), before);
+  await restorePaste(result.token, 'redo');
+  assert.deepEqual(await whiteBalance(color), adjusted);
+}));
 
 test('batch paste persists selected values and complete Kodak look, preserves other edits, undo/redo and virtual copies', {timeout:120000}, async () => fixture(async ({images,dir}) => {
   const lookPath=join(root,'app/looks/t3mujinpack/t3mujinpack - Color Negative_Kodak Gold 200.dtstyle');

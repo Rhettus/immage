@@ -4721,6 +4721,7 @@
   "fields.copy.title": "Copier les réglages",
   "fields.copy.checkAll": "Tout cocher",
   "fields.copy.checkNone": "Tout décocher",
+  "fields.copy.autoWhiteBalance": "Auto au collage",
   "fields.copy.cancel": "Annuler",
   "fields.copy.copy": "Copier",
   "fields.crop.free": "Libre",

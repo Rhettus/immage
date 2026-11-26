@@ -69,7 +69,7 @@ import { begin, end, track, useWorking } from "./activity";
 import { nextJobId, runInBackground, runMerge, runMove, runRenderedEditIn, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
-import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
+import { anchored, neutralize, whitePatch, type WB, pickedCoefficients, WB_REFINEMENTS, wbConverged, cameraUsedAutoWB } from "./wb";
 
 
 
@@ -3092,8 +3092,8 @@ export default function App() {
     const rgb = t.at ? sampleSpot(px, width, height, t.at.ix, t.at.iy) : whitePatch(px, width, height);
     const cur: WB = { temp: s.values.temp, tint: s.values.tint };
     const next = rgb && neutralize(cur, rgb);
-    const settled = !!next && Math.abs(1e6 / next.temp - 1e6 / cur.temp) < 2 && Math.abs(next.tint - cur.tint) < 1;
-    if (!next || settled || t.round >= 4) {
+    const settled = !!next && wbConverged(cur, next);
+    if (!next || settled || t.round >= WB_REFINEMENTS) {
       wbTarget.current = null;
       if (!next && t.round === 0) {
         setStatus(t.at ? translate("app.status.pickLighterSpot") : translate("app.status.noUsableColors"));
@@ -3118,7 +3118,7 @@ export default function App() {
       const m = await commands.meta(s.imgid)
         .catch(() => null);
       if (session.current !== s) return;
-      if (/^auto/i.test(m?.image.exif?.white_balance ?? "")) anchor = { temp: s.neutral.temp, tint: s.neutral.tint };
+      if (cameraUsedAutoWB(m?.image.exif?.white_balance)) anchor = { temp: s.neutral.temp, tint: s.neutral.tint };
     }
     wbTarget.current = { at, round: 0, anchor };
     const img = bc.getContext("2d")!.getImageData(0, 0, bc.width, bc.height);

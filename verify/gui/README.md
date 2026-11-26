@@ -473,9 +473,11 @@ two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
 copies Tone and Look through Copy Settings, selects two targets with a guarded
 modifier click, and exercises Paste, whole-batch Undo and Redo. It checks the
 selection/active photo, Exposure, look/amount, rendered pixels and both saved
-sidecars, then reopens the second target and the unselected photo. Inspection
-is read-only and limited to the app and this run's fixture sidecars. No system
-clipboard or native dialog is used. This case is written, not live-validated.
+sidecars, then reopens the second target and the unselected photo. It also
+enables Auto on Paste, checks that both destinations save an edit,
+and verifies that Undo restores the previous render and sidecar edits.
+Inspection is read-only and limited to the app and this run's fixture sidecars.
+The case uses only controls in the Immage webview.
 
 ## Moving photos by drag
 

@@ -120,6 +120,13 @@ Corrections**, **Transform**, **Post-Crop Vignetting**, **Grain**,
 **Crop**, **Look**, **Masks** and **Advanced modules**. **Crop** and **Masks**
 start unticked. Your choice is remembered.
 
+Under **White Balance**, check **Auto on Paste** to calculate
+temperature and tint from each destination photo before applying the copied
+edits. This works with **Paste** and **Previous**. It skips destinations
+already set to black and white or in negative conversion, and keeps the
+existing white balance when the photo has no usable colors. Leave the option
+unchecked to copy the source photo’s temperature and tint.
+
 Only the groups ticked in Copy Settings change; other edits stay as they
 were. **Look**, ticked by default, includes the film style's own module
 settings and **Look amount**. It reapplies the saved style definition, rather

@@ -108,6 +108,9 @@ for **B&W Mix**.
 - **Auto** judges the light by the brightest unclipped parts of the photo.
   When the camera set its own white balance, Auto trusts it and only nudges
   it, so a sunset or a field of green keeps its color.
+- To run Auto on several photos, choose **Auto on Paste** in
+  [Copy Settings](history-and-sync.md#copying-settings-to-other-photos), select
+  the destinations, and paste.
 
 **Tone**
 

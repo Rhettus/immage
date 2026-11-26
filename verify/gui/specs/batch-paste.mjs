@@ -99,4 +99,56 @@ export async function batchPaste(t) {
   await click(t,cell('batch-untouched.jpg'));await value(t,0);await look(t,null);
   await settledPhoto(t,p=>p.hash===untouchedBefore.hash);await t.evidence('unselected-photo');
   t.measure({name:'batch-paste',selected:selection,baseline:baseline.hash,pasted:edited.hash,sidecars:after.map(s=>s.file)});
+
+  await click(t,cell(t.fixture.file));
+  await settledPhoto(t);
+  await typeValue(t,'tint',-100);
+  await click(t,'[data-action="copy-settings"]');
+  await textButton(t,'.copy-settings','Check None');
+  await click(t,'[data-copy-group="basic:White Balance"]');
+  const offset=await t.driver.observe(() => {
+    const parent=document.querySelector('[data-copy-group="basic:White Balance"]').getBoundingClientRect();
+    const child=document.querySelector('.copy-auto-wb input').getBoundingClientRect();
+    return document.dir==='rtl' ? parent.right-child.right : child.left-parent.left;
+  });
+  assert(offset>=16,'Auto on Paste is indented under White Balance');
+  assert.equal(await t.driver.observe(() => document.querySelector('.copy-auto-wb input').checked),false);
+  await click(t,'.copy-auto-wb input');
+  assert.equal(await t.driver.observe(() => document.querySelector('.copy-auto-wb input').checked),true);
+  await t.evidence('auto-white-balance-copy-option');
+  await textButton(t,'.copy-settings .modal-foot','Copy');
+
+  await click(t,cell('batch-target-1.jpg'));
+  const wbBefore=await settledPhoto(t);
+  const wbOther=await reveal(t,cell('batch-target-2.jpg'));
+  await t.driver.modifiedPoint(modifier,wbOther.x,wbOther.y);
+  assert.equal((await selected(t)).length,2);
+  const beforeWB=await t.sidecarsNamed();
+  await click(t,'[data-action="paste-settings"]');
+  await waitDone(t);
+  const autoFrame=await settledPhoto(t,p=>p.hash!==wbBefore.hash);
+  const tint=+(await t.driver.observe(inspect,rangeSelector('tint'))).value;
+  assert(Number.isFinite(tint),'destination tint is visible');
+  assert.notEqual(tint,-100,'paste computes tint from the destination');
+  const afterWB=await t.sidecarsNamed();
+  const targets=beforeWB.filter(s=>s.file.startsWith('batch-target-'));
+  assert.equal(targets.length,2);
+  // Paste and undo both advance the change timestamp.
+  const withoutTimestamp=text=>text.replace(/darktable:change_timestamp="[^"]*"/,'');
+  for(const {file,text} of targets) {
+    const pasted=afterWB.find(s=>s.file===file);
+    assert(pasted,file);
+    assert.notEqual(withoutTimestamp(pasted.text),withoutTimestamp(text),file);
+  }
+  await t.evidence('auto-white-balance-pasted');
+  await click(t,'button[title^="undo ("]');
+  await waitDone(t);
+  await settledPhoto(t,p=>p.hash===wbBefore.hash);
+  const undoneWB=await t.sidecarsNamed();
+  for(const {file,text} of targets) {
+    const undone=undoneWB.find(s=>s.file===file);
+    assert(undone,file);
+    assert.equal(withoutTimestamp(undone.text),withoutTimestamp(text),file);
+  }
+  t.measure({name:'auto-white-balance-on-paste',tint,before:wbBefore.hash,after:autoFrame.hash});
 }

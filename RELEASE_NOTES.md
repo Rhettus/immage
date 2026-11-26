@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- **Auto white balance on paste:** Choose **Auto on Paste** under White
+  Balance in Copy Settings to calculate temperature and tint for each destination.
 - **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
   in the Library grid ask before resetting edits. Check **Don’t show this
   confirmation again** when confirming to skip both prompts in the future.

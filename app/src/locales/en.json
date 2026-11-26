@@ -4721,6 +4721,7 @@
   "fields.copy.title": "Copy Settings",
   "fields.copy.checkAll": "Check All",
   "fields.copy.checkNone": "Check None",
+  "fields.copy.autoWhiteBalance": "Auto on Paste",
   "fields.copy.cancel": "Cancel",
   "fields.copy.copy": "Copy",
   "fields.crop.free": "Free",

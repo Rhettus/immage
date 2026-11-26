@@ -7,6 +7,7 @@ import { filterValuesForPhoto } from "./pasteDefaults";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
 import { commands, type PasteUpdate } from "./commands";
+import { anchored, cameraUsedAutoWB, neutralize, whitePatch, wbConverged, WB_REFINEMENTS } from "./wb";
 
 export type PasteTarget = { imgid: number; path: string };
 export type { PasteUpdate } from "./commands";
@@ -105,6 +106,25 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
   return result;
 }
 
+// Analyze the destination before applying the clip. Temporary previews let
+// refinements use the new balance without saving intermediate edits.
+async function estimatePasteWB(s: Session) {
+  if (s.values.bw_mode === 1 || s.values.neg_on === 1) return null;
+  const { image } = await commands.meta(s.imgid);
+  const anchor = cameraUsedAutoWB(image.exif?.white_balance)
+    ? { temp: s.neutral.temp, tint: s.neutral.tint } : null;
+  let current = { temp: s.values.temp, tint: s.values.tint };
+  for (let round = 0; ; round++) {
+    const frame = await s.preview(640, round ? current : {});
+    const rgb = whitePatch(frame.pixels, frame.width, frame.height);
+    const next = rgb && neutralize(current, rgb);
+    if (!next && round === 0) return null;
+    if (!next || wbConverged(current, next) || round >= WB_REFINEMENTS)
+      return anchor ? anchored(anchor, next ?? current) : round ? current : null;
+    current = next;
+  }
+}
+
 export async function restorePaste(token: number, action: "undo" | "redo" | "abort") {
   const r = await commands.pasteBatch(action, token, null);
   return r.updates ?? [];
@@ -149,7 +169,8 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }),
         () => {}, e => { failure ??= e; }, true);
       try {
-        applyClip(s, { ...c, masks: undefined }, true);
+        const wb = c.autoWB ? await estimatePasteWB(s) : null;
+        applyClip(s, { ...c, values: wb ? { ...c.values, ...wb } : c.values, masks: undefined }, true);
         await s.settled();
         if (failure) throw Error(failure);
         const calculated = await recalculateAiMasks(c).catch(e => { throw Error(`${target.path}: ${e}`); });

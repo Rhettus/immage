@@ -85,6 +85,10 @@ function nearestCCT(x: number, y: number): number {
 
 type Params = Record<string, number>;
 export type WB = { temp: number; tint: number };
+export const WB_REFINEMENTS = 4;
+export const wbConverged = (current: WB, next: WB) =>
+  Math.abs(1e6 / next.temp - 1e6 / current.temp) < 2 && Math.abs(next.tint - current.tint) < 1;
+export const cameraUsedAutoWB = (setting?: string | null) => /^auto/i.test(setting ?? "");
 
 // a color calibration illuminant as Temp/Tint
 export function readWB(p: Params): WB {

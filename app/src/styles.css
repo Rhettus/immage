@@ -935,6 +935,7 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .modal-body { padding: 0 18px 8px; overflow-y: auto; }
 .modal-body h3 { margin: 14px 0 8px; font-size: var(--fs-body); font-weight: 600; }
 .modal-body .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.modal-body .row.copy-auto-wb { margin-inline-start: 20px; }
 .modal-body .row .k { width: 92px; flex: none; color: var(--text-2); }
 .modal-body .row.check { color: var(--text-2); cursor: pointer; }
 .modal-body .row input[type="range"] { flex: 1; }
