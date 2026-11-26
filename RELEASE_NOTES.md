@@ -89,6 +89,9 @@ Performance
 
 Bug fixes
 
+- On Linux with an AMD graphics card and both AMD's ROCm and Mesa's RustiCL
+  OpenCL drivers installed, Immage now uses ROCm and the GPU speeds up
+  editing; before, it could be left with no working GPU and run on the CPU.
 - Renaming a photo in the Library grid keeps it selected.
 - Smart search no longer tries Immich, or reports that Immich failed, while
   **Use Immich** is off in Preferences.

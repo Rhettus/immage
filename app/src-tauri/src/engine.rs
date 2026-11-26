@@ -917,19 +917,22 @@ fn read_stderr(stderr: ChildStderr, perf: Arc<Perf>) {
 }
 
 // darktable 5.6 turned ROCm's OpenCL off by default in favor of Mesa's
-// RustiCL (darktable 5d782a3b06), so a system with only ROCm installed got
-// no GPU at all: the platform found, 0 devices. ROCm is let in when no
-// RustiCL is installed to take the GPU twice. the ICD files name the
-// driver library they load; `root` is "/" but in the tests
+// RustiCL (darktable 5d782a3b06), so a system with ROCm installed got no
+// GPU at all when RustiCL was missing (the platform found, 0 devices), and
+// on an AMD card on Wayland with both installed, RustiCL gave no usable GPU
+// where ROCm did. installed ROCm is taken as the user's choice: its platform
+// on and RustiCL off, so the GPU is not taken twice (darktable's own advice
+// for RustiCL). the ICD files name the driver library they load; `root` is
+// "/" but in the tests
 #[cfg(any(target_os = "linux", test))]
-fn rocm_only(root: &Path) -> bool {
+fn rocm_installed(root: &Path) -> bool {
     let Ok(dir) = std::fs::read_dir(root.join("etc/OpenCL/vendors")) else { return false };
     let libs: Vec<String> = dir.flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "icd"))
         .filter_map(|e| std::fs::read_to_string(e.path()).ok())
         .map(|s| s.to_lowercase())
         .collect();
-    libs.iter().any(|l| l.contains("amdocl")) && !libs.iter().any(|l| l.contains("rusticl"))
+    libs.iter().any(|l| l.contains("amdocl"))
 }
 
 impl Engine {
@@ -1046,13 +1049,14 @@ impl Engine {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000);
         }
-        // ROCm's platform too, when it is the only AMD driver. with ROCm
-        // 7.1 darktable's kernels failed to build on read_imagef and
+        // ROCm's platform instead of RustiCL, when ROCm is installed. with
+        // ROCm 7.1 darktable's kernels failed to build on read_imagef and
         // write_imagef, and built as OpenCL C 2.0 (darktable #20084; RX 9070
         // XT, Ubuntu 26.04). _APPEND keeps darktable's own build options
         #[cfg(target_os = "linux")]
-        if rocm_only(Path::new("/")) {
-            cmd.args(["--conf", "clplatform_amdacceleratedparallelprocessing=true"]);
+        if rocm_installed(Path::new("/")) {
+            cmd.args(["--conf", "clplatform_amdacceleratedparallelprocessing=true",
+                      "--conf", "clplatform_rusticl=false"]);
             if std::env::var_os("AMD_OCL_BUILD_OPTIONS_APPEND").is_none() {
                 cmd.env("AMD_OCL_BUILD_OPTIONS_APPEND", "-cl-std=CL2.0");
             }
@@ -1355,7 +1359,7 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT, covering, Holds, HOLD_HINT};
+    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_installed, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT, covering, Holds, HOLD_HINT};
     use serde_json::json;
     use crate::settings::Settings;
     use std::time::{Duration, Instant};
@@ -1854,19 +1858,19 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn rocm_only_without_rusticl() {
+    fn rocm_installed_with_or_without_rusticl() {
         let root = std::env::temp_dir().join(format!("immage-icd-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let vendors = root.join("etc/OpenCL/vendors");
-        assert!(!rocm_only(&root));
+        assert!(!rocm_installed(&root));
         std::fs::create_dir_all(&vendors).unwrap();
         std::fs::write(vendors.join("nvidia.icd"), "libnvidia-opencl.so.1\n").unwrap();
-        assert!(!rocm_only(&root));
+        assert!(!rocm_installed(&root));
+        std::fs::write(vendors.join("rusticl.icd"), "libRusticlOpenCL.so.1\n").unwrap();
+        assert!(!rocm_installed(&root));
         // AMD's own packages name the file by version
         std::fs::write(vendors.join("amdocl64_70100.icd"), "libamdocl64.so\n").unwrap();
-        assert!(rocm_only(&root));
-        std::fs::write(vendors.join("rusticl.icd"), "libRusticlOpenCL.so.1\n").unwrap();
-        assert!(!rocm_only(&root));
+        assert!(rocm_installed(&root));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

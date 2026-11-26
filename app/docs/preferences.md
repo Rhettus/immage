@@ -258,6 +258,10 @@ Immage keeps to make it so.
   first one found. If none is found, AI upscaling isn't offered.
 - **Device**: which graphics card, when there is more than one.
 
+On Linux with an AMD graphics card, Immage uses AMD's ROCm OpenCL driver
+whenever it is installed, and leaves Mesa's RustiCL driver off so the card is
+not claimed twice. Without ROCm, RustiCL is used when it is installed.
+
 
 **Interface rendering** (Linux)
 
