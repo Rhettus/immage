@@ -1294,7 +1294,7 @@ static dt_masks_form_t *_spots_group(const dt_iop_module_t *m, const char *name)
 }
 
 // the fill and blur instance, NULL when the photo has none yet
-static dt_iop_module_t *_fill_instance(void)
+dt_iop_module_t *masks_fill_instance(void)
 {
   dt_iop_module_t *m = session_find_named("retouch", _FILL_NAME);
   return m && !g_list_find(_s.deleted, m) ? m : NULL;
@@ -1524,7 +1524,7 @@ static gboolean _spots_write(dt_iop_module_t *m, GPtrArray *spots, const gboolea
 // photo's lightness and texture), whole strength, no color limit
 static dt_iop_module_t *_fill_make(char **err)
 {
-  dt_iop_module_t *m = _fill_instance();
+  dt_iop_module_t *m = masks_fill_instance();
   if(m) return m;
   m = masks_named_instance("retouch", _FILL_NAME, FALSE, err);
   if(!m) return NULL;
@@ -1554,7 +1554,7 @@ gboolean masks_spots_set(JsonArray *spots, char **err)
   // a photo with fill and blur spots only needs no heal instance of its own
   if(plain->len || _spots_group(m, _SPOTS_GROUP))
     ok = _spots_write(m, plain, FALSE, err);
-  dt_iop_module_t *fm = ok ? (fills->len ? _fill_make(err) : _fill_instance()) : NULL;
+  dt_iop_module_t *fm = ok ? (fills->len ? _fill_make(err) : masks_fill_instance()) : NULL;
   if(ok && fills->len && !fm) ok = FALSE;
   if(ok && fm) ok = _spots_write(fm, fills, TRUE, err);
   g_ptr_array_free(plain, TRUE);
@@ -1712,7 +1712,7 @@ gboolean masks_spots_json(JsonBuilder *b, char **err)
 {
   dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
-  dt_iop_module_t *fm = _fill_instance();
+  dt_iop_module_t *fm = masks_fill_instance();
   json_builder_set_member_name(b, "enabled");
   json_builder_add_boolean_value(b, m->enabled || (fm && fm->enabled));
   json_builder_set_member_name(b, "spots");
@@ -1784,7 +1784,7 @@ gboolean masks_spots_enable(const gboolean on, char **err)
 {
   dt_iop_module_t *m = session_module("retouch", err);
   if(!m) return FALSE;
-  dt_iop_module_t *fm = _fill_instance();
+  dt_iop_module_t *fm = masks_fill_instance();
   gboolean changed = _spots_enable_one(m, _SPOTS_GROUP, on);
   if(fm) changed |= _spots_enable_one(fm, _FILL_GROUP, on);
   if(changed) session_changed(DT_DEV_PIPE_TOP_CHANGED);
@@ -2529,7 +2529,7 @@ static gboolean _working_at_module(_working_t *w, const _stage_t stage, dt_iop_m
   // and its input, which its color limit reads
   if(stage == _STAGE_RETOUCH || stage == _STAGE_RETOUCH_IN)
   {
-    anchor = _fill_instance();
+    anchor = masks_fill_instance();
     if(!anchor) anchor = dt_iop_get_module_by_op_priority(_s.dev.iop, "retouch", 0);
   }
   if(!anchor || !session_ppipe_ready(err))
@@ -3295,11 +3295,11 @@ static float _range_factor(const float v, const gboolean invert, const float *p)
 
 // how much `ranges` select at each point of a width x height grid over
 // the shown image, 0-255, written to `out`
-gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const char *out,
-                         char **err)
+gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const _stage_t stage,
+                         const char *out, char **err)
 {
   _working_t w;
-  if(!masks_working(&w, err)) return FALSE;
+  if(!_working_at(&w, stage, err)) return FALSE;
   dt_develop_blend_params_t bp = { 0 };
   _ranges_into(&bp, ranges);
   float params[DEVELOP_BLENDIF_PARAMETER_ITEMS * DEVELOP_BLENDIF_SIZE];

@@ -117,6 +117,7 @@ const GROUPS: ShortcutGroup[] = [
 ["[ ]", t("dialogs.shortcuts.healandclone.entry2")],
 ["Scroll", t("dialogs.shortcuts.healandclone.entry3")],
 ["A", t("dialogs.shortcuts.healandclone.entry4")],
+["O", t("dialogs.shortcuts.healandclone.overlay")],
 ["Delete", t("dialogs.shortcuts.healandclone.entry5")],
 ["Esc", t("dialogs.shortcuts.healandclone.entry6")],
     ],

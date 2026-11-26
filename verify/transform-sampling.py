@@ -102,6 +102,39 @@ def main():
                         for stage in ['retouch', 'retouch_in']:
                             request({'cmd': 'sample', 'stage': stage, 'x': .25, 'y': .5})
                         request({'cmd': 'spots', 'spots': []})
+                    if name == 'landscape':
+                        # The eye skips only Fill and Blur for a frame. Heal/Clone
+                        # and saved history must render as they did before the peek.
+                        clone = {'type': 'circle', 'mode': 'clone', 'x': .7, 'y': .7,
+                                 'sx': .35, 'sy': .35, 'r': .1}
+                        fill = {'type': 'circle', 'mode': 'fill', 'x': .3, 'y': .3,
+                                'r': .14, 'fill_mode': 1, 'fill_color': [.8, .05, .05]}
+                        frame = work / 'comparison.rgba'
+
+                        def pixels(**options):
+                            request({'cmd': 'render', 'width': 400, 'height': 300,
+                                     'rgba': str(frame), **options})
+                            return frame.read_bytes()
+
+                        for pipe in ({}, {'draft': True}, {'base': True}):
+                            request({'cmd': 'spots', 'spots': []})
+                            unedited = pixels(**pipe)
+                            request({'cmd': 'spots', 'spots': [clone]})
+                            clone_only = pixels(**pipe)
+                            assert clone_only != unedited
+                            request({'cmd': 'spots', 'spots': [clone, fill]})
+                            request({'cmd': 'spots_fill', 'blend': 'normal', 'opacity': 100})
+                            with_fill = pixels(**pipe)
+                            assert with_fill != clone_only, pipe
+                            assert pixels(skip=['retouch:fill'], **pipe) == clone_only, pipe
+                            assert pixels(**pipe) == with_fill, pipe
+                        with_fill = pixels()
+                        pixels(skip=['retouch:fill'])
+                        request({'cmd': 'save'})
+                        request({'cmd': 'open', 'path': str(work / 'portrait-native.tif')})
+                        request({'cmd': 'open', 'path': str(work / (name + '.tif'))})
+                        assert pixels() == with_fill, 'comparison must leave the saved image intact'
+                        request({'cmd': 'spots', 'spots': []})
                     # Render first to populate caches at a different scale. Then
                     # repeat after geometry edits, as the Transform panel does.
                     for cropped in [False, True, False]:

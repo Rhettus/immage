@@ -2176,6 +2176,8 @@ async function decisions(photo) {
       ["an adjustment hides it", overlayShown(steps(off, true, "adjust"), true), false],
       ["the next stroke shows it", overlayShown(steps(off, true, "adjust", "stroke"), true), true],
       ["no tool in hand, O shows it", overlayShown(steps(off, false, "key"), false), true],
+      ["O hides a hover preview", overlayShown(overlayStep(off, false, "key", null, true), false), false],
+      ["O shows a muted hover preview", overlayShown(overlayStep(off, false, "key", null, false), false), true],
       ["no tool in hand, an adjustment leaves it on", overlayShown(steps({ on: true, hold: null }, false, "adjust"), false), true],
     ];
     const wrong = cases.filter(([, got, want]) => got !== want).map(([label]) => label);

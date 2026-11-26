@@ -26,11 +26,12 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  Hover over range controls to preview the mask on the photo.
   In Advanced mode, apply built-in presets, import darktable `.dtpreset`
   files, save or delete your own module presets, including within masks, and
   change the order a photo's modules run in.
   Copied AI masks are recalculated for each destination photo.
-- [Heal, clone, fill and blur](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
+- [Heal, clone, fill and blur with multi-spot editing and area color sampling](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
   and working color profiles, and merge HDR photos or panoramas.
 - Apply presets and film looks, compare edits, and copy settings across photos,

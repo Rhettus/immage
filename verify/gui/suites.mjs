@@ -304,6 +304,9 @@ export const cases = {
     limitation: 'Needs a JPEG fixture. Runs in English. Restores the starting mode in a finally.' },
   'heal-fill': { liveValidated: true, verification: 'Linux system WebKitGTK; empty workspace 9 floating/maximized, original workspace 1 restored. Run 2026-11-25T14-14-38.034Z_a5b4ff2_a868143d (JPEG fixture stairs-to-mountain.jpg).', scope: 'Heal Fill and Blur spots: Fill shows the shared Fill and blur section (Color only, Limit Off by default); a click fills a spot with no source and changes the frame; Color and tone, a Range limit and Off change it (Off returns the unlimited frame); a Blur spot beside it changes the frame; Before takes the spots away and After brings them back; Clear all removes them',
     limitation: 'Runs in English. The color eyedroppers, Erase, Brightness, Bilateral, Radius and the Custom limit are not exercised.' },
+  'mask-range-hover': { liveValidated: true, verification: 'Linux system WebKitGTK, 1706×907 logical viewport, workspace 9 isolated and workspace 1 restored. Run 2026-11-26T22-17-49.012Z_d2c0bc3_40ec0620.', scope: 'Color Range and Luminance Range masks: hover previews visible selection pixels, leaving clears the transient preview, and O hides or pins the overlay even while hovering. Cleans up both masks.', fixture: 'configured JPEG',
+    limitation: 'Parametric and Depth Range previews are not covered; Depth needs the installed object/depth model workflow.' },
+  'heal-range-hover': { liveValidated: true, verification: 'Linux system WebKitGTK, 1706×907 logical viewport, workspace 9 isolated and workspace 1 restored. Run 2026-11-26T22-17-49.012Z_d2c0bc3_40ec0620.', scope: 'Heal > Fill > Limit to color: hover previews visible selection pixels, leaving clears the transient preview, and O hides or pins the overlay even while hovering. Resets the limit to Off.', fixture: 'configured JPEG' },
   ...generated,
 };
 export const suites = {
@@ -312,6 +315,7 @@ export const suites = {
   find: ['startup', 'find-live', 'find-sizes', 'find-saved', 'find-panel-memory', 'find-no-clip'],
   crop: ['startup','crop-guides','crop-locked','crop-options','crop-auto-straighten','crop-undo'],
   workflows: ['startup','curves','wheels','equalizer','saturation-curve','masks','color-range','heal','zones','film','print','preferences-matrix','slider-wheel','export-options','filters','presets','shortcuts','menus','menus-guards','menus-view-mode'],
+  'range-preview': ['startup','mask-range-hover','heal-range-hover'],
   inventory: ['startup',...generatedNames],
   engine: ['startup', 'engine-restart', 'save-failure', 'support-bundle'],
   regressions: ['startup', 'rail', 'panel-scroll', 'module-options', 'batch-paste', 'shift-range', 'wheel-undo'],

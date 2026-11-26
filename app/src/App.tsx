@@ -103,7 +103,7 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type ShowSpots, type SpotTool } from "./SpotOverlay";
 import { DEFAULT_FILL, anchorOf, type FillSettings, type NewSpot, type Spot } from "./spots";
-import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { aiRefine, type Backdrop, channelActive, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -844,7 +844,11 @@ export default function App() {
   // ones, and Visualize Spots' threshold (null when off)
   const healMode = rightMode === "heal";
   const [spots, setSpots] = useState<Spot[]>([]);
-  const [spotSel, setSpotSel] = useState<number | null>(null);
+  const [spotSelection, setSpotSelection] = useState<number[]>([]);
+  const spotSel = spotSelection.at(-1) ?? null;
+  const setSpotSel = (index: number | null) => setSpotSelection(index === null ? [] : [index]);
+  const toggleSpotSelection = (index: number) => setSpotSelection((selected) =>
+    selected.includes(index) ? selected.filter((i) => i !== index) : [...selected, index]);
   const [spotTool, setSpotTool] = useState<SpotTool>({
     mode: "heal", size: 0.03, feather: 0.5, opacity: 1,
     fill_mode: 1, fill_color: null, fill_brightness: 0, blur_type: 0, blur_radius: 10,
@@ -852,8 +856,30 @@ export default function App() {
   // what the photo's fill and blur spots share, and the eyedropper that is on
   // (a spot's color, or the color range they are limited to)
   const [spotFill, setSpotFill] = useState<FillSettings>(DEFAULT_FILL);
+  const [fillHidden, setFillHidden] = useState(false);
+  const [spotRangeHover, setSpotRangeHover] = useState(false);
+  const [spotRangePinned, setSpotRangePinned] = useState(false);
+  const [spotRangeMuted, setSpotRangeMuted] = useState(false);
+  const spotRangePreview = spotRangePinned || (spotRangeHover && !spotRangeMuted);
+  const toggleSpotRange = (on = !spotRangePreview) => {
+    setSpotRangePinned(on);
+    setSpotRangeMuted(!on && spotRangeHover);
+  };
+  const hoverSpotRange = useCallback((on: boolean) => {
+    setSpotRangeHover(on);
+    if (!on) setSpotRangeMuted(false);
+  }, []);
+  const spotRangeAvailable = (spotFill.ranges as unknown as Range[]).some((range) =>
+    range.type !== "parametric" || Object.values(range.channels).some(channelActive));
+  useEffect(() => {
+    setSpotRangePinned(false);
+    setSpotRangeMuted(false);
+    setSpotRangeHover(false);
+  }, [current, healMode, rightOpen]);
+  useEffect(() => {
+    if (!spotRangeAvailable) setSpotRangePinned(false);
+  }, [spotRangeAvailable]);
   const [spotPick, setSpotPick] = useState<"color" | "range" | null>(null);
-  useEffect(() => { if (!healMode) setSpotPick(null); }, [healMode]);
   const [visualize, setVisualize] = useState<number | null>(null);
   // Show Spots, remembered; H hides the spots and brings back the choice before
   const [showSpots, setShowSpotsState] = useState<ShowSpots>(() => {
@@ -888,6 +914,8 @@ export default function App() {
   const setZoneOverlay = (o: ZoneOverlay) => { setZoneOverlayState(o); saveZoneOverlay(o); };
   const zoneBox = useRef<HTMLDivElement>(null);
   const zoneCanvas = useRef<HTMLCanvasElement>(null);
+  const spotRangeBox = useRef<HTMLDivElement>(null);
+  const spotRangeCanvas = useRef<HTMLCanvasElement>(null);
   // ⌥-dragging a detail slider: the module's mask in black and white, or
   // the photo in grayscale (Control.optionPreview)
   const [optPreview, setOptPreview] = useState<OptionPreview | null>(null);
@@ -1075,24 +1103,32 @@ export default function App() {
     s.setFill(patch);
     syncSpots();
   };
-  // the eyedropper's click: the photo's color there becomes the selected
+  const editSelectedSpots = (update: (spot: Spot) => Spot, field: string) => {
+    const s = session.current;
+    if (!s || !spotSelection.length) return;
+    const indices = new Set(spotSelection);
+    editSpots(s.spots.map((spot, i) => indices.has(i) ? update(spot) : spot),
+      `spot:edit:${field}:${[...indices].sort((a, b) => a - b).join(".")}`);
+  };
+  // the eyedropper's pick: the photo's color there becomes the selected
   // fill spot's (and the brush's), or the color range the fill is limited to
-  const pickSpotPoint = async (x: number, y: number) => {
+  const pickSpotPoint = async (x: number, y: number, box: [number, number, number, number] | null = null) => {
     const s = session.current, kind = spotPick;
     if (!s || !kind) return;
     setSpotPick(null);
     try {
       if (kind === "color") {
-        const color = (await commands.sample(x, y, null, "retouch")).picker?.mean;
-        if (!color) return;
+        const targets = new Set(spotSelection.map((i) => s.spots[i]));
+        const color = (await commands.sample(x, y, box, "retouch")).picker?.mean;
+        if (!color || session.current !== s) return;
         setSpotTool((tl) => ({ ...tl, fill_color: color }));
-        const sel = spotSel !== null ? s.spots[spotSel] : undefined;
-        if (sel && sel.mode === "fill")
-          editSpots(s.spots.map((q, i) => (i === spotSel ? { ...q, fill_color: color } as Spot : q)), `spot:edit:${spotSel}`);
+        editSpots(s.spots.map((spot) => targets.has(spot) && spot.mode === "fill"
+          ? { ...spot, fill_color: color } : spot), "spot:edit:sample");
         return;
       }
       // the range reads the photo as the fill instance receives it
       const v = await commands.sample(x, y, null, "retouch_in");
+      if (session.current !== s) return;
       const r: Range = { type: "color", hue: v.hue, width: 0.04, feather: 0.04, chroma: v.chroma * 0.5 };
       const custom = (s.fill.ranges as unknown as Range[]).some((q) => q.type === "parametric");
       editFill({ ranges: [custom ? { type: "parametric", channels: rangeChannels(r) } : r] as unknown as FillSettings["ranges"] });
@@ -1103,7 +1139,8 @@ export default function App() {
   const deleteSpot = () => {
     const s = session.current;
     if (!s || spotSel === null) return;
-    editSpots(s.spots.filter((_, i) => i !== spotSel), "spot:delete");
+    const indices = new Set(spotSelection);
+    editSpots(s.spots.filter((_, i) => !indices.has(i)), "spot:delete");
     setSpotSel(null);
   };
   // a range tool's click: what the mask instances see there, as a band
@@ -1746,6 +1783,15 @@ export default function App() {
   // the crop tool: while it is open the crop module is bypassed, so the
   // whole image shows under the rectangle, which is applied on Done
   const [cropping, setCropping] = useState(false);
+  useEffect(() => {
+    if (!healMode || !rightOpen || !current || cropping) return;
+    const s = session.current;
+    return () => {
+      setFillHidden(false);
+      if (session.current === s && s?.setFillPreviewHidden(false)) baseStale.current = true;
+    };
+  }, [current, healMode, rightOpen, cropping]);
+  useEffect(() => { setSpotPick(null); }, [current, healMode, rightOpen, cropping]);
   // the side panel scrolls once for every tool: each tool keeps its own
   // place, and a tool opened for the first time starts at the top
   const panelsRef = useRef<HTMLDivElement>(null);
@@ -1796,6 +1842,8 @@ export default function App() {
   healModeRef.current = healMode && !cropping;
   const healKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false);
   healKeyRef.current = (e) => {
+    if (e.code === "KeyO" && rightOpen && spotRangeAvailable) { if (!e.repeat) toggleSpotRange(); return true; }
+    if (e.key === "Escape" && spotPick) { setSpotPick(null); return true; }
     if (e.key === "Escape" && spotSel !== null) { setSpotSel(null); return true; }
     if ((e.key === "Delete" || e.key === "Backspace") && spotSel !== null) { deleteSpot(); return true; }
     if (e.key === "a" || e.key === "A") { setVisualize((v) => (v === null ? 50 : null)); return true; }
@@ -1838,7 +1886,8 @@ export default function App() {
   // a mask whose name the pointer rests on in the Masks panel: its overlay
   // shows over the image, whether or not overlays are on
   const [peekName, setPeekName] = useState<string | null>(null);
-  const peekMask = masksMode ? masks.find((m) => m.name === peekName) ?? null : null;
+  const [maskPreviewMuted, setMaskPreviewMuted] = useState(false);
+  const peekMask = masksMode && rightOpen && !maskPreviewMuted ? masks.find((m) => m.name === peekName) ?? null : null;
   // a tool in hand to add to the selected mask or take from it: its overlay
   // shows whatever the toggle says, so the shape is drawn against what is
   // there, until O or an adjustment sets it aside (overlayStep)
@@ -1848,7 +1897,32 @@ export default function App() {
   const maskSelRef = useRef<string | null>(null);
   maskSelRef.current = masksMode ? maskSel : null;
   const maskShown = overlayShown(maskOverlay, addingTo, maskSelRef.current);
-  const overlayEvent = (ev: "key" | "adjust" | "stroke") =>
+  const [maskRangeHover, setMaskRangeHover] = useState(false);
+  const hoverMaskRange = useCallback((on: boolean) => {
+    setMaskRangeHover(on);
+    if (on) setMaskPreviewMuted(false);
+  }, []);
+  useEffect(() => {
+    setPeekName(null);
+    setMaskRangeHover(false);
+    setMaskPreviewMuted(false);
+  }, [current, maskSel, masksMode, rightOpen]);
+  const maskEditingShown = !maskPreviewMuted && (refining || (rightOpen && maskRangeHover && !!selMask && !selMask.hidden));
+  const maskToggleRef = useRef(() => {});
+  const toggleMaskOverlay = () => {
+    const shown = maskShown || (!!peekMask && !peekMask.hidden) || maskEditingShown;
+    setMaskPreviewMuted(shown);
+    if (shown) {
+      window.clearTimeout(refineTimer.current);
+      setRefining(false);
+    }
+    setMaskOverlay((state) => overlayStep(state, addingTo, "key", maskSel, shown));
+  };
+  maskToggleRef.current = toggleMaskOverlay;
+  useEffect(() => {
+    if (!peekName && !maskRangeHover && !refining) setMaskPreviewMuted(false);
+  }, [peekName, maskRangeHover, refining, maskPreviewMuted]);
+  const overlayEvent = (ev: "adjust" | "stroke") =>
     setMaskOverlay((t) => overlayStep(t, addingRef.current, ev, maskSelRef.current));
   // a mask an AI selection just made: its overlay shows (overlayShown)
   const aiShown = (name: string | null) => setMaskOverlay((t) => ({ ...t, fresh: name }));
@@ -1865,7 +1939,7 @@ export default function App() {
     const s = session.current, f = full.current;
     const target = peekMask ?? selMask;
     const ranges = target?.shapes.filter(isRange) ?? [];
-    if (!s || !f || !masksMode || (!maskShown && !peekMask && !refining) || !ranges.length) { setRangeMap(null); return; }
+    if (!s || !f || !masksMode || (!maskShown && !peekMask && !maskEditingShown) || !ranges.length) { setRangeMap(null); return; }
     let stale = false;
     const timer = window.setTimeout(async () => {
       let stopped = false;
@@ -1879,7 +1953,7 @@ export default function App() {
       }
       const width = 320, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
-        const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
+        const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height, null));
         if (!stale) {
           setRangeMap({ width, height, data: new Uint8Array(buf, 8) });
           setRangeFor(target!.name);
@@ -1891,7 +1965,7 @@ export default function App() {
       }
     }, 150);
     return () => { stale = true; window.clearTimeout(timer); };
-  }, [selMask, peekMask, values, look, masksMode, maskShown, refining]);
+  }, [selMask, peekMask, values, look, masksMode, maskShown, maskEditingShown]);
   // darktable's own mask, for the overlay of a refined mask: refinements
   // follow the photo's edges and detail, which the shapes cannot show.
   // fetched again as soon as the last one is in while sliders move, and the
@@ -1910,7 +1984,7 @@ export default function App() {
     const s = session.current, f = full.current;
     const target = peekMask ?? selMask;
     if (!s || !f || !shownView || !masksMode || !target || !wantsFinal(target) || target.hidden
-        || (!maskShown && !peekMask && !refining)) return;
+        || (!maskShown && !peekMask && !maskEditingShown)) return;
     finalTarget.current = target.name;
     finalView.current = shownView;
     finalWant.current++;
@@ -1949,7 +2023,7 @@ export default function App() {
         finalBusy.current = false;
       }
     })();
-  }, [selMask, peekMask, values, look, masksMode, maskShown, refining, shownView]);
+  }, [selMask, peekMask, values, look, masksMode, maskShown, maskEditingShown, shownView]);
   // the range masks' maps for their thumbnails in the panel, small, made
   // again when their ranges change
   const [thumbMaps, setThumbMaps] = useState<Record<string, RangeMap>>({});
@@ -1967,7 +2041,7 @@ export default function App() {
         if (stale) return;
         const ranges = m.shapes.filter(isRange), width = 64, height = Math.max(1, Math.round((width * f.h) / f.w));
         try {
-          const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
+          const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height, null));
           if (stale) return;
           thumbKeys.current[m.name] = JSON.stringify(ranges);
           setThumbMaps((o) => ({ ...o, [m.name]: { width, height, data: new Uint8Array(buf, 8) } }));
@@ -2705,7 +2779,7 @@ export default function App() {
       layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, spotRangeBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
       if (!mb) continue;
       layerStyle(mb, "left", `${ox / dpr}px`);
       layerStyle(mb, "top", `${oy / dpr}px`);
@@ -5658,6 +5732,60 @@ export default function App() {
   // held; the edit stays live
   const [baMode, setBaModeState] = useState<BaMode>("off");
   const baModeRef = useRef<BaMode>("off");
+  const [spotRangeMap, setSpotRangeMap] = useState<{ photo: Opened; map: RangeMap; size: string } | null>(null);
+  const spotRangeShown = healMode && rightOpen && !cropping && !preview && baMode === "off" && spotRangeAvailable && spotRangePreview;
+  const spotRangeWidth = placement?.fullWidth ?? 0, spotRangeHeight = placement?.fullHeight ?? 0;
+  const spotRangeSize = `${spotRangeWidth}x${spotRangeHeight}`;
+  const spotRanges = spotFill.ranges;
+  useEffect(() => {
+    const s = session.current;
+    if (!s || !current || !spotRangeShown || !spotRanges.length || !spotRangeWidth || !spotRangeHeight) {
+      setSpotRangeMap(null);
+      return;
+    }
+    let stale = false;
+    // Let the current edit render first. Wait for a pause in the range controls
+    // before asking the preview pipe to sample retouch's input.
+    let timer = window.setTimeout(async function readRange() {
+      if (stale || session.current !== s) return;
+      if (!s.idle) {
+        timer = window.setTimeout(readRange, 50);
+        return;
+      }
+      const scale = Math.min(1, 480 / Math.max(spotRangeWidth, spotRangeHeight));
+      const width = Math.max(1, Math.round(spotRangeWidth * scale));
+      const height = Math.max(1, Math.round(spotRangeHeight * scale));
+      try {
+        const buf = await track(commands.rangeMap(spotRanges, width, height, true));
+        if (!stale && session.current === s)
+          setSpotRangeMap({ photo: current, size: spotRangeSize, map: { width, height, data: new Uint8Array(buf, 8) } });
+      } catch (e) {
+        if (!stale && session.current === s) {
+          setSpotRangeMap(null);
+          setStatus(t("app.status.rangeMapError", { error: e }));
+        }
+      }
+    }, 80);
+    return () => { stale = true; window.clearTimeout(timer); };
+  }, [current, spotRangeShown, spotRangeSize, spotRangeWidth, spotRangeHeight, spotRanges, spots, values, look, lookAmount, masks]);
+
+  const spotTint = spotRangeShown && spotRanges.length && spotRangeMap?.photo === current
+    && spotRangeMap.size === spotRangeSize ? spotRangeMap.map : null;
+  useEffect(() => {
+    const c = spotRangeCanvas.current;
+    if (!c || !spotTint) return;
+    const { width, height, data } = spotTint;
+    const img = new ImageData(width, height);
+    for (let i = 0; i < data.length; i++) {
+      img.data[4 * i] = 255;
+      img.data[4 * i + 1] = 220;
+      img.data[4 * i + 3] = Math.round(data[i] * 0.55);
+    }
+    c.width = width;
+    c.height = height;
+    c.getContext("2d")!.putImageData(img, 0, 0);
+    placeLayers();
+  }, [spotTint]); // eslint-disable-line react-hooks/exhaustive-deps
   const [splitPos, setSplitPos] = useState(0.5);
   const [holding, setHolding] = useState(false);
   const [modeFlash, setModeFlash] = useState<string | null>(null);
@@ -6825,7 +6953,7 @@ export default function App() {
       }
       if (masksModeRef.current) {
         if (e.key === "Escape") { setMaskTool(null); return; }
-        if (e.key === "o" || e.key === "O") { overlayEvent("key"); return; }
+        if (e.code === "KeyO") { if (!e.repeat) maskToggleRef.current(); return; }
         if (e.key === "[" || e.key === "]") {
           setBrush((b) => ({ ...b, size: Math.min(0.4, Math.max(0.005, b.size * (e.key === "]" ? 1.15 : 1 / 1.15))) }));
           return;
@@ -7407,7 +7535,7 @@ export default function App() {
                              })()}
                              overlayColor={maskOverlayRgb(overlayColor)}
                              onHoverPick={pickShow && selMask?.shapes[shapeSel]?.type === "parametric" ? hoverPick : null}
-                             tool={maskTool} brush={brush} showOverlay={(maskShown && !adjusting) || refining} adding={addingTo} shaping={refining} selected={shapeSel}
+                             tool={maskTool} brush={brush} showOverlay={(maskShown && !adjusting) || maskEditingShown} adding={addingTo} shaping={refining} selected={shapeSel}
                              newMask={toolTarget === "new" && !!maskTool}
                              subtract={toolTarget === "subtract" && !!maskTool}
                              onSelect={setShapeSel}
@@ -7424,6 +7552,11 @@ export default function App() {
               <div className="mask-box" ref={zoneBox}>
                 {zoneShown && <canvas ref={zoneCanvas} className="mask-tint zone-tint" />}
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
+              </div>
+            )}
+            {spotTint && (
+              <div className="mask-box" ref={spotRangeBox} aria-hidden="true">
+                <canvas ref={spotRangeCanvas} className="mask-tint" />
               </div>
             )}
             <div className="mask-box checker-box" ref={setCheckerBox} />
@@ -7452,11 +7585,19 @@ export default function App() {
             )}
             {healMode && current && !cropping && !preview && full.current && (
               <div className="mask-box" ref={maskBox}>
-                <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} tool={spotTool}
+                <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} selection={spotSelection} tool={spotTool}
                              show={showSpots} visualize={visualize} base={baseCanvas} baseTick={baseTick} overlayColor={maskOverlayRgb(overlayColor)}
                              picking={spotPick !== null} onPickPoint={(x, y) => void pickSpotPoint(x, y)}
                              onSelect={setSpotSel} onCreate={(sp) => void createSpot(sp)}
                              onChange={(next) => editSpots(next, "spot:drag")} />
+                {spotPick === "color" && <ObjectBox onPrompt={({ box, points }) => {
+                  if (box && box[0] < box[2] && box[1] < box[3]) {
+                    void pickSpotPoint((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box);
+                  } else {
+                    const [x, y] = points?.[0] ?? (box ? [box[0], box[1]] : [0.5, 0.5]);
+                    void pickSpotPoint(x, y);
+                  }
+                }} />}
               </div>
             )}
             {transformView && full.current && (
@@ -7791,7 +7932,7 @@ export default function App() {
                         onResetAdjustments={resetMaskAdjustments}
                         raw={session.current?.raw ?? true} image={full.current} thumbMaps={thumbMaps}
                         onDelete={deleteMask}
-                        onPeek={setPeekName}
+                        onPeek={setPeekName} onRangeHover={hoverMaskRange}
                         onRename={(from, to) => {
                           const s = session.current;
                           if (!s) return;
@@ -7802,7 +7943,7 @@ export default function App() {
                           syncMasks();
                         }}
                         onBrush={setBrush}
-                        onOverlay={() => overlayEvent("key")}
+                        onOverlay={toggleMaskOverlay}
                         onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
                         onLocalMany={(entries, gesture) => {
                           const s = session.current;
@@ -7828,19 +7969,21 @@ export default function App() {
                         }} />
           )}
           {healMode && !cropping && (
-            <HealPanel tool={spotTool} spots={spots} selected={spotSel} show={showSpots} visualize={visualize} disabled={!current}
+            <HealPanel key={current?.imgid ?? current?.path} tool={spotTool} spots={spots} selection={spotSelection} onSelect={toggleSpotSelection} show={showSpots} visualize={visualize} disabled={!current}
                        fill={spotFill} picking={spotPick} onFill={editFill} onPick={setSpotPick}
+                       fillHidden={fillHidden} onFillHidden={(hidden) => {
+                         setFillHidden(hidden);
+                         baseStale.current = true;
+                         session.current?.setFillPreviewHidden(hidden);
+                       }}
+                       rangePreviewPinned={spotRangePinned} onRangePreviewToggle={toggleSpotRange} onRangeHover={hoverSpotRange}
                        onDeselect={() => setSpotSel(null)}
                        renderSlider={(c, v, onChange) => (
                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                  values={values} onChange={onChange} />
                        )}
                        onTool={setSpotTool}
-                       onSpot={(patch) => {
-                         const s = session.current;
-                         if (!s || spotSel === null) return;
-                         editSpots(s.spots.map((x, i) => (i === spotSel ? { ...x, ...patch } as Spot : x)), `spot:edit:${spotSel}`);
-                       }}
+                       onSpot={editSelectedSpots}
                        onDelete={deleteSpot}
                        onClear={() => { editSpots([], "spot:clear"); setSpotSel(null); }}
                        onShow={setShowSpots} onVisualize={setVisualize} />

@@ -24,7 +24,17 @@ Improvements
   you can even out skin tones and other color blotches on part of a photo. Fill
   paints a spot with a color (picked from the photo) or a flat tone, changing
   only the color by default so light and texture stay; set its strength, and
-  limit it to a hue range to leave the rest of the spot alone.
+  limit it to a hue range to leave the rest of the spot alone. Hover over
+  **Limit to color** to preview the matching areas, or click the eye to keep
+  the overlay visible while you pick a color. Drag a box with the Fill color
+  eyedropper to sample an average, then adjust the replacement Hue and
+  Saturation. The eye beside Strength compares the Fill and Blur effect on
+  and off.
+- **Edit several Heal spots together:** Use **Select spots** to change
+  brush settings or delete multiple spots in one Undo step.
+- **Range mask previews:** Hover over Color Range, Luminance Range,
+  Parametric or Depth Range controls in Masks to see the selection. Press
+  **O** to show or hide the overlay in Masks or Heal.
 - **Module order in Advanced mode:** A new **Module order** button lets you
   drag modules to change the order they run in for a photo.
 - **Find searches the whole library:** Under **All folders**, Find's filter

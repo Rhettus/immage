@@ -430,9 +430,8 @@ export type OverlayToggle = { on: boolean; hold: null | "key" | "adjust"; fresh?
 export const overlayShown = (t: OverlayToggle, adding: boolean, selected: string | null = null) =>
   t.on || (!!t.fresh && t.fresh === selected) || (adding && !t.hold);
 export function overlayStep(t: OverlayToggle, adding: boolean, ev: "key" | "adjust" | "stroke",
-                            selected: string | null = null): OverlayToggle {
+                            selected: string | null = null, shown = overlayShown(t, adding, selected)): OverlayToggle {
   if (ev === "key") {
-    const shown = overlayShown(t, adding, selected);
     return { on: !shown, hold: shown && adding ? "key" : null, fresh: null };
   }
   if (ev === "adjust") return { ...t, hold: adding && !t.hold ? "adjust" : t.hold, fresh: null };

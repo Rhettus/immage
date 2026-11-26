@@ -502,6 +502,7 @@ gboolean masks_combine(const char *name, JsonArray *members, JsonArray *ranges, 
 void masks_add_num(JsonBuilder *b, const char *name, const double v);
 gboolean masks_spots_set(JsonArray *spots, char **err);
 gboolean masks_spots_json(JsonBuilder *b, char **err);
+dt_iop_module_t *masks_fill_instance(void);
 gboolean masks_spots_enable(const gboolean on, char **err);
 gboolean masks_fill_set(JsonObject *req, JsonBuilder *b, char **err);
 gboolean masks_spot_source(JsonObject *o, JsonBuilder *b, char **err);
@@ -519,8 +520,8 @@ gboolean masks_upright(const char *mode, JsonArray *guides, const double aspect,
                        char **err);
 void masks_points(JsonArray *pts, const gboolean to_shown, JsonBuilder *b);
 gboolean masks_tone_key(JsonBuilder *b, char **err);
-gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const char *out,
-                         char **err);
+gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const _stage_t stage,
+                         const char *out, char **err);
 gboolean masks_zones(const int width, const int height, const float w, const _stage_t stage,
                      const char *out, JsonBuilder *b, char **err);
 gboolean masks_mask_map(const char *name, const char *op, int *width, int *height,

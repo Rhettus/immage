@@ -50,3 +50,27 @@ export const DEFAULT_FILL: FillSettings = { blend: "chromaticity", opacity: 100,
 // it was made in)
 export const orderSpots = (spots: Spot[]): Spot[] =>
   [...spots.filter((s) => hasSource(s)), ...spots.filter((s) => !hasSource(s))];
+
+type RGB = [number, number, number];
+
+export function fillColorHsl(rgb: RGB, grayHue: number) {
+  const [r, g, b] = rgb.map((value) => Math.min(1, Math.max(0, value)));
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const chroma = max - min, lightness = (max + min) / 2;
+  if (!chroma) return { hue: grayHue, saturation: 0, lightness };
+  const sector = max === r ? (g - b) / chroma : max === g ? 2 + (b - r) / chroma : 4 + (r - g) / chroma;
+  return {
+    hue: (sector * 60 + 360) % 360,
+    saturation: chroma / Math.min(max + min, 2 - max - min),
+    lightness,
+  };
+}
+
+export function fillColorRgb({ hue, saturation, lightness }: ReturnType<typeof fillColorHsl>): RGB {
+  const amplitude = saturation * Math.min(lightness, 1 - lightness);
+  const channel = (offset: number) => {
+    const k = (offset + hue / 30) % 12;
+    return lightness - amplitude * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [channel(0), channel(8), channel(4)];
+}

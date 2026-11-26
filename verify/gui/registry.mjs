@@ -56,6 +56,7 @@ import { advancedRawCards } from './specs/advanced-raw-cards.mjs';
 import { advancedFileCards } from './specs/advanced-file-cards.mjs';
 import { colorzonesCurves } from './specs/colorzones-curves.mjs';
 import { healFill } from './specs/heal-fill.mjs';
+import { healRangeHover, maskRangeHover } from './specs/range-hover.mjs';
 import { panelPeek } from './specs/panel-peek.mjs';
 import { eyeOrder } from './specs/eye-order.mjs';
 import { gridZoom } from './specs/grid-zoom.mjs';
@@ -188,6 +189,8 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'advanced-file-cards': advancedFileCards,
   'colorzones-curves': colorzonesCurves,
   'heal-fill': healFill,
+  'mask-range-hover': maskRangeHover,
+  'heal-range-hover': healRangeHover,
 };
 for(const [name,definition] of Object.entries(cases)) if(definition.kind)
   implementations[name] = t => ({range:rangeContract,choice:choiceContract,module:moduleOutput}[definition.kind])(t,definition);

@@ -104,6 +104,13 @@ works the same way.
 
 ## Mask settings
 
+Select a **Color Range**, **Luminance Range**, **Parametric** or **Depth Range**
+component, then hover over its controls to preview the mask on the photo.
+The overlay shows the combined selection, including any other components.
+Press **O** or click the eye in the Masks panel title to show or hide it.
+If you hide a hover preview, it stays off until you leave the controls or
+turn the overlay back on.
+
 - **Invert**: adjust everything except the mask. On a mask with a range (color,
   luminance or parametric) and drawn shapes, the range is inverted and the
   shapes are shown as you drew them: a shape taking away cuts its area out of

@@ -47,20 +47,28 @@ spot's surroundings. It shows as an outline linked to the spot.
 - **Feather**: 0-100, how soft the patch's edge is.
 - **Opacity**: 0-100.
 
-With a spot selected, the settings change that spot. They are also kept
-for the next one. A selected spot shows the controls of its own kind; the
-buttons switch between heal and clone, or between fill and blur, on the
-spot. Choosing the other pair lets go of the spot and sets the brush for
-new ones.
+Click a spot on the photo to select it, or check several under **Select
+spots** in the Heal panel. Size, Feather and Opacity apply to the whole
+selection in one Undo step per adjustment. The most recently selected spot
+sets which controls are shown. Fill and Blur controls apply to the
+selected spots of that type. Settings also become the brush's settings for
+new spots. The mode buttons switch selected spots within their pair (Heal
+and Clone, or Fill and Blur). Choosing a mode from the other pair than
+the most recently selected spot clears the selection and changes the brush.
+**Delete selected spots** removes the whole selection.
 
 ### Fill
 
 - **Fill with**: **Color** paints the spot with a color. **Erase** paints a
   flat neutral tone, set by **Brightness**, not a transparent hole.
-- **Color**: the swatch shows the stored color. Click the eyedropper, then
-  the photo, to take the color from there. Without a pick, a new spot
-  takes the average color of the photo where you made it. Both sample
-  from the visible area of a cropped photo.
+- **Color**: the swatch shows the stored replacement color. Activate the
+  eyedropper and click the photo to sample a point, or drag a box to take
+  its average color. The pick sets the color for selected Fill spots and
+  for new strokes. A new spot made without a pick takes the average color
+  from where you paint it. Sampling works within the visible crop.
+- **Hue** and **Saturation**: fine-tune the stored replacement color
+  while keeping its HSL lightness. Each selected Color Fill spot keeps its
+  own lightness and the color setting you left untouched.
 - **Brightness**: -100 to 100, added to the color.
 
 ### Blur
@@ -76,13 +84,22 @@ heal or clone spots. They apply to every fill and blur spot on the photo.
 
 - **Affects**: **Color only** changes the color and keeps the photo's light
   and texture, the default. **Color and tone** also changes the tone.
-- **Strength**: 0-100, how much of the fill or blur shows.
+- **Strength**: 0-100, how much of the fill or blur shows. Click the eye
+  beside Strength to temporarily hide Fill and Blur while comparing the
+  photo. Click it again or leave Heal to show the effect. Heal and Clone
+  stay visible, and the comparison leaves saved edits and exports intact.
 - **Limit to color**: restricts the spots to a range of color inside them.
   **Off** applies everywhere; **Range** takes a hue, a hue width, a minimum
   chroma and a smoothness, like a mask's color range, and the eyedropper sets
   them from the visible photo, including after cropping. **Custom** limits
   with darktable's parametric channels, as a mask's parametric component
   does (without its pickers).
+- Hover over the **Limit to color** controls to see a yellow overlay across
+  the photo. A stronger tint shows a stronger match. Click the eye to keep
+  the overlay visible while you use the eyedropper or adjust the range.
+  Press **O** to show or hide the overlay.
+  The preview shows where the colors match, even outside your spots. The
+  fill or blur itself still applies only inside the spots.
 
 To even out skin redness: choose Fill, drag a circle over the blotch with
 **Color** and a skin color picked beside it, leave **Affects** on **Color
@@ -100,7 +117,7 @@ spot.
 **Show spots** chooses which spots appear on the photo:
 
 - **Always**: every spot, each as a pin you can click to select.
-- **Selected**: only the selected spot and its source.
+- **Selected**: only the selected spots and the active spot’s source.
 - **Never**: no spots, to judge the retouch, such as on skin.
 
 H hides the spots, and pressing it again brings back your earlier choice.
@@ -122,5 +139,5 @@ out. **Threshold** sets how much shows.
 | Space-drag | Pan a zoomed-in photo, without moving a spot |
 | A | Visualize spots |
 | H | Hide the spots, or show them again |
-| Delete | Remove the selected spot |
-| Esc | Deselect the spot |
+| Delete | Remove the selected spots |
+| Esc | Cancel the eyedropper or clear the selection |

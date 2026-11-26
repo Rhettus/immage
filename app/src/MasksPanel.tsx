@@ -125,7 +125,7 @@ export const TOOL_ICONS: Record<MaskTool, React.ReactNode> = {
 
 export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, target, brush, overlay, disabled, raw, image, thumbMaps,
                              renderSlider, onTool, onSelect, onShape, onShapeMode, onShapeDelete,
-                             onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek,
+                             onInvert, onOpacity, onRefine, onHidden, onDuplicate, onResetAdjustments, onDelete, onRename, onPeek, onRangeHover,
                              onBrush, onOverlay, onLocal, onLocalMany, onRange, onDepth, onFeather, onAi, aiBusy, focusMode,
                              picked, pickShow, pickSet, onParametric, onPickShow, onPickSet, onPickTab, fresh, mono, photo,
                              onHslShown, presenceLoupe, advancedMode = false, session, sessionRevision = 0, onAdvancedEdit, onAdvancedEdits, photos }: {
@@ -154,6 +154,7 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
   onDelete: (name: string) => void;
   onRename: (name: string, to: string) => void;
   onPeek: (name: string | null) => void;   // the pointer resting on a mask's name, or gone
+  onRangeHover: (on: boolean) => void;
   onBrush: (b: BrushSettings) => void;
   onOverlay: (on: boolean) => void;
   onLocal: (id: string, v: number) => void;
@@ -242,6 +243,8 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
     const groups = advancedMode ? ["mask", "brush", "advanced"] : ["mask", "brush", ...LOCAL_GROUPS.map(([t]) => t)];
     onAnyOpen?.(groups.some((id) => open.has(id)));
   }, [open, advancedMode, onAnyOpen]);
+  const rangeSettingsOpen = open.has("mask");
+  useEffect(() => () => onRangeHover(false), [onRangeHover, selected, shape, rangeSettingsOpen, disabled]);
   const toggle = (id: string, alt: boolean) =>
     setOpen((old) => {
       const solo = focusMode ? !alt && !old.has(id) : alt;
@@ -456,83 +459,95 @@ export function MasksPanel({ fold, onAnyOpen, masks, selected, shape, tool, targ
                 renderSlider(c, Math.round(((m.refine ?? NO_REFINE)[f] / k) * 10) / 10,
                              (v) => onRefine({ [f]: v * k })))}
               {(() => {
-                // the selected component's own soft edge, as Lightroom's
-                // Feather: a radial's inward fade, a stroke's softness, an
-                // outline's border. a linear gradient's fade is its handles,
-                // and a range's is Smoothness
                 const r = m.shapes[shape];
-                const feather = (value: number, neutral: number, set: (v: number) => void) =>
-                  renderSlider({ id: "s_feather", label: "Feather", min: 0, max: 100, step: 1, neutral, format: pct },
-                               Math.round(value), set);
-                if (r?.type === "ellipse")
-                  return feather(r.feather * 100, 50, (v) => onFeather(shape, { feather: Math.min(0.95, v / 100) }));
-                if (r?.type === "brush")
-                  return feather((1 - r.hardness) * 100, 50, (v) => onFeather(shape, { hardness: 1 - v / 100 }));
-                if (r?.type === "object" && !r.depth)
+                const controls = () => {
+                  // the selected component's own soft edge, as Lightroom's
+                  // Feather: a radial's inward fade, a stroke's softness, an
+                  // outline's border. a linear gradient's fade is its handles,
+                  // and a range's is Smoothness
+                  const feather = (value: number, neutral: number, set: (v: number) => void) =>
+                    renderSlider({ id: "s_feather", label: "Feather", min: 0, max: 100, step: 1, neutral, format: pct },
+                                 Math.round(value), set);
+                  if (r?.type === "ellipse")
+                    return feather(r.feather * 100, 50, (v) => onFeather(shape, { feather: Math.min(0.95, v / 100) }));
+                  if (r?.type === "brush")
+                    return feather((1 - r.hardness) * 100, 50, (v) => onFeather(shape, { hardness: 1 - v / 100 }));
+                  if (r?.type === "object" && !r.depth)
+                    return (
+                      <>
+                        {feather((r.feather ?? 0.003) * 2000, 6, (v) => onFeather(shape, { feather: v / 2000 }))}
+                        {r.backdrop && (
+                          // over a plain, colorful background the outline goes
+                          // just over the edge and stops at its color (masks.ts,
+                          // Backdrop); off, it is the outline any selection gets
+                          <label className="toggle" title={t("fields.masks.fitBackgroundHint")}>
+                            <span>{t("fields.masks.fitBackground")}</span>
+                            <input type="checkbox" className="switch" checked={!r.backdrop.off} disabled={disabled}
+                                   onChange={(e) => onFeather(shape, { backdrop: { ...r.backdrop!, off: !e.target.checked } })} />
+                          </label>
+                        )}
+                      </>
+                    );
+                  if (r?.type === "object" && r.depth) {
+                    const [near, far] = r.depth, f = r.feather ?? 0.01;
+                    return (
+                      <>
+                        {renderSlider({ id: "d_near", label: "Near", min: 0, max: 100, step: 1, neutral: near * 100, format: pct },
+                                      near * 100, (v) => onDepth(shape, [Math.min(v / 100, far), far], f))}
+                        {renderSlider({ id: "d_far", label: "Far", min: 0, max: 100, step: 1, neutral: far * 100, format: pct },
+                                      far * 100, (v) => onDepth(shape, [near, Math.max(v / 100, near)], f))}
+                        {feather(f * 2000, 20, (v) => onFeather(shape, { feather: v / 2000 }))}
+                      </>
+                    );
+                  }
+                  if (!r || !isRange(r)) return null;
+                  if (r.type === "parametric")
+                    return <ParametricEditor key={`${m.name}:${shape}`} range={r} picked={picked} showing={pickShow}
+                                             setting={pickSet} disabled={disabled} renderSlider={renderSlider}
+                                             onChange={(ch) => onParametric(shape, ch)} onShow={onPickShow}
+                                             onSet={onPickSet} onTab={onPickTab} />;
+                  if (r.type === "luminance") {
+                    // a Zone System range for zone 0 or X has an open end
+                    const lo = r.lo ?? -14, hi = r.hi ?? 6;
+                    return (
+                    <>
+                      {renderSlider({ id: "r_lo", label: "Low (EV)", min: -14, max: 6, step: 0.1, neutral: lo,
+                                      format: (v) => (r.lo === null && v === lo ? "open" : v.toFixed(1)) },
+                                    lo, (v) => onRange(shape, { lo: Math.min(v, hi) }))}
+                      {renderSlider({ id: "r_hi", label: "High (EV)", min: -14, max: 6, step: 0.1, neutral: hi,
+                                      format: (v) => (r.hi === null && v === hi ? "open" : v.toFixed(1)) },
+                                    hi, (v) => onRange(shape, { hi: Math.max(v, lo) }))}
+                      {renderSlider({ id: "r_lf", label: "Smoothness", min: 0.1, max: 4, step: 0.1, neutral: 1,
+                                      format: (v) => v.toFixed(1) }, r.feather, (v) => onRange(shape, { feather: v }))}
+                    </>
+                    );
+                  }
                   return (
                     <>
-                      {feather((r.feather ?? 0.003) * 2000, 6, (v) => onFeather(shape, { feather: v / 2000 }))}
-                      {r.backdrop && (
-                        // over a plain, colorful background the outline goes
-                        // just over the edge and stops at its color (masks.ts,
-                        // Backdrop); off, it is the outline any selection gets
-                        <label className="toggle" title={t("fields.masks.fitBackgroundHint")}>
-                          <span>{t("fields.masks.fitBackground")}</span>
-                          <input type="checkbox" className="switch" checked={!r.backdrop.off} disabled={disabled}
-                                 onChange={(e) => onFeather(shape, { backdrop: { ...r.backdrop!, off: !e.target.checked } })} />
-                        </label>
-                      )}
+                      {renderSlider({ id: "r_ch", label: "Hue", min: 0, max: 360, step: 1, neutral: 0,
+                                      format: (v) => `${Math.round(v)}°` },
+                                    r.hue * 360, (v) => onRange(shape, { hue: (v % 360) / 360 }))}
+                      {renderSlider({ id: "r_cw", label: "Hue Range", min: 0, max: 100, step: 1, neutral: (0.04 - 0.005) / 0.00445,
+                                      format: (v) => `${Math.round(v)}` },
+                                    (r.width - 0.005) / 0.00445, (v) => onRange(shape, { width: 0.005 + v * 0.00445 }))}
+                      {renderSlider({ id: "r_cc", label: "Minimum Chroma", min: 0, max: Math.max(100, Math.ceil(r.chroma * 1000)), step: 0.1, neutral: 2,
+                                      format: (v) => v.toFixed(1) },
+                                    r.chroma * 1000, (v) => onRange(shape, { chroma: v / 1000 }))}
+                      {renderSlider({ id: "r_cf", label: "Smoothness", min: 0, max: 100, step: 1, neutral: 19,
+                                      format: (v) => `${Math.round(v)}` },
+                                    (r.feather - 0.002) / 0.002, (v) => onRange(shape, { feather: 0.002 + v * 0.002 }))}
                     </>
                   );
-                if (r?.type === "object" && r.depth) {
-                  const [near, far] = r.depth, f = r.feather ?? 0.01;
-                  return (
-                    <>
-                      {renderSlider({ id: "d_near", label: "Near", min: 0, max: 100, step: 1, neutral: near * 100, format: pct },
-                                    near * 100, (v) => onDepth(shape, [Math.min(v / 100, far), far], f))}
-                      {renderSlider({ id: "d_far", label: "Far", min: 0, max: 100, step: 1, neutral: far * 100, format: pct },
-                                    far * 100, (v) => onDepth(shape, [near, Math.max(v / 100, near)], f))}
-                      {feather(f * 2000, 20, (v) => onFeather(shape, { feather: v / 2000 }))}
-                    </>
-                  );
-                }
-                if (!r || !isRange(r)) return null;
-                if (r.type === "parametric")
-                  return <ParametricEditor key={`${m.name}:${shape}`} range={r} picked={picked} showing={pickShow}
-                                           setting={pickSet} disabled={disabled} renderSlider={renderSlider}
-                                           onChange={(ch) => onParametric(shape, ch)} onShow={onPickShow}
-                                           onSet={onPickSet} onTab={onPickTab} />;
-                if (r.type === "luminance") {
-                  // a Zone System range for zone 0 or X has an open end
-                  const lo = r.lo ?? -14, hi = r.hi ?? 6;
-                  return (
-                  <>
-                    {renderSlider({ id: "r_lo", label: "Low (EV)", min: -14, max: 6, step: 0.1, neutral: lo,
-                                    format: (v) => (r.lo === null && v === lo ? "open" : v.toFixed(1)) },
-                                  lo, (v) => onRange(shape, { lo: Math.min(v, hi) }))}
-                    {renderSlider({ id: "r_hi", label: "High (EV)", min: -14, max: 6, step: 0.1, neutral: hi,
-                                    format: (v) => (r.hi === null && v === hi ? "open" : v.toFixed(1)) },
-                                  hi, (v) => onRange(shape, { hi: Math.max(v, lo) }))}
-                    {renderSlider({ id: "r_lf", label: "Smoothness", min: 0.1, max: 4, step: 0.1, neutral: 1,
-                                    format: (v) => v.toFixed(1) }, r.feather, (v) => onRange(shape, { feather: v }))}
-                  </>
-                  );
-                }
+                };
+                const range = r && (isRange(r) || r.type === "object" && !!r.depth);
+                if (!range) return controls();
                 return (
-                  <>
-                    {renderSlider({ id: "r_ch", label: "Hue", min: 0, max: 360, step: 1, neutral: 0,
-                                    format: (v) => `${Math.round(v)}°` },
-                                  r.hue * 360, (v) => onRange(shape, { hue: (v % 360) / 360 }))}
-                    {renderSlider({ id: "r_cw", label: "Hue Range", min: 0, max: 100, step: 1, neutral: (0.04 - 0.005) / 0.00445,
-                                    format: (v) => `${Math.round(v)}` },
-                                  (r.width - 0.005) / 0.00445, (v) => onRange(shape, { width: 0.005 + v * 0.00445 }))}
-                    {renderSlider({ id: "r_cc", label: "Minimum Chroma", min: 0, max: Math.max(100, Math.ceil(r.chroma * 1000)), step: 0.1, neutral: 2,
-                                    format: (v) => v.toFixed(1) },
-                                  r.chroma * 1000, (v) => onRange(shape, { chroma: v / 1000 }))}
-                    {renderSlider({ id: "r_cf", label: "Smoothness", min: 0, max: 100, step: 1, neutral: 19,
-                                    format: (v) => `${Math.round(v)}` },
-                                  (r.feather - 0.002) / 0.002, (v) => onRange(shape, { feather: 0.002 + v * 0.002 }))}
-                  </>
+                  <div onPointerEnter={disabled || !rangeSettingsOpen ? undefined : (e) => {
+                         if (e.pointerType !== "touch") onRangeHover(true);
+                       }}
+                       onPointerLeave={() => onRangeHover(false)} onPointerCancel={() => onRangeHover(false)}>
+                    {controls()}
+                  </div>
                 );
               })()}
             </Collapse>

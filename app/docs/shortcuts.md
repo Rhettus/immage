@@ -105,7 +105,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | [ ] | Brush size |
 | Scroll | With the brush: its size; ⇧ its feather |
 | ⌥-drag | Brush away |
-| O | Show or hide the overlay |
+| O | Show or hide the selected mask overlay, including while hovering over range controls |
 | Esc | Put the tool down |
 | Space-drag | Pan a zoomed-in photo, without painting or moving a mask |
 
@@ -125,9 +125,10 @@ The mask keys work from anywhere: they open Masks with that tool.
 | Key | Action |
 | --- | --- |
 | Q | Heal and clone |
+| O | Show or hide the **Limit to color** overlay |
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧ its feather |
 | A | Visualize spots |
 | H | Hide the spots, or show them again |
-| Delete | Remove the selected spot |
-| Esc | Deselect the spot |
+| Delete | Remove the selected spots |
+| Esc | Cancel the eyedropper or clear the selection |

@@ -27,13 +27,14 @@ export type ShowSpots = "always" | "selected" | "never";
 
 const PIN = 6;  // a pin's radius, in CSS pixels
 
-export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show, visualize, base, baseTick,
+export function SpotOverlay({ boxRef, image, region, spots, selected, selection, tool, show, visualize, base, baseTick,
                               overlayColor, picking, onSelect, onCreate, onChange, onPickPoint }: {
   boxRef: React.RefObject<HTMLDivElement | null>;
   image: { w: number; h: number };       // the shown image at 100%, for its aspect
   region: Region | null;                 // zoomed in, the part of the image the sharp render shows
   spots: Spot[];
   selected: number | null;
+  selection: number[];
   tool: SpotTool;
   show: ShowSpots;
   visualize: number | null;              // Visualize Spots' threshold, 0-100, or off
@@ -174,7 +175,8 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
                drag.current = { kind: "target", start: p, k: selected!, spot: sel, points: [] };
                return;
              }
-             const hit = show !== "always" ? -1 : spots.findIndex((s) => {
+             const hit = show === "never" ? -1 : spots.findIndex((s, index) => {
+               if (show === "selected" && !selection.includes(index)) return false;
                const [x, y] = anchorOf(s);
                return Math.hypot((p[0] - x) * W, (p[1] - y) * H) <= PIN * 1.5 * unit;
              });
@@ -233,10 +235,14 @@ export function SpotOverlay({ boxRef, image, region, spots, selected, tool, show
            onPointerCancel={() => { drag.current = null; setStroke(null); }}
            onPointerLeave={() => setCursor(null)}>
         <rect className="mask-catch" x={0} y={0} width={W} height={H} />
-        {show === "always" && spots.map((s, k) => {
+        {show !== "never" && spots.map((s, k) => {
+          const active = selection.includes(k);
+          if (k === selected || (show === "selected" && !active)) return null;
           const [x, y] = anchorOf(s);
-          return k === selected ? null
-            : <circle key={k} className="spot-pin" cx={x * W} cy={y * H} r={PIN * unit} />;
+          return <g key={k} className={active ? "spot-sel" : undefined}>
+            {active && outline(s, "spot-target")}
+            <circle className={active ? "spot-target" : "spot-pin"} cx={x * W} cy={y * H} r={PIN * unit} />
+          </g>;
         })}
         {sel && (
           <g className="spot-sel">

@@ -281,8 +281,8 @@ const COMMANDS = {
   },
   sample: ({ x, y, area, stage }) => request({ cmd: "sample", x, y, box: area ?? null, stage: stage ?? null }),
   // u32 width and height, then a byte a point
-  range_map: async ({ ranges, width, height }) =>
-    sized(width, height, await request({ cmd: "range_map", ranges, width, height, out: range })),
+  range_map: async ({ ranges, width, height, retouchInput }) =>
+    sized(width, height, await request({ cmd: "range_map", ranges, width, height, retouchInput, out: range })),
   mask_map: async ({ name, op, width, height, view }) => {
     const req = { cmd: "mask_map", width, height, out: range };
     if (name != null) req.name = name;

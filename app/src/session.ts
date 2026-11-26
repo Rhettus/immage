@@ -712,6 +712,21 @@ export class Session {
     void this.pump();
   }
 
+  private fillPreviewHidden = false;
+
+  setFillPreviewHidden(hidden: boolean) {
+    if (this.dead || this.fillPreviewHidden === hidden) return false;
+    this.fillPreviewHidden = hidden;
+    this.current.clear();
+    this.putAside = null;
+    if (this.copy) {
+      this.copy = null;
+      this.onCopy?.(null);
+    }
+    this.requestRender();
+    return true;
+  }
+
   // the open photo's sensor and orientation, as the module maps read them
   get context() { return this.ctx; }
 
@@ -1890,8 +1905,9 @@ export class Session {
     const measurement = perf.measurement;
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
-    const skip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
+    const fastSkip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
+    const skip = this.fillPreviewHidden ? [...(fastSkip ?? []), "retouch:fill"] : fastSkip;
     if (!view.draft) this.draftKeep.clear();
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
     const requestLabel = cycle?.diagnostic?.label ?? perf.label;
@@ -1937,7 +1953,7 @@ export class Session {
   // asking the engine
   private current = new Map<string, Frame>();
   private frameKey(v: View, before: boolean) {
-    return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before}`;
+    return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before},${this.fillPreviewHidden}`;
   }
   private keepFrame(key: string, f: Frame) {
     const at = `${key}|${f.hash}`;
@@ -2047,8 +2063,12 @@ export class Session {
     const woken = new Promise<void>((r) => { wake = r; });
     const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
     this.base = run;
+    const fillPreviewHidden = this.fillPreviewHidden;
     const done = this.renderView(view, "base", undefined, every, have)
-      .then((f) => { if (!run.stale) use(f); else perf.discard(f.trace, "base-obsolete-after-cancel"); })
+      .then((f) => {
+        if (!run.stale && fillPreviewHidden === this.fillPreviewHidden) use(f);
+        else perf.discard(f.trace, run.stale ? "base-obsolete-after-cancel" : "base-obsolete-after-fill-comparison");
+      })
       .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
       .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
     this.baseInFlight = done;

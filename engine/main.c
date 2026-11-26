@@ -867,11 +867,20 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
   const int devid = f == &_s.base && dt_opencl_running()
     ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
 // "skip": ops left out of this one frame, every instance, so a slider
-// drag need not wait on grain or diffuse. a disabled piece carries
+// drag need not wait on grain or diffuse. "retouch:fill" leaves out only
+// Immage's Fill and Blur instance for a visual comparison. a disabled piece carries
 // DT_INVALID_HASH (imageop.c, dt_iop_commit_params), which keeps these
 // frames off the full frames' cachelines. history is not touched
   JsonArray *skip = json_object_has_member(req, "skip")
     ? json_object_get_array_member(req, "skip") : NULL;
+  dt_iop_module_t *fill = NULL;
+  if(skip)
+    for(guint k = 0; k < json_array_get_length(skip); k++)
+      if(!g_strcmp0(json_array_get_string_element(skip, k), "retouch:fill"))
+      {
+        fill = masks_fill_instance();
+        break;
+      }
   typedef struct { dt_dev_pixelpipe_iop_t *piece; dt_hash_t hash; } skipped_t;
   GArray *skipped = g_array_new(FALSE, FALSE, sizeof(skipped_t));
   for(GList *n = skip ? pipe->nodes : NULL; n; n = g_list_next(n))
@@ -879,7 +888,9 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
     dt_dev_pixelpipe_iop_t *piece = n->data;
     if(!piece->enabled) continue;
     for(guint k = 0; k < json_array_get_length(skip); k++)
-      if(!g_strcmp0(piece->module->op, json_array_get_string_element(skip, k)))
+    {
+      const char *op = json_array_get_string_element(skip, k);
+      if(piece->module == fill || !g_strcmp0(piece->module->op, op))
       {
         const skipped_t s = { piece, piece->hash };
         g_array_append_val(skipped, s);
@@ -887,6 +898,7 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
         piece->hash = DT_INVALID_HASH;
         break;
       }
+    }
   }
 // "have": the client's frames, by hash; one of them is named, not sent
   JsonArray *have = json_object_has_member(req, "have")
@@ -1189,7 +1201,9 @@ static gboolean _cmd_range_map(JsonObject *req, JsonBuilder *b, char **err)
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   const int w = json_object_get_int_member_with_default(req, "width", 320);
   const int h = json_object_get_int_member_with_default(req, "height", 213);
-  if(!dest || !masks_range_map(ranges, w, h, dest, err)) return FALSE;
+  const _stage_t stage = json_object_get_boolean_member_with_default(req, "retouchInput", FALSE)
+    ? _STAGE_RETOUCH_IN : _STAGE_ANCHOR;
+  if(!dest || !masks_range_map(ranges, w, h, stage, dest, err)) return FALSE;
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, w);
   json_builder_set_member_name(b, "height");

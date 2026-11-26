@@ -238,9 +238,10 @@ pub(crate) async fn colormapping_acquire(state: State<'_, AppState>, which: Stri
 // image: u32 width and height, then one byte per point
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn range_map(state: State<'_, AppState>, ranges: Vec<Value>, width: u32, height: u32) -> Result<bindings::Frame, String> {
+pub(crate) async fn range_map(state: State<'_, AppState>, ranges: Vec<Value>, width: u32, height: u32, retouch_input: Option<bool>) -> Result<bindings::Frame, String> {
     let mut engine = state.engine("range_map");
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
+                           "retouchInput": retouch_input.unwrap_or(false),
                            "out": state.range_path }))?;
     // read while the engine is still ours, so no other request overwrites it
     let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
