@@ -4481,6 +4481,7 @@
   "app.denoise.action": "Denoise…",
   "app.denoise.sidecarHint": "writes a denoised DNG beside the raw, with this edit",
   "app.panel.technical": "Technical",
+  "app.film.presetTurnsOffNegative": "This preset turns off negative conversion and exposes the film simulation from the photo as a positive.",
   "app.film.turnOff": "Turn Off Film Simulation",
   "app.film.turnOffTitle": "the photo back on its tone mapper, with Basic’s tools as they were",
   "app.action.copyHint": "choose settings of this photo to copy (⇧⌘C)",

@@ -123,6 +123,19 @@ Copy… in the right-hand panel lists **Film Simulation**. It starts
 unticked, like Negative and Crop. Pasting it onto other photos turns the
 simulation on for them with the same settings.
 
+## Saving it in a preset
+
+The [New Preset](presets-and-looks.md#presets) dialog lists **Film
+Simulation**, unticked to start. Tick it to keep the photo's film
+simulation in the preset: whether it is on, the film and paper, and every
+setting in the panel. Applying the preset turns the simulation on with
+those settings, or off if it was off when you saved the preset, just as the
+panel does. Applying it to a converted negative asks first. If an imported
+preset enables both conversions, Film Simulation takes precedence. **Amount**
+blends the film's sliders. The film and paper, and the switches, change
+at any Amount above 0. The preset can also be applied to new photos, and
+it keeps the film settings when you export and import it.
+
 ## In darktable
 
 The edit is darktable's spektrafilm module with the tone mapper switched

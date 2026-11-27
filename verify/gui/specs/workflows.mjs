@@ -322,7 +322,38 @@ export async function film(t) {
   await pause(600); // the Stock step finishes folding, so Grain's heading stops moving
   await openStep(t,'.panel.film','grain');
   assert.equal(await open(),'grain','a folded step opens by its heading');
-  await textButton(t,'.positive-foot','Turn Off Film Simulation'); await settledPhoto(t,p=>p.hash===baseline.hash);
+  const savedFilm = await settledPhoto(t);
+  await openTool(t, 'presets');
+  await click(t, '.preset-tools button[title="new preset from the settings as they are now"]');
+  const filmCheckbox = '.new-preset .preset-parts input[type="checkbox"]';
+  const filmChecked = () => t.driver.observe(selector =>
+    [...document.querySelectorAll(selector)].find(input => input.parentElement.textContent.trim() === 'Film Simulation')?.checked,
+  filmCheckbox);
+  assert.equal(await filmChecked(), false, 'Film Simulation starts unchecked');
+  await textButton(t, '.new-preset', 'Check None');
+  const filmLabel = await reveal(t, '.new-preset .preset-parts label', 'Film Simulation');
+  await t.driver.point(filmLabel.x, filmLabel.y);
+  assert.equal(await filmChecked(), true, 'Film Simulation is selected');
+  await click(t, '.new-preset .field:not([list])');
+  await t.driver.keys(...'Film simulation round trip');
+  await textButton(t, '.new-preset .modal-foot', 'Create');
+  await openTool(t, 'film');
+  await textButton(t, '.positive-foot', 'Turn Off Film Simulation');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+  await openTool(t, 'presets');
+  await click(t, '.presets-panel .tile[title="Film simulation round trip"]');
+  await settledPhoto(t, p => p.hash === savedFilm.hash);
+  await t.evidence('develop-film-preset-applied');
+  const amount = '.preset-amount input[type="range"]';
+  await click(t, amount);
+  await t.driver.keys('\uE011');  // Home sets Amount to zero.
+  assert.equal(await t.driver.observe(s => document.querySelector(s)?.value, amount), '0');
+  await settledPhoto(t, p => p.hash === baseline.hash);
+  await click(t, amount, 2);
+  await settledPhoto(t, p => p.hash === savedFilm.hash);
+  await openTool(t, 'film');
+  await textButton(t, '.positive-foot', 'Turn Off Film Simulation');
+  await settledPhoto(t, p => p.hash === baseline.hash);
 }
 export async function zones(t) {
   // the Zone System works on black and white: convert first, back to color after

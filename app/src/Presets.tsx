@@ -8,7 +8,7 @@
 // extra module instances, one look at a time. both can be shared as files
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDown, Plus, Save, Share, Trash } from "lucide-react";
-import { blacksFromLinear, controlById, panels, type Values } from "./manifest";
+import { blacksFromLinear, controlById, panels, SF_CHOICES, type Values } from "./manifest";
 import { commands, type Value } from "./commands";
 import type { Frame } from "./session";
 import { settings } from "./settings";
@@ -52,6 +52,10 @@ export async function loadPresets(): Promise<Preset[]> {
 }
 export const savePresets = (presets: Preset[]) =>
   commands.presetsSave({ version: PRESETS_VERSION, presets: presets as unknown as Value[] });
+// a preset that turns on a film simulation moves the tools it runs on to
+// the modules the film keeps, as turning it on in its panel does (App.tsx,
+// sfTurnOn): the tone mapper they would otherwise drive is off
+export const filmChoices = (v: Values): Values => (v.sf_on === 1 ? { ...SF_CHOICES } : {});
 export const loadLooks = (): Promise<Look[]> => commands.looksList() as Promise<Look[]>;
 
 // presets as a file to give someone, as the Export dialog's are
@@ -200,16 +204,19 @@ const MY_LOOKS = "My Looks";
 
 // what a preset can hold, as the New Preset dialog lists it: Basic by its
 // sections, every other panel whole. the point curve goes with the Tone
-// Curve, and crop is never part of one, as in Lightroom
+// Curve, and crop is never part of one, as in Lightroom. a film simulation
+// is left out unless asked for, as in Copy Settings: it replaces the
+// photo's tone mapper
 type Part = { id: string; label: string; controls: string[]; on: boolean };
-const OFF_BY_DEFAULT = new Set(["basic:White Balance", "transform", "negative"]);
+const OFF_BY_DEFAULT = new Set(["basic:White Balance", "transform", "negative", "film"]);
+const HIDDEN_PARTS = new Set(["negative", "film"]);
 
 const PARTS: Part[] = (() => {
   const ids = (sections: { controls: { id: string }[] }[]) =>
     [...new Set(sections.flatMap((s) => s.controls.map((c) => c.id)))];
   const parts: Part[] = [];
   for (const p of panels) {
-    if (p.hidden && p.id !== "negative") continue;
+    if (p.hidden && !HIDDEN_PARTS.has(p.id)) continue;
     if (p.id === "basic") {
       for (const s of p.sections) {
         const id = `basic:${s.title}`;
@@ -523,7 +530,7 @@ export function NewPresetDialog({ values, groups, forNewPhotos = false, onSave, 
                   if (e.target.checked) n.add(p.id); else n.delete(p.id);
                   return n;
                 })} />
-                {p.label}
+                {p.id === "film" ? t("app.panel.filmSimulation") : p.label}
               </label>
             ))}
           </div>

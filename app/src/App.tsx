@@ -1005,7 +1005,7 @@ export default function App() {
         return v ? [{ key, run: () => s.preview(PREVIEW_SIZE, v) }] : [];
       }
       const p = all.find((q) => `p:${q.id}` === key);
-      return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, p.values) }] : [];
+      return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, resolvedPresetValues(p, s)) }] : [];
     }));
   };
   const presetsRef = useRef<Preset[]>([]);
@@ -1630,7 +1630,7 @@ export default function App() {
     showHover(!key ? null : "tiles", (s, size) => {
       if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
       if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
-      return p ? s.preview(size, filterValuesForPhoto(presetValues(p), s.toneMappable)) : null;
+      return p ? s.preview(size, resolvedPresetValues(p, s)) : null;
     }, !!key && isStockKey(key));
   };
   const hoverValues = (values: Values | null) =>
@@ -1676,19 +1676,42 @@ export default function App() {
 
   // a preset's strength, as Lightroom's Amount: between the settings before
   // it was applied (0) and the preset's own (100), and beyond, to 200.
-  // switches and choices take the preset's setting at any amount above 0
-  const [amount, setAmount] = useState<{ name: string; value: number; before: Values; preset: Values } | null>(null);
+  // switches and choices take the preset's setting at any amount above 0, as
+  // does a film or paper stock, a hash no amount between two can blend
+  const [amount, setAmount] = useState<{
+    name: string; value: number; before: Values; preset: Values; filmDisabled: HistoryItem[];
+  } | null>(null);
   const isStepped = (id: string) => {
     const c = controlById.get(id);
-    return !c || c.kind === "choice" || c.kind === "toggle" || id.endsWith("pn") || id === "tc_mode";
+    return !c || c.kind === "choice" || c.kind === "toggle" || id.endsWith("pn") || id === "tc_mode"
+      || id.endsWith("_hash");
   };
-  const applyPreset = (preset: Preset) => {
+  // a preset with a film simulation turns it on or off as the Film
+  // Simulation panel does: on, it turns off a converted negative, asking
+  // first; off, its tools go back to the modules Preferences picks
+  const resolvedPresetValues = (preset: Preset, s: Session) => {
+    const values = filterValuesForPhoto(presetValues(preset), s.toneMappable);
+    if (values.sf_on === 1 && s.values.neg_on === 1) {
+      Object.assign(values, Object.fromEntries(negOffEntries(s)), SF_CHOICES);
+    }
+    if (values.sf_on === 0 && s.values.sf_on === 1) Object.assign(values, Object.fromEntries(sfOffEntries(s)));
+    return values;
+  };
+  const applyPreset = (preset: Preset, swap = false) => {
     const s = session.current;
     if (!s) return;
-    const p = { ...preset, values: filterValuesForPhoto(presetValues(preset), s.toneMappable) };
-    const before = Object.fromEntries(Object.keys(p.values).map((id) => [id, s.values[id]]));
-    changeMany(Object.entries(p.values), `Preset: ${p.name}`);
-    setAmount({ name: p.name, value: 100, before, preset: p.values });
+    const values = resolvedPresetValues(preset, s);
+    const filmOn = values.sf_on === 1;
+    if (filmOn && s.values.neg_on === 1 && !swap) {
+      setExclusive({ title: t("app.panel.filmSimulation"),
+                     body: t("app.film.presetTurnsOffNegative"),
+                     go: () => { if (session.current === s) applyPreset(preset, true); } });
+      return;
+    }
+    const before = Object.fromEntries(Object.keys(values).map((id) => [id, s.values[id]]));
+    changeMany(Object.entries(values), `Preset: ${preset.name}`);
+    const filmDisabled = filmOn ? offUnmapped(s, SF_OFF, SF_OFF_UNMAPPED) : [];
+    setAmount({ name: preset.name, value: 100, before, preset: values, filmDisabled });
   };
   const changeAmount = (v: number) => {
     if (!amount) return;
@@ -1699,6 +1722,11 @@ export default function App() {
       const c = controlById.get(id)!;
       return [id, Math.min(c.max, Math.max(c.min, b + (pv - b) * a))];
     }), `Preset: ${amount.name}`);
+    if ((v > 0) !== (amount.value > 0)) {
+      const s = session.current;
+      for (const h of amount.filmDisabled) s?.setModuleState(h, { enabled: v === 0 });
+      if (amount.filmDisabled.length) setHistoryRev((n) => n + 1);
+    }
     setAmount({ ...amount, value: v });
   };
 
@@ -5564,14 +5592,19 @@ export default function App() {
   // sliders, which the session cannot switch through them
   const offUnmapped = (s: Session, off: Set<string>, unmapped: Set<string>) => {
     const done = new Set<string>();
+    const disabled: HistoryItem[] = [];
     for (const h of s.history) {
       const key = instanceKey(h), op = mapOpOf(h);
       if (done.has(key) || h.priority == null || h.masked) continue;
       if (!unmapped.has(h.op) && !(off.has(op) && s.isForeign(op))) continue;
       done.add(key);
-      if (s.moduleStates.get(key)?.enabled ?? h.enabled) s.setModuleState(h, { enabled: false });
+      if (s.moduleStates.get(key)?.enabled ?? h.enabled) {
+        s.setModuleState(h, { enabled: false });
+        disabled.push(h);
+      }
     }
     setHistoryRev((n) => n + 1);
+    return disabled;
   };
   // the profiles last chosen in the panel, for a conversion: each only where
   // the photo is still on its default and the profile is still installed

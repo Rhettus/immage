@@ -4481,6 +4481,7 @@
   "app.denoise.action": "Réduire le bruit…",
   "app.denoise.sidecarHint": "écrit un DNG débruité à côté du RAW avec ces retouches",
   "app.panel.technical": "Technique",
+  "app.film.presetTurnsOffNegative": "Ce préréglage désactive la conversion du négatif et expose le film simulé à partir de la photo en positif.",
   "app.film.turnOff": "Désactiver la simulation de film",
   "app.film.turnOffTitle": "rétablir le moteur de rendu de la photo et les outils Basic",
   "app.action.copyHint": "choisir les réglages de cette photo à copier (⇧⌘C)",

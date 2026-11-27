@@ -16,7 +16,7 @@ import { LensPicker } from "./LensPicker";
 import { ModuleSwitch } from "./ModuleSwitch";
 import { PipetteIcon } from "./icons";
 import { PointCurve } from "./PointCurve";
-import { type Preset } from "./Presets";
+import { filmChoices, type Preset } from "./Presets";
 import { SaturationCurve } from "./SaturationCurve";
 import { Snapshot } from "./uiUpdates";
 import { type WB, WB_PRESETS } from "./wb";
@@ -32,9 +32,13 @@ import { t } from "./i18n";
 import { fieldText } from "./fieldText";
 
 // a preset's values but the photo's modules: the tone mapper, which presets
-// made when it was a slider may hold
-export const presetValues = (p: Preset): Values =>
-  Object.fromEntries(Object.entries(p.values).filter(([id]) => !isModuleSetting(id)));
+// made when it was a slider may hold. a film simulation's tools go on the
+// modules it keeps (filmChoices)
+export const presetValues = (p: Preset): Values => ({
+  ...Object.fromEntries(Object.entries(p.values).filter(([id]) => !isModuleSetting(id))),
+  ...filmChoices(p.values),
+  ...(p.values.sf_on === 1 && p.values.neg_on === 1 ? { neg_on: 0 } : {}),
+});
 
 // the White Balance picker and Lightroom's presets
 export function WBTools({ values, asShot, picking, disabled, onPick, onAuto, onPreset }: {

@@ -34,8 +34,9 @@ and Linux. **All builds are alpha; bugs are expected.**
 - [Heal, clone, fill and blur with multi-spot editing and area color sampling](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
   and working color profiles, and merge HDR photos or panoramas.
-- Apply presets and film looks, compare edits, and copy settings across photos,
-  including RAW tone mappers and optional automatic white balance for each destination.
+- Save [Develop presets](app/docs/presets-and-looks.md) with optional Film Simulation,
+  apply film looks, and compare edits. Copy settings across photos, including RAW
+  tone mappers and optional automatic white balance for each destination.
 - Use Immage in English or French.
 - Choose from eight built-in interface themes ordered from darkest to lightest,
   or import a custom color theme.
