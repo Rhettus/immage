@@ -1,0 +1,810 @@
+diff --git i/src-tauri/plugin/src/catalog.rs w/src-tauri/plugin/src/catalog.rs
+index 7f09d6b..9000fe0 100644
+--- i/src-tauri/plugin/src/catalog.rs
++++ w/src-tauri/plugin/src/catalog.rs
+@@ -31,6 +31,18 @@ pub struct DestRow {
+     pub blake3: Option<String>,
+ }
+ 
++pub(crate) struct MatchKey<'a> {
++    pub name: &'a str,
++    pub size: u64,
++    pub planned: Option<String>,
++}
++
++pub(crate) struct LocalMatches {
++    pub imported: Vec<(ImportedRow, Option<DestRow>)>,
++    pub same_name: Vec<DestRow>,
++    pub planned: Option<DestRow>,
++}
++
+ pub struct NewImported<'a> {
+     pub orig_name: &'a str,
+     pub size: u64,
+@@ -132,7 +144,10 @@ impl Catalog {
+     // ---- imported -------------------------------------------------------
+ 
+     pub fn imported_by_name_size(&self, name: &str, size: u64) -> Vec<ImportedRow> {
+-        let conn = self.conn.lock();
++        Self::imported_by_name_size_on(&self.conn.lock(), name, size)
++    }
++
++    fn imported_by_name_size_on(conn: &Connection, name: &str, size: u64) -> Vec<ImportedRow> {
+         let mut stmt = conn
+             .prepare_cached(
+                 "SELECT id, capture_ts, camera_serial, image_number, blake3, dest_path
+@@ -218,7 +233,10 @@ impl Catalog {
+     }
+ 
+     pub fn dest_by_name_size(&self, root: &str, name: &str, size: u64) -> Vec<DestRow> {
+-        let conn = self.conn.lock();
++        Self::dest_by_name_size_on(&self.conn.lock(), root, name, size)
++    }
++
++    fn dest_by_name_size_on(conn: &Connection, root: &str, name: &str, size: u64) -> Vec<DestRow> {
+         let mut stmt = conn
+             .prepare_cached(
+                 "SELECT path, size, mtime, blake3 FROM dest_files WHERE root = ?1 AND name = ?2 AND size = ?3",
+@@ -230,12 +248,30 @@ impl Catalog {
+     }
+ 
+     pub fn dest_by_path(&self, path: &str) -> Option<DestRow> {
+-        self.conn
+-            .lock()
+-            .query_row("SELECT path, size, mtime, blake3 FROM dest_files WHERE path = ?1", [path], Self::dest_row)
+-            .optional()
+-            .ok()
+-            .flatten()
++        Self::dest_by_path_on(&self.conn.lock(), path)
++    }
++
++    fn dest_by_path_on(conn: &Connection, path: &str) -> Option<DestRow> {
++        let mut stmt = conn.prepare_cached("SELECT path, size, mtime, blake3 FROM dest_files WHERE path = ?1").ok()?;
++        stmt.query_row([path], Self::dest_row).optional().ok().flatten()
++    }
++
++    /// Group indexed lookups under one short connection lease. Output stays
++    /// positional, including misses and repeated names on the card.
++    pub(crate) fn local_matches(&self, root: Option<&str>, keys: &[MatchKey<'_>]) -> Vec<LocalMatches> {
++        let conn = self.conn.lock();
++        keys.iter().map(|key| {
++            let same_name = root.map_or_else(Vec::new, |root| Self::dest_by_name_size_on(&conn, root, key.name, key.size));
++            let imported = Self::imported_by_name_size_on(&conn, key.name, key.size)
++                .into_iter()
++                .map(|row| {
++                    let dest = root.and_then(|_| Self::dest_by_path_on(&conn, &row.dest_path));
++                    (row, dest)
++                })
++                .collect();
++            let planned = key.planned.as_deref().and_then(|path| Self::dest_by_path_on(&conn, path));
++            LocalMatches { imported, same_name, planned }
++        }).collect()
+     }
+ 
+     pub fn dest_by_hash(&self, root: &str, hash: &str) -> Option<DestRow> {
+diff --git i/src-tauri/plugin/src/dedupe.rs w/src-tauri/plugin/src/dedupe.rs
+index 80f452b..1c0e423 100644
+--- i/src-tauri/plugin/src/dedupe.rs
++++ w/src-tauri/plugin/src/dedupe.rs
+@@ -16,7 +16,7 @@ use std::time::{Duration, UNIX_EPOCH};
+ 
+ use parking_lot::RwLock;
+ 
+-use crate::catalog::{Catalog, DestRow, NewImported};
++use crate::catalog::{Catalog, DestRow, LocalMatches, MatchKey, NewImported};
+ use crate::immich::{self, ImmichSettings};
+ use crate::metadata::{self, PhotoMeta};
+ use crate::readonly;
+@@ -71,6 +71,10 @@ pub fn file_mtime(md: &std::fs::Metadata) -> i64 {
+ 
+ /// Hash of a destination file, using the cached value when size/mtime match.
+ pub fn dest_hash(catalog: &Catalog, row: &DestRow) -> Option<String> {
++    dest_hash_with_filter(catalog, row, || true)
++}
++
++fn dest_hash_with_filter(catalog: &Catalog, row: &DestRow, should_hash: impl FnOnce() -> bool) -> Option<String> {
+     let md = std::fs::metadata(&row.path).ok()?;
+     if md.len() != row.size {
+         return None;
+@@ -79,12 +83,25 @@ pub fn dest_hash(catalog: &Catalog, row: &DestRow) -> Option<String> {
+     if let (Some(h), true) = (&row.blake3, mtime == row.mtime) {
+         return Some(h.clone());
+     }
++    if !should_hash() {
++        return None;
++    }
+     let (h, _) = readonly::hash_file(Path::new(&row.path), false).ok()?;
+     let h = h.to_hex().to_string();
+     catalog.dest_set_hash(&row.path, md.len(), mtime, &h);
+     Some(h)
+ }
+ 
++fn dest_exif_matches(f: &SourceFile, meta: &PhotoMeta, row: &DestRow) -> bool {
++    if meta.capture.is_none() {
++        return true;
++    }
++    let other = readonly::read_prefix(Path::new(&row.path), 512 * 1024)
++        .map(|b| metadata::read_meta(&b, f.kind))
++        .unwrap_or_default();
++    other.capture.is_none() || meta.same_shot(&other)
++}
++
+ impl Deduper {
+     pub fn new(catalog: Arc<Catalog>, cfg: DedupeCfg) -> Self {
+         Self { catalog, cfg: Arc::new(RwLock::new(cfg)), immich: RwLock::new(None) }
+@@ -107,27 +124,56 @@ impl Deduper {
+         }
+     }
+ 
+-    /// Stages 1 and 2 for every file of an item; queues stage 3 jobs.
+-    pub fn evaluate_item(&self, s: &Arc<Session>, idx: usize) {
+-        let cfg = self.cfg.read().clone();
+-        let item = &s.items[idx];
+-        let date = s.item_date(idx as u32);
+-        let (eval_gen, metas) = {
++    /// Look up a group of ready items, then queue exact verification as needed.
++    pub fn evaluate_items(&self, s: &Arc<Session>, indices: &[usize]) {
++        let ready: Vec<_> = indices.iter().filter_map(|&idx| {
+             let mut st = s.state[idx].lock();
+             if !st.meta_done {
+-                return;
++                return None;
+             }
+             st.eval_gen += 1;
+-            let metas: Vec<PhotoMeta> = st.files.iter().map(|f| f.meta.clone().unwrap_or_default()).collect();
+-            (st.eval_gen, metas)
+-        };
+-        let all_cands: Vec<Vec<Candidate>> = item
+-            .files
+-            .iter()
+-            .zip(&metas)
+-            .map(|(f, meta)| self.candidates(&cfg, f, meta, &metas[0], &item.files[0].stem, date))
+-            .collect();
++            let metas: Vec<_> = st.files.iter().map(|f| f.meta.clone().unwrap_or_default()).collect();
++            Some((idx, st.eval_gen, metas))
++        }).collect();
++        if ready.is_empty() {
++            return;
++        }
+ 
++        let cfg = self.cfg.read().clone();
++        let root = cfg.dest_root.as_deref().filter(|_| cfg.dest_ready);
++        let mut keys = Vec::new();
++        for (idx, _, metas) in &ready {
++            let item = &s.items[*idx];
++            let plan = root.zip(s.item_date(*idx as u32)).map(|(root, date)| (root, template::Ctx {
++                date,
++                make: metas[0].make.as_deref(),
++                model: metas[0].model.as_deref(),
++                original: &item.files[0].stem,
++                seq: 1,
++            }));
++            keys.extend(item.files.iter().map(|file| MatchKey {
++                name: &file.name,
++                size: file.size,
++                planned: plan.as_ref().map(|(root, ctx)| {
++                    Path::new(root).join(template::plan(&cfg.folder_tpl, &cfg.name_tpl, ctx, &file.ext))
++                        .to_string_lossy().into_owned()
++                }),
++            }));
++        }
++        let mut matches = keys.chunks(crate::scan::MATCH_BATCH)
++            .flat_map(|chunk| self.catalog.local_matches(root, chunk));
++        for (idx, eval_gen, metas) in ready {
++            if s.is_cancelled() {
++                return;
++            }
++            let all_cands = s.items[idx].files.iter().zip(&metas).zip(&mut matches)
++                .map(|((file, meta), rows)| Self::candidates(file, meta, rows))
++                .collect();
++            self.publish_candidates(s, idx, eval_gen, all_cands);
++        }
++    }
++
++    fn publish_candidates(&self, s: &Arc<Session>, idx: usize, eval_gen: u64, all_cands: Vec<Vec<Candidate>>) {
+         let mut jobs = Vec::new();
+         let mut immich_jobs = Vec::new();
+         let new_status = self.new_status(s);
+@@ -160,77 +206,50 @@ impl Deduper {
+         s.mark_dirty(idx as u32);
+     }
+ 
+-    fn candidates(
+-        &self,
+-        cfg: &DedupeCfg,
+-        f: &SourceFile,
+-        meta: &PhotoMeta,
+-        primary_meta: &PhotoMeta,
+-        primary_stem: &str,
+-        date: Option<chrono::NaiveDateTime>,
+-    ) -> Vec<Candidate> {
+-        // Files without a capture date can't be compared by EXIF; the hash decides.
+-        let exif_ok = |other: &PhotoMeta| meta.capture.is_none() || other.capture.is_none() || meta.same_shot(other);
++    fn candidates(f: &SourceFile, meta: &PhotoMeta, matches: LocalMatches) -> Vec<Candidate> {
+         let mut cands = Vec::new();
+-
+-        for row in self.catalog.imported_by_name_size(&f.name, f.size) {
++        let mut rows = matches.same_name;
++        for (row, dest) in matches.imported {
+             let other = PhotoMeta {
+                 capture: row.capture,
+-                serial: row.serial.clone(),
++                serial: row.serial,
+                 image_number: row.image_number,
+                 ..Default::default()
+             };
+-            if exif_ok(&other) {
++            if meta.capture.is_none() || other.capture.is_none() || meta.same_shot(&other) {
+                 cands.push(Candidate::Catalog { hash: row.blake3, dest_path: row.dest_path });
+-            }
+-        }
+-
+-        let (Some(root), true) = (&cfg.dest_root, cfg.dest_ready) else { return cands };
+-        let mut rows = self.catalog.dest_by_name_size(root, &f.name, f.size);
+-        // Copies this app made under another name (e.g. `_1` after a clash with an edited file).
+-        for c in &cands {
+-            if let Candidate::Catalog { dest_path, .. } = c {
+-                if let Some(r) = self.catalog.dest_by_path(dest_path).filter(|r| r.size == f.size) {
+-                    if !rows.iter().any(|x| x.path == r.path) {
+-                        rows.push(r);
+-                    }
++                if let Some(dest) = dest.filter(|r| r.size == f.size && !rows.iter().any(|x| x.path == r.path)) {
++                    rows.push(dest);
+                 }
+             }
+         }
+-        if let Some(date) = date {
+-            let ctx = template::Ctx {
+-                date,
+-                make: primary_meta.make.as_deref(),
+-                model: primary_meta.model.as_deref(),
+-                original: primary_stem,
+-                seq: 1,
+-            };
+-            let planned = Path::new(root).join(template::plan(&cfg.folder_tpl, &cfg.name_tpl, &ctx, &f.ext));
+-            if let Some(r) = self.catalog.dest_by_path(&planned.to_string_lossy()) {
+-                if r.size == f.size && !rows.iter().any(|x| x.path == r.path) {
+-                    rows.push(r);
+-                }
+-            }
++        if let Some(r) = matches.planned.filter(|r| r.size == f.size && !rows.iter().any(|x| x.path == r.path)) {
++            rows.push(r);
+         }
+-        for r in rows {
+-            // Stage 2 on the destination side: its EXIF (local disk, small read).
+-            let other = readonly::read_prefix(Path::new(&r.path), 512 * 1024)
+-                .map(|b| metadata::read_meta(&b, f.kind))
+-                .unwrap_or_default();
+-            if exif_ok(&other) {
+-                cands.push(Candidate::Dest(r));
++        for row in rows {
++            let known_copy = row.blake3.as_ref().is_some_and(|cached| cands.iter().any(|candidate| {
++                matches!(candidate, Candidate::Catalog { hash, dest_path } if hash == cached && dest_path == &row.path)
++            }));
++            if known_copy || dest_exif_matches(f, meta, &row) {
++                cands.push(Candidate::Dest(row));
+             }
+         }
+         cands
+     }
+ 
+     pub fn evaluate_all(&self, s: &Arc<Session>) {
++        let mut batch = Vec::with_capacity(crate::scan::MATCH_BATCH);
+         for idx in 0..s.items.len() {
+             if s.is_cancelled() {
+                 return;
+             }
+-            self.evaluate_item(s, idx);
++            batch.push(idx);
++            if batch.len() == crate::scan::MATCH_BATCH {
++                self.evaluate_items(s, &batch);
++                batch.clear();
++            }
+         }
++        self.evaluate_items(s, &batch);
+     }
+ 
+     /// Stage 3. Runs on one thread so card reads stay sequential.
+@@ -256,28 +275,50 @@ impl Deduper {
+             return;
+         }
+         let f = &s.items[job.item].files[job.file];
+-        let cached = s.state[job.item].lock().files[job.file].hash.clone();
++        let (cached, meta) = {
++            let st = s.state[job.item].lock();
++            let fs = &st.files[job.file];
++            (fs.hash.clone(), fs.meta.clone().unwrap_or_default())
++        };
+         let src_hash = match cached {
+             Some(h) => h,
+-            None => match readonly::hash_file_both(&f.path, false) {
+-                Ok((h, sha1, n)) if n == f.size => {
+-                    let mut st = s.state[job.item].lock();
+-                    st.files[job.file].hash = Some(h.clone());
+-                    st.files[job.file].sha1 = Some(sha1);
+-                    h
++            None => {
++                let check_immich = self.immich.read().is_some();
++                let hash = if check_immich {
++                    readonly::hash_file_both(&f.path, false).map(|(h, sha1, n)| (h, Some(sha1), n))
++                } else {
++                    readonly::hash_file(&f.path, false).map(|(h, n)| (h.to_hex().to_string(), None, n))
++                };
++                match hash {
++                    Ok((h, sha1, n)) if n == f.size => {
++                        let mut st = s.state[job.item].lock();
++                        st.files[job.file].hash = Some(h.clone());
++                        if sha1.is_some() {
++                            st.files[job.file].sha1 = sha1;
++                        }
++                        h
++                    }
++                    // Unreadable source: treat as new; the import will report the error.
++                    _ => {
++                        self.set(s, &job, FileStatus::New, None);
++                        return;
++                    }
+                 }
+-                // Unreadable source: treat as new; the import will report the error.
+-                _ => {
+-                    self.set(s, &job, FileStatus::New, None);
+-                    return;
+-                }
+-            },
++            }
+         };
+         let mut result = (FileStatus::New, None);
+         for c in &job.cands {
+             match c {
+                 Candidate::Dest(row) => {
+-                    if dest_hash(&self.catalog, row).as_deref() == Some(src_hash.as_str()) {
++                    // A current hash settles the comparison without opening the library file.
++                    // On a cache miss, cheap EXIF rejection can avoid hashing a different shot.
++                    let hash = dest_hash_with_filter(&self.catalog, row, || {
++                        !job.cands.iter().any(|candidate| {
++                            matches!(candidate, Candidate::Catalog { hash, dest_path }
++                                if Some(hash) == row.blake3.as_ref() && dest_path == &row.path)
++                        }) || dest_exif_matches(f, &meta, row)
++                    });
++                    if hash.as_deref() == Some(src_hash.as_str()) {
+                         result = (FileStatus::InDestination, Some(row.path.clone()));
+                         break;
+                     }
+@@ -294,9 +335,11 @@ impl Deduper {
+                 }
+             }
+         }
+-        if result.0 == FileStatus::InDestination {
+-            // Remember it so future scans hit the catalog at stage 1/2.
+-            let meta = s.state[job.item].lock().files[job.file].meta.clone().unwrap_or_default();
++        if result.0 == FileStatus::InDestination && !job.cands.iter().any(|candidate| {
++            matches!(candidate, Candidate::Catalog { hash, dest_path }
++                if hash == &src_hash && result.1.as_deref() == Some(dest_path.as_str()))
++        }) {
++            // Remember matches that are new to the import history.
+             let _ = self.catalog.record_imported(&NewImported {
+                 orig_name: &f.name,
+                 size: f.size,
+@@ -410,7 +453,17 @@ impl Deduper {
+         names.sort();
+         names.dedup();
+ 
+-        let assets = match ctx.client.search_names(&names) {
++        // Settings can change while preparing a batch. Drop stale work before
++        // contacting the server or after a request that was already in flight.
++        let current = || self.immich.read().as_ref().is_some_and(|active| Arc::ptr_eq(active, &ctx));
++        if !current() || s.is_cancelled() {
++            return;
++        }
++        let response = ctx.client.search_names(&names);
++        if !current() || s.is_cancelled() {
++            return;
++        }
++        let assets = match response {
+             Ok(a) => {
+                 s.emit("immich-status", serde_json::json!({ "state": "ok" }));
+                 a
+@@ -425,6 +478,9 @@ impl Deduper {
+         };
+ 
+         for ((j, rel), history) in jobs.iter().zip(planned).zip(histories) {
++            if !current() || s.is_cancelled() {
++                return;
++            }
+             let f = &s.items[j.item].files[j.file];
+             let capture = s.state[j.item].lock().files[j.file].meta.as_ref().and_then(|m| m.capture);
+             let planned_name = rel.as_deref().and_then(|r| r.rsplit('/').next()).filter(|_| !name_unpredictable);
+@@ -559,14 +615,58 @@ mod tests {
+         deduper.start_verifier(&session);
+         let thumbs = Arc::new(ThumbCache::new(d.path().join("thumbs")).unwrap());
+         let dd = deduper.clone();
+-        scan::start_workers(&session, thumbs, Arc::new(move |s, i| dd.evaluate_item(s, i)));
++        scan::start_workers(&session, thumbs, Arc::new(move |s, i| dd.evaluate_items(s, i)));
+         assert_eq!(settle(&session), vec![FileStatus::InDestination, FileStatus::New, FileStatus::New]);
++        let matched = session.state[0].lock();
++        assert!(matched.files[0].hash.is_some());
++        assert!(matched.files[0].sha1.is_none());
++        drop(matched);
+         session.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+ 
+         // The match was written back to the catalog for next time.
+         assert_eq!(catalog.imported_by_name_size("P1.ORF", 10).len(), 1);
+     }
+ 
++    #[test]
++    fn scan_settles_short_and_partial_batches() {
++        for count in [20, crate::scan::MATCH_BATCH * 2 + 1] {
++            let dir = tempfile::tempdir().unwrap();
++            let card = dir.path().join("card");
++            let lib = dir.path().join("library");
++            std::fs::create_dir_all(&card).unwrap();
++            std::fs::create_dir_all(&lib).unwrap();
++            for i in 0..count {
++                std::fs::write(card.join(format!("IMG_{i:04}.JPG")), b"test").unwrap();
++            }
++            let last = format!("IMG_{:04}.JPG", count - 1);
++            std::fs::write(lib.join(last), b"test").unwrap();
++
++            let root = lib.to_string_lossy().into_owned();
++            let catalog = Arc::new(Catalog::open_in_memory().unwrap());
++            crate::dest_index::walk(&catalog, &root, &AtomicBool::new(false), |_| {}).unwrap();
++            let deduper = Arc::new(Deduper::new(catalog, DedupeCfg {
++                dest_root: Some(root),
++                dest_ready: true,
++                ..Default::default()
++            }));
++            let session = Session::new(
++                "card".into(),
++                card.clone(),
++                scan::pair(scan::walk(&card, "card")),
++                Arc::new(|_, _| {}),
++            );
++            let thumbs = Arc::new(ThumbCache::new(dir.path().join("thumbs")).unwrap());
++            deduper.start_verifier(&session);
++            scan::start_workers(&session, thumbs, Arc::new(move |s, ids| deduper.evaluate_items(s, ids)));
++
++            let statuses = settle(&session);
++            assert_eq!(statuses.len(), count);
++            assert!(statuses[..count - 1].iter().all(|s| *s == FileStatus::New));
++            assert_eq!(statuses[count - 1], FileStatus::InDestination);
++            session.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
++        }
++    }
++
+     /// A copy imported under a suffixed name (because an edited file held the
+     /// original name) still counts as in the destination.
+     #[test]
+@@ -598,7 +698,7 @@ mod tests {
+         let session = Session::new("card".into(), src_root.clone(), scan::pair(scan::walk(&src_root, "card")), Arc::new(|_, _| {}));
+         deduper.start_verifier(&session);
+         let dd = deduper.clone();
+-        scan::start_workers(&session, Arc::new(ThumbCache::new(d.path().join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_item(s, i)));
++        scan::start_workers(&session, Arc::new(ThumbCache::new(d.path().join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_items(s, i)));
+         assert_eq!(settle(&session), vec![FileStatus::InDestination]);
+         session.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+     }
+@@ -619,7 +719,7 @@ mod tests {
+         deduper.start_verifier(&session);
+         deduper.start_immich_worker(&session);
+         let dd = deduper.clone();
+-        scan::start_workers(&session, Arc::new(ThumbCache::new(d.join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_item(s, i)));
++        scan::start_workers(&session, Arc::new(ThumbCache::new(d.join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_items(s, i)));
+         (session, deduper)
+     }
+ 
+@@ -796,7 +896,7 @@ mod tests {
+         let session = Session::new("card".into(), src_root.clone(), scan::pair(scan::walk(&src_root, "card")), Arc::new(|_, _| {}));
+         deduper.start_verifier(&session);
+         let dd = deduper.clone();
+-        scan::start_workers(&session, Arc::new(ThumbCache::new(d.path().join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_item(s, i)));
++        scan::start_workers(&session, Arc::new(ThumbCache::new(d.path().join("t")).unwrap()), Arc::new(move |s, i| dd.evaluate_items(s, i)));
+         let mut statuses = Vec::new();
+         for _ in 0..200 {
+             statuses = (0..2).map(|i| session.view(i).status).collect::<Vec<_>>();
+diff --git i/src-tauri/plugin/src/lib.rs w/src-tauri/plugin/src/lib.rs
+index 0007b65..37f2d15 100644
+--- i/src-tauri/plugin/src/lib.rs
++++ w/src-tauri/plugin/src/lib.rs
+@@ -141,7 +141,7 @@ async fn scan_source(
+     state.dedupe.start_verifier(&session);
+     state.dedupe.start_immich_worker(&session);
+     let dedupe = state.dedupe.clone();
+-    scan::start_workers(&session, state.thumbs.clone(), Arc::new(move |s, idx| dedupe.evaluate_item(s, idx)));
++    scan::start_workers(&session, state.thumbs.clone(), Arc::new(move |s, idx| dedupe.evaluate_items(s, idx)));
+     let items = (0..session.items.len() as u32).map(|i| session.view(i)).collect();
+     let gen = session.gen;
+     *state.session.lock() = Some(session);
+diff --git i/src-tauri/plugin/src/scan.rs w/src-tauri/plugin/src/scan.rs
+index 632a92d..f65c99a 100644
+--- i/src-tauri/plugin/src/scan.rs
++++ w/src-tauri/plugin/src/scan.rs
+@@ -2,10 +2,11 @@
+ //! background metadata + preview extraction prioritised by what is on screen.
+ 
+ use std::collections::BTreeMap;
++use std::io::{self, Read};
+ use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+ use std::sync::Arc;
+-use std::time::{Duration, SystemTime, UNIX_EPOCH};
++use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+ 
+ use chrono::NaiveDateTime;
+ use parking_lot::Mutex;
+@@ -20,6 +21,9 @@ use crate::readonly;
+ pub type EmitFn = Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>;
+ 
+ const META_WORKERS: usize = 4;
++pub(crate) const MATCH_BATCH: usize = 128;
++const MATCH_BATCH_WINDOW: Duration = Duration::from_millis(4);
++const IMMEDIATE_MATCH_LIMIT: usize = 20;
+ const SIDECAR_PREFIX: usize = 256 * 1024;
+ 
+ #[derive(Debug, Clone)]
+@@ -548,25 +552,34 @@ fn process_item(s: &Session, cache: &ThumbCache, idx: usize) {
+             metas.push(meta);
+             continue;
+         }
+-        let prefix_len = if is_primary { preview::PREFIX_SMALL } else { SIDECAR_PREFIX };
+-        let buf = match readonly::read_prefix(&f.path, prefix_len) {
+-            Ok(b) => b,
+-            Err(_) => {
+-                metas.push(PhotoMeta::default());
+-                thumb_failed |= is_primary;
+-                continue;
+-            }
+-        };
+-        let meta = cached_meta.unwrap_or_else(|| metadata::read_meta(&buf, f.kind));
+-        let _ = cache.put_meta(&f.key, &meta);
+         if is_primary {
+-            // Embedded previews (and plain JPEG pixels) are stored un-rotated.
+-            match extract_preview(f, buf).and_then(|jpeg| preview::make_thumb(&jpeg, meta.orientation).ok()) {
+-                Some(t) if cache.put(&f.key, &t).is_ok() => thumb = Some(f.key.clone()),
+-                _ => thumb_failed = true,
++            let had_meta = cached_meta.is_some();
++            match photo_preview(f, cached_meta) {
++                Ok((meta, jpeg)) => {
++                    if !had_meta {
++                        let _ = cache.put_meta(&f.key, &meta);
++                    }
++                    match jpeg.and_then(|jpeg| preview::make_thumb(&jpeg, meta.orientation).ok()) {
++                        Some(t) if cache.put(&f.key, &t).is_ok() => thumb = Some(f.key.clone()),
++                        _ => thumb_failed = true,
++                    }
++                    metas.push(meta);
++                }
++                Err(_) => {
++                    metas.push(PhotoMeta::default());
++                    thumb_failed = true;
++                }
++            }
++        } else {
++            match readonly::read_prefix(&f.path, SIDECAR_PREFIX) {
++                Ok(buf) => {
++                    let meta = metadata::read_meta(&buf, f.kind);
++                    let _ = cache.put_meta(&f.key, &meta);
++                    metas.push(meta);
++                }
++                Err(_) => metas.push(PhotoMeta::default()),
+             }
+         }
+-        metas.push(meta);
+     }
+     let mut st = s.state[idx].lock();
+     for (fs, m) in st.files.iter_mut().zip(metas) {
+@@ -577,35 +590,51 @@ fn process_item(s: &Session, cache: &ThumbCache, idx: usize) {
+     st.meta_done = true;
+ }
+ 
+-/// Return the JPEG bytes to build a thumbnail from.
+-fn extract_preview(f: &SourceFile, prefix: Vec<u8>) -> Option<Vec<u8>> {
++/// Start with the file's header and extend the same read when necessary.
++fn photo_preview(f: &SourceFile, cached_meta: Option<PhotoMeta>) -> io::Result<(PhotoMeta, Option<Vec<u8>>)> {
++    const FIRST_PREFIX: u64 = 512 * 1024;
+     const GOOD_WIDTH: u16 = 640;
++
+     let is_jpeg = f.kind == Kind::Jpeg;
+     let good = |h: &preview::JpegHit| h.width.max(h.height) >= GOOD_WIDTH;
+-    let scan = preview::find_largest_jpeg(&prefix, is_jpeg);
+-    if let Some(h) = scan.best.as_ref().filter(|h| good(h)) {
+-        return Some(prefix[h.start..h.end].to_vec());
+-    }
+-    let mut fallback = scan.best.map(|h| prefix[h.start..h.end].to_vec());
+-    if scan.truncated && (prefix.len() as u64) < f.size {
+-        if let Ok(big) = readonly::read_prefix(&f.path, preview::PREFIX_LARGE) {
+-            let scan = preview::find_largest_jpeg(&big, is_jpeg);
+-            if let Some(h) = scan.best {
+-                if good(&h) {
+-                    return Some(big[h.start..h.end].to_vec());
+-                }
+-                fallback = Some(big[h.start..h.end].to_vec());
+-            }
++    let mut file = readonly::open_read(&f.path, false)?;
++    let first_limit = f.size.min(FIRST_PREFIX);
++    let mut buf = Vec::with_capacity(first_limit as usize);
++    extend_prefix(&mut file, &mut buf, first_limit)?;
++    let mut scan = preview::find_largest_jpeg(&buf, is_jpeg);
++    let mut meta = cached_meta;
++    if meta.is_none() && scan.best.as_ref().is_some_and(good) {
++        let header_meta = metadata::read_meta(&buf, f.kind);
++        if header_meta.capture.is_some()
++            && header_meta.orientation.is_some()
++            && (f.kind != Kind::Raw || (header_meta.make.is_some() && header_meta.model.is_some() && header_meta.serial.is_some()))
++        {
++            meta = Some(header_meta);
+         }
+     }
+-    if is_jpeg {
+-        // Camera JPEGs usually only embed a 160px thumbnail: use the image itself.
+-        if (prefix.len() as u64) >= f.size {
+-            return Some(prefix);
+-        }
+-        return readonly::read_prefix(&f.path, f.size as usize).ok();
++    if (buf.len() as u64) < f.size && (!scan.best.as_ref().is_some_and(good) || meta.is_none()) {
++        extend_prefix(&mut file, &mut buf, f.size.min(preview::PREFIX_SMALL as u64))?;
++        scan = preview::find_largest_jpeg(&buf, is_jpeg);
+     }
+-    fallback
++    let meta = meta.unwrap_or_else(|| metadata::read_meta(&buf, f.kind));
++    if !scan.best.as_ref().is_some_and(good) && scan.truncated && (buf.len() as u64) < f.size {
++        if extend_prefix(&mut file, &mut buf, f.size.min(preview::PREFIX_LARGE as u64)).is_ok() {
++            scan = preview::find_largest_jpeg(&buf, is_jpeg);
++        }
++    }
++    let jpeg = match scan.best {
++        Some(h) if good(&h) || !is_jpeg => Some(buf[h.start..h.end].to_vec()),
++        // Camera JPEGs often only embed a tiny thumbnail. Decode the original
++        // when a card-sized preview is unavailable.
++        _ if is_jpeg => extend_prefix(&mut file, &mut buf, f.size).ok().map(|_| buf),
++        _ => None,
++    };
++    Ok((meta, jpeg))
++}
++
++fn extend_prefix(file: &mut impl Read, buf: &mut Vec<u8>, limit: u64) -> io::Result<()> {
++    file.take(limit.saturating_sub(buf.len() as u64)).read_to_end(buf)?;
++    Ok(())
+ }
+ 
+ /// Make sure every file of an item has metadata (without building previews).
+@@ -628,8 +657,8 @@ pub fn ensure_meta(s: &Session, idx: usize) {
+ }
+ 
+ /// Spawn the metadata/preview workers and the UI flusher for a session.
+-/// `on_meta` runs after each item's metadata is loaded (dedupe evaluation).
+-pub fn start_workers(s: &Arc<Session>, cache: Arc<ThumbCache>, on_meta: Arc<dyn Fn(&Arc<Session>, usize) + Send + Sync>) {
++/// `on_meta` runs on small groups of ready items for dedupe evaluation.
++pub fn start_workers(s: &Arc<Session>, cache: Arc<ThumbCache>, on_meta: Arc<dyn Fn(&Arc<Session>, &[usize]) + Send + Sync>) {
+     let remaining = Arc::new(AtomicU64::new(s.items.len() as u64));
+     for _ in 0..META_WORKERS {
+         let s = s.clone();
+@@ -637,15 +666,24 @@ pub fn start_workers(s: &Arc<Session>, cache: Arc<ThumbCache>, on_meta: Arc<dyn
+         let on_meta = on_meta.clone();
+         let remaining = remaining.clone();
+         std::thread::spawn(move || {
++            let mut ready = Vec::with_capacity(MATCH_BATCH);
++            let immediate = s.items.len() <= IMMEDIATE_MATCH_LIMIT;
++            let mut first = true;
++            let mut started = Instant::now();
+             while !s.is_cancelled() {
+                 let Some(idx) = s.claim() else { break };
+                 process_item(&s, &cache, idx);
+-                on_meta(&s, idx);
+                 s.mark_dirty(idx as u32);
+-                if remaining.fetch_sub(1, Ordering::SeqCst) == 1 {
+-                    s.emit("metadata-done", serde_json::json!({ "gen": s.gen }));
++                ready.push(idx);
++                if immediate || first || ready.len() == MATCH_BATCH || started.elapsed() >= MATCH_BATCH_WINDOW {
++                    publish_ready(&s, &on_meta, &remaining, &mut ready);
++                    first = false;
++                    started = Instant::now();
+                 }
+             }
++            if !s.is_cancelled() {
++                publish_ready(&s, &on_meta, &remaining, &mut ready);
++            }
+         });
+     }
+     let s = s.clone();
+@@ -657,6 +695,22 @@ pub fn start_workers(s: &Arc<Session>, cache: Arc<ThumbCache>, on_meta: Arc<dyn
+     });
+ }
+ 
++fn publish_ready(
++    s: &Arc<Session>,
++    on_meta: &Arc<dyn Fn(&Arc<Session>, &[usize]) + Send + Sync>,
++    remaining: &AtomicU64,
++    ready: &mut Vec<usize>,
++) {
++    if ready.is_empty() {
++        return;
++    }
++    on_meta(s, ready);
++    if remaining.fetch_sub(ready.len() as u64, Ordering::SeqCst) == ready.len() as u64 {
++        s.emit("metadata-done", serde_json::json!({ "gen": s.gen }));
++    }
++    ready.clear();
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -677,6 +731,30 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn photo_preview_reads_past_initial_prefix_and_decodes_plain_jpeg() {
++        let dir = tempfile::tempdir().unwrap();
++        let image = image::RgbImage::new(640, 480);
++        let mut jpeg = Vec::new();
++        image::codecs::jpeg::JpegEncoder::new(&mut jpeg).encode_image(&image).unwrap();
++
++        let path = dir.path().join("preview.orf");
++        let mut raw = vec![0; 600 * 1024];
++        raw.extend_from_slice(&jpeg);
++        std::fs::write(&path, &raw).unwrap();
++        let mut file = sf(path.to_str().unwrap(), Kind::Raw);
++        file.size = raw.len() as u64;
++        let (_, extracted) = photo_preview(&file, Some(PhotoMeta::default())).unwrap();
++        assert_eq!(extracted.as_deref(), Some(jpeg.as_slice()));
++
++        let path = dir.path().join("original.jpg");
++        std::fs::write(&path, &jpeg).unwrap();
++        let mut file = sf(path.to_str().unwrap(), Kind::Jpeg);
++        file.size = jpeg.len() as u64;
++        let (_, extracted) = photo_preview(&file, None).unwrap();
++        assert_eq!(extracted.as_deref(), Some(jpeg.as_slice()));
++    }
++
+     #[test]
+     fn pairs_raw_and_jpeg() {
+         let groups = pair(vec![
+diff --git i/src-tauri/plugin/tests/end_to_end.rs w/src-tauri/plugin/tests/end_to_end.rs
+index 42e7d83..627477c 100644
+--- i/src-tauri/plugin/tests/end_to_end.rs
++++ w/src-tauri/plugin/tests/end_to_end.rs
+@@ -19,7 +19,7 @@ fn scan(dir: &Path, deduper: &Arc<Deduper>, thumbs: &Arc<ThumbCache>) -> Arc<Ses
+     println!("walk+pair: {} items in {:?}", s.items.len(), t.elapsed());
+     deduper.start_verifier(&s);
+     let d = deduper.clone();
+-    scan::start_workers(&s, thumbs.clone(), Arc::new(move |s, i| d.evaluate_item(s, i)));
++    scan::start_workers(&s, thumbs.clone(), Arc::new(move |s, i| d.evaluate_items(s, i)));
+     for _ in 0..3000 {
+         let v: Vec<_> = (0..s.items.len() as u32).map(|i| s.view(i)).collect();
+         if v.iter().all(|x| !matches!(x.status, FileStatus::Pending | FileStatus::Checking)) {
+diff --git i/src/store.ts w/src/store.ts
+index 9e156cc..64be65b 100644
+--- i/src/store.ts
++++ w/src/store.ts
+@@ -139,6 +139,7 @@ export function isOnVolume(path: string, mountPoint: string): boolean {
+ }
+ 
+ let saveTimer: number | undefined;
++let immichReq = 0;
+ let openReq = 0;
+ 
+ export const useStore = create<State>((set, get) => ({
+@@ -427,7 +428,9 @@ export const useStore = create<State>((set, get) => ({
+ 
+   /** Load Immich settings and check the connection once. */
+   loadImmich: async () => {
++    const req = ++immichReq;
+     const view = await api.getImmichSettings();
++    if (req !== immichReq) return;
+     const { hasKey, requiredPermission: _p, ...settings } = view;
+     set({ immich: settings });
+     if (!settings.enabled || !hasKey || !settings.url) {
+@@ -436,10 +439,12 @@ export const useStore = create<State>((set, get) => ({
+     }
+     set({ immichStatus: { state: "testing" } });
+     const r = await api.testImmich(settings, null);
++    if (req !== immichReq) return;
+     set({ immichStatus: r.ok ? { state: "ok", version: r.version } : { state: "error", error: r.error ?? "Unknown error" } });
+   },
+ 
+   setImmichStatus: (immichStatus) => {
++    if (get().immich?.enabled === false) return;
+     // Keep the version from the last successful test.
+     const prev = get().immichStatus;
+     if (immichStatus.state === "ok" && prev.state === "ok") return;

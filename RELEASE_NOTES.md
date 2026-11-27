@@ -14,6 +14,9 @@ Improvements
 
 Performance
 
+- SD card scans group local catalog lookups, reuse verified library hashes
+  and read less from photos with embedded previews near the start of the file.
+  With **Use Immich** off, scanning uses only local duplicate checks.
 - Pasting settings onto many photos is faster. Each photo is opened once,
   applying any new-photo defaults and the pasted settings together, and the
   progress count runs through the selection once.

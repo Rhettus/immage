@@ -45,8 +45,9 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Add optional Geoapify place-name search to the location map; map tiles and
   manual pin placement work without a search key.
 - Browse folders directly, import from a card to a local folder or mounted NAS
-  share with the [built-in importer](app/docs/import.md),
-  and optionally search and export to an [Immich](app/docs/immich.md) library.
+  share with the [built-in importer](app/docs/import.md). Card scans match
+  against the local library and can also check [Immich](app/docs/immich.md)
+  when enabled. Immich also supports search and export.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
   keeps filters active across folder changes and remembers its own width and

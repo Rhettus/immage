@@ -26,8 +26,10 @@ the current card or folder so newly added photos and thumbnails appear.
   narrow what is shown. If you cull in FastRawViewer first, pick its
   `_Selected` folder.
 
-The grid fills in seconds, using the previews the camera stored. A raw and
-its JPEG show as one tile.
+The grid fills as the card is checked. For photo thumbnails, the importer
+looks for a camera preview near the start of the file and reads farther
+only when needed. A JPEG without a usable embedded preview is decoded
+from the original image. A raw and its JPEG show as one tile.
 
 ## 2. Choose what to import
 
@@ -76,12 +78,16 @@ photo, in its folder. The destination joins your **Folders** list.
 ## Duplicates
 
 A photo counts as already imported only when its contents match exactly.
-The name and size are checked first, then the capture time, then a full
-hash of the file.
+The importer looks up names and sizes in its local catalog. On larger
+cards it groups ready photos into batches. On cards with 20 photos or
+fewer it checks each photo as soon as it is ready. Capture time can
+narrow down matches, and a file hash confirms duplicates. It reuses library hashes while the recorded file size and
+modification time still match.
 
-With Immich set up (see [Immich](immich.md)), the importer also looks each
-photo up on the server, by file name, size and capture time. An Immich
-problem never stops an import.
+Turn on **Use Immich** in **Preferences › Immich** to also look up photos
+on the server by file name, size and capture time. With the switch off,
+card scans use only the local library. An Immich problem never stops an
+import. See [Immich](immich.md) for setup.
 
 ## Notes
 
