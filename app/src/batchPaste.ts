@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
-import { CONVERSIONS } from "./manifest";
+import { CONVERSIONS, mapOf, modules } from "./manifest";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
 import { commands, type PasteUpdate } from "./commands";
@@ -100,23 +100,43 @@ export async function restorePaste(token: number, action: "undo" | "redo" | "abo
   return r.updates ?? [];
 }
 
+// What a paste needs of a photo already edited beyond its history: an open
+// for the edit alone skips the raw decode and the pipe, the costliest steps
+// (session.c, _open_edit_only). Masks, Advanced instances and a conversion
+// need the pipe (masks.c maps shapes through it; module_state); "decoded"
+// is every other map, written exactly as with the pipe while the engine
+// holds the record of an earlier decode; "any" the maps whose defaults read
+// nothing the decode provides, which the library's record alone serves.
+// verify/batch-paste.test.mjs compares the saved edits of both opens.
+const RAW_RECORD = new Set(["temperature", "channelmixerrgb", "channelmixerrgb#bw", "colorin", "demosaic",
+  "hotpixels", "cacorrectrgb", "denoiseprofile", "highlights", "rawprepare", "vignette", "negadoctor",
+  "crop", "ashift", "lens", "flip"]);
+// a control a raw-record map shares (B&W's bw_mode, with HSL's colorequal)
+const RAW_RECORD_CONTROLS = new Set(modules.filter(m => RAW_RECORD.has(m.op)).flatMap(m => m.controls));
+export function editOnlyMode(c: Clip): "decoded" | "any" | null {
+  if (c.masks || c.advanced?.length) return null;
+  if (CONVERSIONS.some(v => c.values[v.flag] === 1)) return null;
+  const ids = Object.keys(c.values);
+  return ids.every(id => !RAW_RECORD_CONTROLS.has(id) && !RAW_RECORD.has(mapOf.get(id)?.op ?? "")) ? "any" : "decoded";
+}
+
 // The caller must quiesce the viewer session, block editing/navigation, and
 // reopen it in finally. A failed batch rolls back all targets; failed recovery
 // writes retain their snapshots so Undo can retry instead of discarding edits.
+// Each target is opened once: a new photo takes `prepare`'s defaults in the
+// same session, saved as its baseline, and its undo point is taken again
+// after them ("rebase"). A new photo always has its raw decoded: rawspeed
+// measures many raws' black levels from their masked pixels
+// (imageio_rawspeed.cc, calculateBlackAreas), and its first history records
+// them. Decoding the next targets ahead on the prefetch threads gained
+// nothing measurable: the loop reached each photo before its decode was done.
 export async function runPaste(targets: PasteTarget[], clip: Clip,
                                progress: (done: number, total: number) => void,
                                saved: (update: PasteUpdate) => void,
                                prepare?: (s: Session) => Promise<void>) {
   const c = structuredClone(clip);
   validateAiPaste(c);
-  if (prepare) {
-    for (const [n, target] of targets.entries()) {
-      progress(n, targets.length);
-      const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }), () => {}, () => {}, true);
-      try { await prepare(s); }
-      finally { await s.close(); }
-    }
-  }
+  const editOnly = editOnlyMode(c);
   const { token } = await commands.pasteBatch("begin", null, targets.map(i => i.imgid));
   if (token == null) throw Error("the engine gave no paste token");
   try {
@@ -124,8 +144,13 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       progress(n, targets.length);
       let failure: string | null = null;
       const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }),
-        () => {}, e => { failure ??= e; }, true);
+        () => {}, e => { failure ??= e; }, true, editOnly);
       try {
+        if (prepare && !s.wasEdited) {
+          await prepare(s);
+          if (failure) throw Error(failure);
+          await commands.pasteBatch("rebase", token, [s.imgid]);
+        }
         applyClip(s, { ...c, masks: undefined }, true);
         await s.settled();
         if (failure) throw Error(failure);

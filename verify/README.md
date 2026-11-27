@@ -213,7 +213,11 @@ node --test --test-isolation=none verify/batch-paste.test.mjs
 
 It checks exact selection, untouched groups, look/strength, native history
 undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
-undo and sidecar failure recovery. The separate visible-app `batch-paste` case
+undo and sidecar failure recovery. It also checks that each target is opened
+once, and that a paste onto an edited photo opened for its edit alone (no raw
+decode, no pipe) saves the same sidecar as a full open. Set
+`IMMAGE_TEST_RAW=/path/to/photo.CR2` to check that on a raw as well as the
+sample JPEG. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.
 
 The panel eye check (headless, real engine) holds a panel's eye through

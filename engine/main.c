@@ -311,7 +311,10 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
 // the preview pipe's budget does not
   const char *kind = json_object_get_string_member_with_default(req, "pipe", "full");
   const dt_imgid_t version = json_object_get_int_member_with_default(req, "imgid", NO_IMGID);
-  if(!path || !session_open_image(path, version, kind, err)) return FALSE;
+  const gboolean needs_decoded = json_object_get_boolean_member_with_default(req, "needs_decoded", TRUE);
+  if(!path || !session_open_image(path, version, kind, needs_decoded, err)) return FALSE;
+  json_builder_set_member_name(b, "pipeless");
+  json_builder_add_boolean_value(b, _s.pipeless);
   json_builder_set_member_name(b, "imgid");
   json_builder_add_int_value(b, _s.imgid);
   json_builder_set_member_name(b, "width");
@@ -1418,6 +1421,20 @@ static const eng_cmd_t _commands[] =
   { "merge_cancel", _cmd_reader_only, _CMD_NEEDS_OPEN },
 };
 
+// what a photo opened for its edit alone serves: the requests that read and
+// write module params, apply a look and save. any other that needs the open
+// photo draws, maps shapes or reads pixels through the pipe it lacks, as do
+// the GPU check's followers and soft proofing among the rest
+static gboolean _pipeless_serves(const eng_cmd_t *entry)
+{
+  static const char *const edits[] = { "set", "get", "save", "baseline_end", "look", "look_amount" };
+  if(!g_strcmp0(entry->name, "parity") || !g_strcmp0(entry->name, "softproof")) return FALSE;
+  if(!(entry->flags & _CMD_NEEDS_OPEN)) return TRUE;
+  for(size_t k = 0; k < G_N_ELEMENTS(edits); k++)
+    if(!g_strcmp0(entry->name, edits[k])) return TRUE;
+  return FALSE;
+}
+
 static void _handle(JsonObject *req, FILE *out)
 {
   const char *cmd = json_object_has_member(req, "cmd")
@@ -1447,6 +1464,11 @@ static void _handle(JsonObject *req, FILE *out)
   if(!entry)
   {
     err = g_strdup_printf("unknown cmd '%s'", cmd ? cmd : "(none)");
+    goto fail;
+  }
+  if(_s.open && _s.pipeless && !_pipeless_serves(entry))
+  {
+    err = g_strdup_printf("'%s' needs the photo opened with its pipe", cmd);
     goto fail;
   }
   if(!entry->fn(req, b, &err)) goto fail;
@@ -1577,7 +1599,7 @@ static void _trim_pipe(dt_dev_pixelpipe_t *pipe, const gboolean pressure)
 
 static void _trim(const gboolean pressure)
 {
-  if(_s.open)
+  if(_s.open && !_s.pipeless)
   {
     _trim_pipe(&_s.pipe, pressure);
     if(_s.ppipe_ok) _trim_pipe(&_s.ppipe, pressure);

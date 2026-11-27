@@ -34,8 +34,9 @@ export function newPhotoLensMethod(s: Session, method: number | undefined): numb
   return method;
 }
 
-// Establish the same new-photo baseline as opening it in the viewer, before
-// taking a batch's undo snapshot. Never change an existing saved edit.
+// Establish the same new-photo baseline as opening it in the viewer. A batch
+// calls it in the paste's own session, then takes the photo's undo snapshot
+// again (runPaste). Never change an existing saved edit.
 export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
   if (s.wasEdited) return;
   const values: Values = { tm_mode: 1 };

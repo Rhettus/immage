@@ -123,6 +123,18 @@ same instances again. As in darktable, modules tied to one camera or photo,
 such as white balance, raw black and white points and orientation, are not
 copied. Neither is an instance with a drawn mask.
 
+A photo that has never been edited first gets the new-photo defaults from
+Preferences, as if you had opened it, and then the pasted settings. Each photo
+is opened once, and the progress count runs through the selection once.
+
+Pasting onto photos that already have an edit is quicker: Immage writes the
+settings into their edit without reading the raw file. Tone, color, detail and
+effects settings always paste this way. White balance, profile, lens, crop and
+transform settings do too once Immage has read the photo's raw earlier in the
+session, for example when you viewed it, pasted onto it or its thumbnail was
+redrawn. Pastes that include **Masks** or **Advanced modules** open each photo
+fully, as do photos with no edit yet.
+
 Virtual copies are independent targets. Paste does not automatically include
 an unselected RAW/JPEG partner. Remote results that have not been opened into
 the local library are skipped and counted in the status message.

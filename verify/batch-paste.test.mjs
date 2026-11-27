@@ -160,8 +160,13 @@ test('new photos establish defaults before snapshot, preserving unticked preset 
   const path=join(dir,'fresh.jpg');copyFileSync(images[0].path,path);
   const fresh={path,imgid:(await requestTagged({cmd:'import',files:[path]})).images[0].imgid};
   const defaults={profile:0,compensation:0,auto:false,preset:{values:{vibrance:17,lens_profile:1,lens_ca:1,hp_enable:1},nonRaw:true}};
-  const result=await runPaste([fresh,images[1]],{values:{exposure:1}},()=>{},()=>{},s=>preparePastePhoto(s,defaults));
+  let opens=0;sent.hook=cmd=>{if(cmd==='open_image')opens++;};
+  const progress=[];
+  const result=await runPaste([fresh,images[1]],{values:{exposure:1}},(n,total)=>progress.push([n,total]),()=>{},s=>preparePastePhoto(s,defaults));
+  sent.hook=null;
   assert.equal(result.error,null);
+  assert.equal(opens,2,'each target is opened once, defaults and paste together');
+  assert.deepEqual(progress,[[0,2],[1,2],[2,2]],'one pass of progress');
   const pasted=await open(fresh);assert.equal(pasted.values.vibrance,17);assert.equal(pasted.values.exposure,1);
   assert.notEqual(pasted.values.lens_profile,1,'a JPEG keeps the camera\'s lens corrections');
   assert.notEqual(pasted.values.hp_enable,1,'a JPEG gets no raw-only settings');await pasted.close();
@@ -359,3 +364,52 @@ test('paste carries Advanced instances Simple cannot show, once', {timeout:12000
     }
   }
 }));
+
+// A photo already edited is pasted onto without its raw decoded or a pipe
+// (runPaste's editOnlyMode, session.c _open_edit_only). Its saved edit must
+// be the one a full open saves: two copies edited alike, one pasted onto
+// through each open, in an engine that has decoded neither ("any", the
+// library's record) or both ("decoded", the record a decode leaves).
+// IMMAGE_TEST_RAW names a raw to check besides the sample JPEG, as its
+// defaults read what only a decode provides
+const editOnlyPhotos = [join(root,'app/sample/stairs-to-mountain.jpg'), ...(process.env.IMMAGE_TEST_RAW ? [process.env.IMMAGE_TEST_RAW] : [])];
+for (const photo of editOnlyPhotos)
+test(`an edited ${photo.split('.').pop()} is pasted onto without its raw or pipe, saving what a full open saves`, {timeout:300000}, async () => {
+  const { editOnlyMode }=await import('../app/src/batchPaste.ts');
+  const dir=mkdtempSync(join(tmpdir(),'immage-editonly-')), home=join(dir,'runtime'), ext=photo.split('.').pop();
+  const strip=x=>x.replace(/(xmp:\w*Date\w*|darktable:\w+_timestamp|xmpMM:DerivedFrom)="[^"]*"/g,'').replace(/[a-z]+\d\.\w+/g,'F');
+  const any={values:{exposure:0.8,contrast:14,vibrance:-12,tc_shadows:9}};
+  const decoded={values:{...any.values,temp:5600,tint:6,lens_profile:1,crop_l:0.05,crop_r:0.9}};
+  assert.equal(editOnlyMode(any),'any');
+  assert.equal(editOnlyMode(decoded),'decoded');
+  assert.equal(editOnlyMode({...any,masks:[]}),null,'masks are mapped through the pipe');
+  const cases=[['any',any],['decoded',decoded]];
+  const files=cases.flatMap((_,k)=>['full','edit'].map(w=>{const p=join(dir,`${w}${k}.${ext}`);copyFileSync(photo,p);return p;}));
+  try {
+    startEngine(join(root,'build/bin/darktable-engine'),home,null);
+    const imported=async()=>(await requestTagged({cmd:'import',files})).images.map((i,k)=>({path:files[k],imgid:i.imgid}));
+    for (const t of await imported()) { const s=await open(t); s.endBaseline(); s.setMany([['exposure',0.3],['shadows',11]]); await s.close(); }
+    await stopEngine();
+    // the library is in memory (main.c): a new engine imports the edits from the sidecars
+    startEngine(join(root,'build/bin/darktable-engine'),home,null);
+    const targets=await imported();
+    for (const [k,[mode,clip]] of cases.entries()) {
+      const [full,edit]=targets.slice(2*k,2*k+2);
+      if (mode==='decoded') await (await open(edit)).close();
+      const asked=[];sent.hook=(cmd,args)=>{if(cmd==='open_image')asked.push(args.editOnly);};
+      const pasted=await runPaste([edit],clip,()=>{},()=>{});
+      sent.hook=null;
+      assert.equal(pasted.error,null);assert.deepEqual(asked,[mode]);
+      const s=await Session.open(full.path,full.imgid,view,()=>{},()=>{},true);
+      assert.equal(s.pipeless,false);applyClip(s,clip,true);await s.close();
+      const xmp=f=>strip(readFileSync(`${f.path}.xmp`,'utf8'));
+      assert.equal(xmp(edit),xmp(full),`${mode}: the pipeless paste saved another edit`);
+      await batch('release',pasted.token);
+    }
+    // and the engine took it so: a pipeless session serves params alone
+    const s=await Session.open(targets[0].path,targets[0].imgid,view,()=>{},()=>{},true,'any');
+    assert.equal(s.pipeless,true);
+    await assert.rejects(request({cmd:'render',width:32,height:32,rgba:join(dir,'x.rgba')}),/needs the photo opened with its pipe/);
+    await s.close();
+  } finally { sent.hook=null; await stopEngine(); rmSync(dir,{recursive:true,force:true}); }
+});
