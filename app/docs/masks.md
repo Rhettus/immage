@@ -75,7 +75,10 @@ Each part of the mask is listed under it, with a **+** / **−** switch and
 On the photo, drag a shape's handles: the center moves it, the edges size
 it, the arrow rotates it, and the outer ring sets its feather. The
 handles show while the pointer is over the photo, and step aside while it
-is over the panels, so the adjustment can be seen.
+is over the panels, so the adjustment can be seen. A drag may run past the
+photo's edge into the empty canvas; on release a center or an end left off the
+photo snaps back to the nearest point on it. Drawing a shape or boxing an object
+works the same way.
 
 ## The mask list
 
@@ -100,6 +103,13 @@ is over the panels, so the adjustment can be seen.
   selected, until you press O or move one of its sliders.
 
 ## Mask settings
+
+Select a **Color Range**, **Luminance Range**, **Parametric** or **Depth Range**
+component, then hover over its controls to preview the mask on the photo.
+The overlay shows the combined selection, including any other components.
+Press **O** or click the eye in the Masks panel title to show or hide it.
+If you hide a hover preview, it stays off until you leave the controls or
+turn the overlay back on.
 
 - **Invert**: adjust everything except the mask. On a mask with a range (color,
   luminance or parametric) and drawn shapes, the range is inverted and the
@@ -155,7 +165,8 @@ In Simple mode, the selected mask's sliders sit below its settings, in six group
 - **Detail**: **Sharpening**, **Noise**, **Defringe**
 
 They work like the same sliders in [Adjustments](adjustments.md), only
-inside the mask. A new mask opens its **Tone** group.
+inside the mask. A new mask opens its **Tone** group. Hover over a slider's
+row to see which darktable module it drives ("darktable: …").
 
 Choose mask modules independently of global adjustments under
 [Preferences › Modules › Masks](preferences.md#modules). Alternatives are

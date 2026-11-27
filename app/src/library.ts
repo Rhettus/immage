@@ -7,6 +7,7 @@ import { commands } from "./commands";
 import { listen } from "@tauri-apps/api/event";
 import { fetchImmichThumb } from "./immich";
 import { settings } from "./settings";
+import type { FolderSource } from "./folderSource";
 
 export type Exif = {
   maker: string; model: string; lens: string;
@@ -60,18 +61,26 @@ export const LABEL_COLORS = ["#e5484d", "#f5c518", "#46a758", "#3e7bfa", "#9b5de
 // reads it, with how far it has got, and once before the first with every
 // file to be read (`files`, in the order they will come). before that, for
 // a folder read before, it hears what the last read found (`known`). `skip` lists
-// subfolders taken off the folder tree, left out of `recursive`. opening
+// subfolders taken off the folder tree, left out of `recursive`. `onSource`
+// hears, after the photos of a folder under the morfPhoto mapping are out,
+// whether its drive is offline and whether they are the local copy of the
+// catalog (folderSource.ts). opening
 // another folder stops this one, which then rejects with "superseded"
 let folderToken = 0;
 export async function openFolder(path: string, recursive = false, skip: string[] = [],
                                  onBatch?: (images: ImageEntry[], done: number, total: number, files?: string[],
                                             known?: Known[]) => void,
+                                 onSource?: (source: FolderSource) => void,
 ): Promise<ImageEntry[]> {
   const token = ++folderToken;
   type Progress = { token: number; done: number; total: number; images: ImageEntry[]; files?: string[]; known?: Known[] };
   const off = await listen<Progress>("folder-progress", (e) => {
     const p = e.payload;
     if (p.token === token && token === folderToken) onBatch?.(p.images, p.done, p.total, p.files, p.known);
+  });
+  const offSource = await listen<FolderSource & { token: number }>("folder-source", (e) => {
+    const { token: from, ...source } = e.payload;
+    if (from === token && token === folderToken) onSource?.(source);
   });
   try {
     if (token !== folderToken) throw "superseded";
@@ -83,6 +92,8 @@ export async function openFolder(path: string, recursive = false, skip: string[]
     throw e;
   } finally {
     off();
+    // the event follows the rows, and may land just after the reply
+    window.setTimeout(offSource, 1500);
   }
 }
 
@@ -170,10 +181,13 @@ const THUMB_SIZE = 240; // device pixels; the engine picks the next cached size 
 
 // an image as darktable's thumbnail pipe renders it, edits and all, at the
 // cached size next up from this one. given its entry, the thumbnail is also
-// kept on disk for fetchCachedThumb()
+// kept on disk for fetchCachedThumb(). `background`: no one waits on it (off
+// screen, rendered ahead), so a photo it must import first waits behind the
+// imports the user waits on
 export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry, proof = false,
-  foreground = false, preferSource = false, cameraPreview = false): Promise<ImageBitmap> {
-  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, preferSource, cameraPreview);
+  foreground = false, preferSource = false, cameraPreview = false, editedPreview = false,
+  background = false): Promise<ImageBitmap> {
+  const buf = await commands.thumb(imgid, size, entry?.path ?? null, entry?.version ?? 0, proof, foreground, { preferSource, cameraPreview, editedPreview }, background);
   const head = new DataView(buf, 0, 8);
   const w = head.getUint32(0, true), h = head.getUint32(4, true);
   return createImageBitmap(new ImageData(new Uint8ClampedArray(buf, 8), w, h));
@@ -181,11 +195,20 @@ export async function fetchThumb(imgid: number, size: number, entry?: ImageEntry
 
 // the thumbnail kept on disk for the file as it is now (its sidecar too),
 // without the engine; null when there is none
-export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSource = false, cameraPreview = false): Promise<ImageBitmap | null> {
-  const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size, preferSource, cameraPreview);
+export async function fetchCachedThumb(entry: ImageEntry, size: number, preferSource = false, cameraPreview = false, editedPreview = false): Promise<ImageBitmap | null> {
+  const buf = await commands.thumbCached(entry.path, entry.version ?? 0, size, preferSource, cameraPreview, editedPreview);
   return buf.byteLength ? createImageBitmap(new Blob([buf], { type: "image/jpeg" })) : null;
 }
 
+// an unedited original in a morfPhoto folder: the server's thumbnail is
+// the one to show, and asking for it reads nothing on the share, where the
+// disk cache's check (fetchCachedThumb) looks at the file and the engine
+// reads it. edits and virtual copies are Immage's to render
+const serverThumb = (entry: ImageEntry) =>
+  !!entry.morfphotoPreview && !entry.edited && !entry.copy && (entry.version ?? 0) === 0;
+
+// morfPhoto's thumbnail, revalidated with the server, or the copy kept
+// here when the server does not answer; null when it has none
 async function fetchMorfPhotoThumb(path: string): Promise<ImageBitmap | null> {
   try {
     const jpeg = await commands.morfPhotoThumbnail(path);
@@ -222,7 +245,7 @@ export function storeThumbThreads(v: number) {
   commands.thumbThreads(v).catch(() => {});
 }
 
-// fetches thumbnails: those kept on disk first, several at a time, then
+// fetches thumbnails: those kept on disk (or morfPhoto's) first, several at a time, then
 // the rest from the engine, as many at a time as it has threads
 // (loadThumbThreads). the engine builds them
 // on threads of its own (main.c, _thumb_run), so they come in while a photo
@@ -240,7 +263,15 @@ export class ThumbLoader {
   private visible = new Set<Id>();
   private seen = new Map<Id, number>();
   private clock = 0;
-  private queue: Id[] = [];
+  // asked for and not yet looked for on disk, and those the engine (or
+  // Immich) makes: looked for and missed, stale, remote or without an
+  // entry. sets keep the order asked and drop one in constant time; a
+  // 140,000-photo folder made array filters over the whole queue at every
+  // step quadratic. `urgent` are those asked for first, newest first, each
+  // still in one of the two; let go once in neither
+  private toDisk = new Set<Id>();
+  private toEngine = new Set<number>();
+  private urgent = new Set<Id>();
   private running = false;
   // engine thumbnails under way, and run() waiting for one to finish
   private inFlight = 0;
@@ -304,11 +335,35 @@ export class ThumbLoader {
     for (const id of ids) if (typeof id === "number") this.adopt(id);
     const wanted = ids.filter((id) => !this.rendering.has(id) &&
       (!this.cache.has(id) || (typeof id === "number" && this.unverified.has(id))));
-    wanted.forEach((id) => { if (typeof id === "number") this.asked.add(id); });
-    this.queue = first ? [...wanted, ...this.queue.filter((id) => !wanted.includes(id))]
-                       : [...this.queue, ...wanted.filter((id) => !this.queue.includes(id))];
+    const queued: Id[] = [];
+    for (const id of wanted) {
+      if (typeof id === "number") this.asked.add(id);
+      // looked for on disk already: a known one has had its only chance,
+      // an image goes to the engine
+      if (this.toDisk.has(id) || (typeof id === "number" && this.toEngine.has(id))) { /* queued */ }
+      else if (!this.tried.has(id)) this.toDisk.add(id);
+      else if (typeof id === "number") this.toEngine.add(id);
+      else continue;
+      queued.push(id);
+    }
+    if (first && queued.length) this.hurry(queued);
     if (wanted.length) this.progressed();
     void this.run();
+  }
+
+  // these go before the rest of their stage, the first of them first
+  private hurry(ids: Id[]) {
+    const first = new Set(ids);
+    // those queued nowhere are done with
+    for (const id of this.urgent) if (this.toDisk.has(id) || (typeof id === "number" && this.toEngine.has(id))) first.add(id);
+    this.urgent = first;
+  }
+
+  // an image that needs the engine, before the others
+  private toEngineFirst(id: number) {
+    this.toDisk.delete(id);
+    this.toEngine.add(id);
+    this.hurry([id]);
   }
 
   // an image just read takes its known thumbnail, unchecked
@@ -345,13 +400,20 @@ export class ThumbLoader {
     this.refreshTimers.set(imgid, window.setTimeout(() => {
       this.refreshTimers.delete(imgid);
       this.stale.add(imgid);
-      this.queue = [imgid, ...this.queue.filter((id) => id !== imgid)];
+      this.toEngineFirst(imgid);
       void this.run();
     }, 2000));
   }
 
   // how many of the folder's thumbnails are ready, of how many
   progress() { return { done: this.done.size, total: this.asked.size }; }
+
+  // an edit's refresh is waiting or under way, or an engine render is: until
+  // that render, the photo's cache names still go by the folder's listing,
+  // from before the edit (cache.rs `refresh`)
+  refreshing() { return this.refreshTimers.size > 0 || this.stale.size > 0 || this.rendering.size > 0; }
+  // the same for one photo: its edit's refresh is waiting or under way
+  refreshPending(imgid: number) { return this.refreshTimers.has(imgid) || this.stale.has(imgid) || this.rendering.has(imgid); }
 
   clear() {
     this.generation++;
@@ -363,7 +425,9 @@ export class ThumbLoader {
     this.bytes = 0;
     this.visible.clear();
     this.seen.clear();
-    this.queue = [];
+    this.toDisk.clear();
+    this.toEngine.clear();
+    this.urgent.clear();
     this.stale.clear();
     this.unverified.clear();
     this.adopted.clear();
@@ -373,25 +437,42 @@ export class ThumbLoader {
     this.progressed();
   }
 
-  // up to eight queued that may be on disk, with their entries (none for
-  // a known thumbnail)
-  private nextOnDisk(visibleOnly: boolean): [Id, ImageEntry | null][] {
+  // up to eight from `from` still to be looked for on disk, with their
+  // entries (none for a known thumbnail). each one looked at leaves
+  // toDisk: for the disk, for the engine, or done with
+  private nextOnDisk(from: Iterable<Id>): [Id, ImageEntry | null][] {
     const out: [Id, ImageEntry | null][] = [];
-    for (const id of this.queue) {
-      if (visibleOnly && !this.visible.has(id)) continue;
+    for (const id of from) {
       if (out.length === 8) break;
+      if (!this.toDisk.delete(id)) {
+        // an urgent one done with, or for the engine
+        if (from === this.urgent && !(typeof id === "number" && this.toEngine.has(id))) this.urgent.delete(id);
+        continue;
+      }
       if (typeof id === "string") {
+        // a known one has the disk or nothing
         if (this.tried.has(id) || this.cache.has(id) || this.adopted.has(id)) continue;
         this.tried.add(id);
         out.push([id, null]);
         continue;
       }
-      if (id < 0 || this.tried.has(id) || this.stale.has(id) || (this.cache.has(id) && !this.unverified.has(id))) continue;
+      if (this.cache.has(id) && !this.unverified.has(id) && !this.stale.has(id)) continue;
+      if (id < 0 || this.tried.has(id) || this.stale.has(id)) { this.toEngine.add(id); continue; }
       this.tried.add(id);
       const entry = this.entryOf(id);
       if (entry) out.push([id, entry]);
+      else this.toEngine.add(id);
     }
     return out;
+  }
+
+  // the first of `ids` in `set`, letting go of urgent ones queued nowhere
+  private firstIn<T extends Id>(ids: Iterable<Id>, set: Set<T>, prune = false): T | undefined {
+    for (const id of ids) {
+      if (set.has(id as T)) return id as T;
+      if (prune && !this.toDisk.has(id) && !(typeof id === "number" && this.toEngine.has(id))) this.urgent.delete(id);
+    }
+    return undefined;
   }
 
   private keep(id: Id, bitmap: ImageBitmap) {
@@ -436,30 +517,34 @@ export class ThumbLoader {
     if (this.running) return;
     this.running = true;
     try {
-      while (this.queue.length) {
+      while (this.toDisk.size || this.toEngine.size) {
         // Re-evaluate visibility after every await. Visible cache misses render
-        // before checking the rest of the folder's disk cache.
-        this.queue = [...this.queue.filter((id) => this.visible.has(id)),
-                      ...this.queue.filter((id) => !this.visible.has(id))];
-        const visiblePending = this.queue.some((id) => this.visible.has(id));
-        const disk = this.nextOnDisk(visiblePending);
+        // before checking the rest of the folder's disk cache: on screen, the
+        // disk then the engine; then the disk, then the engine, those asked
+        // for first before the rest
+        let disk = this.nextOnDisk(this.visible);
+        let id = disk.length ? undefined : this.firstIn(this.visible, this.toEngine);
+        if (!disk.length && id === undefined) {
+          disk = this.nextOnDisk(this.urgent);
+          if (!disk.length) disk = this.nextOnDisk(this.toDisk);
+        }
         if (disk.length) {
           const generation = this.generation;
           const got = await Promise.all(disk.map(([id, entry]) =>
-            (entry ? fetchCachedThumb(entry, THUMB_SIZE) : fetchKnownThumb(id as string, THUMB_SIZE)).catch(() => null)));
+            (!entry ? fetchKnownThumb(id as string, THUMB_SIZE)
+              : serverThumb(entry) ? fetchMorfPhotoThumb(entry.path)
+              : fetchCachedThumb(entry, THUMB_SIZE)).catch(() => null)));
           if (generation !== this.generation) continue;
           let any = false;
           disk.forEach(([id], k) => {
             const bitmap = got[k];
             // a known thumbnail is the disk's or none; the engine has no imgid for it
             if (typeof id === "string") {
-              this.queue = this.queue.filter((q) => q !== id);
               // its image was read meanwhile, and has it from the disk or the engine
               if (!bitmap || this.adopted.has(id)) return;
             } else {
-              // an edit while it was read wants a fresh render
-              if (!bitmap || this.stale.has(id)) return;
-              this.queue = this.queue.filter((q) => q !== id);
+              // none on disk, or an edit while it was read wants a fresh render
+              if (!bitmap || this.stale.has(id)) { bitmap?.close(); this.toEngine.add(id); return; }
               this.unverified.delete(id);
             }
             this.keep(id, bitmap);
@@ -472,14 +557,15 @@ export class ThumbLoader {
           await new Promise<void>((r) => { this.wake = r; });
           continue;
         }
-        const id = this.queue.shift()!;
-        if (typeof id === "string" || (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id))) continue;
-        const useServerPreview = this.visible.has(id) && !this.stale.has(id) && !this.unverified.has(id);
+        id ??= this.firstIn(this.urgent, this.toEngine, true) ?? this.toEngine.values().next().value;
+        if (id === undefined) continue;
+        this.toEngine.delete(id);
+        if (this.cache.has(id) && !this.stale.has(id) && !this.unverified.has(id)) continue;
         this.stale.delete(id);
         this.unverified.delete(id);
         this.inFlight++;
         this.rendering.add(id);
-        void this.fetch(id, useServerPreview).finally(() => {
+        void this.fetch(id, !this.visible.has(id)).finally(() => {
           this.rendering.delete(id);
           this.inFlight--;
           const wake = this.wake;
@@ -487,24 +573,34 @@ export class ThumbLoader {
           wake?.();
         });
       }
+      // nothing is queued, so no urgent one is: those served on screen are
+      // otherwise left in it
+      this.urgent.clear();
     } finally {
       this.running = false;
     }
   }
 
-  private async fetch(id: number, useServerPreview: boolean) {
+  // morfPhoto had none for a server row (nextOnDisk asked it), so the
+  // engine renders it as any other
+  private async fetch(id: number, background: boolean) {
     const generation = this.generation;
     try {
       // below zero, an Immich result: the server's own thumbnail
       const entry = id >= 0 ? this.entryOf(id) : undefined;
-      const preview = useServerPreview && entry?.morfphotoPreview && !entry.edited && !entry.copy && (entry.version ?? 0) === 0
-        ? await fetchMorfPhotoThumb(entry.path) : null;
-      if (generation !== this.generation) { preview?.close(); return; }
-      const bitmap = preview ?? (id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry));
+      const bitmap = id < 0 ? await fetchImmichThumb(id) : await fetchThumb(id, THUMB_SIZE, entry, false, false, false, false, false, background);
       if (generation === this.generation) this.keep(id, bitmap);
       else bitmap.close();
     } catch (e) {
       if (generation !== this.generation) return;
+      // refused as background work (its share is slow, engine.rs `busy`)
+      // but on screen by now: asked again, as one the user waits on
+      if (background && this.visible.has(id)) {
+        this.toEngineFirst(id);
+        // once this fetch's own cleanup in run() has let it go
+        window.setTimeout(() => void this.run(), 0);
+        return;
+      }
       // an image without a thumbnail keeps its placeholder
       this.onFailed?.(id, e);
       if (this.asked.has(id)) this.done.add(id);

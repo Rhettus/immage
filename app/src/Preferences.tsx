@@ -34,7 +34,7 @@ import { settings } from "./settings";
 import { loadThumbThreads, storeThumbThreads, THUMB_THREADS } from "./library";
 export { loadHiddenModules, storeHiddenModules } from "./hiddenModules";
 import { LOCALES, SYSTEM, startupLanguage, loadLanguage, storeLanguage, t } from "./i18n";
-import { commands, type AccelProvider, type GpuEditState, type Licenses, type ResourceLevels, type WebviewRenderer } from "./commands";
+import { commands, type AccelProvider, type GpuEditState, type Licenses, type OpenclStatus, type ResourceLevels, type WebviewRenderer } from "./commands";
 export { loadNewPhotosProfile, loadNewPhotosLensMethod } from "./profileDefault";
 
 // EV a new raw's exposure gets on an instance of its own (manifest.ts,
@@ -635,6 +635,17 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
   };
   const [gpuEdits, setGpuEdits] = useState<GpuEditState | null>(null);
   useEffect(() => { commands.gpuEdits().then(setGpuEdits).catch(() => {}); }, []);
+  // the OpenCL devices darktable runs on now: null until the engine answers,
+  // false when it could not
+  const [opencl, setOpencl] = useState<OpenclStatus | null | false>(null);
+  useEffect(() => { commands.openclStatus().then(setOpencl).catch(() => setOpencl(false)); }, []);
+  const gpuNames = opencl ? opencl.devices.filter((d) => !d.disabled).map((d) => d.name).join(", ") : "";
+  const gpuStatus = opencl === null ? t("prefs.row.gpuedit.status.looking")
+    : opencl === false ? t("prefs.row.gpuedit.summary")
+    : opencl.stopped ? t("prefs.row.gpuedit.status.stopped")
+    : !opencl.running || !gpuNames ? t("prefs.row.gpuedit.status.none")
+    : gpuEdits && !gpuEdits.running ? t("prefs.row.gpuedit.status.exports", { name: gpuNames })
+    : t("prefs.row.gpuedit.status.using", { name: gpuNames });
   const chooseGpuEdits = (on: boolean) => {
     if (!gpuEdits) return;
     commands.gpuEditsSet(on).then(() => setGpuEdits({ ...gpuEdits, next: on })).catch(() => {});
@@ -922,9 +933,16 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
             {tab === "performance" && (
               <>
               <PrefCard title={t("prefs.card.gpu")}>
-                <PrefRow id="GPU" label={t("prefs.row.gpu")} hint={accel === null ? t("prefs.row.gpu.hint.looking")
-                  : accel.length ? t("prefs.row.gpu.hint.some")
-                  : t("prefs.row.gpu.hint.none")}>
+                <PrefRow id="Edit on the GPU" label={t("prefs.row.gpuedit")} summary={gpuStatus + (gpuEdits && gpuEdits.next !== gpuEdits.running ? " " + t("prefs.relaunch") : "")}
+                         hint={t("prefs.row.gpuedit.hint") + (gpuEdits && gpuEdits.next !== gpuEdits.running ? ". " + t("prefs.row.gpuedit.hint.pending") : "")}>
+                  <PrefSwitch checked={gpuEdits?.next ?? false} disabled={!gpuEdits} onChange={chooseGpuEdits} />
+                  {gpuEdits && gpuEdits.next !== gpuEdits.running && (
+                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>{t("prefs.relaunchButton")}</button>
+                  )}
+                </PrefRow>
+                <PrefRow id="AI upscaling" label={t("prefs.row.aiupscale")} hint={accel === null ? t("prefs.row.aiupscale.hint.looking")
+                  : accel.length ? t("prefs.row.aiupscale.hint.some")
+                  : t("prefs.row.aiupscale.hint.none")}>
                   {accel && accel.length > 0 && (
                     <select className="field" value={accelChoice.provider}
                             onChange={(e) => chooseAccel({ provider: e.target.value, device: -1 })}>
@@ -964,14 +982,7 @@ export function PreferencesDialog({ presets, newPhotos, onNewPhotos, onSaveCurre
                   {rendererError && <p role="alert">{rendererError}</p>}
                 </PrefCard>
               )}
-              <PrefCard title={t("prefs.card.editing")}>
-                <PrefRow id="Edit on the GPU" label={t("prefs.row.gpuedit")} summary={t("prefs.row.gpuedit.summary") + (gpuEdits && gpuEdits.next !== gpuEdits.running ? " " + t("prefs.relaunch") : "")}
-                         hint={t("prefs.row.gpuedit.hint") + (gpuEdits && gpuEdits.next !== gpuEdits.running ? ". " + t("prefs.row.gpuedit.hint.pending") : "")}>
-                  <PrefSwitch checked={gpuEdits?.next ?? false} disabled={!gpuEdits} onChange={chooseGpuEdits} />
-                  {gpuEdits && gpuEdits.next !== gpuEdits.running && (
-                    <button className="btn small" style={{ marginLeft: 8 }} onClick={() => void onRelaunch()}>{t("prefs.relaunchButton")}</button>
-                  )}
-                </PrefRow>
+              <PrefCard title={t("prefs.card.previews")}>
                 <PrefRow id="Performance profile" label={t("prefs.row.profile.perf")} summary={{ quality: t("prefs.profile.quality.summary"), balanced: t("prefs.profile.balanced.summary"), performance: t("prefs.profile.performance.summary") }[preview]}
                          hint={{
                            quality: t("prefs.profile.quality.hint"),

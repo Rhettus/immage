@@ -43,7 +43,7 @@ it only once.
 
 Open **Preferences** (⌘,) and the **Immich** tab.
 
-- **Use Immich**: turn on looking photos up during an import.
+- **Use Immich**: enable Immich integration, including import checks, search, and context menu actions.
 - **Server URL**: your server's address, for example
   `https://photos.example.com`. A plain `http` address works, but sends the
   key unencrypted.
@@ -106,7 +106,9 @@ download.
   server, for example `/mnt/photos`, as listed in Immich under
   Administration › External Libraries.
 - **Folder on this computer**: the same photos here: a network share, or a
-  local or external drive. Click **Choose…**.
+  local or external drive. Click **Choose…**. Folders inside it are always
+  treated as network shares: when the share isn't mounted, Library shows them
+  as offline (a red dot on the drive heading) instead of as empty folders.
 
 For example, with **External library path** `/mnt/photos` and **Folder on this computer** `/Volumes/photos`:
 
@@ -174,6 +176,14 @@ source’s results if one fails. The status line reports each source’s error.
 Unknown local-only filter fields exclude remote results. Exact verified mapped
 local paths merge with primary local results; virtual copies remain separate.
 
+When a library folder is mapped under **Opening search results** (or via the
+importer's path settings) and Immich answers with Smart Search enabled, Immage
+routes **Smart** searches in **This folder** and **All folders** to Immich and
+skips local CLIP background analysis for all photos in that folder (while still
+caching local EXIF/XMP metadata for local filters). Precedence per folder is
+**morfPhoto**, then **Immich**, then **local CLIP**; if Immich does not answer
+or has Smart Search turned off, Immage falls through immediately to local CLIP.
+
 ## Opening a result
 
 Double-click a result to open it. If the file is in the folder set under
@@ -189,8 +199,7 @@ To find the photos you have edited in Immage with Immich's Tags filter, set
 keyword once it reads the sidecar again, at its next library scan or
 metadata refresh.
 
-Right-click a result for **Show in Immich**, or **Show Results in Immich**
-to see the same search in Immich's web page.
+Right-click a result for **Show in Immich**, or **Show Results in Immich** (available for Immich and Both searches when Immich is configured and enabled in Preferences) to see the same search in Immich's web page. Immich context menu items are hidden when Immich is not configured or disabled.
 
 With a server URL and API key configured in Preferences, choose
 **Import Parent Folder** to add the result's containing folder to

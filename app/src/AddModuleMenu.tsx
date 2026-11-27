@@ -10,7 +10,7 @@ import { menuKeys, useCardMenu } from "./cardMenu";
 import { t } from "./i18n";
 import { fieldText } from "./fieldText";
 
-export type AddChoice = { op: string; title: string; shown: boolean; applicable: boolean };
+export type AddChoice = { op: string; title: string; shown: boolean; applicable: boolean; reason?: string };
 
 export function AddModuleMenu({ group, choices, onAdd }: {
   group: string; choices: AddChoice[]; onAdd: (op: string) => void;
@@ -30,7 +30,7 @@ export function AddModuleMenu({ group, choices, onAdd }: {
             <button key={c.op} type="button" role="menuitemcheckbox" aria-checked={c.shown} data-add-module={c.op}
                     disabled={c.shown || !c.applicable}
                     title={c.shown ? t("fields.addModule.alreadyOn")
-                      : c.applicable ? undefined : t("fields.advanced.notApplicable")}
+                      : c.applicable ? undefined : (c.reason ?? t("fields.advanced.notApplicable"))}
                     onClick={(e) => { e.stopPropagation(); close(); onAdd(c.op); }}>
               <span className="check">{c.shown ? "✓" : ""}</span><span className="name">{fieldText(c.title)}</span>
             </button>

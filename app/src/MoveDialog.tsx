@@ -12,10 +12,17 @@ import { t, formatNumber } from "./i18n";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${formatNumber(n)} ${n === 1 ? one : many}`;
 
-export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }: {
+export function MoveDialog({ plan, error, copy: copyAsked, companions, withCompanions, onCompanions, pattern, lastPattern, onPattern,
+                            onConfirm, onClose }: {
   plan: MovePlan | null;           // null while it is worked out
   error: string | null;
   copy: boolean;                   // ⌥/Alt held at the drop
+  companions: number;              // stacked JPEG, HEIF or ORI files among the photos
+  withCompanions: boolean;         // whether they go too
+  onCompanions: (on: boolean) => void;
+  pattern: string | null;          // the subfolders the photos are sorted into, null for none
+  lastPattern: string;             // the pattern to offer when they are turned on
+  onPattern: (pattern: string | null) => void;
   onConfirm: (copy: boolean, keepBoth: string[]) => void;
   onClose: () => void;
 }) {
@@ -23,22 +30,44 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
   // the clashing photos to keep beside the other file, by unit key
   const [keep, setKeep] = useState<Set<string>>(new Set());
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => { box.current?.querySelector<HTMLElement>("button.primary")?.focus(); }, [plan]);
+  // the pattern as typed, sent once typing pauses
+  const [typed, setTyped] = useState(pattern ?? lastPattern);
+  const send = useRef(onPattern);
+  send.current = onPattern;
+  useEffect(() => {
+    if (pattern === null || typed === pattern) return;
+    const timer = setTimeout(() => send.current(typed), 400);
+    return () => clearTimeout(timer);
+  }, [typed, pattern]);
+  // the button takes the focus when a plan comes, but never from a field or
+  // checkbox in the dialog: a plan made again while typing would take the
+  // rest of the pattern and an Enter
+  useEffect(() => {
+    if (box.current?.contains(document.activeElement)) return;
+    box.current?.querySelector<HTMLElement>("button.primary")?.focus();
+  }, [plan]);
   const units = plan?.units ?? [];
   const here = units.filter((u) => u.clash === "here");
   const same = units.filter((u) => u.clash === "same");
   const clashes = units.filter((u) => u.clash === "different");
+  // a new plan can drop a clash that was chosen: only the current ones count
+  const kept = clashes.filter((u) => keep.has(u.key)).map((u) => u.key);
   const fresh = units.filter((u) => u.clash === "none");
   const movable = units.some((u) => !u.keepSource && u.clash !== "here");
   const moving = movable && !copy;
   const downloads = units.filter((u) => u.download).length;
   const immichFiles = units.filter((u) => u.keepSource && !u.download).length;
   const versions = units.filter((u) => u.versions > 1 && u.clash !== "here");
-  const count = fresh.length + keep.size + (moving ? same.length : 0);
+  const count = fresh.length + kept.length + (moving ? same.length : 0);
   const verb = moving ? t("dialogs.move.move") : t("dialogs.move.copy");
   const low = plan?.free != null && plan.free < plan.bytes;
   const where = plan ? plan.dest : "";
-  const confirm = () => { if (plan && count && !low) onConfirm(!moving, [...keep]); };
+  // the subfolders photos go into; a photo the pattern leaves in the
+  // destination itself is not counted
+  const folders = [...new Set(units.filter((u) => u.clash !== "here" && u.folder).map((u) => u.folder))];
+  // a pattern still being typed has no plan yet
+  const pending = pattern !== null && typed !== pattern;
+  const confirm = () => { if (plan && count && !low && !pending) onConfirm(!moving, kept); };
   return <div className="modal-backdrop" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     onKeyDown={(e) => {
       e.stopPropagation();
@@ -101,10 +130,28 @@ export function MoveDialog({ plan, error, copy: copyAsked, onConfirm, onClose }:
             {t("dialogs.move.keepOriginals")}
           </label>}
         </>}
+        {/* outside the plan, so they stay put while it is worked out again */}
+        <label className="row check">
+          <input type="checkbox" checked={pattern !== null} onChange={(e) => onPattern(e.target.checked ? typed : null)} />
+          {t("dialogs.move.subfolders")}
+        </label>
+        {pattern !== null && <div className="move-pattern">
+          <input className="field" value={typed} spellCheck={false} aria-label={t("dialogs.move.subfolderPattern")}
+                 onChange={(e) => setTyped(e.target.value)} />
+          <p className="note-plain">{t("dialogs.move.subfolderHint")}</p>
+          {plan && folders.length > 0 && <p className="note-plain">
+            {t("dialogs.move.subfolderExample", { n: folders.length, number: formatNumber(folders.length),
+                                                  folder: folders[0] })}
+          </p>}
+        </div>}
+        {companions > 0 && <label className="row check">
+          <input type="checkbox" checked={withCompanions} onChange={(e) => onCompanions(e.target.checked)} />
+          {t("dialogs.move.includeCompanions", { n: companions, number: formatNumber(companions) })}
+        </label>}
       </div>
       <div className="modal-foot">
         <button className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
-        {plan && !error && <button className="btn primary" disabled={!count || low} onClick={confirm}>
+        {plan && !error && <button className="btn primary" disabled={!count || low || pending} onClick={confirm}>
           {verb} {plural(count, t("dialogs.move.photo"))}
         </button>}
       </div>

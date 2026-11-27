@@ -30,6 +30,13 @@ let custom: ThemeEntry[] = [], selected = 'dark', revision = 0;
 const listeners = new Set<() => void>();
 export const themeEntries = () => [...BUILTIN_THEMES, ...custom];
 export const selectedTheme = () => themeEntries().find(t => t.id === selected) ?? BUILTIN_THEMES[0];
+export const isCustomTheme = (theme: ThemeEntry): boolean => theme.id.startsWith('custom-');
+export const themePayload = (theme: ThemeEntry): Theme => ({
+  version: theme.version,
+  name: theme.name,
+  colorScheme: theme.colorScheme,
+  colors: { ...theme.colors },
+});
 export function applyTheme() {
   if (typeof document === 'undefined') return;
   const theme = selectedTheme();

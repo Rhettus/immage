@@ -17,8 +17,9 @@ import { Aperture, Archive, BookOpen, Briefcase, Camera, CloudUpload, FileDown, 
          MessageCircle, Monitor, Mountain, Palette, Proportions, Plus, Printer, Save, Share, Smartphone, Star, Tag, Trash, Users,
          type LucideIcon } from "lucide-react";
 import { ColorPick, FrameEditor } from "./ExportFrame";
+import { NumberField } from "./NumberField";
 import { KeywordChips, KeywordInput, parseKeyword } from "./Keywording";
-import { DATE_FORMATS, expand, fileTokenNames, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
+import { DATE_FORMATS, expand, fileTokenNames, folderPath, TOKENS, EMPTY_META, type Meta } from "./exportTokens";
 import { runExport } from "./background";
 import { engineText } from "./engineState";
 import {
@@ -314,6 +315,9 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
     s.naming === "original" ? i.filename.replace(/\.[^.]+$/, "")
       : s.naming === "custom" ? `${s.customName.trim()}-${String(seq).padStart(3, "0")}`
       : expand(s.template, i, meta, seq, total, s.dateFormat);
+  // the folder under the chosen one the export puts that photo in
+  const subdirFor = (i: ImageEntry, meta: Meta, seq: number, total: number) =>
+    folderPath(s.subfolder, i, meta, seq, total, s.dateFormat);
 
   // ---------------------------------------------------------- preview
   // the first photo the export covers, exported small with the same frame
@@ -326,6 +330,9 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       .then((r) => setPreviewMeta({ imgid, meta: r.image.metadata }))
       .catch(() => setPreviewMeta({ imgid, meta: EMPTY_META }));
   }, [shownImage?.imgid]);
+  // the first photo's folder from a subfolder pattern with tokens, shown under it
+  const exampleFolder = s.useSubfolder && shownImage && /\{/.test(s.subfolder)
+    ? subdirFor(shownImage, previewMeta?.meta ?? EMPTY_META, 1, items.length || 1) : "";
   const previewFrame = shownImage && previewMeta?.imgid === shownImage.imgid
     ? frameFor(s, shownImage, previewMeta.meta) : undefined;
   const previewKey = shownImage && previewFrame !== undefined
@@ -396,17 +403,20 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
         try { await commands.aiModelEnsure(UPSCALE_MODEL); } finally { stop(); }
         setNote(null);
       }
-      // each image's metadata, when its name or its frame's text needs it
-      const needMeta = s.naming === "template" || s.texts.length > 0;
+      // each image's metadata, when its name, its folder or its frame's text needs it
+      const needMeta = s.naming === "template" || s.texts.length > 0
+        || (!toImmich && s.useSubfolder && /\{(title|caption|creator|copyright)\b/.test(s.subfolder));
       const metas = await Promise.all(items.map(async (i) => !needMeta ? EMPTY_META
         : commands.meta(i.imgid).then((r) => r.image.metadata)));
       const stems = items.map((i, k) => stemFor(i, metas[k], k + 1, items.length));
+      // each photo's folder under the chosen one, from the subfolder pattern
+      const subdirs = items.map((i, k) => !toImmich && s.useSubfolder ? subdirFor(i, metas[k], k + 1, items.length) || null : null);
       // files already there, or named twice in this export: what to do
       // with each, asked one at a time unless applied to all the rest
       const conflicts: (Choice | null)[] = items.map(() => null);
       if (!toImmich && s.conflict === "ask") {
-        const files = await commands.exportExisting(items.map((i, k) => ({ imgid: i.imgid, stem: stems[k] })),
-          s.dir, s.useSubfolder ? s.subfolder : null, s.format);
+        const files = await commands.exportExisting(items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], subdir: subdirs[k] })),
+          s.dir, null, s.format);
         // a short list means the destination did not answer; stop before anything is written
         if (files.length !== items.length) {
           setError(t("dialogs.export.destinationNotAnswering", { dir: s.dir }));
@@ -453,12 +463,12 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
       const what = upscale ? `Upscaling ${upscale}× and exporting` : toImmich ? "Uploading" : "Exporting";
       const reveal = s.reveal && !toImmich, keywordsChanged = s.keywordsOnOriginal && s.keywords.length > 0;
       void runExport(what, total, (job) => commands.exportImages(job,
-        items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], created: i.exif.datetime || null,
+        items.map((i, k) => ({ imgid: i.imgid, stem: stems[k], subdir: subdirs[k], created: i.exif.datetime || null,
                                       conflict: conflicts[k] ?? (s.conflict === "ask" ? "unique" : null),
                                       frame: frameFor(s, i, metas[k]) as Value })),
         {
           dir: s.dir,
-          subfolder: s.useSubfolder ? s.subfolder : null,
+          subfolder: null,
           format: s.format,
           ...exportOptionsFor(s),
           colorSpace: s.colorSpace,
@@ -603,9 +613,14 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                   <label className="row check">
                     <input type="checkbox" checked={s.useSubfolder} onChange={(e) => set("useSubfolder", e.target.checked)} />
                     {t("dialogs.export.insideNewFolder")}
-                    <input className="field" value={s.subfolder} disabled={!s.useSubfolder}
+                    <input className="field" value={s.subfolder} disabled={!s.useSubfolder} spellCheck={false}
+                           aria-label={t("dialogs.export.subfolderPattern")}
                            onChange={(e) => set("subfolder", e.target.value)} />
                   </label>
+                  {s.useSubfolder && <p className="note-plain">
+                    {t("dialogs.export.subfolderHint")}
+                    {exampleFolder && <> {t("dialogs.export.subfolderExample", { folder: exampleFolder })}</>}
+                  </p>}
                   <div className="row">
                     <span className="k">{t("dialogs.export.ifFileExists")}</span>
                     <select data-export-field="conflict" value={s.conflict} onChange={(e) => set("conflict", e.target.value as Settings["conflict"])}>
@@ -740,8 +755,8 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 </select>
                 {s.resize && !upscale && (
                   <>
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.longEdge}
-                           onChange={(e) => set("longEdge", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.longEdge}
+                                 onChange={(v) => set("longEdge", v)} />
                     {t("dialogs.export.pixels")}
                   </>
                 )}
@@ -750,11 +765,11 @@ export function ExportDialog({ current, selected, shown, canUpscale, onClose, on
                 <>
                   <div className="row">
                     <span className="k">{t("dialogs.export.canvas")}</span>
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.canvasW}
-                           title={t("dialogs.print.width")} onChange={(e) => set("canvasW", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.canvasW}
+                                 title={t("dialogs.print.width")} onChange={(v) => set("canvasW", v)} />
                     ×
-                    <input className="field num-field" type="number" min={16} max={30000} value={s.canvasH}
-                           title={t("dialogs.print.height")} onChange={(e) => set("canvasH", Math.max(16, Number(e.target.value)))} />
+                    <NumberField className="field num-field" integer min={16} max={30000} value={s.canvasH}
+                                 title={t("dialogs.print.height")} onChange={(v) => set("canvasH", v)} />
                     {t("dialogs.export.pixels")}
                   </div>
                   <div className="row">

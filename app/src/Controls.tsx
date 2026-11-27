@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { AGX_USER_FIRST, type Control, type CurveChannel, DELETE_PRESET, LOAD_PRESET, type ModuleChoice, mapOf, moduleName, parametricOf, pointsOf, preferredChoice, profileLabel } from "./manifest";
+import { AGX_USER_FIRST, type Control, type CurveChannel, DELETE_PRESET, LOAD_PRESET, type ModuleChoice, localMapOf, mapOf, moduleName, moduleOpFor, parametricOf, pointsOf, preferredChoice, profileLabel } from "./manifest";
 import { type CurveMark, CurveMarkView } from "./PointCurve";
 import { DELETE_AGX_PRESET_EVENT, LOAD_AGX_PRESET_EVENT, useAgxProfiles, userProfiles } from "./agxProfiles";
 import { type Histogram, histogramPath } from "./histogram";
@@ -42,16 +42,17 @@ export function Slider({ values, onChange, onOption, onModule, ...props }: Contr
   const change = useCallback((value: number) => callbacks.current.onChange(value), []);
   const option = useCallback((on: boolean) => callbacks.current.onOption?.(on), []);
   const track = typeof props.control.track === "function" ? props.control.track(values) : props.control.track;
-  return <SliderWidget {...props} track={track} onChange={change} onOption={onOption ? option : undefined}
+  const moduleOp = moduleOpFor(props.control.id, values, props.moduleScope ?? "global");
+  return <SliderWidget {...props} track={track} moduleOp={moduleOp} onChange={change} onOption={onOption ? option : undefined}
                        onModule={onModule ? module : undefined} />;
 }
 
-export const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleAdjusted, moduleScope = "global", onModule }:
-  Omit<ControlProps, "values"> & { track?: string }) {
+export const SliderWidget = memo(function SliderWidget({ control: c, value, neutral, disabled, onChange, track, moduleOp, glow = 0, rawOnly, onOption, moduleChoice, moduleValue, moduleAdjusted, moduleScope = "global", onModule }:
+  Omit<ControlProps, "values"> & { track?: string; moduleOp?: string }) {
   perf.count("react.sliderRenderAttempts");
   const s = c.slider;
   const reset = () => !disabled && send(neutral);
-  const m = mapOf.get(c.id);
+  const op = moduleOp ?? mapOf.get(c.id)?.op ?? localMapOf.get(c.id)?.op;
   const [editing, setEditing] = useState(false);
   const cancel = useRef(false);
   // the wheel over a slider moves it, a notch by Preferences' scroll amount
@@ -150,7 +151,7 @@ export const SliderWidget = memo(function SliderWidget({ control: c, value, neut
                               + `${glow > 0.1 ? " probed" : ""}${value === neutral ? " at-neutral" : ""}`}
          style={glow > 0.1 ? { ["--glow" as string]: glow } : undefined}
          title={rawOnly ? t("fields.control.rawOnly")
-                : c.note ? fieldText(keys(c.note)) : m ? t("fields.control.darktableModule", { name: fieldText(moduleName(m.op)) }) : ""}>
+                : c.note ? fieldText(keys(c.note)) : op ? t("fields.control.darktableModule", { name: fieldText(moduleName(op)) }) : ""}>
       {/* double-click resets, as in Lightroom */}
       {moduleChoice && onModule ? (
         <span className="label-line">

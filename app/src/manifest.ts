@@ -18,6 +18,7 @@ import { channelPointsFromLinear, channelPointsToLinear, fromParams as readCurve
          nodeFields, paramsToPoints, pointsToParams, toParams as writeCurve, type Parametric,
          type Point } from "./tonecurve";
 import { autoCrop } from "./transform";
+import { CZ_CATMULL_ROM, CZ_HUE, CZ_MAX_NODES, czDefaultPoints, czMinNodes, type CzPage } from "./colorzones";
 import { fromNodes, toNodes } from "./colorequal";
 import { cbHueTrack, displayHue } from "./colorgrading";
 import { FILM_BW, FILM_COLOR, NEG_RANGES } from "./negadoctor";
@@ -244,9 +245,11 @@ const tempControl: Control = {
 // brightens the top end by 0.6 EV and -100 dims it by as much
 const WHITES_STOPS = 0.6;
 // and on AgX, color balance rgb's highlights brilliance, which a mask's
-// Whites moves twice as far: the shoulder alone reshapes the top end but
-// leaves where AgX clips, and more dims the midtones at -100
+// Whites (and non-RAW Whites without a tone mapper) moves twice as far: the
+// shoulder alone reshapes the top end but leaves where AgX clips, and more
+// dims the midtones at -100
 const WHITES_BRILLIANCE = 0.002;
+const LOCAL_WHITES_BRILLIANCE = 0.004;
 // Highlight Brilliance: the share of that brilliance Whites adds, in percent
 const WHITES_BRILLIANCE_MAX = 200;
 
@@ -477,6 +480,62 @@ export const satcurveMap: ModuleMap = {
   enabled: (v) => SATCURVE_IDS.some((id) => Math.abs((v[id] ?? SATCURVE_NEUTRAL[id]) - SATCURVE_NEUTRAL[id]) > 1e-6),
 };
 
+// ---------------------------------------------------- Color zones (colorzones)
+// darktable's three curves (lightness, chroma, hue), each over the "select by"
+// axis. the keys are cz<page>n (node count), cz<page>t (interpolation),
+// cz<page>p<k>x and y (the wrap is the select-by channel's, on every page); cz_channel and cz_version (splines_version) are read
+// only: the graph needs them, and the map never writes them, so a V1 history
+// keeps its splines_version as read
+const czKey = (ch: number, k: number, a: "x" | "y") => `cz${ch}p${k}${a}`;
+const czField = (ch: number, k: number, a: "x" | "y") => `curve[${ch}][${k}].${a}`;
+const CZ_PAGE_IDS = [0, 1, 2] as const;
+export const czPointsOf = (v: Values, ch: CzPage): Point[] => {
+  const flat = czDefaultPoints(v.cz_version ?? 1, (v.cz_channel ?? CZ_HUE) === CZ_HUE);
+  const n = Math.max(czMinNodes(v.cz_version ?? 1), Math.min(CZ_MAX_NODES, v[`cz${ch}n`] ?? flat.length));
+  return Array.from({ length: n }, (_, k): Point => [v[czKey(ch, k, "x")] ?? flat[k]?.[0] ?? 1, v[czKey(ch, k, "y")] ?? 0.5]);
+};
+export const czPointValues = (points: Point[], ch: CzPage, type?: number): Values => {
+  const out: Values = { [`cz${ch}n`]: points.length };
+  if (type !== undefined) out[`cz${ch}t`] = type;
+  for (let k = 0; k < CZ_MAX_NODES; k++) {
+    const [x, y] = points[k] ?? [0, 0];
+    out[czKey(ch, k, "x")] = x;
+    out[czKey(ch, k, "y")] = y;
+  }
+  return out;
+};
+export const colorzonesMap: ModuleMap = {
+  op: "colorzones", keepOn: false,
+  controls: [],
+  fields: ["channel", "splines_version",
+    ...CZ_PAGE_IDS.flatMap((ch) => [`curve_num_nodes[${ch}]`, `curve_type[${ch}]`,
+      ...Array.from({ length: CZ_MAX_NODES }, (_, k) => [czField(ch, k, "x"), czField(ch, k, "y")]).flat()])],
+  read: (p) => {
+    const version = p.splines_version ?? 1;
+    const out: Values = { cz_channel: p.channel ?? CZ_HUE, cz_version: version };
+    // the select-by channel, not the page, makes the x axis wrap (colorzones.c, p->channel == h)
+    const flat = czDefaultPoints(version, out.cz_channel === CZ_HUE);
+    for (const ch of CZ_PAGE_IDS) {
+      const n = Math.max(czMinNodes(version), Math.min(CZ_MAX_NODES, p[`curve_num_nodes[${ch}]`] ?? flat.length));
+      Object.assign(out, czPointValues(Array.from({ length: n }, (_, k): Point =>
+        [p[czField(ch, k, "x")] ?? flat[k]?.[0] ?? 1, p[czField(ch, k, "y")] ?? 0.5]), ch,
+        p[`curve_type[${ch}]`] ?? CZ_CATMULL_ROM));
+    }
+    return out;
+  },
+  // the slots past the last node are zeroed, as darktable's _delete_node leaves them
+  write: (v) => Object.assign({}, ...CZ_PAGE_IDS.map((ch) => {
+    const points = czPointsOf(v, ch);
+    const out: Params = { [`curve_num_nodes[${ch}]`]: points.length, [`curve_type[${ch}]`]: v[`cz${ch}t`] ?? CZ_CATMULL_ROM };
+    for (let k = 0; k < CZ_MAX_NODES; k++) {
+      const [x, y] = points[k] ?? [0, 0];
+      out[czField(ch, k, "x")] = x;
+      out[czField(ch, k, "y")] = y;
+    }
+    return out;
+  })),
+};
+
 // ------------------------------------------------------- module choices
 // a tool darktable can do with more than one module. the photo's choice
 // control says which it uses: the module it already has on, or for a tool
@@ -499,8 +558,29 @@ export type ModuleChoice = { id: string; label: string; control: string; options
 const MOD_SHARPEN = 0, MOD_DIFFUSE = 1;
 const MOD_TONEEQ = 0, MOD_SHADHI = 1;
 // the tone mapper (AgX, or sigmoid on a photo started under it), or another module
+export const TM_SIGMOID = 0;
+export const TM_AGX = 1;
+export const TM_NONE = 2;
+export const TONE_MAPPER_OPS = new Set(["agx", "sigmoid", "filmicrgb", "basecurve"]);
+export const TONE_MAPPER_ALL_OPS = new Set(["agx", "sigmoid", "filmicrgb", "filmic", "basecurve"]);
 const MOD_TM = 0, MOD_CBRGB = 1, MOD_EXPOSURE = 1;
 const MOD_SATCURVE = 2;
+export const NO_TM_CHOICES: Record<string, number> = {
+  mod_contrast: MOD_CBRGB,
+  mod_blacks: MOD_EXPOSURE,
+  mod_saturation: MOD_CBRGB,
+};
+// choices for a photo with no tone mapper (non-RAW / LDR or TM_NONE): same
+// non-tone-mapper modules as masks (color balance rgb and exposure)
+export const nonTmModuleChoice = (c: ModuleChoice): ModuleChoice => {
+  if (!(c.control in NO_TM_CHOICES)) return c;
+  const fallback = NO_TM_CHOICES[c.control];
+  return {
+    ...c,
+    options: c.options.filter((o) => o.value !== MOD_TM)
+      .map((o) => ({ ...o, preferred: o.value === fallback })),
+  };
+};
 const MOD_BW_CALIBRATION = 0, MOD_BW_EQUALIZER = 1;
 const shared = (value: number, op: string, name: string, preferred: boolean): ModuleOption =>
   ({ value, op, name, preferred, controls: [], localControls: [] });
@@ -758,9 +838,20 @@ export const PROFILE_GROUPS: [string, [string, number][]][] = [
   ["Color Balance RGB", PROFILES.map((p) => [p.label, p.value])],
 ];
 export const PROFILE_OPTIONS: [string, number][] = PROFILE_GROUPS.flatMap(([, o]) => o);
-export const profileLabel = (v: number) => PROFILE_OPTIONS.find(([, x]) => x === v)?.[0]
-  ?? (AGX_PROFILES.find((p) => p.value === v)?.deleted
-    ? `${AGX_PROFILES.find((p) => p.value === v)!.label} (deleted)` : "AgX Default");
+export const NON_RAW_PROFILE_OPTIONS: [string, number][] = [
+  ["None", 0], ...PROFILES.map((p): [string, number] => [p.label, p.value]),
+];
+export const NON_RAW_PROFILE_GROUPS: [string, [string, number][]][] = [
+  ["Color Balance RGB", NON_RAW_PROFILE_OPTIONS],
+];
+export const isColorBalanceProfile = (v: number) => PROFILES.some((p) => p.value === v);
+export const isAgxProfile = (v: number) => v !== 0 && !isColorBalanceProfile(v);
+export const profileLabel = (v: number, toneMappable = true) => {
+  if (!toneMappable) return NON_RAW_PROFILE_OPTIONS.find(([, x]) => x === v)?.[0] ?? "None";
+  return PROFILE_OPTIONS.find(([, x]) => x === v)?.[0]
+    ?? (AGX_PROFILES.find((p) => p.value === v)?.deleted
+      ? `${AGX_PROFILES.find((p) => p.value === v)!.label} (deleted)` : "AgX Default");
+};
 
 // AgX presets the user loaded from darktable (agxProfiles.ts), after the
 // built-in ones in AGX_PROFILES and as a last Profile group; the list is
@@ -784,9 +875,10 @@ export function setUserProfiles(list: UserProfile[]) {
 }
 
 // Selection is shared by the viewer and new-photo defaults, including batch paste.
-export function profileSelection(value: number): Values {
+export function profileSelection(value: number, toneMappable = true): Values {
+  if (!toneMappable) return { profile: isColorBalanceProfile(value) ? value : 0 };
   const p = value >= AGX_USER_FIRST ? AGX_PROFILES.find((p) => p.value === value)?.params : undefined;
-  return p ? { profile: value, tm_mode: 1, agx_black: p.range_black_relative_ev,
+  return p ? { profile: value, tm_mode: TM_AGX, agx_black: p.range_black_relative_ev,
     agx_white: p.range_white_relative_ev } : { profile: value };
 }
 
@@ -1153,10 +1245,10 @@ export const modules: ModuleMap[] = [
   linear("colorbalancergb", false, [{ id: "vibrance", field: "vibrance", scale: 0.01, base: 0 }]),
   chosen(linear("colorbalancergb", false, [{ id: "contrast", field: "contrast", scale: 0.01, base: 0 }]),
          "mod_contrast", MOD_CBRGB),
-  // a photo on sigmoid, which has no saturation, keeps this one
+  // a photo on sigmoid or without a tone mapper keeps this one
   chosen(linear("colorbalancergb", false, [{ id: "saturation", field: "saturation_global", scale: 0.01, base: 0 }]),
          "mod_saturation", MOD_CBRGB,
-         { active: (v) => v.mod_saturation === MOD_CBRGB || (v.mod_saturation === MOD_TM && v.tm_mode !== 1) }),
+         { active: (v) => v.mod_saturation === MOD_CBRGB || (v.mod_saturation === MOD_TM && v.tm_mode !== TM_AGX) }),
   chosen(satcurveMap, "mod_saturation", MOD_SATCURVE),
   chosen(linear("shadhi", false, [
     { id: "highlights", field: "highlights", scale: 1, base: 0 },
@@ -1195,48 +1287,55 @@ export const modules: ModuleMap[] = [
       const pr = AGX_PROFILES.find((x) => x.value === v.profile && x.value !== AGX_PROFILE_DEFAULT);
       return Object.fromEntries(AGX_FIELDS.map((f) => [f, pr?.params[f] ?? d[f]]));
     },
-    enabled: (v) => v.tm_mode === 1,
+    enabled: (v) => v.tm_mode === TM_AGX,
   },
-  // the tone mapper: AgX, which new photos get, or sigmoid, which photos
-  // started earlier or in darktable may have; one on and the other off.
-  // Whites moves the top end under both: sigmoid's white
-  // target, or AgX's shoulder power, ±100 halving or doubling it, with the
-  // brilliance above. AgX's white relative exposure lifted the midtones as
-  // much as the whites
+  // the tone mapper: AgX, which new raw photos get, sigmoid on photos started
+  // under it, or none (TM_NONE) on already tone-mapped formats (JPEG/TIFF/PNG)
+  // or photos using an unmapped darktable tone mapper.
+  // Whites moves the top end: sigmoid's white target, AgX's shoulder power
+  // plus brilliance, or color balance rgb's highlights brilliance alone
+  // (matching masks) when no tone mapper runs.
   {
     op: "sigmoid", keepOn: false,
     controls: ["whites", "tm_mode"],
     fields: ["display_white_target"],
-    read: (p, d) => ({ tm_mode: 0,
+    read: (p, d) => ({ tm_mode: TM_SIGMOID,
                        whites: (100 * Math.log2(p.display_white_target / d.display_white_target)) / WHITES_STOPS }),
     write: (v, d) => ({ display_white_target: d.display_white_target * 2 ** ((v.whites / 100) * WHITES_STOPS) }),
-    enabled: (v) => v.tm_mode !== 1,
+    enabled: (v) => v.tm_mode === TM_SIGMOID,
   },
   {
     op: "agx", keepOn: false,
     controls: ["whites", "tm_mode"],
     fields: ["curve_shoulder_power"],
-    read: (p, d, _c, v) => ({ tm_mode: 1,
+    read: (p, d, _c, v) => ({ tm_mode: TM_AGX,
                               whites: 100 * Math.log2(p.curve_shoulder_power / agxBase("curve_shoulder_power", v, d)) }),
     write: (v, d) => ({ curve_shoulder_power: agxBase("curve_shoulder_power", v, d) * 2 ** (v.whites / 100) }),
-    enabled: (v) => v.tm_mode === 1,
+    enabled: (v) => v.tm_mode === TM_AGX,
   },
-  // Whites' brilliance on AgX, Highlight Brilliance percent of it, after
-  // the tone mappers so that Whites is theirs (echoed here) and the share
-  // reads against it. an edit from before the share reads as the share it
-  // rendered with, 0% when it had no brilliance
+  // Whites on color balance rgb: on AgX, Highlight Brilliance percent of its
+  // brilliance share; when no tone mapper runs (TM_NONE), the full mask-scale
+  // highlights brilliance (LOCAL_WHITES_BRILLIANCE) alone
   {
     op: "colorbalancergb", keepOn: false,
     controls: ["whites", "whites_brilliance"],
     fields: ["brilliance_highlights"],
     read: (p, _d, _c, v) => {
-      const whites = v?.whites ?? 0;
-      const share = v?.tm_mode === 1 && Math.abs(whites) > 1e-6
+      if (v?.tm_mode === TM_NONE || v?.tm_mode === undefined) {
+        return { whites: p.brilliance_highlights / LOCAL_WHITES_BRILLIANCE, whites_brilliance: 100 };
+      }
+      const whites = v.whites ?? 0;
+      const share = v.tm_mode === TM_AGX && Math.abs(whites) > 1e-6
         ? (100 * p.brilliance_highlights) / (whites * WHITES_BRILLIANCE) : 100;
       return { whites, whites_brilliance: Math.min(Math.max(share, 0), WHITES_BRILLIANCE_MAX) };
     },
-    write: (v) => ({ brilliance_highlights: (v.whites * WHITES_BRILLIANCE * (v.whites_brilliance ?? 100)) / 100 }),
-    active: (v) => v.tm_mode === 1,
+    write: (v) => ({
+      brilliance_highlights: v.tm_mode === TM_NONE
+        ? v.whites * LOCAL_WHITES_BRILLIANCE
+        : (v.whites * WHITES_BRILLIANCE * (v.whites_brilliance ?? 100)) / 100,
+    }),
+    active: (v) => v.tm_mode === TM_AGX || v.tm_mode === TM_NONE,
+    enabled: (v) => v.whites !== 0,
   },
   // Contrast, Blacks and Saturation on the tone mapper, the modules the AgX
   // workflow sets them with; sigmoid has no saturation
@@ -1244,47 +1343,47 @@ export const modules: ModuleMap[] = [
     op: "sigmoid", keepOn: false,
     controls: ["contrast", "tm_mode"],
     fields: ["middle_grey_contrast"],
-    read: (p, d) => ({ tm_mode: 0,
+    read: (p, d) => ({ tm_mode: TM_SIGMOID,
                        contrast: (100 * Math.log2(p.middle_grey_contrast / d.middle_grey_contrast)) / SIGMOID_CONTRAST_STOPS }),
     write: (v, d) => ({ middle_grey_contrast: d.middle_grey_contrast * 2 ** ((v.contrast / 100) * SIGMOID_CONTRAST_STOPS) }),
-    enabled: (v) => v.tm_mode !== 1,
-  }, "mod_contrast", MOD_TM, { active: (v) => v.mod_contrast === MOD_TM && v.tm_mode !== 1 }),
+    enabled: (v) => v.tm_mode === TM_SIGMOID,
+  }, "mod_contrast", MOD_TM, { active: (v) => v.mod_contrast === MOD_TM && v.tm_mode === TM_SIGMOID }),
   chosen({
     op: "agx", keepOn: false,
     controls: ["contrast", "tm_mode"],
     fields: ["curve_contrast_around_pivot"],
-    read: (p, d, _c, v) => ({ tm_mode: 1,
+    read: (p, d, _c, v) => ({ tm_mode: TM_AGX,
       contrast: (100 * Math.log2(p.curve_contrast_around_pivot / agxBase("curve_contrast_around_pivot", v, d)))
         / AGX_CONTRAST_STOPS }),
     write: (v, d) => ({ curve_contrast_around_pivot:
       agxBase("curve_contrast_around_pivot", v, d) * 2 ** ((v.contrast / 100) * AGX_CONTRAST_STOPS) }),
-    enabled: (v) => v.tm_mode === 1,
-  }, "mod_contrast", MOD_TM, { active: (v) => v.mod_contrast === MOD_TM && v.tm_mode === 1 }),
+    enabled: (v) => v.tm_mode === TM_AGX,
+  }, "mod_contrast", MOD_TM, { active: (v) => v.mod_contrast === MOD_TM && v.tm_mode === TM_AGX }),
   chosen({
     op: "sigmoid", keepOn: false,
     controls: ["blacks", "tm_mode"],
     fields: ["display_black_target"],
-    read: (p, d) => ({ tm_mode: 0, blacks: sigmoidBlackRead(p.display_black_target, d.display_black_target) }),
+    read: (p, d) => ({ tm_mode: TM_SIGMOID, blacks: sigmoidBlackRead(p.display_black_target, d.display_black_target) }),
     write: (v, d) => ({ display_black_target: sigmoidBlackWrite(v.blacks, d.display_black_target) }),
-    enabled: (v) => v.tm_mode !== 1,
-  }, "mod_blacks", MOD_TM, { active: (v) => v.mod_blacks === MOD_TM && v.tm_mode !== 1 }),
+    enabled: (v) => v.tm_mode === TM_SIGMOID,
+  }, "mod_blacks", MOD_TM, { active: (v) => v.mod_blacks === MOD_TM && v.tm_mode === TM_SIGMOID }),
   chosen({
     op: "agx", keepOn: false,
     controls: ["blacks", "tm_mode"],
     fields: ["look_lift"],
-    read: (p, d, _c, v) => ({ tm_mode: 1, blacks: (100 * (p.look_lift - agxBase("look_lift", v, d))) / AGX_LIFT }),
+    read: (p, d, _c, v) => ({ tm_mode: TM_AGX, blacks: (100 * (p.look_lift - agxBase("look_lift", v, d))) / AGX_LIFT }),
     write: (v, d) => ({ look_lift: agxBase("look_lift", v, d) + (AGX_LIFT * v.blacks) / 100 }),
-    enabled: (v) => v.tm_mode === 1,
-  }, "mod_blacks", MOD_TM, { active: (v) => v.mod_blacks === MOD_TM && v.tm_mode === 1 }),
+    enabled: (v) => v.tm_mode === TM_AGX,
+  }, "mod_blacks", MOD_TM, { active: (v) => v.mod_blacks === MOD_TM && v.tm_mode === TM_AGX }),
   // AgX's saturation, from gray to twice the profile's, as Lightroom's -100..+100
   chosen({
     op: "agx", keepOn: false,
     controls: ["saturation", "tm_mode"],
     fields: ["look_saturation"],
-    read: (p, d, _c, v) => ({ tm_mode: 1, saturation: (p.look_saturation / agxBase("look_saturation", v, d) - 1) * 100 }),
+    read: (p, d, _c, v) => ({ tm_mode: TM_AGX, saturation: (p.look_saturation / agxBase("look_saturation", v, d) - 1) * 100 }),
     write: (v, d) => ({ look_saturation: agxBase("look_saturation", v, d) * (1 + v.saturation / 100) }),
-    enabled: (v) => v.tm_mode === 1,
-  }, "mod_saturation", MOD_TM, { active: (v) => v.mod_saturation === MOD_TM && v.tm_mode === 1 }),
+    enabled: (v) => v.tm_mode === TM_AGX,
+  }, "mod_saturation", MOD_TM, { active: (v) => v.mod_saturation === MOD_TM && v.tm_mode === TM_AGX }),
   // AgX's black and white relative exposure, set by Auto from darktable's
   // "auto tune levels" (the engine's agx_auto). the pivot keeps its
   // exposure inside the new range, as agx.c's _update_pivot_x does
@@ -1292,7 +1391,7 @@ export const modules: ModuleMap[] = [
     op: "agx", keepOn: false,
     controls: ["agx_black", "agx_white", "tm_mode"],
     fields: ["range_black_relative_ev", "range_white_relative_ev", "curve_pivot_x"],
-    read: (p) => ({ tm_mode: 1, agx_black: p.range_black_relative_ev, agx_white: p.range_white_relative_ev }),
+    read: (p) => ({ tm_mode: TM_AGX, agx_black: p.range_black_relative_ev, agx_white: p.range_white_relative_ev }),
     write: (v, d) => {
       const pivot = agxBase("range_black_relative_ev", v, d) + agxBase("curve_pivot_x", v, d)
         * (agxBase("range_white_relative_ev", v, d) - agxBase("range_black_relative_ev", v, d));
@@ -1300,7 +1399,7 @@ export const modules: ModuleMap[] = [
       return { range_black_relative_ev: v.agx_black, range_white_relative_ev: v.agx_white,
                curve_pivot_x: (at - v.agx_black) / (v.agx_white - v.agx_black) };
     },
-    enabled: (v) => v.tm_mode === 1,
+    enabled: (v) => v.tm_mode === TM_AGX,
   },
   {
     op: "diffuse", keepOn: false, choice: { control: "mod_texture", value: 0 },
@@ -1982,14 +2081,16 @@ export const panels: Panel[] = [
                    format: signed(2, " EV") }],
     }],
   },
-  // how scene light is fitted to the screen: AgX, set on a new photo, or
-  // sigmoid on one started under it. not a per-photo adjustment
+  // how scene light is fitted to the screen: AgX, set on a new raw photo,
+  // sigmoid on one started under it, or none on already tone-mapped formats.
+  // not a per-photo adjustment
   {
     id: "tonemapper", title: "Tone Mapper", hidden: true,
     sections: [{
       title: "Tone Mapper",
-      controls: [{ id: "tm_mode", label: "Tone Mapper", kind: "choice", min: 0, max: 1, step: 1, neutral: 0,
-                   options: [["Sigmoid", 0], ["AgX", 1]], format: (v) => (v ? "AgX" : "Sigmoid") },
+      controls: [{ id: "tm_mode", label: "Tone Mapper", kind: "choice", min: 0, max: 2, step: 1, neutral: TM_NONE,
+                   options: [["Sigmoid", TM_SIGMOID], ["AgX", TM_AGX], ["None", TM_NONE]],
+                   format: (v) => (v === TM_AGX ? "AgX" : v === TM_SIGMOID ? "Sigmoid" : "None") },
                  // AgX's range, no neutral of its own: the image's defaults
                  { id: "agx_black", label: "Black Relative Exposure", min: -20, max: -0.1, step: 0.01, format: signed(2, " EV") },
                  { id: "agx_white", label: "White Relative Exposure", min: 0.1, max: 20, step: 0.01, format: signed(2, " EV") }],
@@ -2179,7 +2280,7 @@ export const LOCAL_CONTROLS: Control[] = [
 const localBalanceMap = withFulcrum(linear("colorbalancergb", false, [
   { id: "l_contrast", field: "contrast", scale: 0.01, base: 0 },
   { id: "l_saturation", field: "saturation_global", scale: 0.01, base: 0 },
-  { id: "l_whites", field: "brilliance_highlights", scale: 0.004, base: 0 },
+  { id: "l_whites", field: "brilliance_highlights", scale: LOCAL_WHITES_BRILLIANCE, base: 0 },
   { id: "l_hue", field: "hue_angle", scale: 0.3, base: 0 },
   ...gradingFields("l_cg"),
 ]));
@@ -2301,6 +2402,14 @@ export const localMaps: ModuleMap[] = [
 
 export const localControlById = new Map(LOCAL_CONTROLS.map((c) => [c.id, c]));
 export const localMapOf = new Map(localMaps.flatMap((m) => m.controls.map((id) => [id, m] as const)));
+export const moduleOpFor = (id: string, values: Values, scope: "global" | "masks" = "global"): string | undefined => {
+  const primary = scope === "masks" ? localMaps : modules;
+  const fallback = scope === "masks" ? modules : localMaps;
+  const matching = primary.filter((m) => m.controls.includes(id));
+  const list = matching.length ? matching : fallback.filter((m) => m.controls.includes(id));
+  const found = list.find((m) => choiceOn(m, values)) ?? list[list.length - 1];
+  return found?.op;
+};
 // the fields to read back from each mask's instances
 export const localFields = () => Object.fromEntries(localMaps.map((m) => [m.op, m.fields]));
 

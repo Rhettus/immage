@@ -62,7 +62,7 @@ is also on the [Immage website](https://immage.photo/guide/).
 - [Crop](crop.md): crop, straighten, rotate and flip
 - [Masks](masks.md): AI selections, brushes, gradients and ranges, and the
   adjustments inside them
-- [Heal and clone](heal.md): removing spots and distractions
+- [Heal, clone, fill and blur](heal.md): removing spots and distractions, evening out color
 - [Film Simulation](film-simulation.md): a photo rendered as a film stock,
   printed on a paper or scanned, from darktable's spektrafilm
 - [Film negatives](negative.md): converting a photo of a film negative,
@@ -85,7 +85,8 @@ is also on the [Immage website](https://immage.photo/guide/).
   borders and captions
 - [Print and soft proofing](print.md): printing or saving a PDF with a
   printer profile, and seeing the print on screen first
-- [Edit In](edit-in.md): sending photos to DxO PureRAW or Macro Studio and back
+- [Edit In](edit-in.md): send photos to DxO PureRAW, Macro Studio, Helicon
+  Focus, or PhotoCraft.
 
 **Reference**
 

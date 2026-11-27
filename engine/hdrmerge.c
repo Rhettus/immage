@@ -418,7 +418,55 @@ static void _merge_frame(const dt_imgid_t imgid, dt_imageio_module_format_t *buf
                                NULL, num, total, NULL, -1);
 }
 
-gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, void *data, char **err)
+// a small copy of the merge for its embedded preview: same-color sites
+// averaged over k x k periods of the sensor's pattern, so the copy keeps the
+// pattern and its offsets and demosaic runs on it as on the merge. fits
+// 3840 x 2160, darktable's 4K mip (mipmap_cache.c, _init_8). written by the
+// merge's own writer and metadata, in the sensor's orientation as camera
+// previews are: readers turn it by the DNG's Orientation
+typedef struct _hdr_small_t
+{
+  const dt_control_merge_hdr_t *d;
+  const void *exif;
+  int exif_len;
+} _hdr_small_t;
+
+static gboolean _hdr_small(const char *path, void *data)
+{
+  const _hdr_small_t *s = data;
+  const dt_control_merge_hdr_t *d = s->d;
+  const uint32_t f = d->first_filter;
+  // X-Trans repeats every 6 rows and columns; a Bayer pattern every 2 when
+  // dcraw's 8-row filters repeat that way, which other layouts do not
+  const int period = f == 9u ? 6 : (f >> 8 & 0xffffff) == (f & 0xffffff) ? 2 : 0;
+  if(!period) return FALSE;
+  const int k = MAX(1, (int)ceil(MAX(d->wd / 3840.0, d->ht / 2160.0)));
+  const int pw = d->wd / (period * k) * period, ph = d->ht / (period * k) * period;
+  if(pw < period || ph < period) return FALSE;
+  float *small = dt_alloc_align_float((size_t)pw * ph);
+  if(!small) return FALSE;
+  const float *in = d->pixels;
+  const int wd = d->wd;
+  DT_OMP_FOR()
+  for(int y = 0; y < ph; y++)
+    for(int x = 0; x < pw; x++)
+    {
+      const int by = y / period * k * period + y % period, bx = x / period * k * period + x % period;
+      double sum = 0.0;
+      for(int a = 0; a < k; a++)
+        for(int b = 0; b < k; b++) sum += in[(size_t)(by + a * period) * wd + bx + b * period];
+      small[(size_t)y * pw + x] = (float)(sum / (k * k));
+    }
+  dt_imageio_dng_write_float(path, small, pw, ph, NULL, 0, d->first_filter,
+                             (const uint8_t (*)[6])d->first_xtrans, 1.0f,
+                             (const float (*))d->wb_coeffs, d->adobe_XYZ_to_CAM);
+  dt_free_align(small);
+  return g_file_test(path, G_FILE_TEST_IS_REGULAR)
+    && rendered_metadata(path, s->exif, s->exif_len, FALSE, NULL, 0);
+}
+
+gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, void *data,
+                 hdr_merge_preview_t preview, char **err)
 {
   GList *t = g_list_copy(imgids);
   const guint total = g_list_length(t);
@@ -542,6 +590,9 @@ gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, voi
   // meanwhile never imports half of it, as the engine's AI denoise does.
   // the writer reports no failure, so the file's being there is the test
   gchar *part = g_strdup_printf("%s.part", pathname);
+  _hdr_small_t small = { &d, exif, exif_len };
+  gsize thumb_len = 0;
+  guint8 *thumb = preview ? preview(_hdr_small, &small, &thumb_len) : NULL;
   dt_imageio_dng_write_float(part,
                              d.pixels,
                              d.wd,
@@ -556,8 +607,9 @@ gchar *hdr_merge(GList *imgids, const gboolean align, hdr_merge_step_t step, voi
   // Preserve the writer's DNG/CFA tags. It supplies no Make/Model, so
   // copy those from the source rather than protecting them as rendered DNGs do.
   const gboolean metadata_ok = g_file_test(part, G_FILE_TEST_IS_REGULAR)
-    && rendered_metadata(part, exif, exif_len, FALSE)
+    && rendered_metadata(part, exif, exif_len, FALSE, thumb, thumb_len)
     && dng_orientation_metadata(part, d.orientation);
+  g_free(thumb);
   free(exif);
   if(!metadata_ok || g_rename(part, pathname))
   {

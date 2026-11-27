@@ -3,6 +3,170 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.48.0
+
+Improvements
+
+- **Better results on JPEGs and other non-RAW photos:** They no longer get a
+  RAW tone mapper applied, so they open looking as shot. Immage also warns
+  before a second tone mapper is turned on. JPEGs you edited in earlier
+  versions keep their look; to get the new rendering, reset them (**Reset
+  Photo** in Grid view, or **Start Over** in History) and edit them again.
+- **Fill and Blur in Heal:** Heal now also has **Fill** and **Blur** spots, so
+  you can even out skin tones and other color blotches on part of a photo. Fill
+  paints a spot with a color (picked from the photo) or a flat tone, changing
+  only the color by default so light and texture stay; set its strength, and
+  limit it to a hue range to leave the rest of the spot alone. Hover over
+  **Limit to color** to preview the matching areas, or click the eye to keep
+  the overlay visible while you pick a color. Drag a box with the Fill color
+  eyedropper to sample an average, then adjust the replacement Hue and
+  Saturation. The eye beside Strength compares the Fill and Blur effect on
+  and off.
+- **Find searches the whole library:** Under **All folders**, Find's filter
+  lists show every camera, lens, keyword, file type, month and exposure setting
+  in your library, with photo counts. With a morfPhoto library, filters answer
+  almost instantly even across very large libraries.
+- **Move, copy and export into dated folders:** **Move to Folder…** and **Copy
+  to Folder…** are in the Photo and right-click menus. Moves, copies and
+  exports can sort photos into folders named from their metadata, such as
+  year/month/day, in one step.
+- **Module order in Advanced mode:** A new **Module order** button lets you
+  drag modules to change the order they run in for a photo.
+- **Smoother panoramas:** Panorama Merge evens out exposure, color and
+  vignetting between photos, so skies no longer show bands where they overlap.
+- **Expandable RAW+JPEG stacks:** Stacked pairs show as a layered thumbnail.
+  Click the format badge to spread the pair out and pick or edit either file on
+  its own.
+- **Auto white balance on paste:** Choose **Auto on Paste** under White
+  Balance in Copy Settings to calculate temperature and tint for each destination.
+- **Your morfPhoto library, on this computer:** With Immage Accelerator on,
+  Immage keeps a local copy of the server's catalog and keeps it up to date in
+  the background. Folders open at once, stay browsable when the server or share
+  is offline, and your own changes show straight away. **Preferences > Immage
+  Accelerator** shows the sync status, with a **Resync** button.
+- **Smart search uses your server's analysis:** Folders already analyzed by
+  morfPhoto or Immich are not analyzed again on this computer, and Smart search
+  asks the server for them. Preferences > Performance shows which source each
+  folder uses.
+- **Range mask previews:** Hover over Color Range, Luminance Range,
+  Parametric or Depth Range controls in Masks to see the selection. Press
+  **O** to show or hide the overlay in Masks or Heal.
+- **Color zones curves:** Color zones in Advanced mode now has its hue,
+  chroma and lightness curves, so you can shift, saturate or brighten chosen
+  colors, on the whole photo or under a mask.
+- **Edit several Heal spots together:** Use **Select spots** to change
+  brush settings or delete multiple spots in one Undo step.
+- **Zoom out past Fit:** Zoom out to half the size of Fit with the wheel, pinch,
+  **⌘-** or the zoom slider. The Navigator has a new **1:2** button.
+- **Confirm photo resets:** **Reset all** in Adjustments and **Reset Photo**
+  in the Library grid ask before resetting edits. Check **Don’t show this
+  confirmation again** when confirming to skip both prompts in the future.
+- **More in Grid view:** Right-click to **Reset Photo** on edited photos, or
+  **Show in Library** to jump to a photo's folder from search results or the
+  filmstrip. **Copy…**, **Paste** and **Previous** now stay at the bottom of
+  the panel.
+- **See which graphics card edits use:** Preferences → Performance now opens
+  with a **GPU** section. **Edit on the GPU** comes first and names the
+  graphics card photo processing runs on, or says the CPU is used because none
+  was found. The former GPU row is now **AI upscaling**, which makes clear that it
+  only covers AI upscaling at export (on Linux, AI always runs on the CPU).
+  The rest of the editing speed settings are now under **Previews**.
+- **PhotoCraft and Helicon Focus in Edit In:** Send photos to PhotoCraft as
+  full-quality layers, or to Helicon Focus (Windows and macOS) for focus
+  stacking. The results come back into Immage to keep editing.
+- **Drag past the photo's edge:** Mask shapes, Heal spots and guide lines can
+  be dragged past the edge of the photo and snap back to it on release.
+- **Search in Keyboard Shortcuts:** Type to filter the shortcuts list.
+- **Export themes:** Preferences > General > Theme can export any theme.
+
+Performance
+
+- **Faster culling of edited photos:** Immage prepares an edited photo's
+  culling preview in the background, including each photo you paste settings
+  onto, and keeps edited photos' previews longest when the thumbnail cache
+  fills up.
+- **Lighter Grid browsing:** Stepping through photos in Grid view no longer
+  loads the full RAW until you open a photo to edit.
+- **Faster Immage Accelerator folders and thumbnails:** Folders and thumbnails
+  are kept on this computer, so unchanged folders open without downloading
+  again, and the first photos show while the rest load.
+- **Very large folders no longer freeze Immage:** Opening a folder with
+  tens of thousands of photos, or a whole library with **Include
+  subfolders**, used to lock the window for minutes or longer. The grid
+  and filmstrip now stay responsive while the photos are read, and a photo
+  opened from your file manager in such a folder opens as soon as its folder
+  lists it.
+- **Large TIFFs no longer hold up other photos:** While Immage reads a large
+  TIFF or DNG from another app, or a Panasonic RAW, other photos' imports and
+  thumbnails no longer wait for it, so a folder with big edited TIFFs or
+  panoramas fills in as fast as the rest.
+- **Less reading from slow drives:** Opening most RAW photos reads the file
+  from disk once instead of twice, and drawing the thumbnail of a panorama or
+  HDR merge reads its file once instead of three times.
+- **Merges carry a preview:** New HDR and panorama DNGs include a preview, as
+  a camera's raws do, so their thumbnails appear at once instead of after
+  reading the whole file, and other apps that show previews show them too.
+  Merging takes a moment longer to make it.
+
+Bug fixes
+
+- **Profile pastes include the tone mapper:** Copying **Profile** carries the
+  source tone mapper and AgX exposure range, so custom AgX presets transfer
+  to compatible photos.
+- Heal Fill can sample colors and pick a color range on cropped photos.
+- Overwriting the files a folder move skipped no longer fails at random with
+  "A transfer already uses one of these folders" right after the first pass.
+- Moving or copying photos and folders onto NTFS and other FUSE drives on
+  Linux no longer fails at the end with "Invalid argument (os error 22)".
+- Export's size fields (long edge, width and height) and the Frame editor's
+  numbers can be typed into again: typing 5128 no longer snaps to 16 at the
+  first digit. Out-of-range values are corrected when you leave the field.
+- On Linux with an AMD graphics card and both AMD's ROCm and Mesa's RustiCL
+  OpenCL drivers installed, Immage now uses ROCm and the GPU speeds up
+  editing; before, it could be left with no working GPU and run on the CPU.
+- A photo saved over in another program, such as a TIFF saved again in
+  PhotoCraft, now shows its new version when you open it again or refresh
+  its folder, and HDR and panorama merges use it, instead of only after
+  restarting Immage.
+- Renaming a photo in the Library grid keeps it selected.
+- Smart search no longer tries Immich, or reports that Immich failed, while
+  **Use Immich** is off in Preferences.
+- Culling no longer shows a photo as it was before you pasted settings onto
+  it, reset it, or undid or redid a paste.
+- Exporting photos that share a name, such as a raw and its JPEG or a
+  virtual copy, with **Replace it** or **Skip it** no longer leaves some of
+  them out; the second gets a number.
+- Find's file type and **Serial not recorded** filters no longer return
+  nothing.
+- Moving or copying with only raws showing no longer takes the stacked JPEGs
+  along; the confirmation lets you choose.
+- An external drive or share that stops responding no longer stalls the
+  library; Immage skips it until it answers again.
+- The History card shows every step, and on Linux its rows no longer pile up
+  below the card.
+- Viewing an unedited photo no longer saves a sidecar or restarts Smart search
+  analysis.
+- **Start Over** no longer fails with "close the photo first" on the open
+  photo.
+- Slider tooltips in the Masks panel show the module they adjust.
+- Immich menu items are hidden when Immich is not set up.
+- The importer follows the current theme and shows newly added photos when
+  reopened.
+- An offline Immich or morfPhoto share shows with a red dot in Folders instead
+  of as an empty folder.
+- With morfPhoto set up, Immage no longer reads photos on network drives for
+  Smart search analysis, which could make the app unresponsive on a slow
+  connection.
+- With morfPhoto set up, a folder whose server isn't answering and that has no
+  local copy yet shows as unavailable instead of being read from the share.
+- Thumbnails of unedited photos in a morfPhoto folder come from the server,
+  on screen or not, instead of being checked and rendered from the share. When
+  the server isn't answering, the copies Immage already has are shown.
+- Reading a photo from a slow network share no longer freezes Immage: other
+  folders, photos on your own drive and editing stay responsive meanwhile. The
+  photos you open or scroll to are read before Smart search's and those off
+  screen, which pause for a minute on a share found to be slow.
+
 ## 0.47.1
 
 Improvements

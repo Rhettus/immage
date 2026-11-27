@@ -28,7 +28,8 @@ globalThis.window = { dispatchEvent: event => { dispatched.push(event.type); ret
 const { settings, ready } = await import('../app/src/settings.ts');
 await ready;
 const { BUILTIN_THEMES, THEME_MAX_BYTES, THEME_TOKENS, parseTheme, validateTheme,
-  loadThemes, themeEntries, selectedTheme, selectTheme, importTheme, removeTheme } = await import('../app/src/themes.ts');
+  loadThemes, themeEntries, selectedTheme, selectTheme, importTheme, removeTheme,
+  isCustomTheme, themePayload } = await import('../app/src/themes.ts');
 const KEY = 'immage.themes.v1';
 const valid = { ...BUILTIN_THEMES[0], id: undefined };
 delete valid.id;
@@ -124,4 +125,24 @@ test('failed persistence leaves selection and imported themes unchanged; corrupt
   loadThemes();
   assert.equal(selectedTheme().id, 'dark');
   assert.deepEqual(themeEntries().map(t => t.id), [...BUILTIN_THEMES.map(t => t.id), 'custom-duplicate']);
+});
+
+test('themePayload strips id and round-trips through parseTheme and validateTheme; isCustomTheme distinguishes custom themes', () => {
+  settings.remove(KEY);
+  loadThemes();
+  for (const builtin of BUILTIN_THEMES) {
+    assert.equal(isCustomTheme(builtin), false, `${builtin.id} should not be custom`);
+    const payload = themePayload(builtin);
+    assert.equal('id' in payload, false, `${builtin.id} payload must omit id`);
+    assert.deepEqual(validateTheme(payload), payload);
+    assert.deepEqual(parseTheme(json(payload)), payload);
+  }
+  const customId = importTheme(json({ ...valid, name: 'Exportable' }));
+  const imported = themeEntries().find(t => t.id === customId);
+  assert.ok(imported);
+  assert.equal(isCustomTheme(imported), true);
+  const customPayload = themePayload(imported);
+  assert.equal('id' in customPayload, false);
+  assert.deepEqual(validateTheme(customPayload), customPayload);
+  assert.deepEqual(parseTheme(json(customPayload)), customPayload);
 });

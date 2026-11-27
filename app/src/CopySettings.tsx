@@ -4,7 +4,7 @@
 // Lightroom's Copy Settings: which parts of an edit to copy, by panel and
 // section, kept between uses; Paste and Previous apply the same parts
 import { useEffect, useState } from "react";
-import { NEG_CHOICES, panels, SF_CHOICES, type Values } from "./manifest";
+import { NEG_CHOICES, panels, SF_CHOICES, TM_AGX, type Values } from "./manifest";
 import type { Mask } from "./masks";
 import { settings } from "./settings";
 import type { AdvancedCopy } from "./advancedEdits";
@@ -40,8 +40,13 @@ export const COPY_GROUPS: CopyGroup[] = [
 // it, and a film simulation, which replaces the photo's tone mapper
 const OFF_BY_DEFAULT = ["crop", "masks", "negative", "film"];
 
+const PROFILE = "basic:Profile";
+const WHITE_BALANCE = "basic:White Balance";
+const AUTO_WB_ON_PASTE = "auto-wb-on-paste";
+
 export type Clip = {
   values: Values;
+  autoWB?: boolean;
   look?: { name: string | null; path: string | null; amount: number };
   masks?: Mask[];
   advanced?: AdvancedCopy[];
@@ -63,8 +68,19 @@ const saveCopyGroups = (on: Set<string>) => {
 export const makeClip = (on: Set<string>, values: Values, look: Clip["look"], masks: Mask[],
                          advanced?: AdvancedCopy[]): Clip => {
   const clip: Clip = { values: {} };
-  for (const g of COPY_GROUPS)
-    if (on.has(g.id)) for (const id of g.ids) if (id in values) clip.values[id] = values[id];
+  for (const g of COPY_GROUPS) {
+    if (!on.has(g.id)) continue;
+    if (g.id === WHITE_BALANCE && on.has(AUTO_WB_ON_PASTE)) clip.autoWB = true;
+    else for (const id of g.ids) if (id in values) clip.values[id] = values[id];
+  }
+  if (on.has(PROFILE) && "tm_mode" in values) {
+    clip.values.tm_mode = values.tm_mode;
+    if (values.tm_mode === TM_AGX) {
+      for (const id of ["agx_black", "agx_white"]) {
+        if (id in values) clip.values[id] = values[id];
+      }
+    }
+  }
   if (on.has("look")) clip.look = look;
   if (on.has("masks")) clip.masks = structuredClone(masks);
   if (on.has("advanced") && advanced) clip.advanced = structuredClone(advanced);
@@ -75,9 +91,17 @@ export function CopyDialog({ onCopy, onClose }: { onCopy: (on: Set<string>) => v
   const [on, setOn] = useState(loadCopyGroups);
   const toggle = (id: string) => setOn((old) => {
     const next = new Set(old);
-    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+      if (id === WHITE_BALANCE) next.delete(AUTO_WB_ON_PASTE);
+    } else next.add(id);
     return next;
   });
+  const checkAll = () => {
+    const next = new Set(COPY_GROUPS.map((g) => g.id));
+    if (on.has(AUTO_WB_ON_PASTE)) next.add(AUTO_WB_ON_PASTE);
+    setOn(next);
+  };
   const copy = () => { saveCopyGroups(on); onCopy(on); onClose(); };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -93,16 +117,24 @@ export function CopyDialog({ onCopy, onClose }: { onCopy: (on: Set<string>) => v
         <div className="modal-head">
           <h2>{t("fields.copy.title")}</h2>
           <div className="segmented small">
-            <button onClick={() => setOn(new Set(COPY_GROUPS.map((g) => g.id)))}>{t("fields.copy.checkAll")}</button>
+            <button onClick={checkAll}>{t("fields.copy.checkAll")}</button>
             <button onClick={() => setOn(new Set())}>{t("fields.copy.checkNone")}</button>
           </div>
         </div>
         <div className="modal-body copy-groups">
           {COPY_GROUPS.map((g) => (
-            <label key={g.id} className="row check">
-              <input type="checkbox" data-copy-group={g.id} checked={on.has(g.id)} onChange={() => toggle(g.id)} />
-              {fieldText(g.label)}
-            </label>
+            <div key={g.id}>
+              <label className="row check">
+                <input type="checkbox" data-copy-group={g.id} checked={on.has(g.id)} onChange={() => toggle(g.id)} />
+                {fieldText(g.label)}
+              </label>
+              {g.id === WHITE_BALANCE && on.has(g.id) && (
+                <label className="row check copy-auto-wb">
+                  <input type="checkbox" checked={on.has(AUTO_WB_ON_PASTE)} onChange={() => toggle(AUTO_WB_ON_PASTE)} />
+                  {t("fields.copy.autoWhiteBalance")}
+                </label>
+              )}
+            </div>
           ))}
         </div>
         <div className="modal-foot">

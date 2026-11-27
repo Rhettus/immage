@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { AdvancedGroup, type AdvancedEdit, type AdvancedPick } from "./AdvancedPanel";
+import { AdvancedGroup, type AdvancedEdit, type AdvancedPick, type ToneMapperGuardRequest } from "./AdvancedPanel";
 import type { EditMode } from "./Preferences";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
-import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, type Panel, SF_GREYED, type Section, type Turn, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice } from "./manifest";
+import { BANDS, type Control, type ControlPreset, type CurveChannel, MODULE_CHOICES, type ModuleChoice, NEG_GREYED, NON_RAW_PROFILE_GROUPS, NON_RAW_PROFILE_OPTIONS, nonTmModuleChoice, type Panel, SF_GREYED, type Section, TM_AGX, TM_NONE, type Turn, type Values, choiceCovers, choiceOn, choiceShows, controlById, isModuleSetting, mapOf, mapsWith, parametricOf, pointValues, pointsOf, preferredChoice, profileLabel } from "./manifest";
 import { Chevron, Collapse } from "./Collapse";
 import { Choice, CurveGraph, OptionPreview, Slider, Toggle, markOnCurve } from "./Controls";
 import { CircleOff, Eye, EyeOff, Grid2x2, MoveHorizontal, MoveVertical, PenLine, Sparkles, WandSparkles } from "lucide-react";
@@ -117,6 +117,7 @@ export type PanelProps = {
   onPreview: (values: Values | null) => void;   // a swatch under the pointer
   onOptionPreview?: (preview: OptionPreview | null) => void;   // a slider ⌥-dragged
   onAdvancedEdit?: AdvancedEdit;   // records an Advanced card edit for undo
+  onToneMapperGuard?: (req: ToneMapperGuardRequest) => void;
   // Simple: how many Advanced edits in this group no slider shows, and the
   // badge's link to the Editing mode preference
   advancedEdits?: number; onAdvancedEdits?: () => void;
@@ -190,6 +191,7 @@ export function PanelView(props: PanelProps) {
   const onPeek = useLiveEvent((ids: string[] | null) => props.onPeek?.(ids));
   if (advancedMode) return <AdvancedGroup id={props.panel.id} title={fieldText(props.panel.advancedTitle ?? props.panel.title)} open={props.open} onToggle={onToggle}
                                        session={props.session} revision={props.sessionRevision} record={props.onAdvancedEdit}
+                                       onToneMapperGuard={props.onToneMapperGuard}
                                        onSimple={onChangeMany} onTurn={onTurn} pick={props.pick} onPicked={props.onPicked} photos={props.photos} />;
   return <PanelWidget {...props} values={values} onToggle={onToggle} onChange={onChange}
     onChangeMany={onChangeMany} onPreview={onPreview} onAuto={props.onAuto ? auto : undefined}
@@ -230,8 +232,9 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
   const [advanced, toggleAdvanced] = useAdvanced(p.id);
   // Whites: Advanced is AgX's
   // the lens method only where there is a choice: the photo carries embedded correction data, or it is not Lensfun
-  const shown = (c: Control) => choiceShows(c.id, values) && (c.id !== "whites_brilliance" || values.tm_mode === 1)
+  const shown = (c: Control) => choiceShows(c.id, values) && (c.id !== "whites_brilliance" || values.tm_mode === TM_AGX)
     && (c.id !== "lens_method" || !!session?.lensEmbedded || (values.lens_method ?? 1) !== 1);
+  const noToneMapper = !!session && (!session.toneMappable || values.tm_mode === TM_NONE);
   const advancedIds = p.sections.flatMap((sec) => sec.controls).filter((c) => isAdvancedControl(c.id) && shown(c)).map((c) => c.id);
   const [tab, setTab] = useState(0);
   const [wheels, setWheels] = useState<WheelMode>("3way");
@@ -242,9 +245,11 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
   const negative = (c: Control) => (values.neg_on === 1 && NEG_GREYED.has(c.id))
     || (values.sf_on === 1 && SF_GREYED.has(c.id));
   // each tool with several modules carries its switch on the first of its
-  // controls shown (the equalizer and the curve stand in for theirs)
+  // controls shown (the equalizer and the curve stand in for theirs). On
+  // non-RAW / no-tone-mapper photos, AgX options leave the switch (same as masks).
   const switchHosts = new Map<string, ModuleChoice>();
-  for (const ch of MODULE_CHOICES) {
+  for (const rawChoice of MODULE_CHOICES) {
+    const ch = noToneMapper ? nonTmModuleChoice(rawChoice) : rawChoice;
     if (ch.options.length < 2) continue;
     const covers = new Set(choiceCovers(ch));
     // Clarity and Texture keep only Medium and Fine above their Advanced fold: the switch goes on those
@@ -264,8 +269,19 @@ export const PanelWidget = memo(function PanelWidget({ panel: p, open, onToggle,
     const sw = switchFor(id);
     return sw ? { moduleChoice: sw.choice, moduleValue: sw.value, moduleAdjusted: sw.adjusted, onModule: sw.onPick } : {};
   };
-  const withOptions = (c: Control) => c.optionsFor && session
-    ? { ...c, options: c.optionsFor(session.context, values[c.id] ?? session.neutral[c.id] ?? 0) } : c;
+  const withOptions = (c: Control) => {
+    if (c.id === "profile" && session && !session.toneMappable) {
+      return {
+        ...c,
+        options: NON_RAW_PROFILE_OPTIONS,
+        optionGroups: NON_RAW_PROFILE_GROUPS,
+        loadPreset: false,
+        format: (v: number) => profileLabel(v, false),
+      };
+    }
+    return c.optionsFor && session
+      ? { ...c, options: c.optionsFor(session.context, values[c.id] ?? session.neutral[c.id] ?? 0) } : c;
+  };
   const controlProps = (c: Control) => ({
     control: negative(c) ? { ...c, note: values.neg_on === 1
       ? "set in Negative: a converted negative turns this module off"

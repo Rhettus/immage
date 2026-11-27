@@ -13,7 +13,7 @@ import { Blocked, textButton } from '../support/scenario.mjs';
 import { click, inspect, reveal } from '../support/controls.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 
-const extOf = (file) => file.match(/\.[^.]+$/)?.[0] ?? '';
+export const extOf = (file) => file.match(/\.[^.]+$/)?.[0] ?? '';
 
 // laid out by run.mjs before the app starts, from the copied fixture
 export async function moveFixtures(fixtures, copied) {
@@ -27,19 +27,19 @@ export async function moveFixtures(fixtures, copied) {
   return ext;
 }
 
-const sha = async (p) => createHash('sha256').update(await readFile(p)).digest('hex');
-const exists = async (p) => readFile(p).then(() => true, () => false);
-const cell = (name) => `.filmstrip .thumb[title=${JSON.stringify(name)}]`;
-const row = (path) => `.folders [data-folder-path=${JSON.stringify(path)}]`;
-const dialog = '.modal.move-photos';
+export const sha = async (p) => createHash('sha256').update(await readFile(p)).digest('hex');
+export const exists = async (p) => readFile(p).then(() => true, () => false);
+export const cell = (name) => `.filmstrip .thumb[title=${JSON.stringify(name)}]`;
+export const row = (path) => `.folders [data-folder-path=${JSON.stringify(path)}]`;
+export const dialog = '.modal.move-photos';
 
-const center = (selector) => {
+export const center = (selector) => {
   const e = document.querySelector(selector);
   if (!e) return null;
   const r = e.getBoundingClientRect();
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 };
-const folderState = () => ({
+export const folderState = () => ({
   active: document.querySelector('.folders .folder-row.active')?.dataset.folderPath ?? null,
   target: document.querySelector('.folders .folder-row.drop-into')?.dataset.folderPath ?? null,
   ghost: !!document.querySelector('.photo-drag'),
@@ -53,23 +53,23 @@ const targetBox = () => {
   const a = r.getBoundingClientRect(), b = panel.getBoundingClientRect();
   return { position: getComputedStyle(r).position, inside: a.left >= b.left - 1 && a.right <= b.right + 1 && a.height < 80 };
 };
-const dialogText = () => document.querySelector('.modal.move-photos')?.textContent ?? null;
+export const dialogText = () => document.querySelector('.modal.move-photos')?.textContent ?? null;
 
-async function foldersCard(t) {
+export async function foldersCard(t) {
   if (!await t.driver.observe(() => document.querySelector('.folders-panel > .panel-title')?.classList.contains('open')))
     await click(t, '.folders-panel > .panel-title');
   await until(() => t.driver.observe(s => !!document.querySelector(s), row(t.fixtureDir)), 'the fixture folder in Folders');
 }
 
 // where to press a thumbnail: its photo, not the stars below it
-async function grip(t, name) {
+export async function grip(t, name) {
   await reveal(t, cell(name));
   const p = await t.driver.observe(center, `${cell(name)} .thumb-image`);
   assert(p, `${name} has a thumbnail`);
   return p;
 }
 
-async function rowAt(t, path) {
+export async function rowAt(t, path) {
   const r = await reveal(t, row(path));
   return { x: r.x, y: r.y };
 }
@@ -83,7 +83,7 @@ async function noDialog(t, what) {
 }
 
 // the job's line under the photo, once it says what it did
-const summary = (t, word) => until(() => t.driver.observe((w) =>
+export const summary = (t, word) => until(() => t.driver.observe((w) =>
   [...document.querySelectorAll('.activity')].map((a) => a.textContent).find((x) => x.includes(w)) ?? null, word),
   `the job's summary (${word})`, 60000);
 

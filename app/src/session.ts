@@ -6,26 +6,31 @@
 // only mark their module dirty, and the next round sends the latest values once
 
 import { boundFields, choiceCovers, choiceOn, controlById, isModuleSetting, localControlById, localFields, localMaps, mapOf, mapsFor,
-         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, turnOrientation, turnRect, type ImageContext,
-         MASK_MODULES, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
+         mapsWith, MASK_MODULE_CHOICES, MODULE_CHOICES, modules, CONVERSIONS, conversionsOn, forcedChoice, moduleName, NO_TM_CHOICES,
+         TM_AGX, TM_NONE, TM_SIGMOID, TONE_MAPPER_ALL_OPS, TONE_MAPPER_OPS, turnOrientation, turnRect, type ImageContext,
+         MASK_MODULES, type ModuleChoice, type ModuleMap, type Params, type Turn, type Values } from "./manifest";
 import { loadModuleChoice } from "./moduleChoice";
 import { isRefined, neutralLocal, type Mask, type Refine, type Shape } from "./masks";
 import { planMerge, type MergePlan } from "./localMerge";
-import type { Spot } from "./spots";
+import { DEFAULT_FILL, orderSpots, type FillSettings, type Spot } from "./spots";
 import { begin, end, progress } from "./activity";
 import { perf, type Trace } from "./perf";
 import { FRAME_HEAD, renderFrame } from "./sharedFrames";
 import { isDetailControl } from "./detailPreview";
 import { advancedCopies, pasteTarget, type AdvancedCopy } from "./advancedEdits";
 import type { Preview } from "./Preferences";
-import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type Value } from "./commands";
+import { commands, type GetReply, type HistoryItem, type Instance, type InstanceReply, type ModuleState, type OrderEntry, type OrderModule, type Value } from "./commands";
 
 // one Advanced card's instance: its darktable fields as the client has them
 export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
 // a card instance menu action (engine session_instance()); `other` and
 // `after` place a move, `name` is a rename's ("" for darktable's own)
-export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore";
-                               op: string; priority: number; name?: string; other?: number; after?: boolean; mask?: string };
+// "order" sets the whole pipe order (Module order dialog): `order` is the full
+// live list or "reset", `layout` an undo's recorded instances, placed against
+// the live list when the action runs; `done` gets the engine's refusal, if any
+export type InstanceAction = { action: "new" | "duplicate" | "rename" | "move" | "delete" | "restore" | "order";
+                               op: string; priority: number; name?: string; other?: number; after?: boolean; mask?: string;
+                               order?: OrderEntry[] | "reset"; layout?: InstanceEntry[]; done?: (error: string | null) => void };
 export type InstanceEntry = { op: string; priority: number; name: string; mask?: string };
 export type { ColorProfiles, HistoryItem, ModuleState } from "./commands";
 // the typed commands, traced under their Rust names as `invoke` traces the rest
@@ -222,8 +227,11 @@ export class Session {
   // mask, some 9 ms a brush stroke, while the others' stays in darktable's
   // drawn mask cache and their instances' output in the pipe's
   private lifted: string | null = null;
-  // heal and clone spots: all of them go whenever one changes, being few
+  // heal, clone, fill and blur spots, in the engine's order (heal and clone
+  // first): all of them go whenever one changes, being few
   spots: Spot[] = [];
+  // what the fill and blur spots share (the engine's second retouch instance)
+  fill: FillSettings = DEFAULT_FILL;
   // whether the image had an edit when it was opened, which decides whether
   // the new-photos defaults apply
   wasEdited = true;
@@ -275,7 +283,87 @@ export class Session {
   }
   // a raw file rather than a JPEG, HEIC or other rendered one
   raw = true;
+  // a display-referred, already tone-mapped format (JPEG, SDR PNG/TIFF/WebP/HEIC)
+  ldr = false;
+  get toneMappable() { return !this.ldr; }
+  private skipToneMapper(op: string) {
+    return !this.toneMappable && TONE_MAPPER_OPS.has(op);
+  }
+  private get noToneMapper() {
+    return !this.toneMappable || (this.wasEdited && this.values.tm_mode === TM_NONE);
+  }
+  private resolveModuleChoice(c: ModuleChoice, pick: number) {
+    return this.noToneMapper && c.control in NO_TM_CHOICES && pick === 0 ? NO_TM_CHOICES[c.control] : pick;
+  }
+  // When no tone mapper is active, move any tool still pointing at the tone
+  // mapper to its non-tone-mapper default (same modules as masks).
+  private syncNoTmChoices() {
+    if (this.toneMappable && this.values.tm_mode !== TM_NONE) return;
+    for (const [control, fallback] of Object.entries(NO_TM_CHOICES)) {
+      if (this.values[control] === 0) this.values[control] = fallback;
+      if (this.neutral[control] === 0) this.neutral[control] = fallback;
+    }
+  }
+  // Currently enabled global (non-mask, non-look) tone mapper instances.
+  activeToneMappers(exclude?: { op: string; priority: number }): { op: string; priority: number; title: string }[] {
+    const out: { op: string; priority: number; title: string }[] = [];
+    const seen = new Set<string>();
+    const skip = (op: string, priority: number) =>
+      exclude?.op === op && exclude.priority === priority;
+    const isEnabled = (op: string, priority: number, fallback: boolean) => {
+      const key = `${op}#${priority}`;
+      if (this.deleted.has(key) || this.instancesDeleted.has(key)) return false;
+      const adv = this.advanced.get(key);
+      if (adv) return adv.enabled;
+      const st = this.moduleStates.get(key);
+      if (st) return st.enabled;
+      if (priority === 0 && TONE_MAPPER_OPS.has(op) && this.toneMappable && (op === "agx" || op === "sigmoid")) {
+        if (conversionsOn(this.values).some((c) => c.off.has(op))) return false;
+        return op === "agx" ? this.values.tm_mode === TM_AGX : this.values.tm_mode === TM_SIGMOID;
+      }
+      if (priority === 0 && this.info[op]) return this.info[op].enabled;
+      return fallback;
+    };
+    if (this.instances.length) {
+      for (const i of this.instances) {
+        if (i.owner !== null || !TONE_MAPPER_ALL_OPS.has(i.op) || skip(i.op, i.priority)) continue;
+        const key = `${i.op}#${i.priority}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (isEnabled(i.op, i.priority, i.enabled))
+          out.push({ op: i.op, priority: i.priority, title: moduleName(i.op) });
+      }
+      return out;
+    }
+    for (const op of ["agx", "sigmoid"] as const) {
+      if (skip(op, 0)) continue;
+      seen.add(`${op}#0`);
+      if (isEnabled(op, 0, false)) out.push({ op, priority: 0, title: moduleName(op) });
+    }
+    for (const h of this.history) {
+      if (h.priority == null || h.masked || !TONE_MAPPER_ALL_OPS.has(h.op) || skip(h.op, h.priority)) continue;
+      const key = `${h.op}#${h.priority}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (isEnabled(h.op, h.priority, h.enabled))
+        out.push({ op: h.op, priority: h.priority, title: h.name || moduleName(h.op) });
+    }
+    return out;
+  }
+  // Turn off every active global tone mapper other than `keep`.
+  disableOtherToneMappers(keep?: { op: string; priority: number }) {
+    for (const tm of this.activeToneMappers(keep)) {
+      const key = `${tm.op}#${tm.priority}`;
+      if (this.advanced.has(key)) this.setAdvancedEnabled(tm.op, tm.priority, false);
+      else if (tm.priority === 0 && (tm.op === "agx" || tm.op === "sigmoid")) {
+        if (keep?.op !== "agx" && keep?.op !== "sigmoid") this.set("tm_mode", TM_NONE);
+      } else {
+        this.setModuleState({ op: tm.op, priority: tm.priority }, { enabled: false });
+      }
+    }
+  }
   private spotsDirty = false;
+  private fillDirty = false;
   // whether the engine has them on: the Before view takes them off
   private spotsOn = true;
   // masks and spots are kept in the shown frame, which a turn, a crop or a
@@ -342,6 +430,7 @@ export class Session {
     s.wasEdited = !opened.fresh;
     s.baseline = opened.fresh;
     s.raw = opened.raw;
+    s.ldr = opened.ldr ?? !opened.raw;
     s.look = opened.look;
     s.lookAmount = opened.look_amount;
     const reply = await traced("get_params", () => commands.getParams(boundFields()));
@@ -368,12 +457,16 @@ export class Session {
     for (const m of modules) {
       const info = s.info[m.op];
       const fromDefaults = m.read(info.defaults, info.defaults, s.ctx);
-      const current = info.enabled ? m.read(info.params, info.defaults, s.ctx, s.values) : {};
+      // On LDR (already tone-mapped) photos, do not read agx/sigmoid into
+      // tm_mode or Basic sliders: legacy <=0.47.1 XMPs stay untouched and
+      // Simple controls map to non-tone-mapper modules (TM_NONE).
+      const current = info.enabled && !s.skipToneMapper(m.op)
+        ? m.read(info.params, info.defaults, s.ctx, s.values) : {};
       for (const id of m.controls) {
         const c = controlById.get(id)!;
         const neutral = c.neutral ?? fromDefaults[id];
         s.neutral[id] = neutral;
-        if (info.enabled && current[id] === undefined) s.foreign.add(m);
+        if (info.enabled && !s.skipToneMapper(m.op) && current[id] === undefined) s.foreign.add(m);
         // a control several maps share takes its value from the one whose
         // module is on
         if (current[id] !== undefined || s.values[id] === undefined)
@@ -382,7 +475,7 @@ export class Session {
     }
     await s.loadMasks();
     s.chooseModules();
-    s.spots = await traced("spots", () => commands.spots(null));
+    s.readSpots(await traced("spots", () => commands.spots(null)));
     await s.refreshWb();
     s.requestRender();
     return s;
@@ -406,15 +499,17 @@ export class Session {
   // read from the chosen module alone
   private chooseModules() {
     for (const c of MODULE_CHOICES) {
-      const pick = loadModuleChoice(c.id);
+      const pick = this.resolveModuleChoice(c, loadModuleChoice(c.id));
       this.neutral[c.control] = pick;
       const covers = choiceCovers(c);
       const reads = (m: ModuleMap) => {
+        if (this.skipToneMapper(m.op)) return null;
         const info = this.info[m.op];
         return info?.enabled && !this.foreign.has(m) ? m.read(info.params, info.defaults, this.ctx, this.values) : null;
       };
       const ofOption = (o: number) => modules.filter((m) => m.choice?.control === c.control && m.choice.value === o);
       const usedAll = c.options.filter((o) =>
+        !(this.noToneMapper && c.control in NO_TM_CHOICES && o.value === 0) &&
         ofOption(o.value).some((m) => {
           const r = reads(m);
           return r && covers.some((id) => id in r && Math.abs(r[id] - (this.neutral[id] ?? 0)) > 1e-6);
@@ -436,7 +531,7 @@ export class Session {
 
   // the modules Preferences picks for each tool, which Reset returns a photo to
   preferredModules(): [string, number][] {
-    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = loadModuleChoice(c.id)]);
+    return MODULE_CHOICES.map((c) => [c.control, this.neutral[c.control] = this.resolveModuleChoice(c, loadModuleChoice(c.id))]);
   }
 
   // Refresh unused tools without replacing any current global or masked edits.
@@ -447,7 +542,7 @@ export class Session {
       const controls = c.covers ?? option?.controls ?? [];
       const used = modules.some((m) => m.choice?.control === c.control && this.foreign.has(m))
         || controls.some((id) => Math.abs((this.values[id] ?? 0) - (this.neutral[id] ?? 0)) > 1e-6);
-      const pick = loadModuleChoice(c.id);
+      const pick = this.resolveModuleChoice(c, loadModuleChoice(c.id));
       this.neutral[c.control] = pick;
       if (!used && forcedChoice(this.values, c.control) === undefined) this.set(c.control, pick);
     }
@@ -477,6 +572,8 @@ export class Session {
 
   set(id: string, v: number, coalesce = false) {
     if (!mapOf.has(id) || this.values[id] === v) return;
+    if (id === "tm_mode" && !this.toneMappable && v !== TM_NONE) return;
+    if (id in NO_TM_CHOICES && v === 0 && (!this.toneMappable || this.values.tm_mode === TM_NONE)) return;
     perf.input(id);
     this.activeDetailControl = this.size().draft && isDetailControl(id) ? id : null;
     this.onDetailControl?.(this.activeDetailControl);
@@ -484,9 +581,11 @@ export class Session {
     const was = choice?.options.find((o) => o.value === this.values[id]);
     if (was && !was.controls.length) this.sharedHolder[id] = was.value;
     this.values[id] = v;
+    if (id === "tm_mode" && v === TM_NONE) this.syncNoTmChoices();
     if (id === "orient") this.orient(v);
     this.conversionChanged(id);
     for (const m of mapsWith(id)) {
+      if (this.skipToneMapper(m.op)) continue;
       this.foreign.delete(m);
       this.dirty.add(m.op);
     }
@@ -522,8 +621,17 @@ export class Session {
     // switching it off would read, opened again, as one the conversion holds
     // and turned back would switch it on (open)
     const converting = this.values[id] === 1;
-    for (const op of conv.off)
-      if (mapsFor(op).some((m) => !this.foreign.has(m)) && (!converting || this.info[op]?.enabled)) this.dirty.add(op);
+    for (const op of conv.off) {
+      if (this.skipToneMapper(op)) continue;
+      const maps = mapsFor(op);
+      if (!maps.some((m) => !this.foreign.has(m))) continue;
+      const onNow = !!this.info[op]?.enabled
+        || (op === "agx" && this.values.tm_mode === TM_AGX)
+        || (op === "sigmoid" && this.values.tm_mode === TM_SIGMOID)
+        || maps.some((m) => choiceOn(m, this.values) && (m.enabled ? m.enabled(this.values)
+          : m.controls.some((cid) => this.values[cid] !== this.neutral[cid])));
+      if (!converting || onNow) this.dirty.add(op);
+    }
   }
 
   // the image's frame turned: modules after flip write their values for it
@@ -565,6 +673,24 @@ export class Session {
     void this.pump();
   }
 
+  // Persist one-time automatic baseline adjustments (e.g. a plugin return)
+  // without marking the photo edited.
+  commitBaseline() {
+    if (this.dead) return;
+    this.unsaved = true;
+    this.scheduleSave();
+  }
+
+  // New-photo defaults (AgX, exposure compensation, profile, New Photos preset)
+  // are applied in memory while `baseline` is still true without writing an XMP
+  // sidecar or invalidating search analysis until the user actually edits the
+  // photo (or a background batch prepares its unedited undo snapshot).
+  private markUnsaved() {
+    if (this.baseline && !this.background) return;
+    this.unsaved = true;
+    this.scheduleSave();
+  }
+
   // nothing queued or in flight
   async settled() {
     while (!this.idle && !this.dead) {
@@ -586,6 +712,21 @@ export class Session {
     void this.pump();
   }
 
+  private fillPreviewHidden = false;
+
+  setFillPreviewHidden(hidden: boolean) {
+    if (this.dead || this.fillPreviewHidden === hidden) return false;
+    this.fillPreviewHidden = hidden;
+    this.current.clear();
+    this.putAside = null;
+    if (this.copy) {
+      this.copy = null;
+      this.onCopy?.(null);
+    }
+    this.requestRender();
+    return true;
+  }
+
   // the open photo's sensor and orientation, as the module maps read them
   get context() { return this.ctx; }
 
@@ -604,7 +745,13 @@ export class Session {
   }
 
   private get spotsPending() {
-    return this.spotsDirty || this.spotsOn !== !this.before;
+    return this.spotsDirty || this.fillDirty || this.spotsOn !== !this.before;
+  }
+
+  // the engine's spots and the settings its fill and blur ones share
+  private readSpots(r: { spots: Spot[]; fill?: FillSettings | null }) {
+    this.spots = orderSpots(r.spots);
+    this.fill = r.fill ?? DEFAULT_FILL;
   }
 
   // the engine's view changed with no edit (the soft proof): the frames
@@ -616,8 +763,16 @@ export class Session {
   }
 
   setSpots(spots: Spot[]) {
-    this.spots = spots;
+    this.spots = orderSpots(spots);
     this.spotsDirty = true;
+    this.needRender = true;
+    void this.pump();
+  }
+
+  // the fill and blur settings, those given
+  setFill(patch: Partial<FillSettings>) {
+    this.fill = { ...this.fill, ...patch };
+    this.fillDirty = true;
     this.needRender = true;
     void this.pump();
   }
@@ -1115,7 +1270,7 @@ export class Session {
   async preview(size: number, values: Values, look?: string | null): Promise<Frame> {
     const changed = Object.keys(values).filter((id) => mapOf.has(id));
     const merged = { ...this.sent(), ...values };
-    const touched = new Set(changed.flatMap((id) => mapsWith(id)));
+    const touched = new Set(changed.flatMap((id) => mapsWith(id)).filter((m) => !this.skipToneMapper(m.op)));
     const ops = [...new Set([...touched].map((m) => m.op))];
     // a named instance is made and placed as for an edit, if the preview
     // switches it on
@@ -1134,7 +1289,7 @@ export class Session {
     // the look goes with the edit; without its file it cannot come back
     if (this.look && this.lookPath) this.wantLook = keep ? null : this.lookPath;
     for (const [name, ops] of this.maskOps) this.dirtyLocal.set(name, new Set(ops));
-    for (const m of modules) this.dirty.add(m.op);
+    for (const m of modules) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
     this.needRender = true;
     void this.pump();
   }
@@ -1146,7 +1301,7 @@ export class Session {
     if (!was && !ids) return;
     this.peeked = ids;
     for (const id of [...(was ?? []), ...(ids ?? [])])
-      for (const m of mapsWith(id)) this.dirty.add(m.op);
+      for (const m of mapsWith(id)) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
     this.needRender = true;
     void this.pump();
   }
@@ -1167,7 +1322,13 @@ export class Session {
 
   // several controls at once, as one round of edits (a point curve drag)
   setMany(entries: [string, number][], coalesce = false) {
-    entries = [...new Map(entries)].filter(([id, v]) => mapOf.has(id) && this.values[id] !== v);
+    const nextTm = entries.find(([id]) => id === "tm_mode")?.[1] ?? this.values.tm_mode;
+    entries = [...new Map(entries)].filter(([id, v]) => {
+      if (!mapOf.has(id) || this.values[id] === v) return false;
+      if (id === "tm_mode" && !this.toneMappable && v !== TM_NONE) return false;
+      if (id in NO_TM_CHOICES && v === 0 && (!this.toneMappable || nextTm === TM_NONE)) return false;
+      return true;
+    });
     if (!entries.length) return;
     perf.input(entries.map(([id]) => id));
     this.activeDetailControl = null;
@@ -1175,9 +1336,11 @@ export class Session {
     for (const [id, v] of entries) {
       if (!mapOf.has(id)) continue;
       this.values[id] = v;
+      if (id === "tm_mode" && v === TM_NONE) this.syncNoTmChoices();
       if (id === "orient") this.orient(v);
       this.conversionChanged(id);
       for (const m of mapsWith(id)) {
+        if (this.skipToneMapper(m.op)) continue;
         this.foreign.delete(m);
         this.dirty.add(m.op);
       }
@@ -1401,6 +1564,7 @@ export class Session {
   instanceLayout(): InstanceEntry[] | null {
     if (!this.instancesLoad) return null;
     return this.instances.filter((i) => i.owner === null || i.owner === "mask")
+      .sort((a, b) => a.iop_order - b.iop_order)
       .map((i) => ({ op: i.op, priority: i.priority, name: i.hand_edited ? i.name : "",
         ...(i.owner === "mask" && i.mask ? { mask: i.mask } : {}) }));
   }
@@ -1431,9 +1595,58 @@ export class Session {
       if (t.length < 2 || (t.length === n.length && t.every((p, k) => p === n[k]))) continue;
       for (let k = 1; k < t.length; k++) this.instanceAction({ action: "move", op, priority: t[k], other: t[k - 1], after: true });
     }
+    // the order across modules: when the instances both have run in another
+    // order, the engine's live list is rearranged when the action runs
+    const common = target.filter((i) => !i.mask && have.has(key(i))).map(key);
+    const inNow = new Set(common);
+    const current = now.filter((i) => !i.mask && inNow.has(key(i))).map(key);
+    if (common.some((k, n) => k !== current[n]))
+      this.instanceAction({ action: "order", op: "", priority: 0, layout: target });
+  }
+
+  // the modules in pipe order, for the Module order dialog, once the queued
+  // edits have reached the engine
+  async moduleOrder(): Promise<OrderModule[]> {
+    await this.settled();
+    return (await commands.orderInfo()).modules;
+  }
+
+  // sets the pipe order through the pump, one engine request at a time with
+  // the renders. resolves to null, or the engine's refusal (nothing changed)
+  setModuleOrder(target: OrderEntry[] | "reset"): Promise<string | null> {
+    return new Promise((done) => this.instanceAction({ action: "order", op: "", priority: 0, order: target, done }));
+  }
+
+  // an undo's order: the live list with the layout's modules in its order,
+  // each in a slot a layout module held (others, owned ones too, stay put)
+  private async layoutOrder(layout: InstanceEntry[]): Promise<OrderEntry[] | null> {
+    const live = (await commands.orderInfo()).modules;
+    const key = (i: { op: string; priority: number }) => `${i.op}#${i.priority}`;
+    const here = new Map(live.map((m) => [key(m), m]));
+    const want = layout.filter((i) => !i.mask && here.get(key(i))?.owner === null).map(key);
+    const set = new Set(want);
+    const current = live.filter((m) => set.has(key(m))).map(key);
+    if (want.every((k, n) => k === current[n])) return null;
+    let next = 0;
+    return live.map((m) => set.has(key(m)) ? here.get(want[next++])! : m).map((m) => ({ op: m.op, priority: m.priority }));
   }
 
   private async sendInstance(a: InstanceAction) {
+    if (a.action === "order") {
+      try {
+        const order = a.order ?? (a.layout ? await this.layoutOrder(a.layout) : null);
+        if (order) {
+          const r = await this.pumpTyped("order_set", () =>
+            commands.orderSet(order === "reset" ? null : order, order === "reset" ? true : null));
+          this.instances = r.instances;
+        }
+        a.done?.(null);
+      } catch (e) {
+        this.instances = (await commands.instances().catch(() => this.instances));
+        if (a.done) a.done(String(e)); else this.onError(String(e));
+      }
+      return;
+    }
     let r: InstanceReply;
     try {
       r = await this.pumpTyped("instance", () =>
@@ -1525,6 +1738,7 @@ export class Session {
     if (!fields) return;
     const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
+    if (this.skipToneMapper(op)) return;
     for (const m of mapsFor(op)) {
       // a tool's other module (Blacks on exposure while it runs on the tone
       // mapper) does not hold its sliders: read, it would claim the tool, as
@@ -1536,6 +1750,12 @@ export class Session {
         if (info.enabled && current[id] === undefined) this.foreign.add(m);
         this.values[id] = this.snap(id, current[id] ?? this.neutral[id], this.neutral[id]);
       }
+    }
+    if (op === "agx" || op === "sigmoid") {
+      const agxOn = this.advanced.get("agx#0")?.enabled ?? this.info.agx?.enabled ?? false;
+      const sigOn = this.advanced.get("sigmoid#0")?.enabled ?? this.info.sigmoid?.enabled ?? false;
+      this.values.tm_mode = agxOn ? TM_AGX : sigOn ? TM_SIGMOID : TM_NONE;
+      if (this.values.tm_mode === TM_NONE) this.syncNoTmChoices();
     }
   }
 
@@ -1685,8 +1905,9 @@ export class Session {
     const measurement = perf.measurement;
     const { width, height, scale, x, y } = view;
     const preview = this.previewMode();
-    const skip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
+    const fastSkip = view.detail ? null : view.draft ? DRAFT_SKIP[preview].filter((op) => !this.draftKeep.has(op))
       : kind === "base" && !every ? BASE_SKIP[preview] : null;
+    const skip = this.fillPreviewHidden ? [...(fastSkip ?? []), "retouch:fill"] : fastSkip;
     if (!view.draft) this.draftKeep.clear();
     const hex = (f: Frame) => f.hash!.toString(16).padStart(16, "0");
     const requestLabel = cycle?.diagnostic?.label ?? perf.label;
@@ -1732,7 +1953,7 @@ export class Session {
   // asking the engine
   private current = new Map<string, Frame>();
   private frameKey(v: View, before: boolean) {
-    return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before}`;
+    return `${v.width},${v.height},${v.scale},${v.x},${v.y},${before},${this.fillPreviewHidden}`;
   }
   private keepFrame(key: string, f: Frame) {
     const at = `${key}|${f.hash}`;
@@ -1842,8 +2063,12 @@ export class Session {
     const woken = new Promise<void>((r) => { wake = r; });
     const run = { stale: false, wake, copy: every ? view.scale ?? null : null };
     this.base = run;
+    const fillPreviewHidden = this.fillPreviewHidden;
     const done = this.renderView(view, "base", undefined, every, have)
-      .then((f) => { if (!run.stale) use(f); else perf.discard(f.trace, "base-obsolete-after-cancel"); })
+      .then((f) => {
+        if (!run.stale && fillPreviewHidden === this.fillPreviewHidden) use(f);
+        else perf.discard(f.trace, run.stale ? "base-obsolete-after-cancel" : "base-obsolete-after-fill-comparison");
+      })
       .catch((e) => { if (String(e) !== "canceled") this.onError(String(e)); })
       .finally(() => { if (this.baseInFlight === done) this.baseInFlight = null; });
     this.baseInFlight = done;
@@ -1941,11 +2166,11 @@ export class Session {
             this.moduleStates.set(key, r.now);
           }
           this.foreign.clear();
-          for (const m of modules) this.dirty.add(m.op);
+          for (const m of modules) if (!this.skipToneMapper(m.op)) this.dirty.add(m.op);
           this.deleted.clear();
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -1958,20 +2183,27 @@ export class Session {
           for (const op of ops) await this.pumpTyped("set_params", () => commands.setParams(this.moduleEdit(op)));
           this.changed();
           if (framing) this.reshape = true;
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
         if (this.spotsPending) {
-          const dirty = this.spotsDirty, on = !this.before;
+          const dirty = this.spotsDirty, fillDirty = this.fillDirty, on = !this.before;
           this.spotsDirty = false;
+          this.fillDirty = false;
           if (dirty) await this.pumpTyped("spots", () => commands.spots(this.spots));
+          // after the spots: the first fill or blur spot makes the instance
+          // these are the settings of
+          if (fillDirty) {
+            const { blend, opacity, ranges } = this.fill;
+            await this.pumpTyped("spots_fill", () => commands.spotsFill(blend, opacity, ranges));
+          }
           // a new set of spots comes on with them; the Before view turns
           // them off after
           if (dirty || on !== this.spotsOn) await this.pumpTyped("spots_enable", () => commands.spotsEnable(on));
           this.spotsOn = on;
           this.changed();
-          if (dirty && !this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (dirty && !this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -1980,7 +2212,7 @@ export class Session {
           this.wantLookAmount = undefined;
           await this.pumpTyped("look_amount", () => commands.lookAmount(amount));
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -1989,7 +2221,7 @@ export class Session {
           let sent: boolean;
           try { sent = await this.sendMasks(); } finally { perf.finish(task); }
           this.changed();
-          if (sent && !this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (sent && !this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -1998,7 +2230,7 @@ export class Session {
           this.wantLook = undefined;
           await this.pumpTyped("look_apply", () => commands.lookApply(path));
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2007,7 +2239,7 @@ export class Session {
           await this.sendInstance(this.instancePending.shift()!);
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2087,7 +2319,7 @@ export class Session {
           this.instancesStale = true;
           this.maskCardsStale = true;
           this.changed();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2133,7 +2365,7 @@ export class Session {
           }
           if (this.advanced.has(key)) this.advancedStale.add(key);
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2181,7 +2413,7 @@ export class Session {
           }
           this.changed();
           this.onModules?.();
-          if (!this.before) { this.unsaved = true; this.scheduleSave(); }
+          if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;
         }
@@ -2212,7 +2444,7 @@ export class Session {
           this.reshape = false;
           const task = perf.begin("pump.task", { operation:"loadMasks", blockingPump:true });
           try { await this.loadMasks(); } finally { perf.finish(task); }
-          this.spots = await this.pumpTyped("spots", () => commands.spots(null));
+          this.readSpots(await this.pumpTyped("spots", () => commands.spots(null)));
           this.onShapes?.();
           continue;
         }
@@ -2285,7 +2517,7 @@ export class Session {
         });
         if (ops.length) this.changed();
         // the Before view and a peek are only for looking: nothing of it reaches the sidecar
-        if (ops.length && !this.viewing) { this.unsaved = true; this.scheduleSave(); }
+        if (ops.length && !this.viewing) this.markUnsaved();
         this.needRender = false;
         // Batch edits use the same module maps and mask transport, without
         // rendering previews for photos that are not on screen.

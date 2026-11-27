@@ -177,11 +177,35 @@ pub fn settings_all(settings: State<'_, Settings>) -> Map {
 // validated there and read before the page exists)
 #[tauri::command]
 #[specta::specta]
-pub async fn settings_set(settings: State<'_, Settings>, changes: HashMap<String, Option<String>>) -> Result<(), String> {
+pub async fn settings_set(
+    app: tauri::AppHandle,
+    settings: State<'_, Settings>,
+    changes: HashMap<String, Option<String>>,
+) -> Result<(), String> {
     if let Some(key) = changes.keys().find(|k| k.starts_with(NATIVE)) {
         return Err(format!("settings: {key} is set by the app, not the page"));
     }
-    settings.apply(changes)
+    let immich_map_changed = changes.contains_key("immage.immichPathMap");
+    settings.apply(changes)?;
+    if immich_map_changed {
+        if let Some(state) = tauri::Manager::try_state::<crate::AppState>(&app) {
+            state.clip_providers.invalidate_immich();
+            // the page saves the mapping on every keystroke, and a half-typed
+            // path ("/m") would put every folder under it offline: refresh
+            // once typing pauses. no lock; a later change supersedes this one
+            static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let mine = GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+            let (runtime, app) = (state.runtime.clone(), app.clone());
+            // the importer's SQLite is read: a blocking thread, not this task's
+            tauri::async_runtime::spawn_blocking(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1200));
+                if GENERATION.load(std::sync::atomic::Ordering::Acquire) == mine {
+                    crate::clip_providers::refresh_share_roots(&app, &runtime)
+                }
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

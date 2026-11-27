@@ -9,7 +9,7 @@
 // measured with every shot so a before/after pair can be cropped to the
 // photo alone.
 import { click, reveal, inspect, rangeSelector, openTool } from '../support/controls.mjs';
-import { panel, textButton, openMaskGroup, choose } from '../support/scenario.mjs';
+import { resetAll, panel, textButton, openMaskGroup, choose } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { hideInfo as hideInfoKeys, pathFree } from '../support/privacy.mjs';
@@ -171,14 +171,9 @@ export async function siteShots(t) {
       await pause(400);
       await click(t, `${pop} .fe-stars button[aria-label="3 stars and up"]`);
       await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-pop .fr-row.on').length) >= 1, 'rating row on');
-      const type = await until(() => t.driver.observe(() => {
-        const e = [...document.querySelectorAll('.find-pop .fr-row')].find(c => c.querySelector('.fr-title')?.textContent === 'File type');
-        if (!e) return null;
-        e.scrollIntoView({ block: 'nearest' });
-        const r = e.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      }), 'File type row');
-      await t.driver.point(type.x, type.y);
+      const type = `${pop} #find-row-kinds`;
+      await until(() => present(type), 'File type row');
+      await click(t, type);
       await until(() => t.driver.observe(() => document.querySelector('.find-pop .fr-row[aria-expanded="true"] .fr-title')?.textContent === 'File type'), 'File type editor');
       await click(t, `${pop} .fr-editor .filter-ticks button`);
       await until(async () => await t.driver.observe(() => document.querySelectorAll('.find-pop .fr-row.on').length) >= 2, 'file type row on');
@@ -246,7 +241,7 @@ export async function siteShots(t) {
   // every edit). After: Basic moves and the Kodachrome 64 look.
   await attempt(t, 'basic', async () => {
     const opened = await settledPhoto(t);
-    await click(t, 'button[aria-label="reset all"]');
+    await resetAll(t);
     try { await settledPhoto(t, q => q.hash !== opened.hash); } catch {}
     await panel(t, 'basic');
     // the New Photos profile outlives Reset all: Unmodified Primaries is the least processed

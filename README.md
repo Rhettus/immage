@@ -26,13 +26,16 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Grade colors with live wheel previews and one undo step per drag.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
+  Hover over range controls to preview the mask on the photo.
   In Advanced mode, apply built-in presets, import darktable `.dtpreset`
-  files, and save or delete your own module presets, including within masks.
+  files, save or delete your own module presets, including within masks, and
+  change the order a photo's modules run in.
   Copied AI masks are recalculated for each destination photo.
-- Heal and clone, [simulate film stocks and papers](app/docs/film-simulation.md)
+- [Heal, clone, fill and blur with multi-spot editing and area color sampling](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
   and working color profiles, and merge HDR photos or panoramas.
-- Apply presets and film looks, compare edits, and copy settings across photos.
+- Apply presets and film looks, compare edits, and copy settings across photos,
+  including RAW tone mappers and optional automatic white balance for each destination.
 - Use Immage in English or French.
 - Choose from eight built-in interface themes ordered from darkest to lightest,
   or import a custom color theme.
@@ -48,12 +51,20 @@ and Linux. **All builds are alpha; bugs are expected.**
   visibility separately from the editing panel.
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
+- [Reset edits](app/docs/history-and-sync.md#reset-all) from Adjustments or the Library grid, with a confirmation you can turn off.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.
 - Browse indexed photos on mapped network shares with experimental
   [Immage Accelerator](app/docs/immage-accelerator.md) support, including camera thumbnails up
   to 400 × 400 pixels for unedited originals, optional NAS Smart Search, and NAS progress in
   Preferences → Immage Accelerator (Experimental).
-- Export to a folder or an Immich album, with borders and file-name templates.
+- [Export](app/docs/export.md) to a folder or an Immich album, with custom
+  dimensions, borders and file-name templates.
+- Use [Edit In](app/docs/edit-in.md#open-photos-as-layers-in-photocraft) to open
+  edited photos as full-size 16-bit ProPhoto RGB layers in PhotoCraft.
+  Continue editing the composite of a layered TIFF in Immage.
+- On Windows and macOS, [stack a focus bracket in Helicon Focus](app/docs/edit-in.md#stack-a-focus-bracket-in-helicon-focus)
+  with your choice of rendering settings, or use Auto DNG to stack RAWs in the background.
+  Edit the resulting TIFF or DNG in Immage.
 - Print a photo, or a contact sheet of many with their file names, or save a
   PDF, with your printer's ICC profile, and [soft proof](app/docs/print.md) the
   photo on screen first.

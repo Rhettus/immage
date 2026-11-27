@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-use crate::{analysis_queue, clip_models, search_cache, search_reconcile, settings, AppState};
+use crate::{
+    analysis_queue, clip_models, clip_providers, search_cache, search_reconcile, settings, AppState,
+};
 use tauri::{AppHandle, Manager, State};
 pub const PAUSED: &str = "immage.analysisPaused";
 #[derive(serde::Serialize, specta::Type)]
@@ -12,17 +14,33 @@ pub struct SearchStatus {
     /// The CLIP package is on disk (checked off the event loop): photo-content
     /// search works without the Preferences check, which only sets `model.verified`.
     pub model_installed: bool,
+    /// Whether morfPhoto CLIP or Immich Smart Search is actively serving CLIP
+    /// for at least one mapped folder.
+    pub remote_clip: bool,
+    /// Effective CLIP provider (`morfPhoto`, `immich`, or `local`) per library
+    /// root, using the cached probe state so this command never blocks on
+    /// network timeouts.
+    pub clip_providers: Vec<clip_providers::RootClipProvider>,
 }
 #[tauri::command]
 #[specta::specta]
-pub async fn search_status(state: State<'_, AppState>) -> Result<SearchStatus, String> {
+pub async fn search_status(app: AppHandle, state: State<'_, AppState>) -> Result<SearchStatus, String> {
     let cache = state.search_cache.clone();
     let queue = state.analysis_queue.status();
     let model = state.clip_models.status();
     let models = state.clip_models.clone();
+    let providers = state.clip_providers.clone();
+    let runtime = state.runtime.clone();
+    if !providers.is_primed() {
+        providers.trigger_background_refresh(app.clone(), runtime.clone());
+    }
     tauri::async_runtime::spawn_blocking(move || {
+        let active = providers.cached();
+        let root_providers = clip_providers::root_providers(&runtime, &active);
         Ok(SearchStatus {
             model_installed: models.installed(),
+            remote_clip: active.any_remote(),
+            clip_providers: root_providers,
             counts: cache.as_ref().map(|c| c.counts()).transpose()?,
             roots: cache
                 .as_ref()

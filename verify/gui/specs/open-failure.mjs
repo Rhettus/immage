@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
+import { extname } from 'node:path';
 import { reveal } from '../support/controls.mjs';
 import { panel, Blocked } from '../support/scenario.mjs';
 import { until } from '../support/webdriver.mjs';
@@ -13,17 +14,28 @@ const noImage = () => document.body.innerText.toLowerCase().includes('no image o
 
 // Open a photo from the filmstrip: two clicks open it whether the preference is
 // single or double click.
-async function openByName(t, prefix) {
-  const cell = await until(() => t.driver.observe(p => {
-    const e = [...document.querySelectorAll('.filmstrip .thumb[data-imgid]')].find(c => c.title.startsWith(p));
-    // inside the window is not enough: the strip clips a cell at its edge
-    e?.scrollIntoView({ block: 'nearest', inline: 'center' });
-    const r = e?.getBoundingClientRect();
-    return r && r.width && r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight
-      ? { x: r.x + r.width / 2, y: r.y + r.height / 2, title: e.title } : null;
-  }, prefix), `filmstrip thumbnail ${prefix}`);
+async function openByName(t, name) {
+  const selector = `.filmstrip .thumb[data-imgid][title=${JSON.stringify(name)}]`;
+  let fromStart = false;
+  await until(async () => {
+    const strip = await t.driver.observe(s => {
+      if (document.querySelector(s)) return { found: true };
+      const el = document.querySelector('.filmstrip');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, left: el.scrollLeft,
+        end: el.scrollWidth - el.clientWidth };
+    }, selector);
+    if (strip?.found) return true;
+    if (!strip) return false;
+    if (strip.left <= 1) fromStart = true;
+    const delta = fromStart ? (strip.left < strip.end - 1 ? 300 : 0) : -300;
+    if (delta) await t.driver.wheel(strip.x, strip.y, 0, delta);
+    return false;
+  }, `filmstrip thumbnail ${name}`);
+  const cell = await reveal(t, selector);
   await t.driver.point(cell.x, cell.y, 2);
-  return cell.title;
+  return name;
 }
 
 async function moveExposureToMax(t) {
@@ -35,13 +47,9 @@ async function moveExposureToMax(t) {
 }
 
 export async function openFailureRecovery(t) {
-  await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 4),
-    'the good photos and the truncated file are listed', 120000);
-  const names = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip .thumb[data-imgid]')].map(c => c.title));
-  const bad = names.find(n => n.startsWith('open-bad'));
-  assert(bad, `the truncated file is listed (${names})`);
-  const goodA = names.find(n => !n.startsWith('open-'));
-  assert(goodA, 'the startup photo is listed');
+  const goodA = t.fixture.file;
+  const ext = extname(goodA);
+  const bad = `open-bad${ext}`;
 
   // A: open and edit
   await openByName(t, goodA);
@@ -51,7 +59,7 @@ export async function openFailureRecovery(t) {
   await t.evidence('open-failure-a-edited');
 
   // the truncated file
-  await openByName(t, 'open-bad');
+  await openByName(t, bad);
   const failed = await until(() => t.driver.observe(statusText).then(s => /could not (open|load)/i.test(s) && s), 'open failure status', 30000).catch(async e => {
     if (await t.driver.observe(() => !!document.querySelector('canvas.layer.sharp:not(.empty)')) && await t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, bad))
       throw new Blocked('the truncated file opened; the fixture is not truncated enough for this engine');
@@ -63,7 +71,7 @@ export async function openFailureRecovery(t) {
   await t.evidence('open-failure-status');
 
   // B: a good photo opens and takes an edit
-  const goodB = await openByName(t, 'open-b');
+  const goodB = await openByName(t, `open-b${ext}`);
   await until(() => t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, goodB), 'photo B is active');
   const before = await settledPhoto(t);
   assert(!await t.driver.observe(noImage), 'no "no image open" after opening B');
@@ -78,7 +86,7 @@ export async function openFailureRecovery(t) {
 
   // two quick opens: only the last stays open
   const fromA = await openByName(t, goodA);
-  const last = await openByName(t, 'open-c');
+  const last = await openByName(t, `open-c${ext}`);
   assert.notEqual(fromA, last, 'two different photos were opened');
   await until(() => t.driver.observe(a => document.querySelector('.filmstrip .thumb.active')?.title === a, last), 'only the last opened photo is active');
   await settledPhoto(t);

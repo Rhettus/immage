@@ -13,7 +13,8 @@ export type ActionId =
   | "import" | "add-folder" | "export" | "print" | "quit"
   | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
   | "copy-settings" | "paste-settings" | "paste-previous" | "preferences"
-  | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "hdr-merge" | "pano-merge"
+  | "virtual-copy" | "start-over" | "rotate-left" | "rotate-right" | "move-to-folder" | "copy-to-folder"
+  | "hdr-merge" | "pano-merge"
   | "crop" | "heal" | "wb-picker"
   | "rate-0" | "rate-1" | "rate-2" | "rate-3" | "rate-4" | "rate-5"
   | "label-red" | "label-yellow" | "label-green" | "label-blue" | "reject"
@@ -35,7 +36,8 @@ export const ACTION_IDS: readonly ActionId[] = [
   "import", "add-folder", "export", "print", "quit",
   "undo", "redo", "cut", "copy", "paste", "select-all",
   "copy-settings", "paste-settings", "paste-previous", "preferences",
-  "virtual-copy", "start-over", "rotate-left", "rotate-right", "hdr-merge", "pano-merge",
+  "virtual-copy", "start-over", "rotate-left", "rotate-right", "move-to-folder", "copy-to-folder",
+  "hdr-merge", "pano-merge",
   "crop", "heal", "wb-picker",
   "rate-0", "rate-1", "rate-2", "rate-3", "rate-4", "rate-5",
   "label-red", "label-yellow", "label-green", "label-blue", "reject",
@@ -88,6 +90,8 @@ export const MENUS: Menu[] = [
       item("start-over", t("menu.start-over")),
       item("rotate-left", t("menu.rotate-left"), "⌘["),
       item("rotate-right", t("menu.rotate-right"), "⌘]"), sep(),
+      item("move-to-folder", t("menu.move-to-folder")),
+      item("copy-to-folder", t("menu.copy-to-folder")), sep(),
       item("hdr-merge", t("menu.hdr-merge"), "⌃H"),
       item("pano-merge", t("menu.pano-merge"), "⌃M"), sep(),
       item("crop", t("menu.crop"), "R"),

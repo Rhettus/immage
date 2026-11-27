@@ -394,9 +394,10 @@ node --input-type=module -e 'import { availableMemory } from "./verify/gui/suppo
 
 List cases without starting an app with `node verify/gui/run.mjs --list`.
 Suites are `smoke`, `controls`, `regressions`, `crop`, `workflows`, `search`, `find`, and `inventory`.
-`--suite all` selects every declaration, but mixes incompatible prerequisites;
-it excludes the standalone `startup-restore` and `dng-thumbnail` cases and is
-not a turnkey full-coverage run. Prefer one case and its required fixture:
+`--suite all` selects most declarations, including cases with incompatible
+prerequisites. Run `startup-restore`, `dng-thumbnail`,
+`edited-culling-preview`, and `morfphoto-mirror` separately. Group the
+remaining cases by compatible fixtures and profile setup.
 
 ```sh
 # GUI commands: obtain fresh approval for each command first.
@@ -472,9 +473,11 @@ two targets and one unselected control. The case applies Kodak Gold 200 at 35%,
 copies Tone and Look through Copy Settings, selects two targets with a guarded
 modifier click, and exercises Paste, whole-batch Undo and Redo. It checks the
 selection/active photo, Exposure, look/amount, rendered pixels and both saved
-sidecars, then reopens the second target and the unselected photo. Inspection
-is read-only and limited to the app and this run's fixture sidecars. No system
-clipboard or native dialog is used. This case is written, not live-validated.
+sidecars, then reopens the second target and the unselected photo. It also
+enables Auto on Paste, checks that both destinations save an edit,
+and verifies that Undo restores the previous render and sidecar edits.
+Inspection is read-only and limited to the app and this run's fixture sidecars.
+The case uses only controls in the Immage webview.
 
 ## Moving photos by drag
 
@@ -495,6 +498,46 @@ following:
 confirmation (identical and clashing photos), uses Keep both for all, and
 checks the numbered copy. Everything stays inside the run's fixture folder.
 The confirmation is drawn by the app, so no native dialog is involved.
+
+### Move options
+
+Three further cases cover the confirmation's newer options. They passed live
+on Linux on 2026-11-24 (`move-companions,move-subfolders` in one launch,
+`move-menu-items` alone). They need no `--fixture`; the runner builds its own
+files beside the fixture:
+
+- `move-companions` copies a RAW from `benchmarking/corpus/` (three `pair-*`
+  copies, each with a same-named JPEG from `app/sample/`), seeds
+  `immage.stackPairs` in the isolated profile's `settings.json` and sets the
+  File type filter to All RAW through Find. The confirmation's "Include the
+  stacked JPEG, HEIF or ORI file" box must be unticked and only the raw and its
+  sidecar arrive; ticking it plans again and both arrive; without the filter it
+  is ticked. The case is blocked when the corpus has no RAW.
+- `move-subfolders` drops a JPEG with an injected Exif capture date (2021-03-14)
+  with Alt held, ticks "Sort into subfolders", checks the default pattern,
+  hint and "Into 1 folder: 2021/03/14" example, types a pattern (Confirm should
+  be disabled during the 400 ms debounce; a miss is recorded, not failed), then
+  copies and checks the file and rated sidecar in `sort-dest/2021/03/14`.
+- `move-menu-items` checks that Move to Folder... and Copy to Folder... are in
+  the photo right-click menu and the Photo menu. It never clicks them: they
+  open a native folder picker, outside the app-only boundary, so the picker
+  flow stays a manual check. Run it after the drag cases or in its own launch.
+
+## Export subfolders
+
+`--case export-subfolders` passed live on Linux on 2026-11-24 and needs no `--fixture`. The runner copies two JPEGs
+with injected Exif capture dates (2021-03-14 and 2022-11-05) beside the default
+fixture, which has no capture date, and seeds the export destination
+(`export-dest/` in the run's fixture folder) into the isolated profile's saved
+export settings with "If a file exists" set to a unique name, so the native
+folder chooser is never operated. The case opens Export, ticks "Inside a new
+folder", types `{year}/{month}/{day}`, checks the "First photo" example, exports
+every shown photo and checks on disk that the dated photos are in
+`YYYY/MM/DD/` folders (the fixture, which has no Exif date, gets the file's own
+date from the library) with no date folder outside the destination. It then
+exports with `{year}/{camera}/{month}`, where no photo has a camera model, and
+checks that the empty part is dropped, and finally with the plain name `Export`,
+checking that every photo lands in `export-dest/Export/`.
 
 ## Renaming photos in the Library grid
 
@@ -524,6 +567,42 @@ the system WebKit driver. `library-workers` checks the 2-worker default, saves
 6→2→6, then the following move-copy case passes with six workers selected.
 The headless DNG verifier covers all EXIF orientations and edited-photo
 behavior; the GUI DNG case verifies the visible fallback thumbnail only.
+
+`edited-culling-preview` checks the render-ahead of an edited RAW's culling
+preview. The feature is RAW-only, so the runner ignores the configured fixture
+and copies a RAW from the local `benchmarking/corpus/` (`P6060404.ORF`, else any
+ORF/ARW/CR2/RW2; the case is blocked when there is none) as `ecp-a`, `ecp-b` and `ecp-c`,
+launching with `ecp-a`. The case opens culling once (which stores the preview
+size), edits `ecp-a`'s Exposure in the editor, moves to `ecp-b`, and polls this
+run's `cache/app.immage/thumbs` folder, read from the Node runner, for a new
+`edit-` file (up to 30 s). It then culls `ecp-a` from the grid and requires a
+non-blank preview within 3 s and no further `edit-` file. Last it edits `ecp-b`,
+presses G before the autosave (the photo stays open behind the grid), and
+requires `ecp-b`'s `edit-` file and the same quick cull. Then it moves
+`ecp-a`'s Exposure to -1, copies its Tone settings and pastes them onto `ecp-b`
+and `ecp-c` (unedited). It requires both grid thumbnails to darken, new `edit-`
+files for both (up to 60 s), then, back in the grid, a new `edit-` file for the
+open `ecp-a` (the paste saved it too), and quick culls with no further `edit-` file, with
+`ecp-b`'s culling preview darker than before the paste. Timings are recorded.
+It runs alone, after startup, and is left out of `all`:
+`node verify/gui/run.mjs --config verify/gui/local.json --case edited-culling-preview`.
+
+`morfphoto-mirror` checks the local copy of the morfPhoto catalog against an
+in-process fake server (loopback, bearer key `gui-mirror-key`, every request
+logged). It needs `/mnt/mac` to be a 9p mount (the host share stands in for the
+network share) and otherwise reports Blocked. The runner makes
+`/mnt/mac/.immage-gui-test-<run id>/photos/` (three copies of the fixture at the
+root, two in `2024/`) and a plain local twin beside the run's fixtures, seeds
+both as library folders, and removes that whole scratch tree afterwards, on
+failure and on signals (only a path under that prefix is ever removed). It also
+starts its own `dbus-daemon --session` on a socket in a private temp folder and
+`gnome-keyring-daemon --foreground --components=secrets --unlock` (empty password
+on stdin) as its own children, and hands the app only that
+`DBUS_SESSION_BUS_ADDRESS`, so saving the API key never reaches the user's
+keyring; either daemon failing to start makes the case Blocked. The case waits
+for the 60 s sync tick twice, so allow about five minutes. It runs alone, after
+startup, and is left out of `all`:
+`node verify/gui/run.mjs --config verify/gui/local.json --case morfphoto-mirror`.
 
 For a floating Hyprland test window, maximize each newly opened ws9 app window
 only when its client is not already maximized. The maximize dispatch is a
@@ -646,7 +725,8 @@ the workspace and memory preparation above.
 ## AgX preset import
 
 `node verify/gui/run.mjs --config verify/gui/local.json --case agx-presets`
-runs the visible Profile > Load AgX Preset workflow on the copied photo. Before
+runs the visible Profile > Load AgX Preset workflow. Set the config fixture
+to a RAW photo before running this case. Before
 launch, `support/agx-fixture.py` generates an AgX v8 user preset and two rows
 that must be excluded (a builtin and a different module) in the run's isolated
 darktable `data.db`. It never reads or changes the user's darktable database.

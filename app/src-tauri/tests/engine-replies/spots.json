@@ -47,5 +47,88 @@
     }
    ]
   }
+ },
+ {
+  "label": "3 open / spots set with fill and blur",
+  "reply": {
+   "enabled": true,
+   "fill": {
+    "blend": "chromaticity",
+    "opacity": 100.0,
+    "ranges": []
+   },
+   "ms": 0.0,
+   "ok": true,
+   "spots": [
+    {
+     "feather": 0.5,
+     "mode": "heal",
+     "opacity": 1.0,
+     "r": 0.10000002384185791,
+     "sx": 0.30000001192092896,
+     "sy": 0.30000001192092896,
+     "type": "circle",
+     "x": 0.5,
+     "y": 0.5
+    },
+    {
+     "feather": 0.5,
+     "fill_brightness": 0.10000000149011612,
+     "fill_color": [
+      0.5,
+      0.30000001192092896,
+      0.20000000298023224
+     ],
+     "fill_mode": 1,
+     "mode": "fill",
+     "opacity": 1.0,
+     "r": 0.09999999403953552,
+     "type": "circle",
+     "x": 0.4000000059604645,
+     "y": 0.4000000059604645
+    },
+    {
+     "blur_radius": 12.5,
+     "blur_type": 1,
+     "feather": 0.5,
+     "mode": "blur",
+     "opacity": 1.0,
+     "points": [
+      [
+       0.20000000298023224,
+       0.20000000298023224
+      ],
+      [
+       0.4000000059604645,
+       0.30000001192092896
+      ]
+     ],
+     "size": 0.050000011920928955,
+     "type": "brush"
+    }
+   ]
+  }
+ },
+ {
+  "label": "3 open / spots clear with fill",
+  "reply": {
+   "enabled": false,
+   "fill": {
+    "blend": "normal",
+    "opacity": 49.0,
+    "ranges": [
+     {
+      "chroma": 0.0020000000949949026,
+      "feather": 0.04999999701976776,
+      "hue": 0.050000011920928955,
+      "type": "color",
+      "width": 0.1000000387430191
+     }
+    ]
+   },
+   "ms": 0.0,
+   "ok": true,
+   "spots": []
+  }
  }
 ]

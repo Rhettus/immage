@@ -67,6 +67,25 @@ unblocked:
 python3 -I verify/import-stall.py
 ```
 
+The exiv2 lock check (Linux, headless, no GUI) slows reads of a 480 MB TIFF
+whose directory follows its pixels (`verify/slowread.c`, LD_PRELOAD) and
+checks a small TIFF's thumbnail does not wait for that file's whole-file
+metadata read:
+
+```bash
+python3 -I verify/exiv2-lock.py
+```
+
+The merge preview check (headless, no GUI) merges a panorama of the sample
+JPEG and, given a camera RAW, a panorama and an HDR merge of copies of it.
+Each DNG must carry its JPEG preview in IFD1 within the first 16 MB, with no
+EXIF of its own, and the preview, turned by the DNG's orientation, must match
+darktable's render of the merge. Use a portrait RAW to check the turn:
+
+```bash
+python3 -I verify/merge-preview.py --raw benchmarking/corpus/P9302114.ORF
+```
+
 The 0.46.0 engine check (headless, no GUI) starts the engine with the app's
 `--thumb-threads` and `--configdir` arguments and checks the config folder is
 the one asked for, checks the `thumb_threads` range, and runs History's start
@@ -205,13 +224,15 @@ Without `--load` it is the original import check. Prefetch has no completion
 reply, so its decode time is read from the engine's CPU use (Linux and macOS).
 
 The focused batch-paste regression check drives production Session and settings
-code through the real engine, with isolated photos and sidecars:
+code through the real engine, with isolated photos and sidecars. The Profile
+case uses Python 3 and ImageMagick (`magick`) to generate a RAW fixture:
 
 ```bash
 node --test --test-isolation=none verify/batch-paste.test.mjs
 ```
 
-It checks exact selection, untouched groups, look/strength, native history
+It checks exact selection, untouched groups, custom AgX profiles and tone
+mapper switching, look/strength, native history
 undo/redo, virtual copies, mask/crop preservation, restart persistence, stale
 undo and sidecar failure recovery. The separate visible-app `batch-paste` case
 is registered in `verify/gui/`; it requires an approved GUI run.

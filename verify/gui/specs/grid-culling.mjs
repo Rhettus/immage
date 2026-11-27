@@ -510,7 +510,7 @@ const PRIORITY_LIMIT_MS = 8000;
 // The lightbox is drawn when its canvas has pixels and the status line has
 // stopped saying "Loading preview…" (GridCulling's busy flag), on the photo
 // named in the title row.
-const lightboxDrawn = (expectName) => {
+export const lightboxDrawn = (expectName) => {
   const root = document.querySelector('.modal-backdrop[aria-label="Culling preview"]');
   const box = root?.querySelector('.culling-lightbox'), canvas = root?.querySelector('canvas');
   if (!box || !canvas?.width) return null;
@@ -524,11 +524,20 @@ const lightboxDrawn = (expectName) => {
 // A lightbox opened while the grid's thumbnails are still loading must not
 // wait behind them: time open (or step) to the full preview drawn.
 export async function gridCullingPriority(t) {
-  await until(() => t.driver.observe(n => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= n, priorityFixtures.length),
-    'the copies are listed', 120000);
   // G toggles: grid-culling-controls can leave the grid open
   if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
-  await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
+  // The filmstrip and grid virtualize cells. Wait for enough visible copies
+  // to drive the preview instead of waiting for every fixture to be mounted.
+  const cells = await until(() => t.driver.observe(() => {
+    const root = document.querySelector('.filmstrip.grid');
+    if (!root) return false;
+    const grid = root.getBoundingClientRect();
+    const visible = [...root.querySelectorAll('.thumb[data-imgid][title^="prio-"]')].map(c => {
+      const r = c.getBoundingClientRect();
+      return { title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }).filter(c => c.y > grid.top && c.y < grid.bottom && c.x > grid.left && c.x < grid.right);
+    return visible.length >= 4 && visible;
+  }), 'four copied photos visible in the grid', 30000);
   const pending = await t.driver.observe(() => {
     const cells = [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')];
     const loaded = cells.filter(c => [...c.querySelectorAll('img')].some(i => i.complete && i.naturalWidth > 0)
@@ -547,11 +556,6 @@ export async function gridCullingPriority(t) {
     assert(ms <= PRIORITY_LIMIT_MS, `${label}: full preview drawn in ${ms} ms, limit ${PRIORITY_LIMIT_MS} ms`);
     return drawn;
   };
-  // the grid scrolls to the open photo, the last one, so take the cells on screen rather than the first ones
-  const cells = await t.driver.observe(() => [...document.querySelectorAll('.filmstrip.grid .thumb[data-imgid]')].map(c => {
-    const r = c.getBoundingClientRect(); return { title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }).filter(c => c.y > 0 && c.y < innerHeight && c.x > 0 && c.x < innerWidth).slice(0, 12));
-  assert(cells.length >= 4, 'visible grid cells to open on');
   await t.driver.move(cells[2].x, cells[2].y);
   const first = await timeDrawn('open with F', () => t.driver.keys('f'), cells[2].title);
   await t.evidence('culling-priority-open');

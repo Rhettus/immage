@@ -3,7 +3,7 @@
 
 use serde_json::{json, Number, Value};
 use std::path::Path;
-use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsReply, UprightReply};
+use crate::typed_edit::{AgxPresetsReply, AgxProfile, CombineMember, FilmFetch, FilmStocks, Instance, InstanceReply, InstancesReply, LensMenu, OrderEntry, OrderInfoReply, OrderReply, ModuleSchema, WbPresets, LutFiles, Watermarks, ColormappingClusters, CheckerReply, LookReply, MapView, MaskInfo, MasksReply, NewSpot, PresetsReply, Spot, SpotSource, SpotsFillReply, SpotsReply, FillSettings, UprightReply};
 use crate::typed_export::LookInfo;
 use tauri::{ipc::Response, AppHandle, State};
 use crate::AppState;
@@ -17,8 +17,7 @@ use crate::export_cmds::pick_files;
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn mask_shapes(state: State<'_, AppState>, name: String, shapes: Vec<Value>) -> Result<(), String> {
-    state.engine("mask_shapes")
-        .request(json!({ "cmd": "mask", "name": name, "shapes": shapes })).map(|_| ())
+    state.request("mask_shapes", json!({ "cmd": "mask", "name": name, "shapes": shapes })).map(|_| ())
 }
 
 // replace a combined mask's members ([{ mask, opacity 0-1, invert }]) and
@@ -28,8 +27,7 @@ pub(crate) async fn mask_shapes(state: State<'_, AppState>, name: String, shapes
 #[specta::specta]
 pub(crate) async fn combine(state: State<'_, AppState>, name: String, members: Vec<CombineMember>, ranges: Option<Vec<Value>>)
     -> Result<(), String> {
-    state.engine("combine")
-        .request(json!({ "cmd": "combine", "name": name, "members": members, "ranges": ranges })).map(|_| ())
+    state.request("combine", json!({ "cmd": "combine", "name": name, "members": members, "ranges": ranges })).map(|_| ())
 }
 
 // the open image's masks, with these fields ({ op: [field] }) of their
@@ -37,7 +35,7 @@ pub(crate) async fn combine(state: State<'_, AppState>, name: String, members: V
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::BTreeMap<String, Vec<String>>) -> Result<Vec<MaskInfo>, String> {
-    let reply = state.engine("masks").request(json!({ "cmd": "masks", "fields": fields }))?;
+    let reply = state.request("masks", json!({ "cmd": "masks", "fields": fields }))?;
     serde_json::from_value::<MasksReply>(reply).map(|r| r.masks).map_err(|e| format!("masks: unexpected reply: {e}"))
 }
 
@@ -46,7 +44,7 @@ pub(crate) async fn masks(state: State<'_, AppState>, fields: std::collections::
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn wb_presets(state: State<'_, AppState>) -> Result<WbPresets, String> {
-    let reply = state.engine("wb_presets").request(json!({ "cmd": "wb_presets" }))?;
+    let reply = state.request("wb_presets", json!({ "cmd": "wb_presets" }))?;
     serde_json::from_value(reply).map_err(|e| format!("wb_presets: unexpected reply: {e}"))
 }
 
@@ -72,7 +70,7 @@ pub(crate) async fn lut_files(app: AppHandle, state: State<'_, AppState>, settin
         };
         req["pick"] = json!(file.to_string_lossy());
     }
-    let reply = state.engine("lut_files").request(req)?;
+    let reply = state.request("lut_files", req)?;
     serde_json::from_value(reply).map(Some).map_err(|e| format!("lut_files: unexpected reply: {e}"))
 }
 
@@ -82,7 +80,7 @@ pub(crate) async fn lut_files(app: AppHandle, state: State<'_, AppState>, settin
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn lut_folder(state: State<'_, AppState>, folder: String) -> Result<(), String> {
-    state.engine("lut_folder").request(json!({ "cmd": "lut_folder", "folder": folder.trim() })).map(|_| ())
+    state.request("lut_folder", json!({ "cmd": "lut_folder", "folder": folder.trim() })).map(|_| ())
 }
 
 // the markers the Watermark card offers (the engine's `watermarks`), which a
@@ -90,7 +88,7 @@ pub(crate) async fn lut_folder(state: State<'_, AppState>, folder: String) -> Re
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn watermarks(state: State<'_, AppState>) -> Result<Watermarks, String> {
-    let reply = state.engine("watermarks").request(json!({ "cmd": "watermarks" }))?;
+    let reply = state.request("watermarks", json!({ "cmd": "watermarks" }))?;
     serde_json::from_value(reply).map_err(|e| format!("watermarks: unexpected reply: {e}"))
 }
 
@@ -99,7 +97,7 @@ pub(crate) async fn watermarks(state: State<'_, AppState>) -> Result<Watermarks,
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn lenses(state: State<'_, AppState>) -> Result<LensMenu, String> {
-    let reply = state.engine("lenses").request(json!({ "cmd": "lenses" }))?;
+    let reply = state.request("lenses", json!({ "cmd": "lenses" }))?;
     serde_json::from_value(reply).map_err(|e| format!("lenses: unexpected reply: {e}"))
 }
 
@@ -109,7 +107,7 @@ pub(crate) async fn lenses(state: State<'_, AppState>) -> Result<LensMenu, Strin
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn module_schema(state: State<'_, AppState>, op: String) -> Result<ModuleSchema, String> {
-    let reply = state.engine("module_schema").request(json!({ "cmd": "module_schema", "op": op }))?;
+    let reply = state.request("module_schema", json!({ "cmd": "module_schema", "op": op }))?;
     serde_json::from_value(reply).map_err(|e| format!("module_schema: unexpected reply: {e}"))
 }
 
@@ -118,7 +116,7 @@ pub(crate) async fn module_schema(state: State<'_, AppState>, op: String) -> Res
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn instances(state: State<'_, AppState>) -> Result<Vec<Instance>, String> {
-    let reply = state.engine("instances").request(json!({ "cmd": "instances" }))?;
+    let reply = state.request("instances", json!({ "cmd": "instances" }))?;
     serde_json::from_value::<InstancesReply>(reply).map(|r| r.instances).map_err(|e| format!("instances: unexpected reply: {e}"))
 }
 
@@ -137,8 +135,30 @@ pub(crate) async fn instance(state: State<'_, AppState>, action: String, op: Str
     if let Some(o) = other { req["other"] = json!(o); }
     if let Some(a) = after { req["after"] = json!(a); }
     if let Some(m) = mask { req["mask"] = json!(m); }
-    let reply = state.engine("instance").request(req)?;
+    let reply = state.request("instance", req)?;
     serde_json::from_value(reply).map_err(|e| format!("instance: unexpected reply: {e}"))
+}
+
+// the open photo's pipe order and what each module may move to, for Advanced
+// mode's order tools
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn order_info(state: State<'_, AppState>) -> Result<OrderInfoReply, String> {
+    let reply = state.request("order_info", json!({ "cmd": "order_info" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("order_info: unexpected reply: {e}"))
+}
+
+// moves instances to the given priorities (`modules`), or restores the default
+// order (`reset`); the reply is the pipe order after the change
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn order_set(state: State<'_, AppState>, modules: Option<Vec<OrderEntry>>, reset: Option<bool>)
+    -> Result<OrderReply, String> {
+    let mut req = json!({ "cmd": "order" });
+    if let Some(m) = modules { req["modules"] = json!(m); }
+    if reset == Some(true) { req["reset"] = json!(true); }
+    let reply = state.request("order", req)?;
+    serde_json::from_value(reply).map_err(|e| format!("order: unexpected reply: {e}"))
 }
 
 // the presets darktable's own menu lists for an instance of a module in the
@@ -153,7 +173,7 @@ pub(crate) async fn presets(state: State<'_, AppState>, op: String, priority: i6
     if let Some(name) = name { req["name"] = json!(name); }
     if let Some(version) = version { req["version"] = json!(version); }
     if let Some(imgid) = imgid { req["imgid"] = json!(imgid); }
-    let reply = state.engine("presets").request(req)?;
+    let reply = state.request("presets", req)?;
     serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
 }
 
@@ -165,7 +185,7 @@ pub(crate) async fn module_preset_import(state: State<'_, AppState>, op: String,
     if xml.len() > 1024 * 1024 || xml.contains('\0') {
         return Err("invalid or oversized darktable preset".into());
     }
-    let reply = state.engine("presets").request(json!({
+    let reply = state.request("presets", json!({
         "cmd": "presets", "op": op, "priority": priority, "imgid": imgid, "action": "import", "xml": xml,
     }))?;
     serde_json::from_value(reply).map_err(|e| format!("presets: unexpected reply: {e}"))
@@ -182,7 +202,7 @@ pub(crate) async fn upright(state: State<'_, AppState>, mode: String, guides: Op
     if let Some(g) = guides {
         req["guides"] = json!(g);
     }
-    let reply = state.engine("upright").request(req)?;
+    let reply = state.request("upright", req)?;
     serde_json::from_value(reply).map_err(|e| format!("upright: unexpected reply: {e}"))
 }
 
@@ -194,7 +214,7 @@ pub(crate) async fn checker_analyze(
     state: State<'_, AppState>, chart: Number, priority: Number, optimization: Number,
     scale: Number, box_points: Option<Vec<Number>>, validate: bool, imgid: Option<i64>,
 ) -> Result<CheckerReply, String> {
-    let reply = state.engine("checker_analyze").request(json!({
+    let reply = state.request("checker_analyze", json!({
         "cmd": "checker_analyze", "chart": chart, "priority": priority,
         "optimization": optimization, "scale": scale, "layout": box_points.is_none(),
         "box": box_points, "validate": validate, "imgid": imgid,
@@ -210,8 +230,7 @@ pub(crate) async fn checker_analyze(
 #[specta::specta]
 pub(crate) async fn colormapping_acquire(state: State<'_, AppState>, which: String, n: Number)
     -> Result<ColormappingClusters, String> {
-    let reply = state.engine("colormapping_acquire")
-        .request(json!({ "cmd": "colormapping_acquire", "which": which, "n": n }))?;
+    let reply = state.request("colormapping_acquire", json!({ "cmd": "colormapping_acquire", "which": which, "n": n }))?;
     serde_json::from_value(reply).map_err(|e| format!("colormapping_acquire: unexpected reply: {e}"))
 }
 
@@ -219,9 +238,10 @@ pub(crate) async fn colormapping_acquire(state: State<'_, AppState>, which: Stri
 // image: u32 width and height, then one byte per point
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn range_map(state: State<'_, AppState>, ranges: Vec<Value>, width: u32, height: u32) -> Result<bindings::Frame, String> {
+pub(crate) async fn range_map(state: State<'_, AppState>, ranges: Vec<Value>, width: u32, height: u32, retouch_input: Option<bool>) -> Result<bindings::Frame, String> {
     let mut engine = state.engine("range_map");
     engine.request(json!({ "cmd": "range_map", "ranges": ranges, "width": width, "height": height,
+                           "retouchInput": retouch_input.unwrap_or(false),
                            "out": state.range_path }))?;
     // read while the engine is still ours, so no other request overwrites it
     let map = frame_output::FrameOutput::read(&state.range_path).map_err(|e| format!("range map: {e}"))?;
@@ -294,7 +314,7 @@ pub(crate) async fn mask_map(state: State<'_, AppState>, name: Option<String>, o
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn spektra_stocks(state: State<'_, AppState>) -> Result<FilmStocks, String> {
-    let reply = state.engine("spektra_stocks").request(json!({ "cmd": "spektra_stocks" }))?;
+    let reply = state.request("spektra_stocks", json!({ "cmd": "spektra_stocks" }))?;
     serde_json::from_value(reply).map_err(|e| format!("spektra_stocks: unexpected reply: {e}"))
 }
 
@@ -303,48 +323,70 @@ pub(crate) async fn spektra_stocks(state: State<'_, AppState>) -> Result<FilmSto
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn spektra_fetch(state: State<'_, AppState>, action: String) -> Result<FilmFetch, String> {
-    let reply = state.engine("spektra_fetch").request(json!({ "cmd": "spektra_fetch", "action": action }))?;
+    let reply = state.request("spektra_fetch", json!({ "cmd": "spektra_fetch", "action": action }))?;
     serde_json::from_value(reply).map_err(|e| format!("spektra_fetch: unexpected reply: {e}"))
 }
 
-// the image's heal and clone spots: replaced by `spots` when given, and
-// replied as the engine keeps them
+// the image's spots (heal and clone, then fill and blur): replaced by
+// `spots` when given, and replied as the engine keeps them, with the settings
+// its fill and blur spots share
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn spots(state: State<'_, AppState>, spots: Option<Vec<Spot>>) -> Result<Vec<Spot>, String> {
+pub(crate) async fn spots(state: State<'_, AppState>, spots: Option<Vec<Spot>>) -> Result<SpotsReply, String> {
     let mut req = json!({ "cmd": "spots" });
     if let Some(s) = spots {
         req["spots"] = json!(s);
     }
-    let reply = state.engine("spots").request(req)?;
-    serde_json::from_value::<SpotsReply>(reply).map(|r| r.spots).map_err(|e| format!("spots: unexpected reply: {e}"))
+    let reply = state.request("spots", req)?;
+    serde_json::from_value::<SpotsReply>(reply).map_err(|e| format!("spots: unexpected reply: {e}"))
+}
+
+// the settings the image's fill and blur spots share, those given: `blend`
+// ("chromaticity" or "normal"), `opacity` (0-100) and `ranges` (the color
+// range it is limited to, as a mask's; empty for none)
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn spots_fill(state: State<'_, AppState>, blend: Option<String>, opacity: Option<serde_json::Number>,
+                               ranges: Option<Vec<Value>>) -> Result<FillSettings, String> {
+    let mut req = json!({ "cmd": "spots_fill" });
+    if let Some(b) = blend {
+        req["blend"] = json!(b);
+    }
+    if let Some(o) = opacity {
+        req["opacity"] = json!(o);
+    }
+    if let Some(r) = ranges {
+        req["ranges"] = json!(r);
+    }
+    let reply = state.request("spots_fill", req)?;
+    serde_json::from_value::<SpotsFillReply>(reply).map(|r| r.fill).map_err(|e| format!("spots_fill: unexpected reply: {e}"))
 }
 
 // the spots off for the Before view, and back on
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn spots_enable(state: State<'_, AppState>, on: bool) -> Result<(), String> {
-    state.engine("spots_enable").request(json!({ "cmd": "spots_enable", "on": on })).map(|_| ())
+    state.request("spots_enable", json!({ "cmd": "spots_enable", "on": on })).map(|_| ())
 }
 
 // where a new spot should copy from: { sx, sy }
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn spot_source(state: State<'_, AppState>, spot: NewSpot) -> Result<SpotSource, String> {
-    let reply = state.engine("spot_source").request(json!({ "cmd": "spot_source", "spot": spot }))?;
+    let reply = state.request("spot_source", json!({ "cmd": "spot_source", "spot": spot }))?;
     serde_json::from_value(reply).map_err(|e| format!("spot_source: unexpected reply: {e}"))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn mask_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    state.engine("mask_delete").request(json!({ "cmd": "mask_delete", "name": name })).map(|_| ())
+    state.request("mask_delete", json!({ "cmd": "mask_delete", "name": name })).map(|_| ())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn mask_rename(state: State<'_, AppState>, name: String, to: String) -> Result<(), String> {
-    state.engine("mask_rename").request(json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
+    state.request("mask_rename", json!({ "cmd": "mask_rename", "name": name, "to": to })).map(|_| ())
 }
 
 // the darktable styles shipped as looks: "<pack> - <group>_<name>.dtstyle",
@@ -437,7 +479,7 @@ pub(crate) fn import_look(state: &AppState, path: &Path) -> Result<String, Strin
         if !dest.exists() { break }
         dest = state.user_looks_dir.join(format!("{stem} ({n}).dtstyle"));
     }
-    state.engine("look_import").request(json!({ "cmd": "style_forget", "name": renamed }))?;
+    state.request("look_import", json!({ "cmd": "style_forget", "name": renamed }))?;
     std::fs::write(&dest, text).map_err(|e| format!("looks: {e}"))?;
     Ok(fresh)
 }
@@ -473,7 +515,7 @@ pub(crate) async fn look_apply(state: State<'_, AppState>, path: Option<String>)
         Some(p) => Some(path_inside(Path::new(&p), &[&state.looks_dir, &state.user_looks_dir])?),
         None => None,
     };
-    let reply = state.engine("look_apply").request(json!({ "cmd": "look", "path": path }))?;
+    let reply = state.request("look_apply", json!({ "cmd": "look", "path": path }))?;
     serde_json::from_value::<LookReply>(reply).map(|r| r.look).map_err(|e| format!("look: unexpected reply: {e}"))
 }
 
@@ -481,7 +523,7 @@ pub(crate) async fn look_apply(state: State<'_, AppState>, path: Option<String>)
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn look_amount(state: State<'_, AppState>, amount: Number) -> Result<(), String> {
-    state.engine("look_amount").request(json!({ "cmd": "look_amount", "amount": amount })).map(|_| ())
+    state.request("look_amount", json!({ "cmd": "look_amount", "amount": amount })).map(|_| ())
 }
 
 // the AgX presets in darktable's own `data.db` in the config folder,
@@ -489,7 +531,7 @@ pub(crate) async fn look_amount(state: State<'_, AppState>, amount: Number) -> R
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn agx_presets(state: State<'_, AppState>, fields: Vec<String>) -> Result<AgxPresetsReply, String> {
-    let reply = state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "fields": fields }))?;
+    let reply = state.request("agx_presets", json!({ "cmd": "agx_presets", "fields": fields }))?;
     serde_json::from_value(reply).map_err(|e| format!("agx_presets: unexpected reply: {e}"))
 }
 
@@ -501,7 +543,7 @@ pub(crate) async fn agx_presets_pick(app: AppHandle, state: State<'_, AppState>,
     -> Result<Option<AgxPresetsReply>, String> {
     let picked = pick_files(&app, "darktable preset or style", &["dtpreset", "dtstyle"], false).await?;
     let Some(file) = picked.first() else { return Ok(None) };
-    let reply = state.engine("agx_presets").request(json!({ "cmd": "agx_presets", "file": file, "fields": fields }))?;
+    let reply = state.request("agx_presets", json!({ "cmd": "agx_presets", "file": file, "fields": fields }))?;
     serde_json::from_value(reply).map(Some).map_err(|e| format!("agx_presets: unexpected reply: {e}"))
 }
 

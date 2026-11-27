@@ -163,7 +163,7 @@ export async function beforeAfterIdle(t) {
   await t.driver.drag({ x: h.x + h.width / 2, y: h.y + h.height / 2 }, { x: h.x + h.width / 2 + 60, y: h.y + h.height / 2 + 40 });
   await textButton(t, '.crop-buttons', 'Done');
   await settledPhoto(t);
-  // the view tool's Y shortcut: the first mode is the overlay, the next the split
+  // Y cycles from Off to Side by side to Vertical split.
   await t.driver.keys('y'); await t.driver.keys('y');
   await until(() => t.driver.observe(() => !!document.querySelector('.before-clip')), 'before/after view');
   await new Promise(r => setTimeout(r, 2500));
@@ -172,5 +172,9 @@ export async function beforeAfterIdle(t) {
   t.measure({ name: 'before-after-idle', samples, spinnerOn: on });
   await t.evidence('before-after-idle');
   assert(on <= 2, `the busy spinner is on in ${on} of ${samples} idle samples`);
-  await t.driver.keys('y'); await t.driver.keys('y'); await t.driver.keys('y');
+  // The next two modes are Horizontal split and Off. The toolbar also
+  // offers a hold-for-before mode that the keyboard cycle skips.
+  await t.driver.keys('y'); await t.driver.keys('y');
+  await until(() => t.driver.observe(() => !document.querySelector('button.tool.view.on[title^="before / after"]')),
+    'before/after view closed');
 }

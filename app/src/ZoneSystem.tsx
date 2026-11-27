@@ -443,6 +443,7 @@ export function ObjectBox({ onPrompt }: { onPrompt: (p: ObjectPrompt) => void })
            const [x, y] = at(e);
            setBox([s.x, s.y, x, y]);
          }}
+         onPointerCancel={() => { start.current = null; setBox(null); }}
          onPointerUp={(e) => {
            const s = start.current;
            start.current = null;

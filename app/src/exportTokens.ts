@@ -46,13 +46,10 @@ function formatTime(d: RegExpExecArray | null, pattern: string): string {
 
 const captured = (i: ImageEntry) => /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(i.exif.datetime ?? "");
 
-// {datecaptured} follows the chosen date format; {datecaptured:YYYY.MM}
-// or {timecaptured:HH-mm} give a token its own. tokens a file name cannot
-// carry are replaced, and an empty result falls back to the original name
-export function expand(template: string, i: ImageEntry, meta: Meta, seq: number, total: number,
-                       dateFormat: string): string {
+// a name's tokens, filled in from the photo
+function values(i: ImageEntry, meta: Meta, seq: number, total: number, dateFormat: string): Record<string, string> {
   const d = captured(i);
-  const vals: Record<string, string> = {
+  return {
     filename: i.filename.replace(/\.[^.]+$/, ""),
     title: meta.title, caption: meta.description, creator: meta.creator, copyright: meta.rights,
     datecaptured: formatTime(d, dateFormat), timecaptured: formatTime(d, "HHmmss"),
@@ -62,7 +59,13 @@ export function expand(template: string, i: ImageEntry, meta: Meta, seq: number,
     rating: String(i.rating),
     seq: String(seq).padStart(Math.max(3, String(total).length), "0"),
   };
-  const name = template
+}
+
+// one name with its tokens filled in and what a name cannot carry replaced;
+// empty when its tokens are
+function fill(template: string, i: ImageEntry, vals: Record<string, string>): string {
+  const d = captured(i);
+  return template
     .replace(/\{(\w+)(?::([^}]+))?\}/g, (m, k: string, fmt?: string) =>
       fmt && (k === "datecaptured" || k === "timecaptured") ? formatTime(d, fmt)
         : k in vals ? vals[k] : m)
@@ -70,7 +73,27 @@ export function expand(template: string, i: ImageEntry, meta: Meta, seq: number,
     // an empty token leaves its separator behind: trim those at the ends
     .replace(/^[\s._-]+|[\s._-]+$/g, "")
     .replace(/[-_ ]{2,}/g, (m) => m[0]);
-  return name || vals.filename;
+}
+
+// {datecaptured} follows the chosen date format; {datecaptured:YYYY.MM}
+// or {timecaptured:HH-mm} give a token its own. tokens a file name cannot
+// carry are replaced, and an empty result falls back to the original name
+export function expand(template: string, i: ImageEntry, meta: Meta, seq: number, total: number,
+                       dateFormat: string): string {
+  const vals = values(i, meta, seq, total, dateFormat);
+  return fill(template, i, vals) || vals.filename;
+}
+
+// a subfolder for Move, Copy and Export: each part of the pattern between
+// slashes is filled in as a file name is, and a part left empty (a photo
+// without a capture date, say) is dropped, so the photo goes one level up.
+// a part cannot start with a dot, so none is "..". Export passes the photo's
+// metadata, number and date style; Move and Copy have neither
+export const FOLDER_PATTERN = "{year}/{month}/{day}";
+export function folderPath(pattern: string, i: ImageEntry, meta: Meta = EMPTY_META, seq = 1, total = 1,
+                           dateFormat = "YYYY-MM-DD"): string {
+  const vals = values(i, meta, seq, total, dateFormat);
+  return pattern.split(/[/\\]+/).map((part) => fill(part, i, vals)).filter(Boolean).join("/");
 }
 
 const round = (v: number, digits: number) => String(Number(v.toFixed(digits)));

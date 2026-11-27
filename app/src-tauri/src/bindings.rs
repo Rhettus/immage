@@ -23,6 +23,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::local_search_cmds::local_search,
         crate::local_search_cmds::local_search_cancel,
         crate::local_search_cmds::local_search_seed,
+        crate::find_facets::find_facets,
         crate::search_cmds::search_pause,
         crate::search_cmds::search_analysis_status,
         crate::search_cmds::search_cache_clear,
@@ -40,6 +41,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::map_tiles::map_tile,
         // the open-photo path
         crate::session_cmds::open_image,
+        crate::session_cmds::close_image,
         crate::session_cmds::history,
         crate::session_cmds::module_state,
         crate::session_cmds::get_params,
@@ -134,6 +136,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::zones,
         crate::edit_cmds::spots,
         crate::edit_cmds::spots_enable,
+        crate::edit_cmds::spots_fill,
         crate::edit_cmds::spot_source,
         crate::edit_cmds::upright,
         crate::edit_cmds::looks_list,
@@ -162,12 +165,15 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::edit_cmds::presets,
         crate::edit_cmds::module_preset_import,
         crate::edit_cmds::instance,
+        crate::edit_cmds::order_info,
+        crate::edit_cmds::order_set,
         // Preferences, performance reports and the app itself
         crate::app_cmds::darktable_resources,
         crate::app_cmds::darktable_resources_set,
         crate::memory_budget::memory_budget,
         crate::app_cmds::gpu_edits,
         crate::app_cmds::gpu_edits_set,
+        crate::app_cmds::opencl_status,
         crate::app_cmds::webview_renderer,
         crate::app_cmds::webview_renderer_set,
         crate::app_cmds::licenses,
@@ -175,6 +181,7 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::app_cmds::engine_restart,
         crate::app_cmds::menu_set,
         crate::app_cmds::csp_violation,
+        crate::stall_watch::stall_beat,
         crate::app_cmds::preview_fullscreen,
         crate::app_cmds::perf_set,
         crate::app_cmds::perf_trace_start,
@@ -204,6 +211,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::morf_photo_cmds::morf_photo_save,
         crate::morf_photo_cmds::morf_photo_test,
         crate::morf_photo_cmds::morf_photo_forget,
+        crate::morf_photo_cmds::morf_mirror_status,
+        crate::morf_photo_cmds::morf_mirror_resync,
         // Edit In plugins, backups and the support bundle
         crate::plugins::plugin_find_apps,
         crate::plugins::plugin_config,
@@ -211,6 +220,8 @@ pub fn commands() -> Commands<tauri::Wry> {
         crate::plugins::plugin_set_app,
         crate::plugins::plugin_choose_app,
         crate::plugins::plugin_launch,
+        crate::plugins::plugin_photo_craft,
+        crate::plugins::plugin_helicon_focus,
         crate::plugins::plugin_watch,
         crate::plugins::plugin_cancel,
         crate::plugins::plugin_job,
@@ -232,7 +243,10 @@ pub fn commands() -> Commands<tauri::Wry> {
 // the app's invoke handler, which serves the commands above
 pub fn handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     let commands = commands().0;
-    move |invoke| commands(invoke)
+    move |invoke| {
+        let name = invoke.message.command().to_string();
+        crate::stall_watch::dispatch(name, || commands(invoke))
+    }
 }
 
 #[cfg(test)]
@@ -451,6 +465,7 @@ mod tests {
         ("capture_times", reads::<CaptureTimesReply>),
         ("masks", reads::<MasksReply>),
         ("spots", reads::<SpotsReply>),
+        ("spots_fill", reads::<SpotsFillReply>),
         ("spot_source", reads::<SpotSource>),
         ("upright", reads::<UprightReply>),
         ("fonts", reads::<FontsReply>),
@@ -464,7 +479,10 @@ mod tests {
         ("instances", reads::<InstancesReply>),
         ("presets", reads::<PresetsReply>),
         ("instance", reads::<InstanceReply>),
+        ("order_info", reads::<OrderInfoReply>),
+        ("order", reads::<OrderReply>),
         ("ai_accel", reads::<AiAccelReply>),
+        ("opencl", reads::<crate::typed_app::OpenclReply>),
         ("look", reads::<LookReply>),
         ("agx_presets", reads::<AgxPresetsReply>),
         ("spektra_stocks", reads::<FilmStocks>),

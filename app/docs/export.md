@@ -41,14 +41,24 @@ For a folder:
 
 - **Choose a folder…**
 - **Inside a new folder**: puts the files in a subfolder, **Export** by
-  default.
+  default. The name can use the tokens of a custom file name (see
+  [File Name](#file-name)), filled in from each photo, and each `/` starts a
+  folder inside the one before: `{year}/{month}/{day}` puts a photo taken on
+  18 November 2026 in `2026/11/18`, and photos from different days go into
+  their own folders in one export. `{datecaptured}` follows the chosen date
+  style. A part whose tokens are all empty, such as `{day}` on a photo with
+  no capture date, is left out, so that photo goes one level up. When the
+  name has tokens, the first photo's folder is shown under it.
 - **If a file exists**: **Ask me**, **Add a number**, **Replace it** or
   **Skip it**. **Ask me** offers **Use Unique Name**, **Overwrite**, **Skip**
   or **Cancel**, and can apply your answer to every clash. An existing file
   is replaced only once the new one is complete, so an export that fails,
   such as on a full disk, leaves it as it was. If the destination folder is
   on a drive or share that is not answering, **Ask me** stops the export
-  before anything is written.
+  before anything is written. **Replace it** and **Skip it** apply to files
+  that were there before the export: when two photos in one export get the
+  same name, such as a raw and its JPEG or a virtual copy, the second gets
+  a number so every photo has its own file.
 - **Show in Finder when done**.
 
 For Immich, choose an album, or **New album…**. A photo Immich already has
@@ -92,6 +102,10 @@ Captions, is fitted inside and centered. **Turn for landscape photos**
 swaps the width and height for landscape photos. A photo smaller than
 the canvas is not enlarged; it sits in the middle at its own size.
 
+The long-edge and fixed-canvas fields accept 16 to 30,000 pixels. You can
+type the full number before the field applies those limits when you press
+Enter or leave it.
+
 AI upscale is offered only on a computer with a supported GPU. It makes a
 20 MP photo 80 MP (2×) or 320 MP (4×) and takes a few minutes for each
 photo. Its model (55 MB) downloads the first time.
@@ -100,6 +114,9 @@ photo. Its model (55 MB) downloads the first time.
 
 Three kinds of item, each added with its own **+** button. They fold to a
 summary and can be moved up or down.
+
+Frame & Captions number fields also keep your entry while you type and
+apply the field's limits when you press Enter or leave it.
 
 - **Frame**: space added around the photo; nothing is cropped. The same
   width all round, or each side on its own (a wider bottom, for a

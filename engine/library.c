@@ -38,6 +38,177 @@
 // print runs: the task is dropped otherwise, with the list, since the page
 // sends a new one on its next step. dropping never blocks a shutdown, as
 // waiting on an export would in library_prefetch_wait
+// a photo's file as the engine last saw it. darktable keys its image and
+// mipmap caches by image id and never looks at the file again, so a photo
+// saved over by another program opened and thumbnailed from the old pixels
+// until a restart
+typedef struct _stamp_t
+{
+  gint64 size, mtime_ns;
+  guint64 inode;
+  // the cached pixels may be older than the file, from when an eviction
+  // starts until one succeeds: every check tries again meanwhile
+  gboolean stale;
+  // the file changed: its EXIF is read again once the old pixels are gone
+  gboolean exif_due;
+  // eviction attempts, so a late success cannot clear a newer one's failure
+  guint gen;
+} _stamp_t;
+static GMutex _stamp_lock;      // rank 8 (probe), taken alone
+static GHashTable *_stamps = NULL;
+
+// drop one level of a photo's pixels unless a reader holds it: TRUE when
+// it is gone. dt_mipmap_cache_remove() covers only the 8-bit levels, and
+// skips one in use without saying so. the key is mipmap_cache.c's
+// _get_key(). never waits: a reader (the open photo, an export) keeps it,
+// and the next check tries again. the disk backend is off (main.c), so an
+// 8-bit level needs no file removed
+static gboolean _evict(const dt_imgid_t imgid, const dt_mipmap_size_t mip)
+{
+  dt_mipmap_cache_t *c = darktable.mipmap_cache;
+  dt_cache_t *cache = mip == DT_MIPMAP_FULL ? &c->mip_full.cache
+                      : mip == DT_MIPMAP_F  ? &c->mip_f.cache
+                                            : &c->mip_thumbs.cache;
+  return dt_cache_try_remove(cache, ((uint32_t)mip << 28) | ((imgid - 1) & 0xfffffff));
+}
+
+static gboolean _float_cached(const dt_imgid_t imgid)
+{
+  dt_mipmap_cache_t *c = darktable.mipmap_cache;
+  const uint32_t id = (imgid - 1) & 0xfffffff;
+  return dt_cache_contains(&c->mip_full.cache, ((uint32_t)DT_MIPMAP_FULL << 28) | id)
+         || dt_cache_contains(&c->mip_f.cache, ((uint32_t)DT_MIPMAP_F << 28) | id);
+}
+
+// the file's stamp now; FALSE when it cannot be looked at
+static gboolean _stamp_now(const char *path, _stamp_t *now)
+{
+  GStatBuf st;
+  if(!*path || g_stat(path, &st)) return FALSE;
+  *now = (_stamp_t){ .size = st.st_size, .mtime_ns = (gint64)st.st_mtime * G_GINT64_CONSTANT(1000000000) };
+  // an editor that saves by replacing the file gives it a new inode, which
+  // tells a save within the same mtime tick apart; Windows has neither
+  // (seconds only there)
+#if defined(__APPLE__)
+  now->mtime_ns += st.st_mtimespec.tv_nsec;
+#elif !defined(_WIN32)
+  now->mtime_ns += st.st_mtim.tv_nsec;
+#endif
+#ifndef _WIN32
+  now->inode = st.st_ino;
+#endif
+  return TRUE;
+}
+
+// the file as an import of it found it: its EXIF was read then, so a later
+// change is told apart from the first sight
+static void _stamp_record(const dt_imgid_t imgid, const _stamp_t *at)
+{
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!_stamps) _stamps = g_hash_table_new_full(NULL, NULL, NULL, g_free);
+  if(!g_hash_table_contains(_stamps, GINT_TO_POINTER(imgid)))
+  {
+    _stamp_t *seen = g_new(_stamp_t, 1);
+    *seen = *at;
+    g_hash_table_insert(_stamps, GINT_TO_POINTER(imgid), seen);
+  }
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+}
+
+// never checked, or its pixels may be old: a thumbnail in memory is not
+// served without a look at the file
+static gboolean _stamp_unsure(const dt_imgid_t imgid)
+{
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  const _stamp_t *seen = _stamps ? g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid)) : NULL;
+  const gboolean unsure = !seen || seen->stale;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  return unsure;
+}
+
+// called where the file is about to be read anyway, never where its drive
+// may not answer. FALSE while the cached pixels may still be the old ones
+gboolean library_refresh_changed(const dt_imgid_t imgid)
+{
+  if(!dt_is_valid_imgid(imgid) || !darktable.mipmap_cache) return TRUE;
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+  _stamp_t now;
+  if(!_stamp_now(path, &now)) return TRUE;
+
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!_stamps) _stamps = g_hash_table_new_full(NULL, NULL, NULL, g_free);
+  _stamp_t *seen = g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid));
+  // nothing recorded: pixels may be cached by a path that does not check
+  // (an import records the stamp it read the EXIF at), so they are dropped
+  const gboolean known = seen != NULL;
+  const gboolean same_time = known && seen->size == now.size && seen->mtime_ns == now.mtime_ns;
+  const gboolean changed = known && (!same_time || seen->inode != now.inode);
+  if(!seen) g_hash_table_insert(_stamps, GINT_TO_POINTER(imgid), seen = g_new0(_stamp_t, 1));
+  seen->size = now.size;
+  seen->mtime_ns = now.mtime_ns;
+  seen->inode = now.inode;
+  if(changed) seen->exif_due = TRUE;
+  const gboolean evict = !known || changed || seen->stale;
+  // stale from here, so a check that runs meanwhile does not take the old
+  // pixels for current ones
+  if(evict) seen->stale = TRUE;
+  const guint gen = evict ? ++seen->gen : 0;
+  const gboolean exif = seen->exif_due;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  if(!evict) return TRUE;
+
+  // an inode alone can change on some network shares (CIFS, FUSE) without a save
+  if(changed)
+    fprintf(stderr, "[engine] %s changed on disk%s, reloading it\n", path, same_time ? " (its inode only)" : "");
+  // while the full pixels are in use, the thumbnail levels stay: rebuilt
+  // now, they would come from the old ones
+  const gboolean floats = _evict(imgid, DT_MIPMAP_FULL) && _evict(imgid, DT_MIPMAP_F);
+  gboolean gone = floats;
+  if(floats)
+  {
+    if(exif)
+    {
+      // as darktable's refresh EXIF (control_jobs.c, _control_refresh_exif_run),
+      // keeping the photo's own metadata; the sidecar is the engine's to write.
+      // the sizes the pipe found are for the old file: 0 has them found
+      // again. the entry's lock is held across the read, as upstream does
+      dt_image_t *img = dt_image_cache_get(imgid, 'w');
+      if(img)
+      {
+        img->job_flags |= DT_IMAGE_JOB_NO_METADATA;
+        dt_exif_read(img, path);
+        img->final_width = img->final_height = img->p_width = img->p_height = 0;
+        dt_image_cache_write_release_info(img, DT_IMAGE_CACHE_RELAXED, "library_refresh_changed");
+      }
+      // a decode started before the EXIF went in (another check, a
+      // prefetch) writes back the image fields it copied (mipmap_cache.c),
+      // the old ones: the next check does it all again
+      if(_float_cached(imgid)) gone = FALSE;
+    }
+    // after the EXIF, so a thumbnail built meanwhile is dropped too
+    for(dt_mipmap_size_t k = DT_MIPMAP_0; k <= DT_MIPMAP_LDR_MAX; k++)
+      if(!_evict(imgid, k)) gone = FALSE;
+#ifdef HAVE_AI
+    ai_forget_image(imgid);
+#endif
+  }
+  else if(changed)
+    fprintf(stderr, "[engine] %s: its old pixels are in use (open or exporting), kept until they are free\n", path);
+
+  eng_lock(&_stamp_lock, ENG_LOCK_PROBE);
+  seen = g_hash_table_lookup(_stamps, GINT_TO_POINTER(imgid));
+  if(seen && gone && seen->gen == gen)
+  {
+    seen->stale = FALSE;
+    seen->exif_due = FALSE;
+  }
+  const gboolean current = !seen || !seen->stale;
+  eng_unlock(&_stamp_lock, ENG_LOCK_PROBE);
+  return current;
+}
+
 #define _PREFETCH_THREADS 3
 static GThreadPool *_prefetch_pool = NULL;
 
@@ -63,6 +234,7 @@ static void _prefetch_run(gpointer data, gpointer user_data)
   const dt_imgid_t imgid = g_array_index(_prefetch_queue, dt_imgid_t, 0);
   g_array_remove_index(_prefetch_queue, 0);
   eng_unlock(&_prefetch_lock, ENG_LOCK_POOL);
+  library_refresh_changed(imgid);
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(&buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   dt_mipmap_cache_release(&buf);
@@ -270,8 +442,19 @@ static GMutex _import_lock;
 // importing reads an existing sidecar, so earlier edits come back
 dt_imgid_t library_import(const char *path)
 {
+  // a drive already known to be stuck is not read: the import would wait on
+  // _import_lock behind its stuck read, and then join it (drives.c)
+  drives_t *drive = drives_of(path);
+  if(drives_held(drive))
+  {
+    fprintf(stderr, "[engine] %s not imported: drive %s is not answering\n", path, drives_mount(drive));
+    return NO_IMGID;
+  }
   gchar *dir = g_path_get_dirname(path);
   eng_lock(&_import_lock, ENG_LOCK_IMPORT);
+  // from here, not before the lock: waiting on it is not the drive's time
+  const int slot = drives_import_begin(drive);
+  drives_test_stall(path);
   dt_film_t film;
   dt_film_init(&film); // holds a mutex; dt_film_new() does not set it up
   const dt_filmid_t filmid = dt_film_new(&film, dir);
@@ -280,6 +463,13 @@ dt_imgid_t library_import(const char *path)
   // darktable finds a file's image by its name alone (image.c,
   // dt_image_get_id()), which can be a snapshot once the version before it
   // has been removed
+  // a first import reads the file's EXIF: its stamp, taken before (a save
+  // during the import then counts as a change), is what that EXIF is of
+  gchar *base = g_path_get_basename(path);
+  _stamp_t read_at;
+  const gboolean fresh = dt_is_valid_filmid(filmid) && !dt_is_valid_imgid(dt_image_get_id(filmid, base))
+                         && _stamp_now(path, &read_at);
+  g_free(base);
   const dt_imgid_t imgid = dt_is_valid_filmid(filmid) ? dt_image_import(filmid, path, TRUE, FALSE) : NO_IMGID;
   if(dt_is_valid_imgid(imgid))
   {
@@ -287,6 +477,7 @@ dt_imgid_t library_import(const char *path)
     for(GList *l = versions; l; l = l->next)
     {
       const dt_imgid_t id = GPOINTER_TO_INT(l->data);
+      if(fresh) _stamp_record(id, &read_at);
       char sidecar[PATH_MAX] = { 0 };
       gboolean from_cache = FALSE;
       dt_image_full_path(id, sidecar, sizeof(sidecar), &from_cache);
@@ -305,6 +496,7 @@ dt_imgid_t library_import(const char *path)
     }
     g_list_free(versions);
   }
+  drives_import_end(slot);
   eng_unlock(&_import_lock, ENG_LOCK_IMPORT);
   return _real_version(imgid);
 }
@@ -1039,6 +1231,8 @@ typedef struct _probe_t
   gint refs;
   char *path;
   gint64 finished_at;
+  drives_t *drive;     // the path's drive, kept from the start (drives.c)
+  gboolean abandoned;  // the waiter gave up on it; under `lock`
 } _probe_t;
 
 static void _probe_unref(_probe_t *p)
@@ -1052,6 +1246,7 @@ static void _probe_unref(_probe_t *p)
 
 static void _probe_read(const char *path)
 {
+  drives_test_stall(path);
   FILE *f = g_fopen(path, "rb");
   if(!f) return;
   char buf[4096];
@@ -1069,8 +1264,11 @@ static gpointer _probe_run(gpointer data)
   eng_lock(&p->lock, ENG_LOCK_PROBE);
   p->finished_at = g_get_monotonic_time();
   p->finished = TRUE;
+  const gboolean abandoned = p->abandoned;
   g_cond_signal(&p->done);
   eng_unlock(&p->lock, ENG_LOCK_PROBE);
+  // the stuck read has returned: its drive may answer again
+  if(abandoned) drives_unstuck(p->drive);
   _probe_unref(p);
   return NULL;
 }
@@ -1106,6 +1304,8 @@ static void _quarantine_folder(const char *path, const gint64 now)
 // did not a moment ago
 static gboolean _file_answers(const char *path, const gint64 timeout_us)
 {
+  drives_t *drive = drives_of(path);
+  if(drives_held(drive)) return FALSE;
   gchar *dir = g_path_get_dirname(path);
   const gint64 now = g_get_monotonic_time();
   eng_lock(&_quarantine_lock, ENG_LOCK_PROBE);
@@ -1124,6 +1324,7 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   g_cond_init(&p->done);
   p->refs = 2; // this call and the thread
   p->path = g_strdup(path);
+  p->drive = drive;
   GThread *t = g_thread_new("import-probe", _probe_run, p);
   g_thread_unref(t);
 
@@ -1131,10 +1332,16 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
   eng_lock(&p->lock, ENG_LOCK_PROBE);
   while(!p->finished && g_cond_wait_until(&p->done, &p->lock, deadline)) {}
   const gboolean answered = p->finished;
+  // abandoned before stuck is counted, so a read that returns in between
+  // still counts itself off (the count dips below zero for a moment)
+  if(!answered) p->abandoned = TRUE;
   eng_unlock(&p->lock, ENG_LOCK_PROBE);
+  if(!answered) drives_stuck(drive);
   _probe_unref(p);
 
-  if(!answered)
+  // a drive that can be held is, until the read returns (drives.c); only the
+  // system disk's folders are skipped for a while instead
+  if(!answered && !drive)
   {
     gint64 *when = g_new(gint64, 1);
     *when = g_get_monotonic_time() + _PROBE_QUARANTINE_US;
@@ -1145,7 +1352,11 @@ static gboolean _file_answers(const char *path, const gint64 timeout_us)
             timeout_us / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
   }
   else
+  {
+    if(!answered)
+      fprintf(stderr, "[engine] %s did not answer in %.1f s; skipped\n", path, timeout_us / 1e6);
     g_free(dir);
+  }
   return answered;
 }
 
@@ -1163,6 +1374,8 @@ typedef struct _metadata_task_t
   gint64 finished_at;
   dt_exif_prefetch_t *prefetch;
   char *path;
+  drives_t *drive;     // as _probe_t's
+  gboolean abandoned;  // under `lock`
 } _metadata_task_t;
 
 static GMutex _metadata_lock;
@@ -1200,8 +1413,10 @@ static gpointer _metadata_run(gpointer data)
   eng_lock(&task->lock, ENG_LOCK_PROBE);
   task->finished_at = g_get_monotonic_time();
   task->finished = TRUE;
+  const gboolean abandoned = task->abandoned;
   g_cond_broadcast(&task->done);
   eng_unlock(&task->lock, ENG_LOCK_PROBE);
+  if(abandoned) drives_unstuck(task->drive);
   _metadata_unref(task);
   return NULL;
 }
@@ -1209,6 +1424,7 @@ static gpointer _metadata_run(gpointer data)
 // NULL means the strict process-wide bound is already occupied.
 static _metadata_task_t *_metadata_start(const char *path, const guint batch_workers)
 {
+  drives_t *drive = drives_of(path);
   eng_lock(&_metadata_lock, ENG_LOCK_PROBE);
   // A preference change applies to the next batch. In-flight batches retain
   // their snapshot, while this hard process cap includes abandoned workers.
@@ -1225,6 +1441,7 @@ static _metadata_task_t *_metadata_start(const char *path, const guint batch_wor
   task->refs = 2; // importing batch and worker
   task->launched = g_get_monotonic_time();
   task->path = g_strdup(path);
+  task->drive = drive;
   GThread *thread = g_thread_new("import-metadata", _metadata_run, task);
   g_thread_unref(thread);
   return task;
@@ -1252,7 +1469,10 @@ static _metadata_wait_result_t _metadata_wait(_metadata_task_t *task, const gint
     const gint64 now = g_get_monotonic_time();
     if(now >= deadline)
     {
+      // as in _file_answers: abandoned first, then counted stuck
+      task->abandoned = TRUE;
       eng_unlock(&task->lock, ENG_LOCK_PROBE);
+      drives_stuck(task->drive);
       return METADATA_TIMEOUT;
     }
     g_cond_wait_until(&task->done, &task->lock, MIN(deadline, now + 50 * 1000));
@@ -1285,6 +1505,7 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   const guint n = files ? json_array_get_length(files) : 0;
   guint k = 0;
   GPtrArray *silent = g_ptr_array_new();
+  GPtrArray *held = g_ptr_array_new(); // drives_t *, each once
   _metadata_task_t **tasks = g_new0(_metadata_task_t *, n);
   gboolean *staged = g_new0(gboolean, n);
     gboolean stop_metadata = FALSE;
@@ -1313,13 +1534,22 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
         staged[j] = TRUE;
         const char *next = json_array_get_string_element(files, j);
         if(!next || _is_sidecar(next) || !dt_exif_prefetch_supported(next)
-           || !g_file_test(next, G_FILE_TEST_IS_REGULAR) || _folder_quarantined(next)) continue;
+           || drives_path_held(next) || !g_file_test(next, G_FILE_TEST_IS_REGULAR)
+           || _folder_quarantined(next)) continue;
         tasks[j] = _metadata_start(next, workers);
       }
     }
 
     const char *path = json_array_get_string_element(files, k);
     if(!path || _is_sidecar(path)) continue;
+    // before the stat below, which a stuck drive would hold
+    drives_t *stuck = drives_path_held(path);
+    if(stuck)
+    {
+      g_ptr_array_add(silent, (gpointer)path);
+      if(!g_ptr_array_find(held, stuck, NULL)) g_ptr_array_add(held, stuck);
+      continue;
+    }
     if(!g_file_test(path, G_FILE_TEST_IS_REGULAR)) continue;
     dt_imgid_t imgid = NO_IMGID;
     if(dt_exif_prefetch_supported(path))
@@ -1350,9 +1580,17 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
         if(wait_result == METADATA_TIMEOUT)
         {
           stop_metadata = TRUE;
-          _quarantine_folder(path, g_get_monotonic_time());
-          fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
-                  path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
+          // a task given up on holds its drive (drives.c); one that came back
+          // late, or one on the system disk, has its folder skipped instead.
+          // `abandoned` is only set by this thread, in _metadata_wait
+          const gboolean holds = task->drive && task->abandoned;
+          if(!holds) _quarantine_folder(path, g_get_monotonic_time());
+          if(holds)
+            fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its drive\n",
+                    path, _METADATA_TIMEOUT_US / 1e6);
+          else
+            fprintf(stderr, "[engine] metadata for %s did not answer in %.1f s; skipped, as is its folder for %d s\n",
+                    path, _METADATA_TIMEOUT_US / 1e6, (int)(_PROBE_QUARANTINE_US / G_USEC_PER_SEC));
           g_ptr_array_add(silent, (gpointer)path);
           for(guint j = k + 1; j < n; j++)
           {
@@ -1398,6 +1636,12 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
       }
     }
     if(dt_is_valid_imgid(imgid)) _image_versions_json(b, imgid);
+    else if((stuck = drives_path_held(path)))
+    {
+      // its drive was held while this file waited (library_import refused it)
+      if(!g_ptr_array_find(silent, path, NULL)) g_ptr_array_add(silent, (gpointer)path);
+      if(!g_ptr_array_find(held, stuck, NULL)) g_ptr_array_add(held, stuck);
+    }
   }
   for(guint j = 0; j < n; j++) if(tasks[j]) _metadata_unref(tasks[j]);
   g_free(tasks);
@@ -1408,6 +1652,14 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
   for(guint i = 0; i < silent->len; i++) json_builder_add_string_value(b, g_ptr_array_index(silent, i));
   json_builder_end_array(b);
   g_ptr_array_free(silent, TRUE);
+  // the drives skipped as not answering (drives.c), so the client can stop
+  // asking for their photos for a while
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < held->len; i++)
+    json_builder_add_string_value(b, drives_mount(g_ptr_array_index(held, i)));
+  json_builder_end_array(b);
+  g_ptr_array_free(held, TRUE);
   json_builder_set_member_name(b, "done");
   json_builder_add_int_value(b, k);
   fprintf(stderr, "[engine] imported %u of %u in %.0f ms%s\n", k, n,
@@ -1422,11 +1674,29 @@ void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean backgr
 GThreadPool *library_import_pool = NULL;
 static GMutex _import_pool_lock;
 
+// an import the user waits on (a folder read, a photo opened or browsed)
+// before queued `background` ones (Smart search, previews rendered ahead,
+// thumbnails off screen), which a slow share's would otherwise keep from
+// the one import thread; equal ranks keep their arrival order
+static gint _import_rank(JsonParser *parser)
+{
+  JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  return json_object_get_boolean_member_with_default(req, "background", FALSE) ? 1 : 0;
+}
+
+gint library_import_order(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+  return _import_rank((JsonParser *)a) - _import_rank((JsonParser *)b);
+}
+
 void library_import_run(gpointer data, gpointer user_data)
 {
   JsonParser *parser = data;
   FILE *out = user_data;
   JsonObject *req = json_node_get_object(json_parser_get_root(parser));
+  // the import's own time, not its wait in the queue: the client tells a
+  // slow drive by it (engine.rs, Slow)
+  const gint64 started = g_get_monotonic_time();
   JsonBuilder *b = json_builder_new();
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "tag");
@@ -1434,10 +1704,78 @@ void library_import_run(gpointer data, gpointer user_data)
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, TRUE);
   library_import_files(req, b, TRUE);
+  json_builder_set_member_name(b, "ms");
+  json_builder_add_int_value(b, (g_get_monotonic_time() - started) / 1000);
   json_builder_end_object(b);
   engine_reply(out, b);
   g_object_unref(b);
   g_object_unref(parser);
+}
+
+// the request reader's answer to an import whose every file is on a held
+// drive (drives.c), so it is not queued behind the import thread, which may
+// itself be stuck on that drive. FALSE, with `b` untouched, otherwise
+gboolean library_import_held_reply(JsonObject *req, JsonBuilder *b)
+{
+  JsonArray *files = json_object_has_member(req, "files") ? json_object_get_array_member(req, "files") : NULL;
+  const guint n = files ? json_array_get_length(files) : 0;
+  if(!n) return FALSE;
+  GPtrArray *held = g_ptr_array_new();
+  for(guint i = 0; i < n; i++)
+  {
+    drives_t *d = drives_path_held(json_array_get_string_element(files, i));
+    if(!d)
+    {
+      g_ptr_array_free(held, TRUE);
+      return FALSE;
+    }
+    if(!g_ptr_array_find(held, d, NULL)) g_ptr_array_add(held, d);
+  }
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member_with_default(req, "tag", 0));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "images");
+  json_builder_begin_array(b);
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "unanswered");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < n; i++)
+  {
+    const char *path = json_array_get_string_element(files, i);
+    if(path && !_is_sidecar(path)) json_builder_add_string_value(b, path);
+  }
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  for(guint i = 0; i < held->len; i++) json_builder_add_string_value(b, drives_mount(g_ptr_array_index(held, i)));
+  json_builder_end_array(b);
+  json_builder_set_member_name(b, "done");
+  json_builder_add_int_value(b, n);
+  g_ptr_array_free(held, TRUE);
+  return TRUE;
+}
+
+// the request reader's answer to a thumb or analysis_preview whose `path`
+// (sent by the client for this) is on a held drive. FALSE otherwise
+gboolean library_thumb_held_reply(JsonObject *req, JsonBuilder *b)
+{
+  const char *path = json_object_get_string_member_with_default(req, "path", NULL);
+  drives_t *d = path ? drives_path_held(path) : NULL;
+  if(!d) return FALSE;
+  json_builder_set_member_name(b, "tag");
+  json_builder_add_int_value(b, json_object_get_int_member_with_default(req, "tag", 0));
+  json_builder_set_member_name(b, "ok");
+  json_builder_add_boolean_value(b, FALSE);
+  json_builder_set_member_name(b, "error");
+  gchar *msg = g_strdup_printf("%s is not answering: its drive or network share may be disconnected", drives_mount(d));
+  json_builder_add_string_value(b, msg);
+  g_free(msg);
+  json_builder_set_member_name(b, "held");
+  json_builder_begin_array(b);
+  json_builder_add_string_value(b, drives_mount(d));
+  json_builder_end_array(b);
+  return TRUE;
 }
 
 // FALSE once the pool has stopped; the request then gets no reply
@@ -1722,6 +2060,64 @@ gboolean library_thumb(const dt_imgid_t imgid, const int size, const gboolean pr
 GThreadPool *library_thumb_pool = NULL;
 static GMutex _thumb_lock;
 
+// a thumbnail already in darktable's memory cache needs no read of the file
+static gboolean _thumb_in_memory(const dt_imgid_t imgid, const int size)
+{
+  if(size <= 0) return FALSE;
+  dt_mipmap_buffer_t buf = { 0 };
+  buf.size = DT_MIPMAP_NONE; // a miss leaves it unset, and release reads it
+  dt_mipmap_cache_get(&buf, imgid, dt_mipmap_cache_get_matching_size(size, size), DT_MIPMAP_TESTLOCK, 'r');
+  const gboolean there = buf.buf && buf.width > 0 && buf.height > 0;
+  dt_mipmap_cache_release(&buf);
+  return there;
+}
+
+// NULL when the photo may be read for a thumbnail or analysis preview, or
+// why not: its drive is held (drives.c), or its file did not answer the
+// probe, which may hold the drive. a stuck decode cannot be abandoned, so
+// a stuck drive's photos are not started at all. the system disk is never
+// probed here, so it works as before
+//
+// `answered`: the file may be read now, the system disk's or one that
+// answered the probe, so whether it changed can be checked. a thumbnail in
+// memory is served without the probe, unless `recheck`: the app's own
+// thumbnail of the photo missed because its file or sidecar changed
+static char *_thumb_unanswered(const dt_imgid_t imgid, const int size, const gboolean plain,
+                               const gboolean recheck, JsonBuilder *b, gboolean *answered)
+{
+  *answered = FALSE;
+  if(!dt_is_valid_imgid(imgid)) return NULL;
+  char path[PATH_MAX] = { 0 };
+  gboolean from_cache = FALSE;
+  dt_image_full_path(imgid, path, sizeof(path), &from_cache);
+  drives_t *drive = *path ? drives_of(path) : NULL;
+  if(!drive)
+  {
+    *answered = *path != '\0';
+    return NULL;
+  }
+  if(!drives_held(drive))
+  {
+    const gboolean in_memory = plain && _thumb_in_memory(imgid, size);
+    if(in_memory && !recheck && !_stamp_unsure(imgid)) return NULL;
+    if(_file_answers(path, _PROBE_TIMEOUT_US))
+    {
+      *answered = TRUE;
+      return NULL;
+    }
+    if(in_memory) return NULL;
+  }
+  if(drives_held(drive))
+  {
+    json_builder_set_member_name(b, "held");
+    json_builder_begin_array(b);
+    json_builder_add_string_value(b, drives_mount(drive));
+    json_builder_end_array(b);
+    return g_strdup_printf("%s is not answering: its drive or network share may be disconnected", drives_mount(drive));
+  }
+  return g_strdup_printf("%s is not answering", path);
+}
+
 // foreground (the lightbox's photo) before grid thumbnails and metadata,
 // those before analysis previews; equal ranks keep their arrival order
 static gint _thumb_rank(JsonParser *parser)
@@ -1754,6 +2150,7 @@ void library_thumb_run(gpointer data, gpointer user_data)
   const gboolean metadata = !g_strcmp0(cmd, "meta");
   const dt_imgid_t imgid = json_object_get_int_member_with_default(req, "imgid", 0);
   gboolean ok = FALSE;
+  gboolean answered = FALSE;
   if(metadata)
   {
     if(dt_is_valid_imgid(imgid) && dt_image_exists(imgid))
@@ -1764,13 +2161,31 @@ void library_thumb_run(gpointer data, gpointer user_data)
     }
     else err = g_strdup("no such image");
   }
-  else if(dest && analysis)
-    ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
+  else if(dest && (err = _thumb_unanswered(imgid, analysis ? 0 : json_object_get_int_member_with_default(req, "size", 256),
+                                           !analysis && !json_object_get_boolean_member_with_default(req, "proof", FALSE)
+                                           && !json_object_get_boolean_member_with_default(req, "prefer_source", FALSE)
+                                           && !json_object_get_boolean_member_with_default(req, "camera_preview", FALSE),
+                                           json_object_get_boolean_member_with_default(req, "recheck", FALSE), b, &answered)))
+    ok = FALSE;
   else if(dest)
-    ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
-                       json_object_get_boolean_member_with_default(req, "proof", FALSE),
-                       json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
-                       json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, &err);
+  {
+    // the old pixels still in use (the photo open or exporting): the app
+    // shows this thumbnail but does not keep it,
+    // or served from memory unchecked, after a recheck its drive did not answer
+    if(answered ? !library_refresh_changed(imgid)
+                : json_object_get_boolean_member_with_default(req, "recheck", FALSE))
+    {
+      json_builder_set_member_name(b, "stale");
+      json_builder_add_boolean_value(b, TRUE);
+    }
+    if(analysis)
+      ok = library_analysis_preview(imgid, json_object_get_string_member_with_default(req, "subject", ""), dest, &err);
+    else
+      ok = library_thumb(imgid, json_object_get_int_member_with_default(req, "size", 256),
+                         json_object_get_boolean_member_with_default(req, "proof", FALSE),
+                         json_object_get_boolean_member_with_default(req, "prefer_source", FALSE),
+                         json_object_get_boolean_member_with_default(req, "camera_preview", FALSE), dest, b, &err);
+  }
   json_builder_set_member_name(b, "ok");
   json_builder_add_boolean_value(b, ok);
   if(!ok)

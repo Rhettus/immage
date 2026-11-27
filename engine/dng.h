@@ -32,10 +32,14 @@ G_BEGIN_DECLS
 // color, white balance not applied, 1.0 the sensor's white; values above
 // it are kept. `img` gives the camera, its color matrix and the white
 // balance as shot, so the DNG opens as `img` did; `exif` is written over
-// it. `progress`, if any, follows the rows written, some 50 times. 0 when
-// written, else the file is removed
+// it, and `preview`, a JPEG or NULL, is its embedded preview (strip.h,
+// rendered_metadata). `compress` FALSE writes the pixels as they are, for a
+// small file read once (a merge's preview, export.c). `progress`, if any,
+// follows the rows written, some 50 times. 0 when written, else the file
+// is removed
 int dng_write_linear_half(const char *filename, const float *rgb, int width, int height,
                           const struct dt_image_t *img, const void *exif, int exif_len,
+                          const void *preview, size_t preview_len, gboolean compress,
                           void (*progress)(int done, int total, void *data), void *data);
 
 // A converted positive in linear Rec.2020, supplied as float RGBA.
@@ -44,7 +48,7 @@ int dng_write_rendered_half(const char *filename, const float *rgba, int width, 
 
 // A panorama in linear Rec.2020, supplied as float RGB.
 int dng_write_rendered_rgb_half(const char *filename, const float *rgb, int width, int height,
-                                const void *exif, int exif_len,
-                                void (*progress)(int, int, void *), void *data);
+                                const void *exif, int exif_len, const void *preview, size_t preview_len,
+                                gboolean compress, void (*progress)(int, int, void *), void *data);
 
 G_END_DECLS

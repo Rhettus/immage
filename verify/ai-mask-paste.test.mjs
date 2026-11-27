@@ -11,7 +11,8 @@ registerHooks({
   resolve(spec,ctx,next) {
     if(spec==='@tauri-apps/api/core')return {url:data('export const invoke=(...args)=>globalThis.aiInvoke(...args)'),shortCircuit:true};
     if(ctx.parentURL?.endsWith('/batchPaste.ts')&&spec==='./session')return {url:data('export class Session {}; export const instanceKey=()=>{}, mapOpOf=()=>{};'),shortCircuit:true};
-    if(spec==='./manifest')return {url:data('export const CONVERSIONS=[], LOCAL_CONTROLS=[];'),shortCircuit:true};
+    if(ctx.parentURL?.endsWith('/batchPaste.ts')&&spec==='./pasteDefaults')return {url:data('export const filterValuesForPhoto=v=>v;'),shortCircuit:true};
+    if(spec==='./manifest')return {url:data('export const CONVERSIONS=[], LOCAL_CONTROLS=[], TONE_MAPPER_ALL_OPS=new Set(), TM_SIGMOID=0, TM_AGX=1;'),shortCircuit:true};
     if(spec.startsWith('.')&&!/\.[jt]sx?$/.test(spec))for(const ext of ['.ts','.tsx']) {
       const u=new URL(spec+ext,ctx.parentURL);if(existsSync(fileURLToPath(u)))return next(u.href,ctx);
     }

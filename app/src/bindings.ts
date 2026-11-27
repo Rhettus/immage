@@ -10,6 +10,11 @@ export const commands = {
 	localSearchCancel: (requestId: number) => __TAURI_INVOKE<void>("local_search_cancel", { requestId }),
 	/**  Resolve the clicked file version to a cache identity, never an engine ID. */
 	localSearchSeed: (path: string, version: number) => __TAURI_INVOKE<string | null>("local_search_seed", { path, version }),
+	/**
+	 *  Every value the library holds for Find's lists, with counts, for the search's
+	 *  folders. The page cancels a request it has outgrown with `local_search_cancel`.
+	 */
+	findFacets: (args: FindFacetsArgs, requestId: number) => __TAURI_INVOKE<FacetReply>("find_facets", { args, requestId }),
 	searchPause: (paused: boolean) => __TAURI_INVOKE<null>("search_pause", { paused }),
 	/**
 	 *  Find's indicator: the real backlog of photos waiting for analysis, whether
@@ -33,6 +38,7 @@ export const commands = {
 	about: () => __TAURI_INVOKE<AboutInfo>("about"),
 	mapTile: (z: number, x: number, y: number) => __TAURI_INVOKE<ArrayBuffer>("map_tile", { z, x, y }),
 	openImage: (path: string, imgid: number | null) => __TAURI_INVOKE<OpenReply>("open_image", { path, imgid }),
+	closeImage: () => __TAURI_INVOKE<null>("close_image"),
 	history: (saved: boolean | null) => __TAURI_INVOKE<HistoryItem[]>("history", { saved }),
 	moduleState: (op: string, priority: number, enabled: boolean | null, reset: boolean | null, restore: Restore | null, preset: string | null) => __TAURI_INVOKE<ModuleStateReply>("module_state", { op, priority, enabled, reset, restore, preset }),
 	getParams: (modules: { [key in string]: string[] }) => __TAURI_INVOKE<GetReply>("get_params", { modules }),
@@ -53,9 +59,9 @@ export const commands = {
 	listSubfolders: (path: string) => __TAURI_INVOKE<SubFolder[]>("list_subfolders", { path }),
 	createFolder: (parent: string, name: string) => __TAURI_INVOKE<string>("create_folder", { parent, name }),
 	folderVolumes: (paths: string[]) => __TAURI_INVOKE<Volume[]>("folder_volumes", { paths }),
-	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground, preferSource, cameraPreview }),
+	thumb: (imgid: number, size: number, path: string | null, version: number | null, proof: boolean | null, foreground: boolean | null, preview: PreviewKinds | null, background: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb", { imgid, size, path, version, proof, foreground, preview, background }),
 	thumbThreads: (threads: number) => __TAURI_INVOKE<null>("thumb_threads", { threads }),
-	thumbCached: (path: string, version: number, size: number, preferSource: boolean | null, cameraPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size, preferSource, cameraPreview }),
+	thumbCached: (path: string, version: number, size: number, preferSource: boolean | null, cameraPreview: boolean | null, editedPreview: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("thumb_cached", { path, version, size, preferSource, cameraPreview, editedPreview }),
 	thumbKnown: (path: string, version: number, size: number) => __TAURI_INVOKE<ArrayBuffer>("thumb_known", { path, version, size }),
 	prefetch: (imgids: number[]) => __TAURI_INVOKE<null>("prefetch", { imgids }),
 	keywords: () => __TAURI_INVOKE<string[]>("keywords"),
@@ -68,7 +74,7 @@ export const commands = {
 	removeVirtualCopy: (imgid: number) => __TAURI_INVOKE<string | null>("remove_virtual_copy", { imgid }),
 	pathExists: (path: string) => __TAURI_INVOKE<boolean>("path_exists", { path }),
 	cacheLimits: (limits: Limits) => __TAURI_INVOKE<null>("cache_limits", { limits }),
-	cacheUsage: () => __TAURI_INVOKE<Limits>("cache_usage"),
+	cacheUsage: () => __TAURI_INVOKE<Usage>("cache_usage"),
 	cacheClear: (which: string) => __TAURI_INVOKE<null>("cache_clear", { which }),
 	launchFile: () => __TAURI_INVOKE<string | null>("launch_file"),
 	displayScale: () => __TAURI_INVOKE<number | null>("display_scale"),
@@ -121,10 +127,11 @@ export const commands = {
 	maskDelete: (name: string) => __TAURI_INVOKE<null>("mask_delete", { name }),
 	maskRename: (name: string, to: string) => __TAURI_INVOKE<null>("mask_rename", { name, to }),
 	maskMap: (name: string | null, op: string | null, width: number, height: number, view: MapView | null) => __TAURI_INVOKE<ArrayBuffer>("mask_map", { name, op, width, height, view }),
-	rangeMap: (ranges: Value[], width: number, height: number) => __TAURI_INVOKE<ArrayBuffer>("range_map", { ranges, width, height }),
+	rangeMap: (ranges: Value[], width: number, height: number, retouchInput: boolean | null) => __TAURI_INVOKE<ArrayBuffer>("range_map", { ranges, width, height, retouchInput }),
 	zones: (width: number, height: number, transition: number, stage: string) => __TAURI_INVOKE<ArrayBuffer>("zones", { width, height, transition, stage }),
-	spots: (spots: Spot[] | null) => __TAURI_INVOKE<Spot[]>("spots", { spots }),
+	spots: (spots: Spot[] | null) => __TAURI_INVOKE<SpotsReply>("spots", { spots }),
 	spotsEnable: (on: boolean) => __TAURI_INVOKE<null>("spots_enable", { on }),
+	spotsFill: (blend: string | null, opacity: number | null, ranges: Value[] | null) => __TAURI_INVOKE<FillSettings>("spots_fill", { blend, opacity, ranges }),
 	spotSource: (spot: NewSpot) => __TAURI_INVOKE<SpotSource>("spot_source", { spot }),
 	upright: (mode: string, guides: number[] | null, aspect: number) => __TAURI_INVOKE<UprightReply>("upright", { mode, guides, aspect }),
 	looksList: () => __TAURI_INVOKE<LookInfo[]>("looks_list"),
@@ -153,11 +160,14 @@ export const commands = {
 	presets: (op: string, priority: number, action: string | null, name: string | null, version: number | null, imgid: number | null) => __TAURI_INVOKE<PresetsReply>("presets", { op, priority, action, name, version, imgid }),
 	modulePresetImport: (op: string, priority: number, imgid: number, xml: string) => __TAURI_INVOKE<PresetsReply>("module_preset_import", { op, priority, imgid, xml }),
 	instance: (action: string, op: string, priority: number, name: string | null, other: number | null, after: boolean | null, mask: string | null) => __TAURI_INVOKE<InstanceReply>("instance", { action, op, priority, name, other, after, mask }),
+	orderInfo: () => __TAURI_INVOKE<OrderInfoReply>("order_info"),
+	orderSet: (modules: OrderEntry[] | null, reset: boolean | null) => __TAURI_INVOKE<OrderReply>("order_set", { modules, reset }),
 	darktableResources: () => __TAURI_INVOKE<ResourceLevels>("darktable_resources"),
 	darktableResourcesSet: (level: string) => __TAURI_INVOKE<null>("darktable_resources_set", { level }),
 	memoryBudget: () => __TAURI_INVOKE<MemoryBudget>("memory_budget"),
 	gpuEdits: () => __TAURI_INVOKE<GpuEditState>("gpu_edits"),
 	gpuEditsSet: (on: boolean) => __TAURI_INVOKE<null>("gpu_edits_set", { on }),
+	openclStatus: () => __TAURI_INVOKE<OpenclStatus>("opencl_status"),
 	webviewRenderer: () => __TAURI_INVOKE<WebviewRenderer | null>("webview_renderer"),
 	webviewRendererSet: (mode: string) => __TAURI_INVOKE<null>("webview_renderer_set", { mode }),
 	licenses: () => __TAURI_INVOKE<Licenses>("licenses"),
@@ -165,6 +175,7 @@ export const commands = {
 	engineRestart: () => __TAURI_INVOKE<void>("engine_restart"),
 	menuSet: (menus: NativeMenu[]) => __TAURI_INVOKE<null>("menu_set", { menus }),
 	cspViolation: (directive: string, blocked: string, source: string, line: number, sample: string) => __TAURI_INVOKE<void>("csp_violation", { directive, blocked, source, line, sample }),
+	stallBeat: (beat: Beat) => __TAURI_INVOKE<void>("stall_beat", { beat }),
 	previewFullscreen: (on: boolean) => __TAURI_INVOKE<null>("preview_fullscreen", { on }),
 	perfSet: (on: boolean) => __TAURI_INVOKE<null>("perf_set", { on }),
 	perfTraceStart: () => __TAURI_INVOKE<null>("perf_trace_start"),
@@ -193,12 +204,16 @@ export const commands = {
 	morfPhotoSave: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_save", { settings, key }),
 	morfPhotoTest: (settings: Config, key: string | null) => __TAURI_INVOKE<null>("morf_photo_test", { settings, key }),
 	morfPhotoForget: () => __TAURI_INVOKE<null>("morf_photo_forget"),
+	morfMirrorStatus: () => __TAURI_INVOKE<MirrorStatus>("morf_mirror_status"),
+	morfMirrorResync: () => __TAURI_INVOKE<void>("morf_mirror_resync"),
 	pluginFindApps: (patterns: string[]) => __TAURI_INVOKE<string[]>("plugin_find_apps", { patterns }),
 	pluginConfig: (legacy: PluginConfig[] | null) => __TAURI_INVOKE<PluginConfig[]>("plugin_config", { legacy }),
 	pluginConfigSave: (list: PluginConfig[]) => __TAURI_INVOKE<PluginConfig[]>("plugin_config_save", { list }),
 	pluginSetApp: (id: string, path: string) => __TAURI_INVOKE<PluginConfig[]>("plugin_set_app", { id, path }),
 	pluginChooseApp: (id: string) => __TAURI_INVOKE<PluginConfig[] | null>("plugin_choose_app", { id }),
 	pluginLaunch: (id: string, files: string[]) => __TAURI_INVOKE<null>("plugin_launch", { id, files }),
+	pluginPhotoCraft: (id: string, job: number, imgids: number[]) => __TAURI_INVOKE<string>("plugin_photo_craft", { id, job, imgids }),
+	pluginHeliconFocus: (id: string, job: number, imgids: number[], mode: HeliconMode) => __TAURI_INVOKE<PluginReturn | null>("plugin_helicon_focus", { id, job, imgids, mode }),
 	pluginWatch: (watch: PluginWatch) => __TAURI_INVOKE<null>("plugin_watch", { watch }),
 	pluginCancel: (token: number) => __TAURI_INVOKE<void>("plugin_cancel", { token }),
 	pluginJob: (job: PluginJob) => __TAURI_INVOKE<null>("plugin_job", { job }),
@@ -318,6 +333,15 @@ export type BackupSummary = {
 	components: BackupHeld[],
 };
 
+export type Beat = {
+	pending: PendingCall[],
+	slow: SlowCall[],
+	slowMore: number,
+	gapMs: number,
+	beforeGap: string[],
+	visible: boolean,
+};
+
 export type BuildInfo = {
 	app: string,
 	commit: string | null,
@@ -369,6 +393,8 @@ export type ChosenFile = {
 	label?: string | null,
 	hash: number | null,
 };
+
+export type ClipProvider = "morfPhoto" | "immich" | "local";
 
 export type ColorProfiles = {
 	input: ([string, number])[],
@@ -435,6 +461,7 @@ export type ExportItem = {
 	created?: string | null,
 	conflict?: string | null,
 	frame?: Value | null,
+	subdir?: string | null,
 };
 
 export type ExportOptions = {
@@ -471,7 +498,26 @@ export type ExportReply = {
 	album?: string | null,
 };
 
+export type FacetReply = {
+	kinds: ([string, number])[],
+	keywords: ([string, number])[],
+	cameras: ([string, number])[],
+	bodies: ([string, number])[],
+	lenses: ([string, number])[],
+	months: ([string, number])[],
+	iso: ([string, number])[],
+	aperture: ([string, number])[],
+	focal: ([string, number])[],
+	shutter: ([string, number])[],
+};
+
 export type FetchState = "idle" | "running" | "done" | "failed";
+
+export type FillSettings = {
+	blend: string,
+	opacity: number,
+	ranges: Value[],
+};
 
 export type FilmFetch = {
 	state: FetchState,
@@ -501,6 +547,17 @@ export type FilmStock = {
 export type FilmStocks = {
 	pack: FilmPack | null,
 	stocks: FilmStock[],
+};
+
+export type FindFacetsArgs = {
+	/**  "library" (All folders) or "folder" */
+	scope?: string,
+	folder?: string | null,
+	recursive?: boolean,
+	filters?: GridFilter,
+	remote?: SearchArgs,
+	/**  the lists to count; none means every list */
+	lists?: string[],
 };
 
 export type FolderConflict = {
@@ -594,6 +651,8 @@ export type HdrReply = {
 	path: string,
 	image: LibraryImage,
 };
+
+export type HeliconMode = "raw" | "tiff" | "auto-dng";
 
 export type HistoryItem = {
 	op: string,
@@ -698,6 +757,11 @@ export type LocalSearchArgs = {
 	remote?: SearchArgs,
 	next?: string | null,
 	size?: number,
+	/**
+	 *  Set by Find's "Both" mode when Immich is already queried in parallel,
+	 *  so `local_search` does not issue a duplicate Immich request.
+	 */
+	immichSearched?: boolean,
 };
 
 export type Location = {
@@ -808,6 +872,17 @@ export type MetaText = {
 	notes: string,
 };
 
+export type MirrorStatus = {
+	phase: Phase,
+	done: number,
+	total: number,
+	syncedAt: number | null,
+	photos: number,
+	complete: boolean,
+	error: string | null,
+	diskFull: boolean,
+};
+
 export type ModelStatus = {
 	revision: string,
 	bytes: number,
@@ -890,6 +965,7 @@ export type MoveSource = {
 	imgid?: number | null,
 	asset?: string | null,
 	assetPath?: string | null,
+	subdir?: string | null,
 };
 
 export type MoveSummary = {
@@ -927,8 +1003,47 @@ export type OpenReply = {
 	look_amount: number,
 	edited: boolean,
 	raw: boolean,
+	ldr?: boolean,
 	sensor: string | null,
 	fresh: boolean,
+};
+
+export type OpenclDevice = {
+	name: string,
+	disabled: boolean,
+};
+
+export type OpenclStatus = {
+	running: boolean,
+	stopped: boolean,
+	devices: OpenclDevice[],
+};
+
+export type OrderEntry = {
+	op: string,
+	priority: number,
+};
+
+export type OrderInfoReply = {
+	modules: OrderModule[],
+};
+
+export type OrderModule = {
+	op: string,
+	priority: number,
+	name: string,
+	label: string,
+	enabled: boolean,
+	iop_order: number,
+	owner: string | null,
+	lo: number,
+	hi: number,
+	locked: string | null,
+};
+
+export type OrderReply = {
+	instances: Instance[],
+	modules: OrderModule[],
 };
 
 export type PageValues = {
@@ -1003,6 +1118,14 @@ export type PathMap = {
 	local?: string,
 };
 
+export type PendingCall = {
+	id: number,
+	name: string,
+	ms: number,
+};
+
+export type Phase = "off" | "unavailable" | "idle" | "syncing" | "error";
+
 export type PickerStats = {
 	min: [number, number, number],
 	mean: [number, number, number],
@@ -1027,6 +1150,7 @@ export type PlanUnit = {
 	clash: string,
 	download: boolean,
 	keepSource: boolean,
+	folder: string,
 };
 
 export type PluginConfig = {
@@ -1080,6 +1204,12 @@ export type PresetsFile = {
 
 export type PresetsReply = {
 	presets: DtPreset[],
+};
+
+export type PreviewKinds = {
+	preferSource?: boolean | null,
+	cameraPreview?: boolean | null,
+	editedPreview?: boolean | null,
 };
 
 export type PrintProfile = {
@@ -1191,6 +1321,11 @@ export type ResourceLevels = {
 
 export type Restore = string | ModuleState;
 
+export type RootClipProvider = {
+	path: string,
+	provider: ClipProvider,
+};
+
 export type RootStatus = {
 	path: string,
 	mount: string | null,
@@ -1280,6 +1415,17 @@ export type SearchStatus = {
 	 *  search works without the Preferences check, which only sets `model.verified`.
 	 */
 	model_installed: boolean,
+	/**
+	 *  Whether morfPhoto CLIP or Immich Smart Search is actively serving CLIP
+	 *  for at least one mapped folder.
+	 */
+	remote_clip: boolean,
+	/**
+	 *  Effective CLIP provider (`morfPhoto`, `immich`, or `local`) per library
+	 *  root, using the cached probe state so this command never blocks on
+	 *  network timeouts.
+	 */
+	clip_providers: RootClipProvider[],
 };
 
 export type SharedImport = {
@@ -1288,13 +1434,53 @@ export type SharedImport = {
 	failed: string[],
 };
 
-export type Spot = { type: "circle"; x: number; y: number; r: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number } | { type: "brush"; points: ([number, number])[]; size: number; mode: SpotMode; sx: number; sy: number; feather: number; opacity: number };
+export type SlowCall = {
+	name: string,
+	ms: number,
+	failed: boolean,
+};
 
-export type SpotMode = "heal" | "clone";
+export type Spot = {
+	type: "circle",
+} & {
+	x: number,
+	y: number,
+	r: number,
+	mode: SpotMode,
+	sx?: number | null,
+	sy?: number | null,
+	feather: number,
+	opacity: number,
+} & SpotFill | {
+	type: "brush",
+} & {
+	points: ([number, number])[],
+	size: number,
+	mode: SpotMode,
+	sx?: number | null,
+	sy?: number | null,
+	feather: number,
+	opacity: number,
+} & SpotFill;
+
+export type SpotFill = {
+	fill_mode?: number | null,
+	fill_color?: [number, number, number] | null,
+	fill_brightness?: number | null,
+	blur_type?: number | null,
+	blur_radius?: number | null,
+};
+
+export type SpotMode = "heal" | "clone" | "fill" | "blur";
 
 export type SpotSource = {
 	sx: number,
 	sy: number,
+};
+
+export type SpotsReply = {
+	spots: Spot[],
+	fill?: FillSettings | null,
 };
 
 export type Status = {
@@ -1330,6 +1516,13 @@ export type UprightReply = {
 	lensshift_v: number,
 	lensshift_h: number,
 	fit?: string | null,
+};
+
+export type Usage = {
+	thumbs: number,
+	thumbsEdited: number,
+	immichThumbs: number,
+	immichOriginals: number,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

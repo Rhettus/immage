@@ -36,7 +36,9 @@ Open the **Folders** card in the **Library** panel.
   are; adding or dragging the folder in again brings it back.
 - **Include subfolders** shows the photos in a folder's subfolders too.
   It is off unless you
-  turn it on.
+  turn it on. Even a folder with hundreds of thousands of photos stays
+  responsive while it is read: the first photos show at once, and the rest
+  join the grid every second or two until the read finishes.
 - The refresh button reads the folders, and the open folder's photos,
   again: use it after adding files from outside Immage.
 - The **×** beside a top-level folder takes it off the list. Nothing is
@@ -50,17 +52,36 @@ Open the **Folders** card in the **Library** panel.
   connected by address; double-click the name or address to give it a
   name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
+  A folder inside the local folder set up for Immich or morfPhoto is always
+  treated as a network share. If that share isn't mounted, its drive heading
+  gets a red dot and its folders can't be opened or browsed, and nothing in
+  them is changed. The dot turns green and the folders are read again once the
+  share is mounted. With morfPhoto and Immage Accelerator on, the folders
+  instead list their photos from Immage's local copy of the morfPhoto catalog,
+  each with a small red dot; those photos can't be opened until the share is
+  mounted (see [Immage Accelerator](immage-accelerator.md#local-catalog)).
 - A folder on a slow share fills in gradually. Opening another folder, or a
   photo from your own drive, doesn't wait for it: the share's reading stops
   after the file it is on. Photos you opened before appear straight away from
   Immage's saved copy; the share's files are checked for changes side by side
   for at most a few seconds, and a file that hasn't answered by then keeps its
   saved copy until you next open the folder. A folder whose listing doesn't come
-  back within 10 seconds is reported as not answering.
-- A share that stops answering mid-folder doesn't freeze Immage. A file that
-  doesn't answer within 5 seconds is skipped, with the rest of that folder for
-  30 seconds, so photos on your own drive still open. Open the folder again
-  once the share is back to read the skipped files.
+  back within 10 seconds is reported as not answering. While a photo on a slow
+  share is being read, the rest of Immage stays responsive: you can open
+  other folders, and photos from your own drive, and keep editing. The photos
+  you open or scroll to are read first. When a photo Immage has to read in
+  first, such as one from a morfPhoto catalog or a search result, takes 5
+  seconds or more on a network share, work you aren't waiting on (Smart
+  search, and thumbnails off screen) leaves that share for a minute, or until
+  a read is quick again; those thumbnails load when you scroll to them.
+- A drive or share that stops answering mid-folder doesn't freeze Immage. A
+  file that doesn't answer within 5 seconds is skipped, and so is the rest of
+  that drive until the stuck file answers or the drive is unplugged, so photos
+  and thumbnails on your other drives still load. Its photos keep their
+  placeholders and are asked for again when you scroll to them or reopen the
+  folder. On your computer's own disk only that file's
+  folder is skipped, for 30 seconds. Open the folder again once the drive is
+  back to read the skipped files.
 - Editing comes first. While you zoom or adjust an open photo, the folder's
   reading and thumbnails slow down and catch up when you pause.
 
@@ -213,6 +234,14 @@ that isn't connected, don't take a drop.
 Hold ⌥ (Alt) as you drop to copy instead, keeping the originals where they
 are. You can also choose this in the confirmation.
 
+To send photos to a folder that isn't in the **Folders** card, or one that
+doesn't exist yet, choose **Photo > Move to Folder…** or **Photo > Copy to
+Folder…**, or right-click a photo or a selection and choose the same items.
+They act on the selection, or on the open photo when nothing is selected.
+Pick the folder in the system's folder chooser, where **New Folder** makes
+one. The chooser starts in the last folder you picked. The same confirmation
+follows as for a drop.
+
 Nothing happens until you confirm. The confirmation shows the following:
 
 - **The photos.** How many photos go, how much they add up to, and the
@@ -234,6 +263,25 @@ Nothing happens until you confirm. The confirmation shows the following:
   and **Keep both for all** set the whole list.
 - **Free space.** A warning appears, and the button is off, when the drive
   doesn't have room.
+- **Sort into subfolders.** Tick it to put each photo in a subfolder of the
+  destination named from its metadata, for example a year/month/day
+  library. The pattern starts as `{year}/{month}/{day}`; each `/` starts a
+  folder inside the one before. Use `{year}`, `{month}`, `{day}`,
+  `{datecaptured:YYYY-MM-DD}` (any mix of YYYY, MM and DD), `{camera}`,
+  `{lens}` or `{rating}`, and any text of your own, as in
+  `Keepers/{year}/{datecaptured:YYYY-MM-DD}`. A part left empty, such as
+  the date of a photo without a capture time, is dropped, so that photo
+  goes one level up. A photo's virtual copies share its file, so they go
+  together into the folder its first version names. The confirmation says
+  how many subfolders the photos go into and names one. Missing folders are made during the transfer, and
+  photos already in their folder, or there with other content, are found in
+  the subfolder. The choice and the pattern are kept for the next move or
+  copy.
+- **Stacked files.** When the photos include collapsed RAW+JPEG stacks,
+  **Include the stacked JPEG, HEIF or ORI files** chooses whether the
+  companions go with their raws. It starts ticked, unless the file-type
+  filter shows only raws, so filtering to RAW and dragging moves or copies
+  just the raws.
 
 Each photo goes with its XMP sidecars, every version's, and its mask
 sidecars, so its edits, ratings, labels and keywords arrive with it.
@@ -340,16 +388,21 @@ running finish before the newly visible photos use their slots.
 A photo counts as edited once you change something yourself. What Immage
 gives a photo the first time it opens (the **New Photos** settings in
 [Preferences](preferences.md)) doesn't count, and undoing every change
-makes it unedited again. darktable uses the same rule, and the sidecar
+makes it unedited again. Opening and viewing an unedited photo applies those
+defaults in memory without writing an XMP sidecar or re-queuing Smart search
+analysis until you make an edit. darktable uses the same rule, and the sidecar
 carries it, so its lighttable shows the same photos as altered. Photos
 opened in Immage before version 0.23.2 count their New Photos settings as
 an edit until you reset them.
 
 Press G, or click **Library** on the rail at the right edge, below
-**Import**, for **Grid** view: the whole folder at once.
-Double-click a photo to open it and go back to the filmstrip. G, Esc or the
-**Library** button also goes back. The **Library** button is highlighted while
-the grid shows.
+**Import**, for **Grid** view: the whole folder at once. Clicking a photo or
+stepping with the Left/Right arrow keys in the grid selects it and updates
+Metadata and Keywording without decoding or rendering the full photo in the
+editor. Double-click a photo, or press Enter, to open it in the editor. G, Esc
+or the **Library** button also leaves the grid, opening the selected photo if
+it differs from the one already open. The **Library** button is highlighted
+while the grid shows.
 
 In the grid the right-hand panel is **Find** (see below), locked in place: it
 has the same width, resize handle, show and hide button, pin and auto-hide
@@ -407,18 +460,22 @@ the filmstrip, opens it; the number on the button is how many filters are on.
 Searching the library and narrowing a folder both happen here.
 
 - **Search words**: type what to look for. **Smart** searches by what is in
-  the photo (it needs the optional model described above for photos on this
-  computer, and Immich's own machine learning for Immich); **Filename**
-  searches file names. Until the model is downloaded and Immich is not
-  connected, Smart cannot run: Find then shows Filename as the active choice and Smart
-  dimmed (hover it to see why; clicking does nothing), its box says it searches
-  file names, and it matches file names only. Your choice is
-  kept, so Smart returns by itself once the model is on this computer or Immich
-  is connected, even for a saved filter that asks for it. While the model is not
-  downloaded, a small tip under the search row says so, with **Set up in
-  Preferences**, which opens Preferences > General at the Smart search (CLIP) card,
-  and a close button that dismisses the tip for good. The tip also goes away by
-  itself once the model is installed.
+  the photo using per-folder precedence (**morfPhoto**, then **Immich**, then
+  the optional local CLIP model on this computer); **Filename** searches file
+  names. If a server does not answer or has CLIP/Smart Search turned off,
+  Immage falls through immediately to the next provider in that order. Immich
+  is used only while **Use Immich** is on in Preferences > Immich. Until a
+  local CLIP model is downloaded and neither morfPhoto CLIP nor Immich is
+  serving, Smart cannot run: Find then shows Filename as the active choice and
+  Smart dimmed (hover it to see why; clicking does nothing), its box says it
+  searches file names, and it matches file names only. Your choice is kept, so
+  Smart returns by itself once a provider is ready, even for a saved filter
+  that asks for it. While the local model is not downloaded and at least one
+  folder relies on local CLIP, a small tip under the search row says so, with
+  **Set up in Preferences**, which opens Preferences > General at the Smart
+  search (CLIP) card, and a close button that dismisses the tip for good. The
+  tip also goes away by itself once the model is installed or all folders are
+  served by morfPhoto or Immich.
 - **Analysis icon**: the icon at the end of the search box shows Smart
   search's background analysis of your photos, with the number of photos still
   waiting beside it (the exact number is in its tooltip; from 10,000 it is
@@ -426,15 +483,19 @@ Searching the library and narrowing a folder both happen here.
   A still arc means photos are waiting but nothing is running just now, for
   example while waiting for a quiet spell on a network drive or between batches.
   Find checks photo availability in batches, including while analysis is paused.
-  The count excludes photos as they are found missing or offline and includes
-  them again when they return. A pause symbol means analysis is paused, and a
-  green check means no photo is waiting. While the
+  The count excludes folders already served by morfPhoto or Immich CLIP, photos
+  found missing or offline, and photos in a folder on an unmounted share (see
+  [Folders](#folders)) until it is mounted again. While morfPhoto is set up, it
+  also excludes every photo on a network drive, which Immage never analyzes
+  itself. It includes the others again if the Immich server stops answering or
+  files return. A pause symbol means
+  analysis is paused, and a green check means no photo is waiting. While the
   count is being worked out the tooltip says so. Click it to pause or resume,
   the same pause as **Pause / Resume** in Preferences > General > Background
   work. Before the model is downloaded the icon is dimmed and does nothing; its
   tooltip says the model is not installed.
   Browsing photos keeps their existing analysis. Saving edits queues fresh
-  analysis for the edited photo or virtual copy.
+  analysis for the edited photo or virtual copy in folders using local CLIP.
 - **Search in**: **This folder** or **All folders**. With Immich set up in
   Preferences, **Immich** and **Both** are also offered. **This folder** means
   whichever folder is open.
@@ -507,9 +568,29 @@ list the server's values.
 Each list counts only the photos your other choices leave: tick a camera, and
 **Lens** lists just the lenses used on it.
 
+With **Search in** set to **All folders**, the lists hold every value in your
+whole library, with how many photos have it, not just the photos on the current
+page of results: file types, keywords (a photo counts once under each level of
+a keyword), cameras, camera bodies, lenses, capture months and the four
+exposure settings. They include photos in the local catalog of an Immage
+Accelerator folder and Immage's own photo index. The lists refresh a moment
+after you change a filter and keep showing the previous values until the new
+ones arrive. **This folder** lists the photos of the folder, as before.
+
+**Camera**, **Camera body**, **Lens** and each **Exposure** tab have a find box
+once they list more than eight values. A list of more than 200 values shows the
+200 most used, plus any you have ticked; type in the find box to search the
+whole list.
+
+A camera or lens has one spelling in the lists, whether Immage read it from the
+file or from your morfPhoto server: **Nikon Z 6**, not **NIKON CORPORATION
+NIKON Z 6**. Saved filters that name the other spelling still match.
+
 Everything applies live. A tick works at once; typed words apply when you
 press Enter or after a short pause. The footer is always visible below the list:
-it shows how many photos match, **Load** (saved filters) and **Save filter…**. Esc
+it shows how many photos match, **Load** (saved filters) and **Save filter…**,
+with **Copy…**, **Paste** and **Previous** pinned below it at the bottom of the
+right panel just like in Adjustments. Esc
 folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
 buttons still work and are the same filters: changing one changes the other.
 Opening another folder sets **Search in** to **This folder** and clears the
@@ -556,9 +637,19 @@ this computer only and says that Immich was skipped.
 ## RAW+JPEG pairs
 
 Turn on **Stack RAW+JPEG pairs as one photo** in **Preferences › General**
-to show a raw and the JPEG, HEIF or OM System .ORI of the same name as a
-single photo. Its thumbnail reads, for example, **ARW+JPG**. A rating,
-reject or delete takes them all.
+to show a raw and the JPEG, HEIF or OM System `.ORI` of the same name as a
+single stacked thumbnail with a layered shadow behind it and a clickable
+format badge (for example, **ARW+JPG ▸**) in both Grid view and the
+filmstrip.
+
+Click the badge to expand the stack in place and show the raw alongside its
+companion JPEG, HEIF or `.ORI` so you can select, rate, reject or open either
+file for editing. Click the badge on any expanded photo (for example,
+**ARW ▾** or **JPG ▾**) to collapse the stack back into a single thumbnail.
+While collapsed, rating, rejecting, labeling, moving, renaming or deleting
+takes the whole pair; while expanded, each visible file acts independently.
+Moving or copying a collapsed stack can leave its companions behind; see
+[Moving and copying photos](#moving-and-copying-photos).
 
 ## Virtual copies
 
@@ -597,7 +688,10 @@ brackets themselves aren't changed.
 HDR DNGs preserve their format identification, color calibration and sensor
 pattern when copying the brackets' EXIF, and retain the camera's orientation
 so portrait and rotated brackets open upright in darktable and other photo
-applications.
+applications. Like a camera's raw, the DNG carries a preview of the merge as
+it first opens, so its thumbnail appears at once, here and in other apps
+that show previews, even on a slow drive. Editing the merge doesn't change
+that preview: Immage draws an edited photo's thumbnail from the edit.
 Regenerate an older merge if it shows a **?** thumbnail and cannot open.
 
 The brackets must be raws from the same camera, of the same size and
@@ -651,8 +745,16 @@ changed.
 
 Panorama DNGs can also be opened in darktable. RAW merges preserve the DNG's
 format identification, camera color matrix and white balance when copying
-the source photo's EXIF. If an older RAW merge shows a **?** thumbnail and
-cannot open, merge the original photos again with the updated version.
+the source photo's EXIF. Like an HDR merge, the DNG carries a preview of the
+panorama as it first opens, so its thumbnail appears at once. If an older RAW
+merge shows a **?** thumbnail and cannot open, merge the original photos
+again with the updated version.
+
+Before blending, Panorama Merge matches the photos' exposure and color, and
+evens out the lens's vignetting (corners darker than the middle), from
+the areas where the photos overlap. Photos shot at slightly different
+exposures or white balances blend into an even sky, without bands at the
+overlaps. The preview uses the same matching.
 
 The photos should overlap by a third or so. A photo that overlaps none of
 the others is left out, and the activity line says so. Stitching runs on OpenCV rather than darktable,
@@ -688,15 +790,28 @@ Right-click a photo, or a selection, for:
   hidden for Immich results, which keep Immich's ratings until opened.
 
 - **Edit In ›**: send it to another application. See [Edit In](edit-in.md).
+- **Move to Folder…** / **Copy to Folder…**: send the photos to a folder you
+  choose. See [Moving and copying photos](#moving-and-copying-photos).
 - **Create Virtual Copy** / **Remove Virtual Copy**
 - **HDR Merge…**, for two raws or more
 - **Panorama Merge…**, for two photos or more
 - **Adjust Capture Time…** / **Undo Capture Time Adjustment…**
+- **Reset Photo** / **Reset N Photos…**, in the grid when at least one selected
+  photo is edited. Confirm to discard the selected photos’ edits. Check
+  **Don’t show this confirmation again** before choosing **Reset** to skip
+  future prompts here and in Adjustments. Unedited photos are ignored and
+  the item does not appear when none are edited.
+- **Show in Library**: jumps to the photo's thumbnail in its folder view,
+  expanding and scrolling to its folder in the left panel; useful after
+  Smart/CLIP or **All folders** searches.
 - **Show in Finder**
-- **Import Parent Folder**, for an Immich result when Immich is configured in
-  Preferences: add its locally mapped parent to Folders and browse its photos.
-  Disabled when no local file is available. See [Immich](immich.md).
-- **Show in Immich**, for a photo from an Immich search
+- **Import Parent Folder**, for an Immich result when Immich is configured and
+  enabled in Preferences: add its locally mapped parent to Folders and browse
+  its photos. Disabled when no local file is available. See [Immich](immich.md).
+- **Show in Immich**, for a photo from an Immich search (hidden when Immich is
+  not configured or disabled)
+- **Show Results in Immich**, for searches that include Immich (hidden when
+  Immich is not configured or disabled, and on local-only searches)
 - **Delete Rejected Photo…**
 
 ## Metadata
@@ -786,6 +901,18 @@ The menu command is available when the grid shows a local photo.
 The toolbar magnifier and the menu use the photo under the pointer, else the
 selected photo, else the first photo in the grid; the thumbnail icon opens
 that thumbnail's photo.
+
+When you leave an edited RAW photo, for another photo or for the grid, Immage
+prepares its culling preview in the background, so culling it next opens at
+once instead of rendering the edits again. Pasting settings onto RAW photos
+does the same for each of them. It waits until the grid's thumbnails have
+finished loading, including the fresh thumbnails of the photos you edited or
+pasted onto, and until the photo you open next has appeared. It does not run
+while culling is open: a photo you paste onto while culling has its preview
+rendered again when culling shows it. This starts after you have opened
+culling at least once (so the size is known), and is skipped while **Camera
+previews** is on.
+Opening culling or another folder cancels what is still waiting.
 
 Press **F** over a photo to show a floating preview over the dimmed library,
 in a fixed frame covering 80% of the window width and height, without opening it in the

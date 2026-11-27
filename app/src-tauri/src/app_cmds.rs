@@ -7,7 +7,7 @@ use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use crate::typed_app::{Level, Licenses, ParityReply, Toggle};
+use crate::typed_app::{Level, Licenses, OpenclReply, ParityReply, Toggle};
 use tauri::{AppHandle, Manager, State};
 use crate::AppState;
 use crate::ai_cmds::no_console;
@@ -274,7 +274,7 @@ pub(crate) fn machine_block(dir: Option<&Path>, opencl: Option<Value>) -> Value 
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn perf_machine(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
-    let opencl = state.engine("perf_machine").request(json!({ "cmd": "opencl" })).ok()
+    let opencl = state.request("perf_machine", json!({ "cmd": "opencl" })).ok()
         .map(|mut r| { if let Some(o) = r.as_object_mut() { o.remove("ok"); } r });
     let dir = app.path().app_data_dir().ok();
     tauri::async_runtime::spawn_blocking(move || machine_block(dir.as_deref(), opencl))
@@ -327,6 +327,15 @@ pub(crate) fn gpu_edits(state: State<'_, AppState>) -> Toggle {
     Toggle { running: state.gpu_edits.load(Ordering::Relaxed), next: engine::gpu_edits(&state.runtime) }
 }
 
+// the OpenCL devices the engine edits and exports on, for Preferences' GPU
+// card. async: it waits its turn at the engine
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn opencl_status(state: State<'_, AppState>) -> Result<OpenclReply, String> {
+    let reply = state.request("opencl_status", json!({ "cmd": "opencl" }))?;
+    serde_json::from_value(reply).map_err(|e| format!("opencl: unexpected reply: {e}"))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn gpu_edits_set(settings: State<'_, settings::Settings>, on: bool) -> Result<(), String> {
@@ -360,7 +369,7 @@ pub(crate) fn build(app: AppHandle) -> bindings::BuildInfo {
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn about(app: AppHandle, state: State<'_, AppState>) -> Result<bindings::AboutInfo, String> {
-    let reply = state.engine("about").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("about", json!({ "cmd": "version" }))?;
     Ok(bindings::AboutInfo {
         app: app.package_info().version.to_string(),
         commit: build_label(),

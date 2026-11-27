@@ -48,6 +48,26 @@ card switches to the one you picked.
 A module darktable cannot apply to this photo is greyed out and cannot be
 picked, as in Add module. With no photo open, every row is greyed out.
 
+## Module order
+
+The **Module order** button (up and down arrows) at the end of the module search
+box opens the order the photo's enabled modules run in, from the top down. Each
+row shows its position number. darktable runs the modules in this order, so
+moving one can change the result; the order is saved with the photo, in its
+sidecar like other edits.
+
+Drag a module by its grip to move it. While you drag, a line shows where it can
+go, and rows it cannot pass are dimmed. Or select a row and press **Alt+Up** or
+**Alt+Down** to move it one place. Locked rows, marked with a lock icon, cannot
+move. darktable keeps some modules in place, and mask and look adjustments are
+placed by the Masks and Looks tools, so their rows say which one manages them.
+
+**Apply** sets the new order for this photo only, and is one step in Edit >
+Undo and History. **Cancel** discards the changes. **Reset to default** asks
+first, then puts every module back in darktable's default order for the photo.
+If darktable cannot use an order, the dialog says so and shows the current
+order again.
+
 ## Hiding modules
 
 **Preferences > Modules > Advanced modules** lists every Advanced module by
@@ -179,6 +199,14 @@ Besides exposure, the Basic group has these darktable modules:
   none on, the card shows each tone mapper the photo has used. Add module lists
   them too, checked while the card shows one. Simple's tone mapper follows a
   switch made here.
+  - On already tone-mapped photos (JPEG, PNG, WebP, HEIC, 8/16-bit TIFF), tone
+    mappers are disabled in Add module, the module search and the card switch.
+    If an older sidecar already has a tone mapper enabled, you can still switch
+    it off.
+  - Enabling, editing or duplicating a second tone mapper while another is
+    already enabled (including from the History panel) opens a warning dialog
+    offering to **Switch to** the new tone mapper, **Enable anyway** or
+    **Cancel**.
   - AgX: tabs **Settings** (input exposure range, basic and advanced curve
     settings, look) and **Primaries** (before and after tone mapping). Its curve
     graph and pickers are not on the card yet.
@@ -271,8 +299,16 @@ The HSL / Color group has these darktable modules:
   module.
 - **Velvia**: **Strength** and **Mid-tones bias**.
 - **Color contrast**: **Green-magenta contrast** and **Blue-yellow contrast**.
-- **Color zones**: **Select by**, **Process mode** and **Mix**. Its curves
-  are not on the card yet.
+- **Color zones**: a graph with **Hue**, **Chroma** and **Lightness** pages,
+  then **Select by**, **Process mode** and **Mix**. Each page is a curve
+  across the colors chosen by **Select by**, shown by the color strip under
+  it. On **Lightness** and **Chroma**, raise a point to brighten or saturate
+  those colors and lower it to darken or mute them; on **Hue**, move a point
+  up or down to shift those colors toward neighboring hues. Click to add a point; double-click or drag a point off
+  the graph to remove it. The interpolation menu sets the curve shape of the
+  page shown, and **Reset** returns that page to flat. When selecting by hue,
+  the curve wraps around from the right edge to the left. The same graph is on
+  Color zones' mask card.
 - **Color harmonizer**: **Harmony rule** (and **Nodes** for a custom rule),
   **Pull strength**, **Pull width**, **Neutral color protection** and
   **Smoothing**, then a saturation slider for each of the rule's hues. The

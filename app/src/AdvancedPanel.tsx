@@ -12,7 +12,7 @@ import { patchPaths } from "./colorchecker";
 import { clusterPaths } from "./colormapping";
 import { LAYOUTS, editOf, groupLayouts, layoutPaths, layoutFor, layoutRank, shows } from "./advancedLayout";
 import { searchModules, type SearchHit } from "./advancedSearch";
-import { MASK_MODULES, localMaps, panels } from "./manifest";
+import { MASK_MODULES, TONE_MAPPER_OPS, localMaps, panels } from "./manifest";
 import { useDismiss } from "./MasksPanel";
 import { AddModuleMenu } from "./AddModuleMenu";
 import { GRAPHS } from "./graphMaps";
@@ -20,6 +20,7 @@ import { MAX_NODES } from "./tonecurve";
 import { isHidden, loadHiddenModules, visibleLayouts } from "./hiddenModules";
 import type { ImageEntry } from "./library";
 import { t } from "./i18n";
+import { ModuleOrderIcon } from "./icons";
 import { fieldText } from "./fieldText";
 import { presetLabel } from "./presetName";
 
@@ -31,8 +32,9 @@ export const TECHNICAL_ID = "technical";
 // and settings (by label) it finds in every group. `applicable` says whether
 // darktable can apply a module to this photo; a module it cannot, or any with
 // no photo open, is greyed out
-export function AdvancedSearch({ photo, applicable, onPick }: {
-  photo: boolean; applicable: (op: string) => boolean; onPick: (hit: SearchHit) => void;
+export function AdvancedSearch({ photo, applicable, reasonFor, onPick, onOrder }: {
+  photo: boolean; applicable: (op: string) => boolean; reasonFor?: (op: string) => string | undefined; onPick: (hit: SearchHit) => void;
+  onOrder?: () => void;   // the Module order button beside the search
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -64,12 +66,14 @@ export function AdvancedSearch({ photo, applicable, onPick }: {
                else if (e.key === "Enter" && open && hits[active]) { e.preventDefault(); pick(hits[active]); }
                else if (e.key === "Escape") { e.stopPropagation(); close(); }
              }} />
+      {onOrder && <button type="button" className="tool" title={t("dialogs.moduleOrder.title")} aria-label={t("dialogs.moduleOrder.title")}
+                          disabled={!photo} onClick={onOrder}><ModuleOrderIcon /></button>}
       {open && hits.length > 0 && (
         <div id="advanced-search-results" className="context-menu module-menu advanced-search-results" role="listbox">
           {hits.map((h, i) => (
             <button key={`${h.group}:${h.op}:${h.title}`} type="button" role="option" aria-selected={i === active}
                     className={i === active ? "active" : ""} data-search-hit={h.op} disabled={!ok(h)}
-                    title={!photo ? t("fields.advanced.openPhoto") : ok(h) ? undefined : t("fields.advanced.notApplicable")}
+                    title={!photo ? t("fields.advanced.openPhoto") : ok(h) ? undefined : (reasonFor?.(h.op) ?? t("fields.advanced.notApplicable"))}
                     onMouseEnter={() => { if (ok(h)) setActive(i); }}
                     onClick={() => pick(h)}>
               <span className="name">{fieldText(h.title)}{h.setting && <span className="tag"> · {fieldText(h.setting)}</span>}</span>
@@ -95,6 +99,12 @@ const schemaOf = (op: string) => {
 };
 
 export type AdvancedEdit = (ids: string[], label?: string, gesture?: number) => void;
+export type ToneMapperGuardRequest = {
+  current: string;
+  next: string;
+  onSwitch: () => void;
+  onEnableAnyway: () => void;
+};
 
 // modules that do one job and share a card: the photo shows the one that is
 // on (or, with none on, the ones it has used), and the card's switch moves
@@ -120,9 +130,10 @@ const cardFields = (layout: NonNullable<ReturnType<typeof layoutFor>>) => {
     ...(layout.graph ? GRAPHS[layout.graph].fields : [])];
 };
 
-export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onSimple, onTurn, pick, onPicked, photos }: {
+export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0, record, onToneMapperGuard, onSimple, onTurn, pick, onPicked, photos }: {
   id: string; title: string; open: boolean; onToggle: (solo: boolean) => void;
   session?: Session | null; revision?: number; record?: AdvancedEdit;
+  onToneMapperGuard?: (req: ToneMapperGuardRequest) => void;
   // Simple's values set as one undo step, for a card of a Simple instance
   onSimple?: (entries: [string, number][], label: string) => void;
   // the toolbar's turn of the photo, for a card's turn buttons
@@ -172,23 +183,46 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     const f = familyOf(c.i.op);
     return shown(c) && (!f || c.state.enabled || !familyOn(f));
   }).sort((a, b) => layoutRank(a.i.op, id) - layoutRank(b.i.op, id));
+  const tmAllowed = (op: string) => !TONE_MAPPER_OPS.has(op) || !!session?.toneMappable;
+  const tmReason = (op: string) => TONE_MAPPER_OPS.has(op) && session && !session.toneMappable
+    ? t("fields.advanced.toneMapperNonRaw") : undefined;
+  // Pop-up warning when an Advanced action would leave two tone mappers enabled.
+  const guardToneMapper = (op: string, priority: number | null, label: string,
+                           onEnableAnyway: () => void, onSwitch: () => void) => {
+    if (!session || !TONE_MAPPER_OPS.has(op)) { onEnableAnyway(); return; }
+    const others = session.activeToneMappers(priority === null ? undefined : { op, priority });
+    if (!others.length || !onToneMapperGuard) { onEnableAnyway(); return; }
+    const current = others.map((x) => fieldText(layoutFor(x.op, id)?.title ?? x.title)).join(", ");
+    onToneMapperGuard({ current, next: fieldText(label), onSwitch, onEnableAnyway });
+  };
   // hidden modules leave the tone mapper switch, but not the one the card is on
   const hiddenSet = loadHiddenModules();
   const familyOptions = (f: { ops: string[] }, current: string) => f.ops.flatMap((op) => {
     if (op !== current && isHidden(hiddenSet, id, op)) return [];
     const l = layoutFor(op, id), first = all.find((c) => c.i.op === op && c.i.priority === 0);
-    return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false }] : [];
+    return l && first ? [{ op, title: l.title, applicable: first.i.switchable !== false && tmAllowed(op),
+                           reason: tmReason(op) }] : [];
   });
   const switchTo = (c: typeof all[number], f: { label: string }, to: string) => {
+    if (!tmAllowed(to)) return;
     record?.([`adv:${c.i.op}#${c.i.priority}:switch:${performance.now()}`], `Switch ${f.label}: ${layoutFor(to, id)!.title}`);
     session!.switchModule(c.i.op, c.i.priority, to);
   };
   // Add module's action, for its menu and the search
   const add = (op: string) => {
+    if (!tmAllowed(op)) return;
     const l = layoutFor(op, id)!;
     if (l.instance) { onSimple!(l.instance.add, `Add module: ${l.title}`); return; }
-    record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
-    session!.addModule(op);
+    const doAdd = () => {
+      record?.([`adv:${op}#0:add:${performance.now()}`], `Add module: ${l.title}`);
+      session!.addModule(op);
+    };
+    const doSwitch = () => {
+      record?.([`adv:${op}#0:switch:${performance.now()}`], `Switch tone mapper: ${l.title}`);
+      session!.disableOtherToneMappers({ op, priority: 0 });
+      session!.addModule(op);
+    };
+    guardToneMapper(op, 0, l.title, doAdd, doSwitch);
   };
   const choices = visibleLayouts(groupLayouts(id), hiddenSet).flatMap((l) => {
     // a named card's instance may not exist yet: the module's first says
@@ -199,7 +233,7 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
     // card's switch is how to reach it
     const f = familyOf(l.op);
     return [{ op: l.op, title: l.title, shown: cards.some((c) => c.i.op === l.op || (!!f && f.ops.includes(c.i.op) && c.state.enabled)),
-              applicable: first.switchable !== false }];
+              applicable: first.switchable !== false && tmAllowed(l.op), reason: tmReason(l.op) }];
   });
   // the module search's pick: the card shown is focused, a tone mapper's
   // shared card switches to it, and a module not shown is added
@@ -240,32 +274,94 @@ export function AdvancedGroup({ id, title, open, onToggle, session, revision = 0
                 rename: "Rename instance", up: "Move instance", down: "Move instance", delete: "Delete instance",
                 remove: "Remove from mask", reset: "Reset module" };
               if (c === "remove" || c === "reset") return;
-              // each action its own step, however quickly the next follows
-              record?.([`adv:${key}:${c}:${performance.now()}`], `${steps[c]}: ${layout.title}`);
-              if (c === "up") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index - 1].priority, after: false });
-              else if (c === "down") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index + 1].priority, after: true });
-              else s.instanceAction({ action: c, op: i.op, priority: i.priority, name });
+              if ((c === "new" || c === "duplicate") && !tmAllowed(i.op)) return;
+              const runInstance = () => {
+                // each action its own step, however quickly the next follows
+                record?.([`adv:${key}:${c}:${performance.now()}`], `${steps[c]}: ${layout.title}`);
+                if (c === "up") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index - 1].priority, after: false });
+                else if (c === "down") s.instanceAction({ action: "move", op: i.op, priority: i.priority, other: sib[index + 1].priority, after: true });
+                else s.instanceAction({ action: c, op: i.op, priority: i.priority, name });
+              };
+              if (c === "duplicate" && TONE_MAPPER_OPS.has(i.op) && (state.enabled || s.activeToneMappers().length > 0)) {
+                guardToneMapper(i.op, null, layout.title, runInstance, () => {
+                  record?.([`adv:${key}:switch:${performance.now()}`], `${steps[c]}: ${layout.title}`);
+                  s.disableOtherToneMappers();
+                  s.instanceAction({ action: c, op: i.op, priority: i.priority, name });
+                });
+                return;
+              }
+              runInstance();
+            };
+            const applyFieldEdit = (edit: Record<string, number>, coalesce: boolean, editId: string, gesture?: number) => {
+              if (!state.enabled && !tmAllowed(i.op)) return;
+              const doEdit = () => {
+                record?.([`adv:${key}:${editId}`], layout.title, gesture);
+                session!.setFields(i.op, i.priority, edit, coalesce);
+              };
+              if (!state.enabled && TONE_MAPPER_OPS.has(i.op)) {
+                guardToneMapper(i.op, i.priority, layout.title, doEdit, () => {
+                  record?.([`adv:${key}:switch:${performance.now()}`], `Switch tone mapper: ${layout.title}`);
+                  session!.disableOtherToneMappers({ op: i.op, priority: i.priority });
+                  session!.setFields(i.op, i.priority, edit, coalesce);
+                });
+                return;
+              }
+              doEdit();
             };
             return (
-              <ModuleCard key={key} hidden={isHidden(hiddenSet, id, i.op)} instance={i} layout={layout} schema={schema} state={state}
+              <ModuleCard key={key} hidden={isHidden(hiddenSet, id, i.op)}
+                blockEnable={!tmAllowed(i.op)} blockReason={tmReason(i.op)}
+                instance={i} layout={layout} schema={schema} state={state}
                 family={(() => {
                   const f = familyOf(i.op);
                   return f && familyOptions(f, i.op).length > 1 ? { label: f.label, options: familyOptions(f, i.op), onPick: (to: string) => switchTo(cards.find((c) => c.i === i)!, f, to) } : undefined;
                 })()}
                 photo={session} photos={photos} onSettled={() => void session!.reloadAdvanced(i.op, i.priority)} settle={() => session!.settled()} wbInModule={session?.wbInModule} wbLocked={session?.wbLocked} trouble={i.op === "temperature" ? session?.wbTrouble : i.op === "channelmixerrgb" ? session?.catTrouble.get(i.priority) : 0} siblings={sib.length} index={index} fresh={session!.lastAdded === key} focus={focused?.key === key ? focused.nonce : undefined} onInstance={onInstance} onTurn={onTurn}
-                onField={(path, v, coalesce) => { record?.([`adv:${key}:${path}`], layout.title); const c = session!.context;
-                  session!.setFields(i.op, i.priority, editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce); }}
-                onFields={(edit, coalesce, id, gesture) => {
+                onField={(path, v, coalesce) => {
+                  const c = session!.context;
+                  applyFieldEdit(editOf(layout, path, v, state.params, { width: c.sensorWidth, height: c.sensorHeight }), coalesce, path);
+                }}
+                onFields={(edit, coalesce, editId, gesture) => {
                   const c = session!.context;
                   const size = { width: c.sensorWidth, height: c.sensorHeight };
                   const all = Object.entries(edit).reduce((acc, [path, v]) => ({ ...acc, ...editOf(layout, path, v, { ...state.params, ...acc }, size) }), {});
                   if (gesture !== undefined && !session!.changesFields(i.op, i.priority, all)) return;
-                  record?.([`adv:${key}:${id}`], layout.title, gesture);
-                  session!.setFields(i.op, i.priority, all, coalesce); }}
-                onEnabled={(on) => { record?.([`adv:${key}:enabled`], layout.title); session!.setAdvancedEnabled(i.op, i.priority, on); }}
+                  applyFieldEdit(all, coalesce, editId, gesture);
+                }}
+                onEnabled={(on) => {
+                  if (on && !tmAllowed(i.op)) return;
+                  const doToggle = () => {
+                    record?.([`adv:${key}:enabled`], layout.title);
+                    session!.setAdvancedEnabled(i.op, i.priority, on);
+                  };
+                  if (on && TONE_MAPPER_OPS.has(i.op)) {
+                    guardToneMapper(i.op, i.priority, layout.title, doToggle, () => {
+                      record?.([`adv:${key}:switch:${performance.now()}`], `Switch tone mapper: ${layout.title}`);
+                      session!.disableOtherToneMappers({ op: i.op, priority: i.priority });
+                      session!.setAdvancedEnabled(i.op, i.priority, true);
+                    });
+                    return;
+                  }
+                  doToggle();
+                }}
                 loadPresets={(change) => session!.loadPresets(i.op, i.priority, change)}
                 importPreset={(xml) => session!.importModulePreset(i.op, i.priority, xml)}
-                onPreset={(name) => { record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`); session!.applyPreset(i.op, i.priority, name); }}
+                onPreset={(name) => {
+                  if (!state.enabled && !tmAllowed(i.op)) return;
+                  const doPreset = () => {
+                    record?.([`adv:${key}:preset:${performance.now()}`], `Preset: ${layout.title}`);
+                    session!.applyPreset(i.op, i.priority, name);
+                  };
+                  if (!state.enabled && TONE_MAPPER_OPS.has(i.op)) {
+                    guardToneMapper(i.op, i.priority, layout.title, doPreset, () => {
+                      record?.([`adv:${key}:switch:${performance.now()}`], `Switch tone mapper: ${layout.title}`);
+                      session!.disableOtherToneMappers({ op: i.op, priority: i.priority });
+                      session!.applyPreset(i.op, i.priority, name);
+                    });
+                    return;
+                  }
+                  doPreset();
+                }}
                 onReset={() => { record?.([`adv:${key}:reset`], layout.title); session!.resetAdvanced(i.op, i.priority); }} />
             );
           })}

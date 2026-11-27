@@ -248,6 +248,8 @@ typedef enum _stage_t
   _STAGE_TEMPERATURE,
   _STAGE_CHECKER_INPUT,
   _STAGE_CHECKER_OUTPUT,
+  _STAGE_RETOUCH,
+  _STAGE_RETOUCH_IN,
 } _stage_t;
 
 // lock order. every engine mutex has a rank; a thread takes locks in
@@ -267,7 +269,10 @@ typedef enum _stage_t
 //   5  ai_load         AI provider conf while a model loads (slow)
 //   6  ai_cache        segmentation and mask caches
 //   7  pool            the five thread-pool pointers, and the prefetch queue
-//   8  probe           quarantine table; a folder probe's finished flag
+//   8  probe           quarantine table; a folder probe's finished flag; the
+//                      drive table and import slots (drives.c); the file
+//                      stamps (library.c, library_refresh_changed). each rank-8
+//                      lock is taken alone, never with another of them
 //   9  cancel, fg      base and merge cancel flags; foreground busy flag
 //   10 reply           stdout line writes (taken from everywhere, leaf)
 typedef enum eng_lock_rank_t
@@ -395,6 +400,20 @@ gboolean wb_various_read(dt_iop_module_t *mod, const gboolean from_defaults, dou
 gboolean wb_illuminant_read(dt_iop_module_t *mod, const char *name, const gboolean from_defaults, double *num);
 void wb_illuminant_changed(dt_iop_module_t *mod, const char *name, const int previous);
 gboolean wb_presets(JsonBuilder *b, char **err);
+// drives.c: drives that have stopped answering, held until their stuck read
+// returns. a drives_t is never freed. NULL is the system disk, never held
+typedef struct drives_t drives_t;
+void drives_init(void);
+drives_t *drives_of(const char *path);
+const char *drives_mount(const drives_t *d);
+gboolean drives_held(drives_t *d);
+drives_t *drives_path_held(const char *path);
+void drives_stuck(drives_t *d);
+void drives_unstuck(drives_t *d);
+int drives_import_begin(drives_t *d);
+void drives_import_end(const int slot);
+void drives_test_stall(const char *path);
+
 // files.c: the file-name params no number can hold, edited as the hash of the
 // name like the lens module's "lens_pick": lut3d's "lut_file" (filepath, a
 // file in the LUT folder) and watermark's "wm_marker" (filename, a marker in
@@ -453,6 +472,8 @@ void session_module_state_json(JsonBuilder *b, const dt_iop_module_t *mod, const
 gboolean session_instance(const char *action, const char *op, const int priority, const char *name,
                           const char *mask,
                           const int other, const gboolean after, JsonBuilder *b, char **err);
+void session_order_info(JsonBuilder *b);
+gboolean session_order(JsonObject *req, JsonBuilder *b, char **err);
 gboolean session_lens_menu(JsonBuilder *b, char **err);
 gboolean session_color_profiles(JsonBuilder *b, char **err);
 dt_dev_pixelpipe_iop_t *session_piece(dt_dev_pixelpipe_t *pipe, const dt_iop_module_t *m);
@@ -481,7 +502,9 @@ gboolean masks_combine(const char *name, JsonArray *members, JsonArray *ranges, 
 void masks_add_num(JsonBuilder *b, const char *name, const double v);
 gboolean masks_spots_set(JsonArray *spots, char **err);
 gboolean masks_spots_json(JsonBuilder *b, char **err);
+dt_iop_module_t *masks_fill_instance(void);
 gboolean masks_spots_enable(const gboolean on, char **err);
+gboolean masks_fill_set(JsonObject *req, JsonBuilder *b, char **err);
 gboolean masks_spot_source(JsonObject *o, JsonBuilder *b, char **err);
 gboolean masks_masks(JsonObject *fields, JsonBuilder *b, char **err);
 gboolean masks_mask_delete(const char *name, char **err);
@@ -497,8 +520,8 @@ gboolean masks_upright(const char *mode, JsonArray *guides, const double aspect,
                        char **err);
 void masks_points(JsonArray *pts, const gboolean to_shown, JsonBuilder *b);
 gboolean masks_tone_key(JsonBuilder *b, char **err);
-gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const char *out,
-                         char **err);
+gboolean masks_range_map(JsonArray *ranges, const int width, const int height, const _stage_t stage,
+                         const char *out, char **err);
 gboolean masks_zones(const int width, const int height, const float w, const _stage_t stage,
                      const char *out, JsonBuilder *b, char **err);
 gboolean masks_mask_map(const char *name, const char *op, int *width, int *height,
@@ -508,6 +531,7 @@ gboolean masks_attach_mask(dt_iop_module_t *m, const char *name, const gboolean 
 // library.c
 void library_prefetch(const dt_imgid_t *imgids, const guint n);
 void library_prefetch_wait(void);
+gboolean library_refresh_changed(const dt_imgid_t imgid);
 extern gchar *library_sidecar_error;
 gboolean library_write_sidecar(const dt_imgid_t imgid);
 dt_imgid_t library_import(const char *path);
@@ -531,7 +555,10 @@ extern gint64 library_import_latest;
 void library_import_files(JsonObject *req, JsonBuilder *b, const gboolean background);
 extern GThreadPool *library_import_pool;
 void library_import_run(gpointer data, gpointer user_data);
+gint library_import_order(gconstpointer a, gconstpointer b, gpointer user_data);
 gboolean library_import_queue(JsonParser *parser);
+gboolean library_import_held_reply(JsonObject *req, JsonBuilder *b);
+gboolean library_thumb_held_reply(JsonObject *req, JsonBuilder *b);
 void library_import_wait(void);
 gboolean library_import_metadata_pending(void);
 gboolean library_analysis_preview(const dt_imgid_t imgid, const char *subject, const char *out, char **err);
@@ -575,6 +602,7 @@ void ai_run(gpointer data, gpointer user_data);
 void ai_wait(void);
 gboolean ai_select(JsonObject *req, JsonBuilder *b, char **err);
 void ai_denoise_forget(void);
+void ai_forget_image(const dt_imgid_t imgid);
 gboolean ai_denoise_preview(const float u, const float v, const int size, const char *out,
                             JsonBuilder *b, char **err);
 extern GThreadPool *ai_denoise_pool;

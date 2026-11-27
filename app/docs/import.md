@@ -8,8 +8,10 @@ Immich. When it is done, the new photos open in Immage.
 The card is never written to, nothing is ever overwritten, and every copy
 is checked byte for byte before it counts.
 
-Open it with **Import** at the top of the rail, or ⇧⌘I. It fills the
-window; **Close** goes back to editing.
+Open it with **Import** at the top of the rail, or ⇧⌘I (triggering **Import**
+while it is already open refreshes the active card or folder). It fills the
+window; the **×** close button goes back to editing. Reopening Import refreshes
+the current card or folder so newly added photos and thumbnails appear.
 
 ![The importer with a card selected and duplicates grayed out](images/import-grid.png)
 <!-- screenshot: Import with an SD card source, some tiles "In library", destination template visible -->

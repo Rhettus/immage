@@ -27,10 +27,12 @@ Search, too.
 Your original photos stay on the photo share, and their XMP sidecars remain
 the system of record for edits and other sidecar metadata. Accelerator stores
 only data it can rebuild from the photos and sidecars: the metadata index,
-cached thumbnails, and optional CLIP embeddings. If Accelerator is unavailable
-or its stored data is lost, Immage reads metadata from the photos and XMP
-sidecars and generates thumbnails from the mounted share using its usual
-file-based workflow.
+cached thumbnails, and optional CLIP embeddings. If its stored data is lost,
+morfPhoto rebuilds it from the photos. While the server isn't answering,
+Immage shows mapped folders from its local copy of the catalog and the
+thumbnails it already has, rather than reading the share (see below); Find
+leaves out mapped folders it can't list. Turn morfPhoto off in Preferences to
+read the share as an ordinary folder instead.
 
 morfPhoto was created by Frédéric Biron (morfredus) and is licensed GPL-3.0-only.
 The Docker image and Compose files below come from the Rhettus morfPhoto fork.
@@ -149,7 +151,10 @@ The worker starts from the saved catalog and reuses thumbnails when available.
    Set **Folder on this computer** to the mounted share with the same
    contents, for example `/Volumes/photos`. A file listed as
    `/photos/2026/example.raw` then opens from
-   `/Volumes/photos/2026/example.raw`.
+   `/Volumes/photos/2026/example.raw`. Folders inside that folder are always
+   treated as network shares: when the share isn't mounted, Library shows them
+   as offline (a red dot on the drive heading) and they can't be opened until
+   it is mounted again.
 3. Select **Test**, turn on **Enable Immage Accelerator**, and select **Save**.
    Add the mounted folder to your [Library](library.md).
 
@@ -167,33 +172,153 @@ prefer the metadata from the current server index for mapped network shares.
 Photos, edits, and file moves can take until the next morfPhoto index update
 to appear.
 
-If Immage cannot read the API for a mapped folder, it shows a notice and uses
-its usual file-based workflow for that scope. Refresh to try morfPhoto again.
-Local similarity search still depends on Immage's local image analysis.
+With morfPhoto v0.15.9+, Immage optimizes catalog and thumbnail loading while
+staying compatible with older morfPhoto servers:
 
-For visible thumbnails of unedited originals, Immage checks its own cache
-first and then can use an embedded camera preview from a morfPhoto server
-with its optional thumbnail cache enabled. If the preview is unavailable, Immage renders the
-thumbnail from the mounted file. Edited photos and virtual copies use
-Immage's rendered thumbnails.
+- **Progressive loading:** Immage shows the first page of photos immediately
+  while remaining pages load in the background.
+- **Compressed persistent connections:** API requests use gzip compression and
+  persistent Keep-Alive connections for smaller, faster syncs.
+- **Local catalog and subfolder caching:** Immage caches folder catalogs on
+  disk (up to 32 folders / 64 MiB) and subfolder listings in memory, validating
+  both with `ETag` / `304 Not Modified` checks so unchanged folders open with
+  zero catalog re-download. The catalog cache clears automatically when you
+  change the server URL or folder mapping, or when you select **Forget**. The
+  [local catalog](#local-catalog) opens folders first when it has them.
+- **Local thumbnail caching:** Thumbnails of unedited originals, on screen
+  or not, come from morfPhoto: Immage keeps them in a local morfPhoto thumbnail
+  cache (up to 256 MiB) and revalidates them via `ETag` / `304 Not Modified`
+  before downloading a new preview. Nothing is read from the share for them.
+  If the server isn't answering, the cached preview is shown; only a photo
+  with no server preview at all is rendered from the mounted file. Edited
+  photos and virtual copies always use Immage's rendered thumbnails. Clearing
+  **Library thumbnails** in **Preferences → Performance** or selecting
+  **Forget** in **Preferences → Immage Accelerator (Experimental)** also clears
+  the local morfPhoto thumbnail cache.
+
+While morfPhoto is turned on, Immage never reads a mapped folder's files from
+the share to list them. If the server isn't answering, the folder is shown from
+Immage's local copy of the catalog. If it has no local copy of that folder yet,
+the folder is shown as unavailable, with a message in the status bar, until the
+server can be reached; refresh to try again. With morfPhoto turned off in
+**Preferences**, its folder is read like any other folder.
+Local similarity search still depends on Immage's local image analysis.
 
 ## Smart Search on the NAS
 
 Enable the CLIP Compose override on the morfPhoto server and install its pinned
-model on NAS storage. In Immage, open a mapped folder and choose **Smart** and
-the current folder scope in Find. Enter a description such as “a dog on a beach”.
-morfPhoto ranks indexed, unedited originals, including photos Immage has never
-opened. The desktop CLIP model is optional for these searches.
+model on NAS storage. In Immage, open a mapped folder and choose **Smart** with
+**This folder** or **All folders** in Find. Enter a description such as “a dog
+on a beach”. morfPhoto ranks indexed, unedited originals, including photos
+Immage has never opened. The desktop CLIP model is optional for these searches.
+
+CLIP provider precedence per folder is **morfPhoto**, then **Immich**, then
+**local CLIP**. While morfPhoto answers with active CLIP indexing, Immage skips
+local CLIP analysis for all photos (originals, edited photos, and virtual
+copies) inside the mapped folder, and excludes them from Find's local analysis
+backlog. In **All folders** searches, Immage combines morfPhoto results for the
+mapped share with Immich or local CLIP results for other folders.
 
 While the NAS builds its index, Immage shows how many matching originals are
 indexed. On the NAS, inspect the `clip` section of the authenticated index
 status to see progress and preview failures. The worker can reuse thumbnails
 already cached by morfPhoto.
 
-Library-wide searches, image queries, and searches that require edits or copies
-use the existing desktop index. If the server cannot handle the search or an
-active filter, Immage falls back to desktop search, which uses its own CLIP
-model and can only rank photos it has analyzed.
+Immage waits up to 22 seconds for NAS Smart Search responses so cold NAS disks
+have time to spin up and respond without falling back prematurely. Image queries
+and searches filtered to edited photos use the desktop index. If the server does
+not answer, has CLIP disabled, or cannot handle an active filter, Immage falls
+through immediately to the next available provider (Immich if mapped for that
+folder, otherwise local CLIP) and shows a notice.
+
+## Local catalog
+
+With Immage Accelerator on, Immage keeps a copy of the server's catalog on
+this computer: each photo and version under the mapped server folder, with the
+fields Find's filters use (file type, camera, lens, exposure, rating, labels,
+keywords and dates). It updates in the background, a few seconds after launch,
+after you save the settings and about every minute while Immage is open. With
+a morfPhoto server that offers the change feed, only what changed is
+downloaded. Older servers are read in full at most every ten minutes. The sync
+pauses while you open, edit or browse photos, so it never slows your work.
+
+Open **Preferences → Immage Accelerator (Experimental)** and look at **Local
+catalog**:
+
+- **Last synced** is when the copy last matched the server.
+- **Photos in the local copy** is how many photos it holds.
+- **Syncing** shows progress while a sync runs.
+- **Last error** appears when a sync fails, for example when the disk is full.
+  Immage keeps what it has and tries again, waiting longer after each failure.
+- **Resync now** discards the local copy and downloads the catalog again.
+
+Selecting **Forget**, or saving a different server URL or server folder, also
+empties the local copy. The copy is disposable: deleting it loses nothing.
+If the file cannot be opened, Immage works without it. Folders and Find then
+read the server as described above.
+
+### Folders open from the local copy
+
+A folder under the mapped folder shows its photos from the local copy at once,
+before the server is asked anything. Immage then asks the server whether its
+catalog has changed since the last sync. If it has not, the copy is the final
+list and no catalog is downloaded. If it has, the folder is read from the
+server as before while the sync catches up, and the folder refreshes by itself
+when the sync has changed photos in it.
+
+When the server does not answer within about a second and a half, the copy
+stands and the status bar says **Showing the local catalog, synced** with the
+time of the last sync. Rating, label and keyword changes made on the server
+since then are missing until it answers again. A folder the copy knows nothing
+about is read from the server, and then from the files, as before.
+
+The folder tree reads the server's subfolders first, then the local copy when
+the server does not answer, then the files.
+
+### Your changes show at once
+
+The server learns of a change made in Immage only when it next indexes the
+photo's sidecar, which can be minutes later. Until then Immage shows your
+change itself, in folders, the folder tree and Find, so nothing seems to revert:
+
+- A rating, reject, color label, keyword, capture time or edit you save shows at
+  once in the folder and in Find's results and filter lists.
+- A photo you move, copy, rename, delete or move to the Trash in a folder under
+  the mapped folder leaves or appears in its folders and in Find at once. A
+  photo arrives with the information the local copy had of the original, so a
+  photo from outside the mapped folder shows once the server has indexed it.
+- A virtual copy you make or remove shows at once.
+
+Each change is forgotten when the server reports the same values for the photo.
+If the server reports a change of the photo more than a minute after yours (for
+example another computer changed it), the server's values show, and nothing is
+kept longer than half an hour. These changes are not saved: after you quit and
+start Immage again the server's values show until it has indexed your changes.
+Forget, Resync and a changed server drop them too. Semantic (Smart) searches
+and folders read from the server because the copy is out of date show the
+server's values.
+
+While the mapped share is not mounted or is not answering, its photos still
+show from the local copy, each with a small red dot (the red of the drive's
+offline dot) and the tooltip **Photo's drive is offline**. Their thumbnails
+come from Immage's or morfPhoto's caches, or stay empty. Clicking such a photo
+selects it but does not open it, and the status bar says the photo is on an
+offline drive. Open it once the share is connected again.
+
+### Find reads the local copy
+
+With **All folders** and a metadata search (filters, or a file name search),
+Find reads the local copy by database queries and loads only the photos that
+match, so a narrow filter over a library of 150,000 photos answers in a few
+hundredths of a second and the filter lists count the whole library. This
+needs the copy to be complete; until the first sync finishes Find lists the
+server's folders as before, and the filter lists hold the photos Immage has
+already read. Smart (photo content) searches are unchanged.
+
+Camera and lens names from the server are shown as Immage shows the ones it
+reads itself, using darktable's camera names (**Nikon Z 6**, **Canon EOS R5**,
+**Sony ILCE-7M3**). A lens keeps the server's name except for Canon RF and RF-S,
+and Nikkor, Tamron and Viltrox names, which are spelled as darktable spells them.
 
 ## Monitor NAS activity
 

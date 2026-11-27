@@ -80,6 +80,8 @@ static gint64 _base_running, _base_canceled;
 // keeps a long edit session from starving them for good, and a client's
 // batch from outrunning its timeout
 static GAsyncQueue *_requests = NULL;
+// where the request reader replies itself (_reader_reply): set before it starts
+static FILE *_reply_out = NULL;
 static GMutex _fg_lock;
 static gboolean _fg_busy = FALSE;
 static gint64 _fg_last = 0;
@@ -329,6 +331,9 @@ static gboolean _cmd_open(JsonObject *req, JsonBuilder *b, char **err)
 // a raw gets the client's raw-only defaults, as Lightroom's do
   json_builder_set_member_name(b, "raw");
   json_builder_add_boolean_value(b, dt_image_is_raw(&_s.dev.image_storage));
+// display-referred, already tone-mapped formats (JPEG, SDR PNG/WebP/HEIC/TIFF)
+  json_builder_set_member_name(b, "ldr");
+  json_builder_add_boolean_value(b, dt_image_is_ldr(&_s.dev.image_storage));
 // the sensor picks the demosaic methods that apply, as demosaic.c's
 // reload_defaults and commit_params tell them apart
   json_builder_set_member_name(b, "sensor");
@@ -830,6 +835,17 @@ static gboolean _cmd_instance(JsonObject *req, JsonBuilder *b, char **err)
                           json_object_get_boolean_member_with_default(req, "after", FALSE), b, err);
 }
 
+static gboolean _cmd_order_info(JsonObject *req, JsonBuilder *b, char **err)
+{
+  session_order_info(b);
+  return TRUE;
+}
+
+static gboolean _cmd_order(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return session_order(req, b, err);
+}
+
 static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
 {
 // "draft": a slider drag's frame, on the drag pipe so the main pipe's
@@ -851,11 +867,20 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
   const int devid = f == &_s.base && dt_opencl_running()
     ? dt_opencl_lock_device(DT_DEV_PIXELPIPE_EXPORT) : DT_DEVICE_NONE;
 // "skip": ops left out of this one frame, every instance, so a slider
-// drag need not wait on grain or diffuse. a disabled piece carries
+// drag need not wait on grain or diffuse. "retouch:fill" leaves out only
+// Immage's Fill and Blur instance for a visual comparison. a disabled piece carries
 // DT_INVALID_HASH (imageop.c, dt_iop_commit_params), which keeps these
 // frames off the full frames' cachelines. history is not touched
   JsonArray *skip = json_object_has_member(req, "skip")
     ? json_object_get_array_member(req, "skip") : NULL;
+  dt_iop_module_t *fill = NULL;
+  if(skip)
+    for(guint k = 0; k < json_array_get_length(skip); k++)
+      if(!g_strcmp0(json_array_get_string_element(skip, k), "retouch:fill"))
+      {
+        fill = masks_fill_instance();
+        break;
+      }
   typedef struct { dt_dev_pixelpipe_iop_t *piece; dt_hash_t hash; } skipped_t;
   GArray *skipped = g_array_new(FALSE, FALSE, sizeof(skipped_t));
   for(GList *n = skip ? pipe->nodes : NULL; n; n = g_list_next(n))
@@ -863,7 +888,9 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
     dt_dev_pixelpipe_iop_t *piece = n->data;
     if(!piece->enabled) continue;
     for(guint k = 0; k < json_array_get_length(skip); k++)
-      if(!g_strcmp0(piece->module->op, json_array_get_string_element(skip, k)))
+    {
+      const char *op = json_array_get_string_element(skip, k);
+      if(piece->module == fill || !g_strcmp0(piece->module->op, op))
       {
         const skipped_t s = { piece, piece->hash };
         g_array_append_val(skipped, s);
@@ -871,6 +898,7 @@ static gboolean _cmd_render(JsonObject *req, JsonBuilder *b, char **err)
         piece->hash = DT_INVALID_HASH;
         break;
       }
+    }
   }
 // "have": the client's frames, by hash; one of them is named, not sent
   JsonArray *have = json_object_has_member(req, "have")
@@ -1035,6 +1063,11 @@ static gboolean _cmd_spots_enable(JsonObject *req, JsonBuilder *b, char **err)
   return TRUE;
 }
 
+static gboolean _cmd_spots_fill(JsonObject *req, JsonBuilder *b, char **err)
+{
+  return masks_fill_set(req, b, err);
+}
+
 static gboolean _cmd_spot_source(JsonObject *req, JsonBuilder *b, char **err)
 {
   JsonObject *spot = json_object_has_member(req, "spot") ? json_object_get_object_member(req, "spot") : NULL;
@@ -1063,6 +1096,8 @@ static gboolean _cmd_sample(JsonObject *req, JsonBuilder *b, char **err)
                 ? json_object_get_array_member(req, "box") : NULL,
               !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "negadoctor") ? _STAGE_NEGADOCTOR
                 : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "temperature") ? _STAGE_TEMPERATURE
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "retouch") ? _STAGE_RETOUCH
+                : !g_strcmp0(json_object_get_string_member_with_default(req, "stage", NULL), "retouch_in") ? _STAGE_RETOUCH_IN
                 : _STAGE_ANCHOR,
               b, err))
     return FALSE;
@@ -1166,7 +1201,9 @@ static gboolean _cmd_range_map(JsonObject *req, JsonBuilder *b, char **err)
   const char *dest = json_object_get_string_member_with_default(req, "out", NULL);
   const int w = json_object_get_int_member_with_default(req, "width", 320);
   const int h = json_object_get_int_member_with_default(req, "height", 213);
-  if(!dest || !masks_range_map(ranges, w, h, dest, err)) return FALSE;
+  const _stage_t stage = json_object_get_boolean_member_with_default(req, "retouchInput", FALSE)
+    ? _STAGE_RETOUCH_IN : _STAGE_ANCHOR;
+  if(!dest || !masks_range_map(ranges, w, h, stage, dest, err)) return FALSE;
   json_builder_set_member_name(b, "width");
   json_builder_add_int_value(b, w);
   json_builder_set_member_name(b, "height");
@@ -1382,11 +1419,14 @@ static const eng_cmd_t _commands[] =
   { "module_schema", _cmd_module_schema, _CMD_NEEDS_OPEN },
   { "instances", _cmd_instances, _CMD_NEEDS_OPEN },
   { "instance", _cmd_instance, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "order_info", _cmd_order_info, _CMD_NEEDS_OPEN },
+  { "order", _cmd_order, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "render", _cmd_render, _CMD_NEEDS_OPEN },
   { "mask", _cmd_mask, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "combine", _cmd_combine, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spots", _cmd_spots, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spots_enable", _cmd_spots_enable, _CMD_NEEDS_OPEN | _CMD_EDITS },
+  { "spots_fill", _cmd_spots_fill, _CMD_NEEDS_OPEN | _CMD_EDITS },
   { "spot_source", _cmd_spot_source, _CMD_NEEDS_OPEN },
   { "masks", _cmd_masks, _CMD_NEEDS_OPEN },
   { "sample", _cmd_sample, _CMD_NEEDS_OPEN },
@@ -1604,6 +1644,14 @@ static void _trim(const gboolean pressure)
 // `ai_object`, `ai_mask` or `ai_depth` is among them: the main loop
 // answers it, then hands the model's work to a thread (ai_denoise_run,
 // ai_run), which answers again with the tag
+// a reply the request reader built itself, to a request it then does not queue
+static void _reader_reply(JsonBuilder *b, const char *cmd)
+{
+  json_builder_end_object(b);
+  fprintf(stderr, "[engine] %s answered at once: its drive is held\n", cmd);
+  engine_reply(_reply_out, b);
+}
+
 static gpointer _read_requests(gpointer data)
 {
   GAsyncQueue *queue = data;
@@ -1640,8 +1688,12 @@ static gpointer _read_requests(gpointer data)
                  || !g_strcmp0(cmd, "meta")) && json_object_has_member(req, "tag"))
         {
           fprintf(stderr, "[engine] %s %.*s\n", cmd, (int)strcspn(line->str, "\r\n"), line->str);
+          JsonBuilder *b = json_builder_new();
+          json_builder_begin_object(b);
+          if(g_strcmp0(cmd, "meta") && library_thumb_held_reply(req, b)) _reader_reply(b, cmd);
           // the pool frees the parser
-          if(library_thumb_queue(parser)) parser = NULL;
+          else if(library_thumb_queue(parser)) parser = NULL;
+          g_object_unref(b);
           taken = TRUE;
         }
         else if((!g_strcmp0(cmd, "export") || !g_strcmp0(cmd, "export_release")
@@ -1663,7 +1715,11 @@ static gpointer _read_requests(gpointer data)
             library_import_latest = job;
             eng_unlock(&engine_cancel_lock, ENG_LOCK_CANCEL);
           }
-          if(library_import_queue(parser)) parser = NULL;
+          JsonBuilder *b = json_builder_new();
+          json_builder_begin_object(b);
+          if(library_import_held_reply(req, b)) _reader_reply(b, cmd);
+          else if(library_import_queue(parser)) parser = NULL;
+          g_object_unref(b);
           taken = TRUE;
         }
       }
@@ -1711,6 +1767,7 @@ int main(int argc, char **argv)
   // Keep ORF metadata preparation in step with the user's thumbnail worker
   // preference.
   library_metadata_threads(thumb_threads);
+  drives_init();
 
 #ifdef HAVE_AI
   // The registry checks installed model versions during dt_init. It must
@@ -1772,6 +1829,7 @@ int main(int argc, char **argv)
   g_thread_pool_set_sort_function(library_thumb_pool, library_thumb_order, NULL);
   export_pool = g_thread_pool_new(export_run, out, 1, TRUE, NULL);
   library_import_pool = g_thread_pool_new(library_import_run, out, 1, FALSE, NULL);
+  g_thread_pool_set_sort_function(library_import_pool, library_import_order, NULL);
 #ifdef HAVE_AI
   ai_denoise_pool = g_thread_pool_new(ai_denoise_run, out, 1, TRUE, NULL);
   ai_pool = g_thread_pool_new(ai_run, out, 1, FALSE, NULL);
@@ -1780,6 +1838,7 @@ int main(int argc, char **argv)
   clip_start(out);
   GAsyncQueue *requests = g_async_queue_new();
   _requests = requests;
+  _reply_out = out;
   g_thread_unref(g_thread_new("requests", _read_requests, requests));
   _pressure_watch();
   gboolean quit = FALSE, trimmed = TRUE;

@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 the Immage authors
+
+// Renders an edited RAW's culling-size preview in the background once the user
+// leaves it, so the next cull is a disk hit (the engine's thumb command writes
+// the edit- cache entry). Pure logic over injected dependencies; App.tsx binds
+// the real ones. The page is single-threaded, so the queue takes no locks.
+// It yields to everything the user waits on: a job starts only while the
+// thumbnail loader is idle, culling is closed and no photo is opening (held
+// until its first frame), and only one runs at a time, on the engine's
+// background thumbnail pool. A job already running is never stopped: its
+// JPEG is named by the file's stamps, so it can never be a stale hit.
+import type { ImageEntry } from "./library";
+
+// culling's last non-detail preview size, in device pixels (GridCulling stores it)
+export const PREVIEW_SIZE_KEY = "immage.culling.previewSize";
+
+const RECHECK_MS = 1000;
+// an open that never paints does not hold the queue for good
+const HOLD_MAX_MS = 10000;
+
+export interface EditedPreviewDeps {
+  // renders the preview (and so caches it); a bitmap result is closed here
+  fetch(entry: ImageEntry, size: number): Promise<{ close?: () => void } | void>;
+  // no foreground thumbnail work is waiting
+  idle(): boolean;
+  loadSize(): number;
+  kind(filename: string): string;
+  setTimer(fn: () => void, ms: number): unknown;
+  clearTimer(handle: unknown): void;
+}
+
+export function createEditedPreviews() {
+  let deps: EditedPreviewDeps | null = null;
+  const pending = new Map<number, ImageEntry>(); // insertion order is the run order
+  let running: number | null = null;
+  let timer: unknown = null, holdTimer: unknown = null;
+  let open = false, camera = false, held = false;
+
+  const stopTimer = () => { if (timer !== null && deps) { deps.clearTimer(timer); timer = null; } };
+  const stopHold = () => { if (holdTimer !== null && deps) { deps.clearTimer(holdTimer); holdTimer = null; } };
+  const release = () => {
+    stopHold();
+    if (!held) return;
+    held = false;
+    stopTimer();
+    pump();
+  };
+
+  const pump = () => {
+    if (!deps || running || timer !== null) return;
+    const next = pending.entries().next();
+    if (next.done) return;
+    if (open || held || !deps.idle()) {
+      timer = deps.setTimer(() => { timer = null; pump(); }, RECHECK_MS);
+      return;
+    }
+    const [id, entry] = next.value;
+    pending.delete(id);
+    const size = deps.loadSize();
+    if (!(size > 0)) { pump(); return; }
+    running = id;
+    deps.fetch(entry, size)
+      // the result is only the cache write's by-product
+      .then((bitmap) => bitmap?.close?.())
+      .catch(() => {})
+      .finally(() => { running = null; pump(); });
+  };
+
+  return {
+    configure(d: EditedPreviewDeps) { deps = d; },
+    // after the photo is closed and saved
+    schedule(entry: ImageEntry) {
+      // a job queued for the photo as it was (edited, say, before an undo) goes
+      pending.delete(entry.imgid);
+      if (!deps || open || !entry.edited || deps.kind(entry.filename) !== "RAW" || camera || !(deps.loadSize() > 0)) return;
+      pending.set(entry.imgid, entry);
+      pump();
+    },
+    // the photo is open again: its pending job goes (one running finishes)
+    cancel(imgid: number) {
+      pending.delete(imgid);
+    },
+    // a photo is opening: nothing starts until release(), called on its first
+    // frame or a failed open, or HOLD_MAX_MS later
+    hold() {
+      if (!deps) return;
+      held = true;
+      stopHold();
+      holdTimer = deps.setTimer(() => { holdTimer = null; release(); }, HOLD_MAX_MS);
+    },
+    release,
+    // another folder, or culling opening: drop everything queued
+    clear() {
+      pending.clear();
+      stopTimer();
+    },
+    // culling's state: opening it clears the queue, as culling fetches its own
+    culling(isOpen: boolean, cameraPreviews: boolean) {
+      camera = cameraPreviews;
+      if (isOpen && !open) this.clear();
+      open = isOpen;
+    },
+    pending: () => [...pending.keys()],
+    running: () => running,
+  };
+}
+
+export const editedPreviews = createEditedPreviews();

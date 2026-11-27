@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { commands } from "./commands";
 import type { Session } from "./session";
-import { agxRuns, controlById, profileSelection, type Values } from "./manifest";
+import { agxRuns, controlById, isColorBalanceProfile, profileSelection, TM_AGX, type Values } from "./manifest";
 import { AUTO_TONE_IDS, autoExposure, autoTone } from "./autoTone";
 import { DEFAULT_TRANSITION, parseZones } from "./zones";
 
@@ -10,15 +10,29 @@ export type PasteDefaults = {
   profile: number; compensation: number; auto: boolean; lensMethod?: number;
   preset: { values: Values; rawOnly?: boolean; nonRaw?: boolean } | null;
 };
+// Controls that only apply to a scene-referred tone mapper (AgX/Sigmoid)
+const TM_ONLY_IDS = new Set(["tm_mode", "agx_black", "agx_white", "whites_brilliance"]);
+
+// Strip tone-mapper-only controls and AgX profiles when targeting a display-referred
+// (already tone-mapped) photo so presets and paste never enable a tone mapper on LDR files.
+export function filterValuesForPhoto(values: Values, toneMappable: boolean): Values {
+  if (toneMappable) return values;
+  return Object.fromEntries(Object.entries(values).filter(([id, v]) =>
+    !TM_ONLY_IDS.has(id) && (id !== "profile" || v === 0 || isColorBalanceProfile(v))));
+}
+
 // the new-photos preset is a raw's starting point. a JPEG, TIFF or other
 // rendered file gets it only when Preferences' Also apply to JPEGs is on,
-// and then without what needs a raw (the controls marked rawOnly) or what
-// the camera did already (Lens Corrections). null: nothing to apply
+// and then without what needs a raw (the controls marked rawOnly), what
+// the camera did already (Lens Corrections), or AgX-only controls/profiles.
+// null: nothing to apply
 const LENS_IDS = new Set(["lens_profile", "lens_ca", "lens_pick", "lens_method"]);
-export function newPhotoPresetValues(values: Values, raw: boolean, nonRaw: boolean): Values | null {
+export function newPhotoPresetValues(values: Values, raw: boolean, nonRaw: boolean,
+                                     toneMappable = raw): Values | null {
   if (raw) return values;
   if (!nonRaw) return null;
-  return Object.fromEntries(Object.entries(values)
+  const base = filterValuesForPhoto(values, toneMappable);
+  return Object.fromEntries(Object.entries(base)
     .filter(([id]) => !LENS_IDS.has(id) && !controlById.get(id)?.rawOnly));
 }
 
@@ -38,19 +52,21 @@ export function newPhotoLensMethod(s: Session, method: number | undefined): numb
 // taking a batch's undo snapshot. Never change an existing saved edit.
 export async function preparePastePhoto(s: Session, defaults: PasteDefaults) {
   if (s.wasEdited) return;
-  const values: Values = { tm_mode: 1 };
+  const values: Values = s.toneMappable ? { tm_mode: TM_AGX } : {};
   if (s.raw) {
     if (defaults.compensation) values.exp_comp = defaults.compensation;
     values.capture = 1;
   }
   const preset = defaults.preset && (s.raw || !defaults.preset.rawOnly)
-    ? newPhotoPresetValues(defaults.preset.values, s.raw, !!defaults.preset.nonRaw) : null;
+    ? newPhotoPresetValues(defaults.preset.values, s.raw, !!defaults.preset.nonRaw, s.toneMappable) : null;
   if (preset) Object.assign(values, preset);
   // Preferences' profile wins over a preset's, AgX Default (0) included
-  if (s.raw && (defaults.profile || values.profile !== undefined))
-    Object.assign(values, profileSelection(defaults.profile));
-  s.setMany(Object.entries(values));
-  await s.settled();
+  if (s.toneMappable && (defaults.profile || values.profile !== undefined))
+    Object.assign(values, profileSelection(defaults.profile, s.toneMappable));
+  if (Object.keys(values).length) {
+    s.setMany(Object.entries(values));
+    await s.settled();
+  }
   const lens = newPhotoLensMethod(s, defaults.lensMethod);
   if (lens !== null) { s.setMany([["lens_method", lens]]); await s.settled(); }
   if (s.raw && defaults.auto) {

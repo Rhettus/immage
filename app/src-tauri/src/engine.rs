@@ -71,6 +71,110 @@ pub struct Link {
     // a quiet spell (Tagged::quiet_for)
     started: Instant,
     active_ms: AtomicU64,
+    // drives the engine reported held (engine/drives.c), by mount, and when:
+    // a hint for HOLD_HINT, so their photos fail at once rather than wait on
+    // the engine; the engine stays the one to ask after that. LOCK ORDER: a
+    // leaf, taken while the Engine mutex or a photo's import gate may be held,
+    // with nothing taken under it and no I/O inside
+    holds: Holds,
+    // network drives found slow, and those with a background import under
+    // way (Slow). LOCK ORDER: leaves, as `holds`
+    slow: Slow,
+}
+
+#[derive(Default)]
+struct Holds(Mutex<HashMap<String, Instant>>);
+
+impl Holds {
+    // a reply's "held" drives, kept as a hint
+    fn note(&self, reply: &Value, now: Instant) {
+        let Some(held) = reply["held"].as_array().filter(|h| !h.is_empty()) else { return };
+        let mut holds = self.0.lock().unwrap();
+        holds.retain(|_, at| now.duration_since(*at) < HOLD_HINT);
+        for m in held.iter().filter_map(Value::as_str) { holds.insert(m.to_string(), now); }
+    }
+
+    fn covering(&self, path: &str, now: Instant) -> Option<String> {
+        let holds = self.0.lock().unwrap();
+        covering(holds.iter().filter(|(_, at)| now.duration_since(**at) < HOLD_HINT).map(|(m, _)| m), path)
+    }
+}
+
+// a network drive an import took SLOW_IMPORT or more on is slow for
+// SLOW_HINT: background work there (Smart search, previews rendered ahead,
+// thumbnails off screen) is refused at once, so the one import thread and
+// the share are left to what the user waits on. one under FAST_IMPORT ends
+// it. and one background import at a time on each network drive, the
+// others waiting for its lane (a mutex of its own, taken before the photo's
+// import gate and never under it, nor under the Engine mutex). the times are the engine's own (`ms`), not the wait in
+// its queue, so a fast drive queued behind a slow one is not marked
+#[derive(Default)]
+struct Slow {
+    until: Mutex<HashMap<String, Instant>>,
+    lanes: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+}
+
+const SLOW_IMPORT: Duration = Duration::from_secs(5);
+const FAST_IMPORT: Duration = Duration::from_secs(1);
+const SLOW_HINT: Duration = Duration::from_secs(60);
+
+impl Slow {
+    fn is_slow(&self, mount: &str, now: Instant) -> bool {
+        self.until.lock().unwrap().get(mount).is_some_and(|until| now < *until)
+    }
+
+    fn note(&self, mount: &str, took: Duration, now: Instant) {
+        let mut until = self.until.lock().unwrap();
+        until.retain(|_, u| now < *u);
+        if took >= SLOW_IMPORT {
+            until.insert(mount.to_string(), now + SLOW_HINT);
+        } else if took < FAST_IMPORT {
+            until.remove(mount);
+        }
+    }
+
+    // the drive's background lane, to hold for one import
+    fn lane(&self, mount: &str) -> Arc<Mutex<()>> {
+        self.lanes.lock().unwrap().entry(mount.to_string()).or_default().clone()
+    }
+}
+
+// the network drive `path` is on, from the mount table alone; None on a
+// local disk, which is never marked slow
+fn network_mount(path: &str) -> Option<String> {
+    let path = Path::new(path);
+    crate::volumes::on_network(path).then(|| crate::volumes::mount_identity(path)).flatten()
+}
+
+// the error for background work refused on a slow drive. the page never
+// shows it: a thumbnail keeps its placeholder until asked for again, and
+// Smart search tries the photo at a later pass
+pub fn busy(mount: &str) -> String {
+    format!("{mount} is slow: background work there waits")
+}
+
+// how long a drive the engine reported held is taken as still held
+const HOLD_HINT: Duration = Duration::from_secs(10);
+
+// Engine::request's error for a cached photo not imported yet: the caller
+// imports it with the engine lock let go (Tagged::resolve) and asks again
+pub const NEEDS_IMPORT: &str = "cached photo not imported yet";
+
+// the error for a photo on a drive that is not answering, as the folder
+// read words it (library_cmds.rs, open_folder)
+pub fn not_answering(at: &str) -> String {
+    format!("{at} is not answering: its drive or network share may be disconnected")
+}
+
+// the mount among `holds` that `path` is on, by whole components
+fn covering<'a>(holds: impl Iterator<Item = &'a String>, path: &str) -> Option<String> {
+    let sep = |c: char| c == '/' || (cfg!(windows) && c == '\\');
+    holds.filter(|m| {
+        let m = m.trim_end_matches(sep);
+        !m.is_empty() && path.len() >= m.len() && path.is_char_boundary(m.len())
+            && if cfg!(windows) { path[..m.len()].eq_ignore_ascii_case(m) } else { &path[..m.len()] == m }
+            && path[m.len()..].chars().next().is_none_or(sep)
+    }).max_by_key(|m| m.len()).cloned()
 }
 
 impl Link {
@@ -88,11 +192,17 @@ impl Link {
             search_cache: Mutex::new(None),
             started: Instant::now(),
             active_ms: AtomicU64::new(0),
+            holds: Holds::default(),
+            slow: Slow::default(),
         })
     }
 
     fn current(&self) -> Arc<Conn> {
         self.current.lock().unwrap().clone()
+    }
+
+    fn held(&self, path: &str) -> Option<String> {
+        self.holds.covering(path, Instant::now())
     }
 
     fn install(&self, conn: Arc<Conn>) {
@@ -103,7 +213,19 @@ impl Link {
     }
 
     fn after_success(&self, req: &Value, reply: &Value) {
-        let affected=self.library_ids.lock().unwrap().changed(req, reply);
+        let affected = self.note_ids(req, reply);
+        self.update_search_cache(affected);
+    }
+
+    // what the request changed of the photos' ids, and which is open: in the
+    // engine's order, so under the Engine mutex
+    pub(crate) fn note_ids(&self, req: &Value, reply: &Value) -> Vec<(crate::library_ids::Photo, bool)> {
+        self.library_ids.lock().unwrap().changed(req, reply)
+    }
+
+    // the search cache's SQLite work for those photos, once the Engine mutex
+    // is let go (AppState::request)
+    pub(crate) fn update_search_cache(&self, affected: Vec<(crate::library_ids::Photo, bool)>) {
         let cache=self.search_cache.lock().unwrap().clone();
         if let Some(cache)=cache {
             for (photo,removed) in affected {
@@ -259,15 +381,89 @@ impl Tagged {
 
     // how long since the user last opened, rendered or browsed photos
     // (mark_active), or since the app started
+    // the mount of a drive the engine said is not answering, if `path` is
+    // on one: its photos fail at once for a while (Link::holds)
+    pub fn held(&self, path: &str) -> Option<String> {
+        self.link.held(path)
+    }
+
+    // whether `path` is on a network drive found slow (Slow): Smart search
+    // leaves it, as for a quiet spell
+    pub fn slow(&self, path: &str) -> bool {
+        network_mount(path).is_some_and(|m| self.link.slow.is_slow(&m, Instant::now()))
+    }
+
     pub fn quiet_for(&self) -> Duration {
         let at = Duration::from_millis(self.link.active_ms.load(Ordering::Relaxed));
         self.link.started.elapsed().saturating_sub(at)
     }
 
+    // imports the request's cached photos the engine has no id for yet, so
+    // that Engine::request finds them (prepare_cached). LOCK ORDER: never
+    // with the Engine mutex held, as an import waits on the photo's gate and
+    // on the engine's one import thread, behind any slow share's
+    pub fn resolve(&self, req: &Value) -> Result<(), String> {
+        let mut copy = req.clone();
+        self.prepare(&mut copy, &self.link.current())
+    }
+
+    // an error resolve() gives when the engine went, or was replaced, while
+    // it imported: worth asking again once the respawn is done
+    pub fn restarted(&self, e: &str) -> bool {
+        e == self.link.exited || e == "engine restarted" || e.starts_with("engine write")
+    }
+
+    // these ids less the cached photos not imported yet, which a prefetch
+    // leaves out rather than import
+    pub fn imported_only(&self, ids: &[i64]) -> Vec<i64> {
+        let library = self.link.library_ids.lock().unwrap();
+        ids.iter().copied().filter(|&id| match library.photo(id) {
+            Ok(None) => true,
+            Ok(Some(photo)) => library.resolved(&photo).is_some(),
+            Err(_) => false,
+        }).collect()
+    }
+
+    // the request's cached photos as the engine's ids, without importing:
+    // NEEDS_IMPORT for one that resolve() has not imported (a respawn since
+    // cleared it), so that the caller imports it with the engine lock let go
+    fn prepare_cached(&self, req: &mut Value) -> Result<(), String> {
+        crate::library_ids::request_ids(req, &mut |id| {
+            let library = self.link.library_ids.lock().unwrap();
+            let Some(photo) = library.photo(id)? else { return Ok(id) };
+            if let Some(real) = library.resolved(&photo) { return Ok(real); }
+            drop(library);
+            match self.link.held(&photo.path) {
+                Some(mount) => Err(not_answering(&mount)),
+                None => Err(NEEDS_IMPORT.into()),
+            }
+        })
+    }
+
     fn prepare(&self, req: &mut Value, conn: &Arc<Conn>) -> Result<(), String> {
+        // work no one waits on (`background`: Smart search, previews rendered
+        // ahead, thumbnails off screen) imports behind what the user waits on
+        let background = req.get("background").and_then(Value::as_bool) == Some(true);
         crate::library_ids::request_ids(req, &mut |id| {
             let photo = self.link.library_ids.lock().unwrap().photo(id)?;
             let Some(photo) = photo else { return Ok(id) };
+            // a drive known to be stuck is not asked: this import would wait
+            // behind its stuck read, up to 30 s for each photo
+            if let Some(mount) = self.link.held(&photo.path) { return Err(not_answering(&mount)); }
+            if let Some(real) = self.link.library_ids.lock().unwrap().resolved(&photo) { return Ok(real); }
+            let mount = network_mount(&photo.path);
+            // background work: not on a slow drive, and one import at a time on
+            // each; the drive may have been found slow while this one waited
+            let lane = mount.as_deref().filter(|_| background).map(|m| self.link.slow.lane(m));
+            let _in_lane = match (&lane, &mount) {
+                (Some(lane), Some(m)) => {
+                    if self.link.slow.is_slow(m, Instant::now()) { return Err(busy(m)); }
+                    let held = lane.lock().map_err(|_| "background import lane poisoned")?;
+                    if self.link.slow.is_slow(m, Instant::now()) { return Err(busy(m)); }
+                    Some(held)
+                }
+                _ => None,
+            };
             let gate = self.link.library_ids.lock().unwrap().gate(&photo.path);
             let _importing = gate.lock().map_err(|_| "cached photo import lock poisoned")?;
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
@@ -277,6 +473,7 @@ impl Tagged {
             let tag = self.tag();
             let mut import = json!({"cmd":"import","files":[photo.path],"tag":tag});
             import["budget"] = json!(30000);
+            if background { import["background"] = json!(true); }
             let answer = self.expect_on(conn, tag)?;
             let result = (|| {
                 { let mut stdin = conn.stdin.lock().unwrap();
@@ -284,7 +481,14 @@ impl Tagged {
                 answer.wait_until(Duration::from_secs(30), || conn.dead.load(Ordering::SeqCst))
             })();
             Self::forget_on(conn, tag);
-            result?;
+            let reply = result?;
+            if let (Some(m), Some(ms)) = (&mount, reply["ms"].as_u64()) {
+                self.link.slow.note(m, Duration::from_millis(ms), Instant::now());
+            }
+            if reply["unanswered"].as_array().is_some_and(|u| u.iter().any(|p| p.as_str() == Some(photo.path.as_str()))) {
+                let mount = reply["held"].as_array().and_then(|h| h.first()).and_then(Value::as_str);
+                return Err(not_answering(mount.unwrap_or(&photo.path)));
+            }
             if conn.epoch != self.link.current().epoch { return Err("engine restarted".into()); }
             self.link.library_ids.lock().unwrap().resolved(&photo)
                 .ok_or_else(|| format!("photo version {} is no longer available: {}", photo.version, photo.path))
@@ -292,6 +496,15 @@ impl Tagged {
     }
 
     pub fn request(&self, tag: u64, mut req: Value) -> Result<Value, String> {
+        // a background thumbnail or preview of a photo on a slow drive reads
+        // that drive too, imported or not: refused before it is sent
+        if req.get("background").and_then(Value::as_bool) == Some(true) {
+            let path = req["path"].as_str().map(str::to_string)
+                .or_else(|| req["imgid"].as_i64().and_then(|id| self.known_photo(id)).map(|p| p.path));
+            if let Some(m) = path.as_deref().and_then(network_mount) {
+                if self.link.slow.is_slow(&m, Instant::now()) { return Err(busy(&m)); }
+            }
+        }
         let conn = self.link.current();
         self.prepare(&mut req, &conn)?;
         self.request_on(&conn, tag, req)
@@ -429,6 +642,7 @@ fn read_stdout(stdout: ChildStdout, replies: Sender<Value>, conn: Arc<Conn>, lin
             .unwrap_or_else(|e| json!({ "ok": false, "error": format!("engine reply: {e}") }));
         { let current = link.current.lock().unwrap();
           if conn.epoch == current.epoch { link.library_ids.lock().unwrap().reply(&mut reply); } }
+        link.holds.note(&reply, Instant::now());
         match reply["tag"].as_u64() {
             Some(tag) if reply["progress"].as_bool() == Some(true) => {
                 if let Some(f) = progress.lock().unwrap().get(&tag) {
@@ -619,6 +833,25 @@ struct PerfLog {
 struct Perf {
     log: Mutex<PerfLog>,
     marked: Condvar,
+    // engine.log, written by read_stderr and by LogSink::note. LOCK ORDER:
+    // a leaf; its write goes to the local runtime folder
+    file: Mutex<Option<File>>,
+}
+
+// engine.log's time of day for each line, so a support bundle shows how far
+// apart its requests and imports were
+fn log_line(file: &mut File, line: &str) {
+    let _ = writeln!(file, "{} {line}", chrono::Local::now().format("%H:%M:%S%.3f"));
+}
+
+// writes Immage's own lines into engine.log beside the engine's
+#[derive(Clone)]
+pub struct LogSink(Arc<Perf>);
+
+impl LogSink {
+    pub fn note(&self, line: &str) {
+        if let Some(file) = self.0.file.lock().unwrap().as_mut() { log_line(file, line); }
+    }
 }
 
 // "     1.6279 [dev_pixelpipe] took 0.004 secs (0.018 CPU) [full] processed `exposure' on CPU"
@@ -644,7 +877,7 @@ fn parse_timing(line: &str) -> Option<Timing> {
 
 // the engine's stderr, to its log: darktable's timings are kept apart, each
 // request's from its start ("[engine] > ...") to the mark after it
-fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
+fn read_stderr(stderr: ChildStderr, perf: Arc<Perf>) {
     let mut reader = BufReader::new(stderr);
     let mut buf = Vec::new();
     loop {
@@ -679,24 +912,27 @@ fn read_stderr(stderr: ChildStderr, mut log: File, perf: Arc<Perf>) {
             perf.log.lock().unwrap().current.push(t);
             continue;
         }
-        let _ = writeln!(log, "{line}");
+        if let Some(file) = perf.file.lock().unwrap().as_mut() { log_line(file, line); }
     }
 }
 
 // darktable 5.6 turned ROCm's OpenCL off by default in favor of Mesa's
-// RustiCL (darktable 5d782a3b06), so a system with only ROCm installed got
-// no GPU at all: the platform found, 0 devices. ROCm is let in when no
-// RustiCL is installed to take the GPU twice. the ICD files name the
-// driver library they load; `root` is "/" but in the tests
+// RustiCL (darktable 5d782a3b06), so a system with ROCm installed got no
+// GPU at all when RustiCL was missing (the platform found, 0 devices), and
+// on an AMD card on Wayland with both installed, RustiCL gave no usable GPU
+// where ROCm did. installed ROCm is taken as the user's choice: its platform
+// on and RustiCL off, so the GPU is not taken twice (darktable's own advice
+// for RustiCL). the ICD files name the driver library they load; `root` is
+// "/" but in the tests
 #[cfg(any(target_os = "linux", test))]
-fn rocm_only(root: &Path) -> bool {
+fn rocm_installed(root: &Path) -> bool {
     let Ok(dir) = std::fs::read_dir(root.join("etc/OpenCL/vendors")) else { return false };
     let libs: Vec<String> = dir.flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "icd"))
         .filter_map(|e| std::fs::read_to_string(e.path()).ok())
         .map(|s| s.to_lowercase())
         .collect();
-    libs.iter().any(|l| l.contains("amdocl")) && !libs.iter().any(|l| l.contains("rusticl"))
+    libs.iter().any(|l| l.contains("amdocl"))
 }
 
 impl Engine {
@@ -762,7 +998,12 @@ impl Engine {
         // started after it; begun afresh once it passes 5 MB
         let path = runtime.join("engine.log");
         let fresh = std::fs::metadata(&path).map(|m| m.len() > 5_000_000).unwrap_or(true);
-        let mut log = std::fs::OpenOptions::new().create(true).append(!fresh).write(true).truncate(fresh).open(&path)?;
+        if fresh {
+            std::fs::File::create(&path)?;
+        }
+        // always O_APPEND: stall_watch.rs appends its lines through its own
+        // handle, which a positioned write here would overwrite
+        let mut log = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
         let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         writeln!(log, "\n===== engine start ({since} s since 1970) =====")?;
         let mut cmd = Command::new(bin);
@@ -808,13 +1049,14 @@ impl Engine {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000);
         }
-        // ROCm's platform too, when it is the only AMD driver. with ROCm
-        // 7.1 darktable's kernels failed to build on read_imagef and
+        // ROCm's platform instead of RustiCL, when ROCm is installed. with
+        // ROCm 7.1 darktable's kernels failed to build on read_imagef and
         // write_imagef, and built as OpenCL C 2.0 (darktable #20084; RX 9070
         // XT, Ubuntu 26.04). _APPEND keeps darktable's own build options
         #[cfg(target_os = "linux")]
-        if rocm_only(Path::new("/")) {
-            cmd.args(["--conf", "clplatform_amdacceleratedparallelprocessing=true"]);
+        if rocm_installed(Path::new("/")) {
+            cmd.args(["--conf", "clplatform_amdacceleratedparallelprocessing=true",
+                      "--conf", "clplatform_rusticl=false"]);
             if std::env::var_os("AMD_OCL_BUILD_OPTIONS_APPEND").is_none() {
                 cmd.env("AMD_OCL_BUILD_OPTIONS_APPEND", "-cl-std=CL2.0");
             }
@@ -838,9 +1080,9 @@ impl Engine {
         let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped stdin")));
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
-        let perf = Arc::new(Perf::default());
+        let perf = Arc::new(Perf { file: Mutex::new(Some(log)), ..Perf::default() });
         let shared = perf.clone();
-        std::thread::spawn(move || read_stderr(stderr, log, shared));
+        std::thread::spawn(move || read_stderr(stderr, shared));
         let (tx, replies) = channel();
         let conn = Arc::new(Conn {
             epoch,
@@ -894,6 +1136,10 @@ impl Engine {
 
     pub fn epoch(&self) -> u64 {
         self.conn.epoch
+    }
+
+    pub fn log_sink(&self) -> LogSink {
+        LogSink(self.perf.clone())
     }
 
     pub fn link(&self) -> Arc<Link> {
@@ -953,11 +1199,21 @@ impl Engine {
         report
     }
 
-    pub fn request(&mut self, mut req: Value) -> Result<Value, String> {
+    pub fn request(&mut self, req: Value) -> Result<Value, String> {
+        let (sent, reply) = self.request_unsettled(req)?;
+        self.link.after_success(&sent, &reply);
+        Ok(reply)
+    }
+
+    // request() without its id and search cache work, which the caller does
+    // (Link::note_ids under the lock, update_search_cache after it): the
+    // request as sent, and the reply. a cached photo not imported yet is
+    // NEEDS_IMPORT, before anything is sent
+    pub fn request_unsettled(&mut self, mut req: Value) -> Result<(Value, Value), String> {
         if matches!(req.get("cmd").and_then(Value::as_str), Some("open" | "render")) {
             self.tagged().mark_active();
         }
-        self.tagged().prepare(&mut req, &self.conn)?;
+        self.tagged().prepare_cached(&mut req)?;
         if self.cache_trace { req["cache_trace"] = json!(true); }
         self.last_id += 1;
         let id = self.last_id;
@@ -1007,8 +1263,7 @@ impl Engine {
             if slow {
                 self.link.emit(json!({ "state": "ready", "epoch": self.conn.epoch }));
             }
-            if let Ok(reply) = &result { self.link.after_success(&req, reply); }
-            return result;
+            return result.map(|reply| (req, reply));
         }
     }
 
@@ -1104,7 +1359,8 @@ impl Drop for Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_only, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT};
+    use super::{gpu_edits, thumb_threads, parse_timing, resource_level, set_resource_level, reap, rocm_installed, set_gpu_edits, CacheLog, CACHE_RECORD_LIMIT, covering, Holds, HOLD_HINT};
+    use serde_json::json;
     use crate::settings::Settings;
     use std::time::{Duration, Instant};
 
@@ -1188,7 +1444,15 @@ for line in sys.stdin:
         assert_eq!(held["job"], b);
         // Missing copy cannot silently open the original.
         let missing = tagged.cached_photo("/photo.raw", 9);
-        assert!(engine.request(json!({"cmd":"open","imgid":missing})).unwrap_err().contains("version 9"));
+        let open = json!({"cmd":"open","imgid":missing});
+        // under the engine lock nothing is imported: the caller is told to
+        // import first (AppState::request), and nothing is sent
+        let sent = requests.len();
+        assert_eq!(engine.request(open.clone()).unwrap_err(), super::NEEDS_IMPORT);
+        assert_eq!(std::fs::read_to_string(root.join("requests")).unwrap().lines().count(), sent);
+        assert!(tagged.resolve(&open).unwrap_err().contains("version 9"));
+        // a prefetch leaves out what is not imported yet
+        assert_eq!(tagged.imported_only(&[a, b, missing, 3]), vec![a, b, 3]);
         drop(engine);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1325,6 +1589,70 @@ for line in sys.stdin:
         }
         engine.quit();
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn holds_cover_their_drive_for_a_while() {
+        let holds = Holds::default();
+        let t = Instant::now();
+        holds.note(&json!({"held": []}), t);
+        assert_eq!(holds.covering("/Volumes/A/x.nef", t), None);
+        holds.note(&json!({"ok": true, "held": ["/Volumes/A"]}), t);
+        assert_eq!(holds.covering("/Volumes/A/2015/x.nef", t).as_deref(), Some("/Volumes/A"));
+        assert_eq!(holds.covering("/Volumes/A", t).as_deref(), Some("/Volumes/A"));
+        // by whole components
+        assert_eq!(holds.covering("/Volumes/AB/x.nef", t), None);
+        assert_eq!(holds.covering("/Users/me/x.nef", t), None);
+        // a hint only: the engine is asked again after HOLD_HINT
+        assert_eq!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT), None);
+        holds.note(&json!({"held": ["/Volumes/A"]}), t + HOLD_HINT);
+        assert!(holds.covering("/Volumes/A/x.nef", t + HOLD_HINT).is_some());
+    }
+
+    #[test]
+    fn slow_drives_follow_the_engines_import_times() {
+        use std::time::{Duration, Instant};
+        let slow = super::Slow::default();
+        let now = Instant::now();
+        // a long wait in the queue is not the drive's: only `ms` counts
+        slow.note("/mnt/nas", Duration::from_millis(4999), now);
+        assert!(!slow.is_slow("/mnt/nas", now));
+        slow.note("/mnt/nas", super::SLOW_IMPORT, now);
+        assert!(slow.is_slow("/mnt/nas", now));
+        assert!(!slow.is_slow("/mnt/other", now));
+        // in between neither marks nor clears; under FAST_IMPORT clears
+        slow.note("/mnt/nas", Duration::from_secs(2), now);
+        assert!(slow.is_slow("/mnt/nas", now));
+        slow.note("/mnt/nas", Duration::from_millis(500), now);
+        assert!(!slow.is_slow("/mnt/nas", now));
+        // and it passes by itself
+        slow.note("/mnt/nas", Duration::from_secs(9), now);
+        assert!(!slow.is_slow("/mnt/nas", now + super::SLOW_HINT));
+        // the local disk is never a network drive to mark
+        assert_eq!(super::network_mount(std::env::temp_dir().to_str().unwrap()), None);
+    }
+
+    #[test]
+    fn a_drives_background_imports_take_turns() {
+        let slow = std::sync::Arc::new(super::Slow::default());
+        let first = slow.lane("/mnt/nas");
+        let held = first.lock().unwrap();
+        // another drive's lane is its own
+        assert!(slow.lane("/mnt/other").try_lock().is_ok());
+        let waiter = { let slow = slow.clone(); std::thread::spawn(move || drop(slow.lane("/mnt/nas").lock().unwrap())) };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!waiter.is_finished(), "the second import must wait for the lane");
+        drop(held);
+        waiter.join().unwrap();
+    }
+
+    #[test]
+    fn covering_never_matches_an_empty_or_root_mount() {
+        let roots = ["/".to_string(), String::new()];
+        assert_eq!(covering(roots.iter(), "/Users/me/x.nef"), None);
+        let nested = ["/run/user/1000/gvfs".to_string(), "/run/user/1000/gvfs/smb-share:server=nas".to_string()];
+        assert_eq!(covering(nested.iter(), "/run/user/1000/gvfs/smb-share:server=nas/p.nef").as_deref(),
+                   Some("/run/user/1000/gvfs/smb-share:server=nas"));
     }
 
     #[test]
@@ -1530,19 +1858,19 @@ for line in sys.stdin:
     }
 
     #[test]
-    fn rocm_only_without_rusticl() {
+    fn rocm_installed_with_or_without_rusticl() {
         let root = std::env::temp_dir().join(format!("immage-icd-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let vendors = root.join("etc/OpenCL/vendors");
-        assert!(!rocm_only(&root));
+        assert!(!rocm_installed(&root));
         std::fs::create_dir_all(&vendors).unwrap();
         std::fs::write(vendors.join("nvidia.icd"), "libnvidia-opencl.so.1\n").unwrap();
-        assert!(!rocm_only(&root));
+        assert!(!rocm_installed(&root));
+        std::fs::write(vendors.join("rusticl.icd"), "libRusticlOpenCL.so.1\n").unwrap();
+        assert!(!rocm_installed(&root));
         // AMD's own packages name the file by version
         std::fs::write(vendors.join("amdocl64_70100.icd"), "libamdocl64.so\n").unwrap();
-        assert!(rocm_only(&root));
-        std::fs::write(vendors.join("rusticl.icd"), "libRusticlOpenCL.so.1\n").unwrap();
-        assert!(!rocm_only(&root));
+        assert!(rocm_installed(&root));
         std::fs::remove_dir_all(&root).unwrap();
     }
 

@@ -36,6 +36,9 @@ export function SearchPrefs() {
   const { status, busy, error, run } = useSearchStatus();
   const queue = status?.queue;
   const count = status?.counts;
+  const providerByPath = new Map((status?.clip_providers ?? []).map(p => [p.path, p.provider]));
+  const rootByPath = new Map((status?.roots ?? []).map(r => [r.path, r]));
+  const dirPaths = [...new Set([...rootByPath.keys(), ...providerByPath.keys()])].sort();
   return <PrefCard title={t("library.cache.title")}>
     <PrefRow label={t("library.cache.metadata")} summary={count ? t("library.cache.count", { photos: count.assets.toLocaleString(), versions: count.variants.toLocaleString(), records: count.metadata.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")}
       hint={t("library.cache.hint")}>
@@ -47,16 +50,22 @@ export function SearchPrefs() {
       <button className="btn small" disabled={busy || !queue} onClick={() => void run(() => commands.searchPause(!queue!.paused))}>{queue?.paused ? t("library.cache.resume") : t("library.cache.pause")}</button>
     </PrefRow>
     <PrefRow label={t("library.cache.analysis")} summary={count ? t("library.cache.analysedPhotos", { photos: count.analysed_photos.toLocaleString(), analyses: count.analyses.toLocaleString() }) : status ? t("library.cache.unavailable") : t("library.cache.reading")} children={null} />
-    {!!status?.roots.length && <div className="cache-directories" role="region" aria-label={t("library.cache.directories")} tabIndex={0}>
-      {status.roots.map(root => {
-        const connected = root.state === "online";
-        const label = root.state === "online" || root.state === "offline"
+    {!!dirPaths.length && <div className="cache-directories" role="region" aria-label={t("library.cache.directories")} tabIndex={0}>
+      {dirPaths.map(path => {
+        const root = rootByPath.get(path);
+        const provider = providerByPath.get(path);
+        const providerLabel = provider ? t(`library.cache.provider.${provider}`) : null;
+        const connected = !root || root.state === "online";
+        const label = !root ? t("library.folders.connected")
+          : root.state === "online" || root.state === "offline"
           ? t(connected ? "library.folders.connected" : "library.folders.offline")
           : t("library.cache.lastCheck", { state: root.state, error: "" });
-        return <div className="cache-directory" key={root.path}>
-          <span className="cache-directory-path" title={root.path}>{root.path}</span>
+        return <div className="cache-directory" key={path}>
+          <span className="cache-directory-path" title={path}>{path}</span>
+          {providerLabel && <span className={`cache-directory-provider${provider !== "local" ? " remote" : ""}`}
+            title={t("library.cache.providerTitle", { provider: providerLabel })}>{providerLabel}</span>}
           <span className="cache-directory-status" role="img" aria-label={label}
-            title={`${label}${root.error ? ` — ${root.error}` : ""}`}>
+            title={`${label}${root?.error ? ` — ${root.error}` : ""}`}>
             <span className={`drive-dot${connected ? "" : " off"}`} />
           </span>
         </div>;
@@ -85,6 +94,7 @@ export function ClipPrefs() {
         setProbe(t("library.cache.probe", { text: result.dimensions, image: result.image_dimensions, timing: result.elapsed_ms === null ? t("library.cache.timingUnavailable") : t("library.cache.elapsed", { ms: Math.round(result.elapsed_ms) }) }));
       })}>{t("library.cache.check")}</button>
     </PrefRow>
+    <p className="pref-hint">{t("library.clip.precedence")}</p>
     <p className="prefs-status warn">{t("library.clip.warning")}</p>
     {(error || model?.error) && <p role="alert" className="prefs-error">{error || model?.error}</p>}
   </PrefCard>;

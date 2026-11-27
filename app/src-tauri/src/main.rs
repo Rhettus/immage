@@ -6,19 +6,26 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cache;
+mod stall_watch;
 mod search_cache;
 mod search_analysis;
 mod library_ids;
 mod analysis_queue;
 mod search_reconcile;
 mod clip_models;
+mod clip_providers;
 mod clip_text;
 mod clip_image;
 mod clip_infer;
 mod search_cmds;
+mod camera_names;
 mod search_filters;
 mod local_search;
 mod local_search_cmds;
+mod find_facets;
+mod mirror_notes;
+mod mirror_overrides;
+mod mirror_query;
 mod map_tiles;
 mod map_search;
 mod engine;
@@ -53,6 +60,7 @@ mod library_cmds;
 mod export_cmds;
 mod move_cmds;
 mod immich_cmds;
+mod morf_mirror;
 mod morf_photo;
 mod morf_photo_cmds;
 mod print_cmds;
@@ -66,6 +74,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use serde_json::Value;
 use tauri::{Emitter, Manager};
 #[cfg(target_os = "linux")]
 use crate::session_cmds::shm_frame;
@@ -76,11 +86,14 @@ use crate::app_cmds::supervise;
 struct AppState {
     // disposable local search metadata; darktable's catalog remains in-memory
     search_cache: Option<Arc<search_cache::SearchCache>>,
+    // the local copy of the morfPhoto catalog; its sync thread owns the file
+    mirror: Arc<morf_mirror::Mirror>,
     analysis_queue: Arc<analysis_queue::AnalysisQueue>,
     search_analysis: search_analysis::Control,
     search_clear_lock: Mutex<()>,
     local_search_requests: Arc<local_search_cmds::Requests>,
     clip_models: Arc<clip_models::Models>,
+    clip_providers: Arc<clip_providers::ProbeCache>,
     // engine(), not this directly
     engine: perf_trace::TracedMutex<Engine>,
     // reaches the engine while a request holds it
@@ -122,11 +135,86 @@ struct AppState {
 }
 
 impl AppState {
-    // the engine for a request its main loop serves, one at a time
+    // the engine for requests its main loop serves, one at a time. request()
+    // is the one to use for a single request; this is for a few in a row on
+    // the open photo, which import nothing. LOCK ORDER: the Engine mutex is
+    // never taken with a photo's import gate held, nor the gate under it
+    // (Tagged::resolve)
     fn engine(&self, operation: &'static str) -> perf_trace::Guard<'_, Engine> {
-        let mut guard = self.engine.lock(operation, None);
+        let mut guard = blocking(|| self.engine.lock(operation, None));
         guard.set_operation(operation);
         guard
+    }
+
+    // one request its main loop serves. its cached photos are imported first,
+    // without the engine lock (Tagged::resolve), so nothing waits for the
+    // lock behind a slow share's import. waiting for the lock, and the
+    // request, give up their async worker (blocking), so a queue of them
+    // cannot stall every other command. the ids' bookkeeping follows the
+    // engine's order, under the lock; the search cache's SQLite update runs
+    // once it is let go. a respawn between the import and the lock imports
+    // again, twice at most; nothing has been sent by then
+    fn request(&self, operation: &'static str, req: Value) -> Result<Value, String> {
+        self.request_then(operation, req, Ok)
+    }
+
+    // request(), with `then` run on the reply while the lock is still held:
+    // for a reply whose output file the next request would overwrite. an
+    // import that met a respawn waits for it (the respawn holds the lock)
+    // and imports again
+    fn request_then<T>(&self, operation: &'static str, req: Value,
+                       then: impl FnOnce(Value) -> Result<T, String>) -> Result<T, String> {
+        blocking(|| {
+            let mut then = Some(then);
+            for attempt in 0..3 {
+                match self.tagged.resolve(&req) {
+                    Err(e) if attempt < 2 && self.tagged.restarted(&e) => {
+                        drop(self.engine.lock(operation, None));
+                        continue;
+                    }
+                    other => other?,
+                }
+                let asked = Instant::now();
+                let mut engine = self.engine.lock(operation, None);
+                engine.set_operation(operation);
+                let waited = asked.elapsed();
+                let result = engine.request_unsettled(req.clone());
+                let link = engine.link();
+                let result = result.and_then(|(sent, reply)| {
+                    let affected = link.note_ids(&sent, &reply);
+                    Ok((affected, then.take().expect("run once")(reply)?))
+                });
+                let log = engine.log_sink();
+                drop(engine);
+                let held = asked.elapsed() - waited;
+                if waited > SLOW_LOCK || held > SLOW_LOCK {
+                    log.note(&format!("[immage] {operation}: waited {} ms for the engine, then {} ms",
+                                      waited.as_millis(), held.as_millis()));
+                }
+                match result {
+                    Ok((affected, out)) => {
+                        link.update_search_cache(affected);
+                        return Ok(out);
+                    }
+                    Err(e) if e == engine::NEEDS_IMPORT => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Err("the photo is no longer available to the engine; open its folder again".into())
+        })
+    }
+}
+
+// an engine lock wait or request this long is noted in engine.log
+const SLOW_LOCK: Duration = Duration::from_secs(1);
+
+// runs `f`, which blocks, without holding up the async runtime: on one of
+// its workers, tokio first hands the worker's other tasks to another
+// thread (block_in_place). elsewhere `f` just runs
+pub(crate) fn blocking<T>(f: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => tokio::task::block_in_place(f),
+        _ => f(),
     }
 }
 
@@ -263,6 +351,8 @@ fn main() {
             let gpu_edits = engine::gpu_edits(&runtime);
             let engine = Engine::spawn(&bin, &runtime, &models_dir)
                 .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+            // after the spawn, which may start engine.log afresh
+            stall_watch::start(app.handle().clone(), runtime.join("engine.log"));
             engine.set_search_cache(search_cache.clone());
             let analysis_queue = Arc::new(analysis_queue::AnalysisQueue::new(engine::thumb_threads(&runtime) as usize, 256));
             analysis_queue.pause(settings::read_key(&runtime,search_cmds::PAUSED).as_deref()==Some("1"));
@@ -272,14 +362,38 @@ fn main() {
             let events = app.handle().clone();
             engine_link.set_events(move |event| { let _ = events.emit("engine-state", event); });
             let clip_models = Arc::new(clip_models::Models::new(runtime.join("clip-models")));
-            let search_analysis = search_analysis::start(search_cache.clone(), clip_models.clone(), analysis_queue.clone(), engine.tagged(), frame_output.clone(), runtime.clone());
+            let clip_providers = Arc::new(clip_providers::ProbeCache::new());
+            // yields to the user's photo work (Tagged::quiet_for); the thread opens the file
+            let mirror = {
+                let tagged = engine.tagged();
+                morf_mirror::Mirror::start(&runtime, move || tagged.quiet_for())
+            };
+            {
+                // the sync thread calls this with no lock held
+                let events = app.handle().clone();
+                mirror.set_events(move |dirs, all| {
+                    let _ = events.emit("mirror-changed", serde_json::json!({ "dirs": dirs, "all": all }));
+                });
+            }
+            let search_analysis = search_analysis::start(
+                app.handle().clone(),
+                search_cache.clone(),
+                clip_models.clone(),
+                clip_providers.clone(),
+                analysis_queue.clone(),
+                engine.tagged(),
+                frame_output.clone(),
+                runtime.clone(),
+            );
             app.manage(AppState {
+                mirror,
                 search_analysis,
                 search_cache,
                 analysis_queue,
                 search_clear_lock: Mutex::new(()),
                 local_search_requests: Arc::new(local_search_cmds::Requests::default()),
                 clip_models,
+                clip_providers,
                 base_cancel: engine.base_cancel(),
                 tagged: engine.tagged(),
                 export_cancels: Mutex::new(HashMap::new()),
@@ -308,6 +422,10 @@ fn main() {
             let handle = app.handle().clone();
             std::thread::spawn(move || supervise(handle));
             app.manage(plugins::Plugins::new(runtime.join("plugin-returns.json")));
+            // the share roots, for telling an unmounted share from an empty
+            // folder; reads the importer's SQLite, so off the event loop
+            let (handle, root_runtime) = (app.handle().clone(), runtime.clone());
+            std::thread::spawn(move || clip_providers::refresh_share_roots(&handle, &root_runtime));
             // stacks saved in Macro Studio while Immage was closed
             let handle = app.handle().clone();
             std::thread::spawn(move || handle.state::<plugins::Plugins>().drain_jobs());
@@ -343,6 +461,7 @@ fn main() {
     app.run(|_app, _event| {
         if matches!(_event, tauri::RunEvent::Exit) {
             _app.state::<AppState>().search_analysis.stop();
+            _app.state::<AppState>().mirror.stop();
             _app.state::<AppState>().local_search_requests.cancel_all();
             _app.state::<AppState>().analysis_queue.pause(true);
             _app.state::<AppState>().analysis_queue.cancel();
@@ -381,5 +500,27 @@ mod tests {
         let windows = setup.find("for config in app.config().app.windows.clone()").unwrap();
         assert!(settings < windows, "windows must wait for the settings store");
         assert!(state < windows, "windows must wait for application state");
+    }
+
+    // a command waiting for the engine lock gives up its worker: with one
+    // worker and the lock held, another command still runs
+    #[test]
+    fn a_wait_for_the_engine_leaves_the_runtime_free() {
+        use std::sync::{mpsc, Arc, Mutex};
+        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(1).build().unwrap();
+        let lock = Arc::new(Mutex::new(()));
+        let held = lock.lock().unwrap();
+        let (waiting, waited) = mpsc::channel();
+        let waiter = lock.clone();
+        runtime.spawn(async move {
+            super::blocking(|| drop(waiter.lock().unwrap()));
+            waiting.send(()).unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let (ran, done) = mpsc::channel();
+        runtime.spawn(async move { ran.send(()).unwrap(); });
+        assert!(done.recv_timeout(std::time::Duration::from_secs(5)).is_ok(), "the runtime stalled");
+        drop(held);
+        assert!(waited.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
     }
 }

@@ -1,0 +1,100 @@
+[
+ {
+  "label": "3 open / order swap",
+  "reply": {
+   "instances": [
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 100,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "rawprepare",
+     "owner": null,
+     "priority": 0,
+     "switchable": false
+    },
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 200,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "invert",
+     "owner": null,
+     "priority": 0,
+     "switchable": true
+    },
+    {
+     "changed": false,
+     "copyable": false,
+     "default_enabled": false,
+     "enabled": false,
+     "hand_edited": false,
+     "in_history": false,
+     "iop_order": 300,
+     "label": "",
+     "mask": null,
+     "masked": false,
+     "name": "",
+     "op": "temperature",
+     "owner": null,
+     "priority": 0,
+     "switchable": true
+    }
+   ],
+   "modules": [
+    {
+     "enabled": false,
+     "hi": 0,
+     "iop_order": 100,
+     "label": "",
+     "lo": 0,
+     "locked": "pipe",
+     "name": "",
+     "op": "rawprepare",
+     "owner": null,
+     "priority": 0
+    },
+    {
+     "enabled": false,
+     "hi": 1,
+     "iop_order": 200,
+     "label": "",
+     "lo": 1,
+     "locked": "pipe",
+     "name": "",
+     "op": "invert",
+     "owner": null,
+     "priority": 0
+    },
+    {
+     "enabled": false,
+     "hi": 3,
+     "iop_order": 300,
+     "label": "",
+     "lo": 2,
+     "locked": null,
+     "name": "",
+     "op": "temperature",
+     "owner": null,
+     "priority": 0
+    }
+   ],
+   "ms": 0.0,
+   "ok": true
+  }
+ }
+]

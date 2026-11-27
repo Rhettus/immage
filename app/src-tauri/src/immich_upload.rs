@@ -59,6 +59,14 @@ fn explain(body: &str) -> String {
 
 impl Immich {
     pub fn new(c: &tauri_plugin_immporter::ImmichConnection) -> Result<Self, String> {
+        // an upload of a large TIFF over a slow link takes a while
+        Self::new_with_timeout(c, Duration::from_secs(300))
+    }
+
+    pub fn new_with_timeout(
+        c: &tauri_plugin_immporter::ImmichConnection,
+        timeout: Duration,
+    ) -> Result<Self, String> {
         let mut key = reqwest::header::HeaderValue::from_str(&c.api_key).map_err(|e| e.to_string())?;
         key.set_sensitive(true);
         let mut headers = reqwest::header::HeaderMap::new();
@@ -68,8 +76,7 @@ impl Immich {
             // a redirect would carry the key to wherever it points
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(c.accept_invalid_certs)
-            // an upload of a large TIFF over a slow link takes a while
-            .timeout(Duration::from_secs(300))
+            .timeout(timeout)
             .build()
             .map_err(|e| e.to_string())?;
         Ok(Immich { http, base: c.url.trim_end_matches('/').to_string() })

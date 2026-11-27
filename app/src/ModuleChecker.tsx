@@ -2,7 +2,7 @@
 // Copyright (C) 2026 the Immage authors
 import { createContext, useContext, useEffect, useId, useRef, useState, type Dispatch, type PointerEvent, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
-import { commands, type CheckerReply } from "./bindings";
+import { commands, type CheckerReply } from "./commands";
 import { formatNumber, t } from "./i18n";
 import type { AdvancedState } from "./session";
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { until, pause } from '../support/webdriver.mjs';
-import { panel, expandSections, Blocked } from '../support/scenario.mjs';
+import { resetAll, panel, expandSections, Blocked } from '../support/scenario.mjs';
 import { inspect, reveal, click, rangeSelector, openTool } from '../support/controls.mjs';
 import { settledPhoto } from './smoke.mjs';
 import * as read from '../support/observations.mjs';
@@ -74,7 +74,7 @@ export async function history(t) {
   // Reset All clears the New Photos preset (a raw's lens corrections) by
   // design: reset first, so the baseline is the photo's own defaults and the
   // later Reset All must reproduce it
-  await click(t, 'button[aria-label="reset all"]'); await pause(300);
+  await resetAll(t); await pause(300);
   const selector = rangeSelector('exposure');
   let s = await reveal(t, selector);
   await t.driver.point(s.label.x, s.label.y, 2);
@@ -99,7 +99,7 @@ export async function history(t) {
     t.measure({ name: action, value, photoHash: frame.hash });
     await t.evidence(action);
   }
-  await click(t, 'button[aria-label="reset all"]');
+  await resetAll(t);
   await until(async () => Math.abs(+(await t.driver.observe(inspect, selector)).value) < .02, 'Reset All Exposure');
   // Reset All re-renders from the defaults rather than replaying the undo
   // cache, so compare like the Exposure reset: mean error within 1/255.

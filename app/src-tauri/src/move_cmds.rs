@@ -151,6 +151,10 @@ pub struct MoveSource {
     pub asset: Option<String>,
     #[serde(default)]
     pub asset_path: Option<String>,
+    // a folder under the destination to put it in, from the confirmation's
+    // subfolder pattern: names only, never `..` or a root
+    #[serde(default)]
+    pub subdir: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Type)]
@@ -178,6 +182,8 @@ pub struct PlanUnit {
     pub clash: String,
     pub download: bool,
     pub keep_source: bool,
+    // the subfolder of the destination it goes into, empty for the folder itself
+    pub folder: String,
 }
 
 #[derive(Serialize, Clone, Type)]
@@ -548,33 +554,61 @@ fn immich_client(app: &AppHandle) -> Result<immich_upload::Immich, String> {
     immich_upload::Immich::new(&conn)
 }
 
+// a source's subfolder, or an exported photo's, as a relative path of
+// plain names. the page fills it from photo metadata, so anything that could climb out of the
+// destination or name another root is refused
+pub(crate) fn subfolder(sub: Option<&str>) -> Result<PathBuf, String> {
+    let mut out = PathBuf::new();
+    for c in Path::new(sub.unwrap_or("").trim()).components() {
+        match c {
+            std::path::Component::Normal(n) => out.push(n),
+            std::path::Component::CurDir => {}
+            _ => return Err(format!("{} is not a subfolder name", sub.unwrap_or(""))),
+        }
+    }
+    Ok(out)
+}
+
+// a unit placed in a subfolder of the destination: every file keeps its
+// place relative to the photo, under that folder
+fn place(u: &mut Unit, sub: &Path) {
+    if sub.as_os_str().is_empty() {
+        return;
+    }
+    for f in &mut u.files {
+        f.rel = sub.join(&f.rel);
+    }
+}
+
 // the units to move, from the engine's say of where each photo is: the
 // page names photos, never files
 async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) -> Result<Vec<Unit>, String> {
     let dest = PathBuf::from(&req.dest);
-    let mut by_path: Vec<(PathBuf, Vec<i64>)> = Vec::new();
+    let mut by_path: Vec<(PathBuf, Vec<i64>, PathBuf)> = Vec::new();
     let mut assets = Vec::new();
     for s in &req.sources {
+        let sub = subfolder(s.subdir.as_deref())?;
         if let Some(id) = s.imgid.filter(|i| *i > 0) {
-            let reply = state.engine("move_plan").request(json!({ "cmd": "meta", "imgid": id }))?;
+            let reply = state.request("move_plan", json!({ "cmd": "meta", "imgid": id }))?;
             let path = reply["image"]["path"].as_str().unwrap_or_default();
             if path.is_empty() {
                 continue;
             }
             let path = PathBuf::from(path);
-            match by_path.iter_mut().find(|(p, _)| *p == path) {
-                Some((_, ids)) => ids.push(id),
-                None => by_path.push((path, vec![id])),
+            // versions of one file go together, into the first one's folder
+            match by_path.iter_mut().find(|(p, _, _)| *p == path) {
+                Some((_, ids, _)) => ids.push(id),
+                None => by_path.push((path, vec![id], sub)),
             }
         } else if let Some(a) = &s.asset {
-            assets.push((a.clone(), s.asset_path.clone().unwrap_or_default()));
+            assets.push((a.clone(), s.asset_path.clone().unwrap_or_default(), sub));
         }
     }
     let mut local = Vec::new();
-    for (path, ids) in by_path {
-        let reply = state.engine("move_plan").request(json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
+    for (path, ids, sub) in by_path {
+        let reply = state.request("move_plan", json!({ "cmd": "sidecars", "imgid": ids[0] }))?;
         let sidecars: Vec<PathBuf> = reply["files"].as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(PathBuf::from).collect();
-        local.push((path, ids, sidecars));
+        local.push((path, ids, sidecars, sub));
     }
     let map = req.map.clone().unwrap_or_default();
     let app = app.clone();
@@ -592,17 +626,20 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
             }
         };
         let mut v = Vec::new();
-        for (path, ids, sidecars) in local {
+        for (path, ids, sidecars, sub) in local {
             reach(&path)?;
-            v.push(local_unit(&path, ids, sidecars, &dest, false));
+            let mut u = local_unit(&path, ids, sidecars, &dest.join(&sub), false);
+            place(&mut u, &sub);
+            v.push(u);
         }
         let mut client = None;
-        for (id, server) in assets {
+        for (id, server, sub) in assets {
             if let Some(p) = immich_search::local_path(&server, &map) {
                 reach(&p)?;
                 let sidecars = mapped_sidecars(&p);
-                let mut u = local_unit(&p, Vec::new(), sidecars, &dest, true);
+                let mut u = local_unit(&p, Vec::new(), sidecars, &dest.join(&sub), true);
                 u.key = format!("immich:{id}");
+                place(&mut u, &sub);
                 v.push(u);
                 continue;
             }
@@ -617,7 +654,7 @@ async fn units(app: &AppHandle, state: &State<'_, AppState>, req: &MoveRequest) 
                 name: name.clone(),
                 imgids: Vec::new(),
                 versions: 1,
-                files: vec![UnitFile { from: None, rel: PathBuf::from(&name), size: info.size.unwrap_or(0) }],
+                files: vec![UnitFile { from: None, rel: sub.join(&name), size: info.size.unwrap_or(0) }],
                 download: Some((id, info.checksum)),
                 keep_source: true,
                 here: false,
@@ -671,6 +708,7 @@ pub(crate) async fn move_plan(app: AppHandle, state: State<'_, AppState>, req: M
                 clash: if here { "here".into() } else { c.label().into() },
                 download: u.download.is_some(),
                 keep_source: u.keep_source,
+                folder: u.files[0].rel.parent().map(text).unwrap_or_default(),
             });
         }
         MovePlan {
@@ -736,7 +774,8 @@ fn sync_transfer_file(file: &File, path: &Path) -> Result<(), String> {
 
 // macOS SMB can reject both exclusive rename and hard links. Exclusive
 // creation still protects a destination that appeared after confirmation.
-#[cfg(any(target_os = "macos", test))]
+// So can Linux FUSE drives (see rename_no_replace).
+#[cfg(unix)]
 fn publish_by_exclusive_copy(part: &Path, target: &Path, expected: &str,
                              mtime: Option<std::time::SystemTime>, ctx: &Ctx) -> Result<(), String> {
     let mut input = File::open(part).map_err(|e| transfer_io_error("open verified temporary file", part, e))?;
@@ -860,8 +899,11 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
         std::fs::rename(&part, target)
             .map_err(|e| fail(transfer_io_error("rename temporary file", target, e)))?;
     } else if let Err(e) = rename_no_replace(&part, target) {
-        #[cfg(target_os = "macos")]
-        if matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EOPNOTSUPP)) {
+        // macOS SMB rejects RENAME_EXCL; Linux FUSE drives without hard
+        // links (exfat-fuse) reject RENAME_NOREPLACE with EINVAL.
+        #[cfg(unix)]
+        if matches!(e.raw_os_error(), Some(libc::ENOTSUP | libc::EINVAL | libc::ENOSYS))
+            || e.raw_os_error() == Some(libc::EOPNOTSUPP) {
             publish_by_exclusive_copy(&part, target, &read, mtime, ctx).map_err(fail)?;
             if let Err(e) = std::fs::remove_file(&part) {
                 let _ = transfer_io_error("remove verified temporary file", &part, e);
@@ -880,6 +922,8 @@ fn copy_verified_with(from: &mut dyn Read, target: &Path, expect: Option<&str>, 
 struct Placed {
     created: Vec<PathBuf>,
     renamed: Vec<(PathBuf, PathBuf)>,
+    // folders this transfer made, outermost first
+    folders: Vec<PathBuf>,
 }
 
 impl Placed {
@@ -889,6 +933,11 @@ impl Placed {
         }
         for p in &self.created {
             let _ = std::fs::remove_file(p);
+        }
+        // deepest first; remove_dir leaves a folder another photo has
+        // put something in meanwhile
+        for d in self.folders.iter().rev() {
+            let _ = std::fs::remove_dir(d);
         }
     }
 }
@@ -910,7 +959,10 @@ fn transfer_unit(u: &Unit, dest: &Path, rel: &[PathBuf], there: &[bool], copy: b
             }
             let target = dest.join(r);
             if let Some(parent) = target.parent() {
+                let missing: Vec<PathBuf> = parent.ancestors().take_while(|a| a.symlink_metadata().is_err())
+                    .map(Path::to_path_buf).collect();
                 std::fs::create_dir_all(parent).map_err(|e| transfer_io_error("create destination directory", parent, e))?;
+                placed.folders.extend(missing.into_iter().rev());
             }
             if target.symlink_metadata().is_ok() {
                 return Err(format!("{} appeared at the destination", target.display()));
@@ -991,7 +1043,7 @@ type TransferResult = Result<Option<(bool, Option<String>)>, String>;
 // must remain valid until a move removes its sources.
 #[cfg(test)]
 fn transfer_photo(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener) -> TransferResult {
-    transfer_photo_indexed(u, dest, copy, keep, ctx, open, None)
+    transfer_photo_indexed(u, dest, copy, keep, ctx, open, None, None)
 }
 
 type SearchSnapshot = (crate::search_cache::Asset, Vec<crate::search_cache::Variant>);
@@ -1031,9 +1083,14 @@ fn transfer_search_snapshot(
     Ok(false)
 }
 
+// `placed` hears a photo that landed (its source, its new file, and whether the
+// source is gone), once the files are in place: the local copy of the morfPhoto
+// catalog follows it. It runs on this worker thread with no lock held.
+type Placed2<'a> = &'a dyn Fn(&Path, &Path, bool);
+
 #[allow(clippy::too_many_arguments)]
 fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &Ctx, open: Opener,
-    index: Option<&crate::search_cache::SearchCache>) -> TransferResult {
+    index: Option<&crate::search_cache::SearchCache>, placed: Option<Placed2>) -> TransferResult {
     let original = file_names(u);
     let mut reservation = DestinationReservation::try_new(dest, &original, u);
     let mut selected = original;
@@ -1075,6 +1132,9 @@ fn transfer_photo_indexed(u: &Unit, dest: &Path, copy: bool, keep: bool, ctx: &C
         .is_some_and(|p| same_drive(p.parent().unwrap_or(Path::new("")), dest));
     let snapshot = index.and_then(|index| search_snapshot(index, u.files.first()?.from.as_ref()?));
     let result = transfer_unit(u, dest, &selected, &there, copy, rename, ctx, open)?;
+    if let (Some(placed), Some(from)) = (placed, u.files[0].from.as_deref()) {
+        placed(from, &dest.join(&selected[0]), result.0);
+    }
     if let (Some(index), Some(snapshot)) = (index, snapshot) {
         if let Err(e) = transfer_search_snapshot(index, snapshot, &dest.join(&selected[0]), result.0) {
             eprintln!("search cache transfer: {e}");
@@ -1166,6 +1226,10 @@ where F: Fn(&Unit, &Ctx) -> TransferResult + Send + Sync + 'static {
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| task(&worker_unit, &worker_ctx)))
                     .unwrap_or_else(|_| Err("the transfer worker stopped unexpectedly".into()));
                 // All filesystem work and reservation cleanup have finished.
+                // The task can own a reservation (a folder move's Tree), so it
+                // goes before the result: once the batch has every result, a
+                // follow-up transfer of the same folders must not be refused.
+                drop(task);
                 drop(permit);
                 let _ = send.send((index, r));
             });
@@ -1252,6 +1316,10 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
     tauri::async_runtime::spawn_blocking(move || {
         let d = dest.clone();
         let forgotten = app.clone();
+        // the saved mapping, read once for the job: each photo that lands is
+        // told to the local copy of the morfPhoto catalog
+        let morf = Some(crate::morf_photo::load(&app.state::<AppState>().runtime)).filter(|c| c.enabled);
+        let told = app.clone();
         transfer_batch(Batch { units, dest, workers, cancel, stall: STALL }, move |unit, ctx| {
             let client: std::cell::OnceCell<Result<immich_upload::Immich, String>> = std::cell::OnceCell::new();
             let open = |id: &str| -> Result<Box<dyn Read>, String> {
@@ -1261,12 +1329,17 @@ pub(crate) async fn move_files(app: AppHandle, state: State<'_, AppState>, setti
                 let c = c.as_ref().map_err(|e| e.clone())?;
                 Ok(Box::new(c.original_stream(id)?))
             };
-            transfer_photo_indexed(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open, index.as_deref())
+            let tell = |from: &Path, to: &Path, gone: bool| {
+                if let Some(config) = &morf {
+                    told.state::<AppState>().mirror.file_placed(config, from, to, gone);
+                }
+            };
+            transfer_photo_indexed(unit, &d, copy, keep_both.contains(&unit.key), ctx, &open, index.as_deref(), Some(&tell))
         }, |p| {
             let _ = app.emit("move-progress", json!({ "job": job, "done": p.done, "total": p.total,
                 "bytes": p.bytes, "bytesTotal": p.bytes_total, "file": p.file }));
         }, |ids| {
-            for id in ids { let _ = forgotten.state::<AppState>().engine("move_files").request(json!({ "cmd": "forget", "imgid": id })); }
+            for id in ids { let _ = forgotten.state::<AppState>().request("move_files", json!({ "cmd": "forget", "imgid": id })); }
         })
     }).await.map_err(|e| e.to_string())
 }
@@ -1349,14 +1422,39 @@ fn rename_destinations(unit: &Unit, stem: &str) -> Result<Vec<PathBuf>, String> 
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+fn rename_no_replace(path: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
-    let from = std::ffi::CString::new(from.as_os_str().as_bytes())?;
+    let from = std::ffi::CString::new(path.as_os_str().as_bytes())?;
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
     let result = unsafe {
         libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
     };
-    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    if result == 0 { return Ok(()); }
+    let error = std::io::Error::last_os_error();
+    // FUSE drives such as ntfs-3g reject the flag with EINVAL. A hard link
+    // fails with EEXIST rather than replacing, so link and unlink stands in
+    // for files; folders and drives without links keep the original error.
+    if !matches!(error.raw_os_error(), Some(libc::EINVAL | libc::ENOSYS | libc::EOPNOTSUPP)) {
+        return Err(error);
+    }
+    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+        return Err(error);
+    }
+    link_no_replace(&from, &to).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { e } else { error })
+}
+
+// rename for a file by hard link then unlink: never replaces `to`
+#[cfg(target_os = "linux")]
+fn link_no_replace(from: &std::ffi::CStr, to: &std::ffi::CStr) -> std::io::Result<()> {
+    if unsafe { libc::link(from.as_ptr(), to.as_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { libc::unlink(from.as_ptr()) } != 0 {
+        let error = std::io::Error::last_os_error();
+        unsafe { libc::unlink(to.as_ptr()) };
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1479,14 +1577,14 @@ fn plan_rename(app: &AppHandle, items: Vec<RenameItem>) -> Vec<PlannedRename> {
                 return Err(format!("Folder is unavailable: {}", dir.display()));
             }
             if item.imgid <= 0 { return Err("Expected a local photo".into()); }
-            let meta = state.engine("rename").request(json!({ "cmd": "meta", "imgid": item.imgid }))?;
+            let meta = state.request("rename", json!({ "cmd": "meta", "imgid": item.imgid }))?;
             if meta["image"]["path"].as_str() != Some(item.path.as_str()) {
                 return Err("The selected photo has changed".into());
             }
             if !path.symlink_metadata().is_ok_and(|m| m.is_file()) {
                 return Err("The source is no longer a regular file".into());
             }
-            let sidecars = state.engine("rename").request(json!({ "cmd": "sidecars", "imgid": item.imgid }))?;
+            let sidecars = state.request("rename", json!({ "cmd": "sidecars", "imgid": item.imgid }))?;
             let files = sidecars["files"].as_array().ok_or("Could not list sidecars")?
                 .iter().filter_map(|file| file.as_str()).map(PathBuf::from).collect();
             let unit = local_unit(path, vec![item.imgid], files, dir, false);
@@ -1617,7 +1715,11 @@ pub(crate) async fn rename_files(app: AppHandle, items: Vec<RenameItem>) -> Resu
                 stopped = true;
                 continue;
             }
-            if let Err(e) = state.engine("rename_files").request(json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
+            // the local copy of the catalog shows the new name at once
+            crate::mirror_notes::now(&state.mirror, &state.runtime, |mirror, config| {
+                mirror.file_placed(config, source, target, true);
+            });
+            if let Err(e) = state.request("rename_files", json!({ "cmd": "forget", "imgid": unit.imgids[0] })) {
                 eprintln!("could not forget renamed photo {}: {e}", source.display());
             }
             if let Some(index) = index {
@@ -1738,6 +1840,24 @@ mod rename_tests {
         assert_eq!(std::fs::read(source).unwrap(), b"source");
         assert_eq!(std::fs::read(target).unwrap(), b"target");
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn link_fallback_moves_files_without_replacing() {
+        use std::os::unix::ffi::OsStrExt;
+        let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (source, target) = (dir.path().join("source"), dir.path().join("target"));
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&target, "target").unwrap();
+        let e = link_no_replace(&c(&source), &c(&target)).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&target).unwrap(), b"target");
+        std::fs::remove_file(&target).unwrap();
+        link_no_replace(&c(&source), &c(&target)).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"source");
+    }
 }
 
 #[cfg(test)]
@@ -1810,7 +1930,7 @@ mod tests {
             // Exercise the actual Keep Both destination selection as well.
             if copy { std::fs::write(dest.join("A.CR3"),b"another photo").unwrap(); }
             let target=if copy {dest.join(&renamed(&unit,1)[0])} else {dest.join("A.CR3")};
-            assert!(transfer_photo_indexed(&unit,&dest,copy,copy,&ctx(),&no_open,Some(&index)).unwrap().is_some());
+            assert!(transfer_photo_indexed(&unit,&dest,copy,copy,&ctx(),&no_open,Some(&index),None).unwrap().is_some());
             let moved=index.path_variants(target.to_str().unwrap()).unwrap();
             assert_eq!(moved.len(),2);
             for (old,new) in originals.iter().zip(&moved) {
@@ -2350,6 +2470,56 @@ mod tests {
         transfer_unit(&unit(&good), &dest, &["G.CR3".into()], &[false], true, false, &ctx(), &open).unwrap();
         assert_eq!(std::fs::read(dest.join("G.CR3")).unwrap(), body);
         assert_eq!(clash(&unit(&good), &dest, &["G.CR3".into()], None).0, Clash::Same);
+    }
+
+    #[test]
+    fn a_subfolder_is_plain_names_only() {
+        assert_eq!(subfolder(None).unwrap(), PathBuf::new());
+        assert_eq!(subfolder(Some(" ")).unwrap(), PathBuf::new());
+        assert_eq!(subfolder(Some("2026/11/23")).unwrap(), PathBuf::from("2026").join("11").join("23"));
+        assert_eq!(subfolder(Some("./2026//11/")).unwrap(), PathBuf::from("2026").join("11"));
+        assert!(subfolder(Some("../out")).is_err());
+        assert!(subfolder(Some("2026/../../out")).is_err());
+        assert!(subfolder(Some("/etc")).is_err());
+    }
+
+    #[test]
+    fn a_photo_goes_into_its_subfolder_with_its_sidecars() {
+        let d = test_dir("subfolder");
+        let dest = d.join("dest");
+        let sub = subfolder(Some("2026/11")).unwrap();
+        let mut u = photo(&d.join("src"), "G.ORF");
+        place(&mut u, &sub);
+        assert!(u.files.iter().all(|f| f.rel.starts_with(&sub)));
+        // the folders are made by the transfer, not before it
+        assert!(!dest.join(&sub).exists());
+        let (gone, _) = transfer_unit(&u, &dest, &names(&u), &[false; 4], true, false, &ctx(), &no_open).unwrap();
+        assert!(!gone);
+        for f in ["G.ORF", "G.ORF.xmp", "G_01.ORF.xmp", "G.ORF.dtdata"] {
+            assert!(dest.join(&sub).join(f).is_file(), "{f}");
+        }
+        // a clash is looked for in the subfolder, and numbered there
+        std::fs::write(dest.join(&sub).join("G.ORF.xmp"), "another edit").unwrap();
+        assert_eq!(clash(&u, &dest, &names(&u), None).0, Clash::Different);
+        assert_eq!(numbered(&u, &dest)[0], sub.join("G_1.ORF"));
+        // a photo already in that subfolder is marked here
+        let raw = dest.join(&sub).join("G.ORF");
+        assert!(local_unit(&raw, vec![1], Vec::new(), &dest.join(&sub), false).here);
+        assert!(!local_unit(&raw, vec![1], Vec::new(), &dest, false).here);
+    }
+
+    #[test]
+    fn a_failed_copy_into_a_subfolder_leaves_no_folder() {
+        let d = test_dir("subfolder-undo");
+        let dest = d.join("dest");
+        let sub = subfolder(Some("2026/11")).unwrap();
+        let mut u = photo(&d.join("src"), "H.ORF");
+        place(&mut u, &sub);
+        // the last sidecar is gone by the time it is copied
+        std::fs::remove_file(u.files[3].from.as_ref().unwrap()).unwrap();
+        assert!(transfer_unit(&u, &dest, &names(&u), &[false; 4], true, false, &ctx(), &no_open).is_err());
+        assert!(!dest.join("2026").exists());
+        assert!(dest.is_dir());
     }
 
     #[test]

@@ -22,6 +22,9 @@ pub struct OpenReply {
     pub look_amount: Number,
     pub edited: bool,
     pub raw: bool,
+    // display-referred, already tone-mapped file (JPEG, SDR PNG/TIFF/WebP/HEIC)
+    #[serde(default)]
+    pub ldr: bool,
     // "bayer", "xtrans", "bayer4" or "mono" for a raw, else none: which
     // demosaic methods apply
     pub sensor: Option<String>,

@@ -203,9 +203,11 @@ const COMMANDS = {
   display_scale: () => (screen.scale === "error" ? Promise.reject(new Error("not on a screen yet")) : screen.scale),
   meta: ({ imgid }) => request({ cmd: "meta", imgid }),
   paste_batch: (args) => request({ cmd: "paste_batch", ...args }),
+  history_discard: ({ imgid }) => request({ cmd: "history_discard", imgid }),
   spektra_stocks: async () => { const { ok, ms, ...r } = await request({ cmd: "spektra_stocks" }); return r; },
   spektra_fetch: async ({ action }) => { const { ok, ms, ...r } = await request({ cmd: "spektra_fetch", action }); return r; },
   open_image: ({ path, imgid }) => request({ cmd: "open", path, imgid: imgid ?? -1 }),
+  close_image: () => request({ cmd: "close" }).catch((e) => { if (e?.message !== "no image open") throw e; }),
   get_params: ({ modules }) => request({ cmd: "get", modules }),
   color_profiles: () => request({ cmd: "color_profiles" }),
   history: async ({ saved } = {}) => (await request({ cmd: "history", saved: saved ?? false })).items,
@@ -218,7 +220,8 @@ const COMMANDS = {
     return request(req);
   },
   masks: async ({ fields }) => (await request({ cmd: "masks", fields })).masks,
-  spots: async ({ spots } = {}) => (await request({ cmd: "spots", ...(spots ? { spots } : {}) })).spots,
+  spots: async ({ spots } = {}) => await request({ cmd: "spots", ...(spots ? { spots } : {}) }),
+  spots_fill: async ({ blend, opacity, ranges } = {}) => (await request({ cmd: "spots_fill", ...(blend != null ? { blend } : {}), ...(opacity != null ? { opacity } : {}), ...(ranges != null ? { ranges } : {}) })).fill,
   spots_enable: ({ on }) => request({ cmd: "spots_enable", on }),
   mask_shapes: ({ name, shapes }) => request({ cmd: "mask", name, shapes }),
   mask_rename: ({ name, to }) => request({ cmd: "mask_rename", name, to }),
@@ -278,8 +281,8 @@ const COMMANDS = {
   },
   sample: ({ x, y, area, stage }) => request({ cmd: "sample", x, y, box: area ?? null, stage: stage ?? null }),
   // u32 width and height, then a byte a point
-  range_map: async ({ ranges, width, height }) =>
-    sized(width, height, await request({ cmd: "range_map", ranges, width, height, out: range })),
+  range_map: async ({ ranges, width, height, retouchInput }) =>
+    sized(width, height, await request({ cmd: "range_map", ranges, width, height, retouchInput, out: range })),
   mask_map: async ({ name, op, width, height, view }) => {
     const req = { cmd: "mask_map", width, height, out: range };
     if (name != null) req.name = name;

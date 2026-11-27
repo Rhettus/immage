@@ -13,7 +13,7 @@ use specta::Type;
 
 // one image of an export: its file name without extension, already expanded
 // from any template
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Default, Serialize, Deserialize, Type)]
 pub struct ExportItem {
     pub imgid: i64,
     pub stem: String,
@@ -29,9 +29,13 @@ pub struct ExportItem {
     // engine reads it, and the page's frame editor shapes it
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<Value>,
+    // the folder under the export's own it goes into, expanded from the
+    // subfolder pattern: names only, never `..` or a root
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportOptions {
     pub dir: String,

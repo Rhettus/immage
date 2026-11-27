@@ -1,25 +1,28 @@
 
 import { AgxPresetLoader } from "./AgxPresetDialog";
 import { settings } from "./settings";
+import { FOLDER_PATTERN, folderPath } from "./exportTokens";
 import { FolderEdits } from "./folderEdits";
 import { useAgxProfiles } from "./agxProfiles";
-import { profileSelection, AGX_USER_FIRST, agxRuns } from "./manifest";
+import { profileSelection, AGX_USER_FIRST, agxRuns, isAgxProfile, isColorBalanceProfile, TM_AGX, TONE_MAPPER_ALL_OPS, TONE_MAPPER_OPS } from "./manifest";
 
 
 
 import { CheckerViewer } from "./ModuleChecker";
-import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick } from "./AdvancedPanel";
+import { AdvancedSearch, AdvancedGroup, TECHNICAL_ID, type AdvancedPick, type ToneMapperGuardRequest } from "./AdvancedPanel";
 import { advancedEdits } from "./advancedEdits";
 import { fieldText } from "./fieldText";
 import { AdvancedToggle, advancedEdited, useAdvanced } from "./advanced";
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-import { newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
-import { pasteTargets, replaceMasks, restorePaste, runPaste, type PasteUpdate } from "./batchPaste";
+import { filterValuesForPhoto, newPhotoLensMethod, newPhotoPresetValues, preparePastePhoto } from "./pasteDefaults";
+import { pasteTargets, replaceMasks, resetTargets, restorePaste, runPaste, runReset, type PasteUpdate } from "./batchPaste";
 import { CaptureTimeDialog } from "./CaptureTimeDialog";
+import { ResetPhotosDialog } from "./ResetPhotosDialog";
 import { FolderMoveDialog } from "./FolderMoveDialog";
 import { MoveDialog } from "./MoveDialog";
+import { ModuleOrderDialog } from "./ModuleOrderDialog";
 import { pressPhoto } from "./photoDrag";
 import { captureMillis, type CaptureTimeEntry, type CaptureTimeUpdate } from "./captureTime";
 import { Fragment, Profiler, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -54,17 +57,19 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
-import { fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
+import { fetchCachedThumb, fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { buildStackView, movedCompanions, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
 import { VignetteOverlay } from "./VignetteOverlay";
 import { GuideOverlay } from "./GuideOverlay";
 import { autoMix } from "./bwauto";
 import { begin, end, track, useWorking } from "./activity";
-import { nextJobId, runInBackground, runMerge, runMove, useJobs } from "./background";
+import { nextJobId, runInBackground, runMerge, runMove, runRenderedEditIn, useJobs } from "./background";
 import { withModel } from "./aiModel";
 import { invert, pixelAt, setProbe, type RGB } from "./probe";
-import { anchored, neutralize, whitePatch, type WB, pickedCoefficients } from "./wb";
+import { anchored, neutralize, whitePatch, type WB, pickedCoefficients, WB_REFINEMENTS, wbConverged, cameraUsedAutoWB } from "./wb";
 
 
 
@@ -80,7 +85,7 @@ import { autoCheck, relaunch } from "./updates";
 import { loadFrameCacheMb, loadThumbMemoryMb, refreshMemoryBudget } from "./memoryBudget";
 import { loadOpenGenerated, storeOpenGenerated, loadLoupe, storeLoupe, loadAutoHide, loadAutoToneNew, loadExposureCompNew, loadCanvas, loadEditedKeywords, loadEditedMeta, loadFocusMode, loadEditMode, storeEditMode, loadNewPhotosNonRaw, loadNewPhotosProfile, loadNewPhotosLensMethod, loadOverlayColor, loadGuideColor, guideRgb, loadPins, maskOverlayRgb, loadPreview, loadBalancedPreviewSize, loadDraftTarget, loadDraftSmallest, loadSliderScroll, loadStackPairs, loadGridSize, storeGridSize, clampGridSize, GRID_SIZE_MIN, GRID_SIZE_MAX, GRID_SIZE_DEFAULT, PreferencesDialog, storeOverlayColor, storeGuideColor, storeStackPairs, storeAutoHide, storeCanvas, CANVASES, storeFocusMode, storePins, type AccelProvider, type Canvas, loadNegWarn, loadNegProfiles, storeNegProfile, loadNegativeExportFormat, loadReadAhead, storeNegWarn, storeNegativeExportFormat, type PanelPins, type Pins, type PrefsTab, type Preview, type EditMode } from "./Preferences";
 import { kindOf, loadPlugins, loadReturns, returnValues, storePlugins, unfit, type PluginConfig,
-         type PluginReturn } from "./plugins";
+         type PluginReturn, type EditInAction } from "./plugins";
 import { FolderTree, type Volume } from "./FolderTree";
 import { baseName, parentDir, within } from "./paths";
 import { isEngineExit, reopenPlan, reopening, START as ENGINE_START, step as engineStep, wait as engineWait,
@@ -97,8 +102,8 @@ import { DEFAULT_TRANSITION, loadZoneOverlay, offsetsOf, overlayRgb, paintRange,
          rangeCenter, samePart, saveZoneOverlay, ZONE_PARTS, zoneAt, zoneMaskName, zoneOfMask, zonePartOf, zoneShape,
          type ZoneData, type ZoneOverlay, type ZonePart, type ZoneRange } from "./zones";
 import { SpotOverlay, type ShowSpots, type SpotTool } from "./SpotOverlay";
-import type { NewSpot, Spot } from "./spots";
-import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
+import { DEFAULT_FILL, anchorOf, type FillSettings, type NewSpot, type Spot } from "./spots";
+import { aiRefine, type Backdrop, channelActive, flipMode, isRange, isRefined, maskAt, readsBackdrop, maskKindName, nextMaskName, NO_REFINE, overlayShown, overlayStep, rangeChannels,
          type BlendifChannel, type ChannelRange, type Mask, type ObjectShape, type OverlayToggle, type ParametricRange, type Range,
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
@@ -112,6 +117,8 @@ import { cmd, fieldKeeps, IS_MAC, keys } from "./keys";
 import { chordAction } from "./actions";
 import { MenuBar } from "./MenuBar";
 import { disabledViewActions, forPlatform, MENUS, nativeSpec, type ActionId } from "./menu";
+import { followRename, followSelection, NO_FOLLOW, type Followed } from "./selectionIdentity";
+import { gridActivePhoto, photoToOpenOnLeaveGrid, shouldOpenOnPick, stepGridSelection } from "./gridSelection";
 import { perf } from "./perf";
 import { renderDimensions } from "./renderDimensions";
 import { draftScale, settledScale } from "./pixelRatio";
@@ -133,6 +140,7 @@ import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { indexChanged, localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
+import { canShowResultsMenu, findTargetEntry, immichMenuState, showInLibraryTarget, type LibraryJumpTarget } from "./fileMenuModel";
 import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
@@ -146,7 +154,8 @@ import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
 import { Choice, OptionPreview, Slider, Toggle } from "./Controls";
 import { commands, type Instance, type FolderConflict, type FolderMovePlan, type FolderMoveRequest, type MovePlan, type MoveRequest, type MoveSummary, type PrintReply, type RenameItem, type Value } from "./commands";
-import { formatNumber, t, t as translate } from "./i18n";
+import { formatDate, formatNumber, t, t as translate } from "./i18n";
+import { isOffline, mirrorChangeTouches, type FolderSource, type MirrorChange } from "./folderSource";
 
 const MAX_PREVIEW = 2560;
 
@@ -176,12 +185,37 @@ const bumpHoldHint = () => {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+// a move or copy as the confirmation asks it: the photos, the stacked
+// companions among them and whether they go too, and the subfolder pattern
+// that sorts them in the destination (null for none)
+type MoveAsk = { all: ImageEntry[]; companions: ImageEntry[]; withCompanions: boolean; dest: string; copy: boolean;
+                 pattern: string | null; map: MoveRequest["map"] };
+// the confirmation's subfolder choice, kept for the next one
+const MOVE_SUBFOLDERS = "immage.moveSubfolders", MOVE_PATTERN = "immage.movePattern";
+const loadMovePattern = () => {
+  try { return settings.get(MOVE_PATTERN) || FOLDER_PATTERN; } catch { return FOLDER_PATTERN; }
+};
+const loadMoveSubfolders = () => {
+  try { return settings.get(MOVE_SUBFOLDERS) === "1" ? loadMovePattern() : null; } catch { return null; }
+};
+const storeMoveSubfolders = (pattern: string | null) => {
+  try {
+    settings.set(MOVE_SUBFOLDERS, pattern === null ? "0" : "1");
+    if (pattern !== null) settings.set(MOVE_PATTERN, pattern);
+  } catch { /* not kept */ }
+};
+
 export default function App() {
   useAgxProfiles();
   perf.count("react.appRenderAttempts");
   const [folder, setFolder] = useState<string | null>(null);
   const folderRef = useRef(folder);
   folderRef.current = folder;
+  // where the open folder's photos came from, when it is under the morfPhoto
+  // mapping: its drive offline (a red dot on each photo), the local copy
+  const [folderSource, setFolderSource] = useState<FolderSource | null>(null);
+  const folderSourceRef = useRef(folderSource);
+  folderSourceRef.current = folderSource;
   // with pairs stacked, each raw's partners (set at render); every rating,
   // reject, label and delete of a photo takes its partners too
   const partnersRef = useRef(new Map<number, ImageEntry[]>());
@@ -196,6 +230,8 @@ export default function App() {
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [folderRefresh, setFolderRefresh] = useState(0);
+  const [folderRevealKey, setFolderRevealKey] = useState(0);
+  const [thumbRevealKey, setThumbRevealKey] = useState(0);
   // subfolders taken off the tree; adding one again brings it back
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(loadLibrary().hidden));
   const hiddenRef = useRef(hidden);
@@ -231,7 +267,10 @@ export default function App() {
       for (const v of list) {
         const seen = volumesRef.current.get(v.path);
         if (v.online && seen?.online === false) back = true;
-        next.set(v.path, !v.online && seen ? { ...seen, online: false } : v);
+        // an offline drive keeps what was learned while it answered, unless
+        // the reply names another mount: an unmounted share's own root
+        const keep = !v.online && seen && (!v.mount || v.mount === seen.mount);
+        next.set(v.path, keep ? { ...seen, online: false } : v);
       }
       if (JSON.stringify([...next]) === JSON.stringify([...volumesRef.current])) return;
       setVolumes(next);
@@ -250,9 +289,28 @@ export default function App() {
   // copies share its path; until the engine has said, the file's original
   const isOpen = (i: ImageEntry, o = currentRef.current) =>
     !!o && (o.imgid !== null ? i.imgid === o.imgid : i.path === o.path && !i.copy);
+  // the listed photos by imgid, built again when the list is replaced: the
+  // loader looks one up for every thumbnail, and a scan of a 140,000-photo
+  // list for each made a folder read quadratic
+  const imageById = useRef<{ of: ImageEntry[]; map: Map<number, ImageEntry> }>({ of: [], map: new Map() });
+  // the photos a folder read has asked thumbnails for but not shown yet
+  // (showFolder shows batches together, later): without them the loader
+  // skipped their disk cache and rendered them without a path, so they
+  // were never kept on disk
+  const readingById = useRef<Map<number, ImageEntry> | null>(null);
+  const entryOf = (imgid: number) => {
+    const list = imagesRef.current;
+    if (imageById.current.of !== list) {
+      const map = new Map<number, ImageEntry>();
+      // the first of an imgid wins, as find() did
+      for (const i of list) if (!map.has(i.imgid)) map.set(i.imgid, i);
+      imageById.current = { of: list, map };
+    }
+    return imageById.current.map.get(imgid) ?? readingById.current?.get(imgid);
+  };
   const loader = useRef<ThumbLoader | null>(null);
   if (!loader.current)
-    loader.current = new ThumbLoader((imgid) => imagesRef.current.find((i) => i.imgid === imgid),
+    loader.current = new ThumbLoader(entryOf,
                                      () => loadThumbMemoryMb() * 1024 * 1024,
                                      // the server's refusal is said once, not hidden behind placeholders
                                      (imgid, e) => {
@@ -261,6 +319,23 @@ export default function App() {
                                        setStatus(t("app.status.immichThumbnails", { error: e }));
                                      });
   const thumbError = useRef(false);
+  // renders edited photos' culling previews ahead (editedPreviews.ts); it waits
+  // while the grid's thumbnails are still loading
+  useEffect(() => {
+    editedPreviews.configure({
+      // a photo left without new edits may already have its preview on disk
+      fetch: async (entry, size) => (await fetchCachedThumb(entry, size, false, false, true))
+        ?? fetchThumb(entry.imgid, size, entry, false, false, false, false, true, true),
+      // after a saved edit, wait for its thumbnail: that render brings the
+      // cache names up to date, so the disk check above is not a stale hit
+      idle: () => { const p = loader.current!.progress(); return p.done >= p.total && !loader.current!.refreshing(); },
+      loadSize: () => { try { return Number(settings.get(PREVIEW_SIZE_KEY)) || 0; } catch { return 0; } },
+      kind: fileKind,
+      setTimer: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimer: (h) => window.clearTimeout(h as number),
+    });
+    return () => editedPreviews.clear();
+  }, []);
   const [current, setCurrent] = useState<Opened | null>(null);
   // the open photo's filmstrip cell, kept while the filmstrip shows another
   // folder or an Immich search, so the tools and panels that need it still work
@@ -286,7 +361,9 @@ export default function App() {
     setStatusRaw(s);
     setStatusStamp((n) => n + 1);
   }, []);
-  const [morfPhotoFallback, setMorfPhotoFallback] = useState<{ path: string } | null>(null);
+  const [morfPhotoFallback, setMorfPhotoFallback] = useState<
+    { path: string } | { reason: string; fallback?: "immich" | "local" } | { immichReason: string } | null
+  >(null);
   const [morfPhotoCoverage, setMorfPhotoCoverage] = useState<{ indexed: number; eligible: number } | null>(null);
   useEffect(() => {
     const off = listen<{ indexed: number; eligible: number }>("morfphoto-coverage", ({ payload }) => setMorfPhotoCoverage(payload));
@@ -294,13 +371,23 @@ export default function App() {
   }, []);
   useEffect(() => {
     const off = listen<string>("morfphoto-fallback", ({ payload }) => setMorfPhotoFallback({ path: payload }));
-    return () => { void off.then(unlisten => unlisten()); };
+    const offSemantic = listen<string | { reason: string; fallback?: "immich" | "local" }>("morfphoto-semantic-fallback", ({ payload }) =>
+      setMorfPhotoFallback(typeof payload === "string" ? { reason: payload, fallback: "local" } : payload));
+    const offImmich = listen<string | { reason: string }>("immich-semantic-fallback", ({ payload }) =>
+      setMorfPhotoFallback({ immichReason: typeof payload === "string" ? payload : payload.reason }));
+    return () => {
+      void off.then(unlisten => unlisten());
+      void offSemantic.then(unlisten => unlisten());
+      void offImmich.then(unlisten => unlisten());
+    };
   }, []);
   // how far the open folder's reading has got, while it is read
   // `files` lists them all, in the order they are read, once `listed`;
   // `known` are the photos the folder's last read found, shown until read
   const [reading, setReading] = useState<{ done: number; total: number; files: string[]; listed: boolean;
                                            known: Known[] } | null>(null);
+  const readingRef = useRef(reading);
+  readingRef.current = reading;
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set(["basic"]));
   const [layout, setLayoutState] = useState<Layout>(loadLayout);
   const setLayout = (f: (l: Layout) => Layout) =>
@@ -336,15 +423,17 @@ export default function App() {
     slide();
     setLayout((old) => ({ ...old, ...next }));
   };
+  const leaveGridRef = useRef<() => void>(() => setGrid(false));
+  const inspectedRef = useRef<ImageEntry | null>(null);
   // a rail button: switch the right-hand panel to its mode, or, already
   // showing it, slide the panel shut
   const showRight = (mode: RightMode) => {
     // leaving the crop tool for the mode it was opened over is not a second click
     const wasCropping = croppingRef.current;
     if (wasCropping) leaveCrop(true);
-    // in the grid, a tool other than Print leaves it for the open photo
+    // in the grid, a tool other than Print leaves it for the selected or open photo
     const leaving = gridRef.current && mode !== "print";
-    if (leaving) setGrid(false);
+    if (leaving) leaveGridRef.current();
     if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
     if (!layout.right && !(leaving && mode === "adjust")) toggleSide("right");
@@ -388,19 +477,29 @@ export default function App() {
       }
     });
   }, [prefsOpen]);
-  // the local CLIP package, for Smart search and similar photos: asked after the
-  // first paint and again as Preferences closes, then while a download runs
+  // the local CLIP package and remote CLIP providers (morfPhoto / Immich): asked
+  // after the first paint and again as Preferences closes, then while a download runs
   const [clipReady, setClipReady] = useState(false);
+  const [remoteClip, setRemoteClip] = useState(false);
+  const [allRemoteClip, setAllRemoteClip] = useState(false);
   // not shown before the first status answer, so the tip never flashes for an installed model
   const [clipKnown, setClipKnown] = useState(false);
   const [clipTipGone, setClipTipGone] = useState(() => { try { return settings.get("immage.findClipTipDismissed") === "1"; } catch { return false; } });
   const clipReadyRef = useRef(false);
+  const remoteClipRef = useRef(false);
   useEffect(() => {
     if (prefsOpen) return;
     let alive = true, timer = 0;
     const ask = () => void loadClipState().then((c) => {
       if (!alive) return;
-      if (c.known) { clipReadyRef.current = c.installed; setClipReady(c.installed); setClipKnown(true); }
+      if (c.known) {
+        clipReadyRef.current = c.installed;
+        remoteClipRef.current = c.remoteClip;
+        setClipReady(c.installed);
+        setRemoteClip(c.remoteClip);
+        setAllRemoteClip(c.allRemote);
+        setClipKnown(true);
+      }
       if (c.downloading) timer = window.setTimeout(ask, 2000);
     });
     timer = window.setTimeout(ask, 0);
@@ -437,7 +536,7 @@ export default function App() {
     const avail = !!immichBaseRef.current;
     // the query now running, not the form: keystrokes have already changed the form
     const running = combined.current?.getState().query as SearchQuery | null;
-    const smart = smartAvailable(clipReadyRef.current, avail);
+    const smart = smartAvailable(clipReadyRef.current, avail, remoteClipRef.current);
     const sameSearch = !!running && JSON.stringify(running.form) === JSON.stringify(effectiveSearch(next.search, smart));
     showSkip(restored && reach(next.search, avail).skipped);
     window.clearTimeout(immichTimer.current);
@@ -485,6 +584,11 @@ export default function App() {
   const lastKeyActionRef = useRef<{ id: ActionId; t: number } | null>(null);
   const addFolderRef = useRef<() => void | Promise<void>>(() => {});
   const pasteUndoSession = useRef<Session | null>(null);
+  // how many times a paste, reset, undo or redo saved each photo: part of
+  // GridCulling's in-memory preview key, so it lets go of the one from before
+  const pasteRevisions = useRef(new Map<number, number>());
+  // the selection's photos by identity, for an id that changes (selectionIdentity.ts)
+  const followed = useRef<Followed>(NO_FOLLOW);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Lightroom's Grid (G): the filmstrip spread over the editing area
@@ -571,7 +675,7 @@ export default function App() {
   // right-click on the Immich card or the results' empty space: the search
   // in Immich's web app
   const showResultsMenu = (e: React.MouseEvent) => {
-    if (!immichRef.current) return;
+    if (!canShowResultsMenu(immichBaseRef.current, immichRef.current?.search)) return;
     e.preventDefault();
     setFileMenu({ x: e.clientX, y: e.clientY, imgid: null, targets: [] });
   };
@@ -589,9 +693,12 @@ export default function App() {
     const sel = selectionRef.current;
     return withPartners(sel.size > 1 && sel.has(i.imgid) ? imagesRef.current.filter((p) => sel.has(p.imgid)) : [i]);
   };
-  // photos dropped on a folder, waiting for the confirmation (MoveDialog)
-  const [moveDialog, setMoveDialog] = useState<{ list: ImageEntry[]; req: MoveRequest; copy: boolean;
-                                                 plan: MovePlan | null; error: string | null } | null>(null);
+  // photos dropped on a folder, waiting for the confirmation (MoveDialog).
+  // `all` is what was dropped, stacked companions included; `list` is what
+  // the request sends, without the companions when they are left out
+  const [resetConfirmation, setResetConfirmation] = useState<{ run: () => void; count?: number } | null>(null);
+  const [moveDialog, setMoveDialog] = useState<(MoveAsk & { list: ImageEntry[]; req: MoveRequest;
+                                                 plan: MovePlan | null; error: string | null }) | null>(null);
   const [folderMoveDialog, setFolderMoveDialog] = useState<{
     job: number; req: FolderMoveRequest; copy: boolean; plan: FolderMovePlan | null; error: string | null;
   } | null>(null);
@@ -610,6 +717,7 @@ export default function App() {
   const [perfHud, setPerfHud] = useState(perf.enabled);
   useEffect(() => { perf.init(); }, []);
   const [stackPairs, setStackPairs] = useState(loadStackPairs);
+  const [expandedStacks, setExpandedStacks] = useState<Set<string>>(() => new Set());
   // the grid view's cell height (Preferences > General > Library; ⌘+ ⌘- and
   // a pinch or ⌘ wheel in the grid), any size in its range. a key step eases
   // there over 150 ms, as the photo's zoom does; a pinch follows the fingers.
@@ -652,6 +760,10 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const importOpenRef = useRef(false);
   importOpenRef.current = importOpen;
+  const openImport = () => {
+    if (importOpenRef.current) void import("@immporter/embed").then((m) => m.refreshImporter());
+    else setImportOpen(true);
+  };
   const endTour = () => setTouring(false);
   // the tour points at both side panels, the filmstrip and the Adjustments
   // panels, so they show while it runs
@@ -732,8 +844,42 @@ export default function App() {
   // ones, and Visualize Spots' threshold (null when off)
   const healMode = rightMode === "heal";
   const [spots, setSpots] = useState<Spot[]>([]);
-  const [spotSel, setSpotSel] = useState<number | null>(null);
-  const [spotTool, setSpotTool] = useState<SpotTool>({ mode: "heal", size: 0.03, feather: 0.5, opacity: 1 });
+  const [spotSelection, setSpotSelection] = useState<number[]>([]);
+  const spotSel = spotSelection.at(-1) ?? null;
+  const setSpotSel = (index: number | null) => setSpotSelection(index === null ? [] : [index]);
+  const toggleSpotSelection = (index: number) => setSpotSelection((selected) =>
+    selected.includes(index) ? selected.filter((i) => i !== index) : [...selected, index]);
+  const [spotTool, setSpotTool] = useState<SpotTool>({
+    mode: "heal", size: 0.03, feather: 0.5, opacity: 1,
+    fill_mode: 1, fill_color: null, fill_brightness: 0, blur_type: 0, blur_radius: 10,
+  });
+  // what the photo's fill and blur spots share, and the eyedropper that is on
+  // (a spot's color, or the color range they are limited to)
+  const [spotFill, setSpotFill] = useState<FillSettings>(DEFAULT_FILL);
+  const [fillHidden, setFillHidden] = useState(false);
+  const [spotRangeHover, setSpotRangeHover] = useState(false);
+  const [spotRangePinned, setSpotRangePinned] = useState(false);
+  const [spotRangeMuted, setSpotRangeMuted] = useState(false);
+  const spotRangePreview = spotRangePinned || (spotRangeHover && !spotRangeMuted);
+  const toggleSpotRange = (on = !spotRangePreview) => {
+    setSpotRangePinned(on);
+    setSpotRangeMuted(!on && spotRangeHover);
+  };
+  const hoverSpotRange = useCallback((on: boolean) => {
+    setSpotRangeHover(on);
+    if (!on) setSpotRangeMuted(false);
+  }, []);
+  const spotRangeAvailable = (spotFill.ranges as unknown as Range[]).some((range) =>
+    range.type !== "parametric" || Object.values(range.channels).some(channelActive));
+  useEffect(() => {
+    setSpotRangePinned(false);
+    setSpotRangeMuted(false);
+    setSpotRangeHover(false);
+  }, [current, healMode, rightOpen]);
+  useEffect(() => {
+    if (!spotRangeAvailable) setSpotRangePinned(false);
+  }, [spotRangeAvailable]);
+  const [spotPick, setSpotPick] = useState<"color" | "range" | null>(null);
   const [visualize, setVisualize] = useState<number | null>(null);
   // Show Spots, remembered; H hides the spots and brings back the choice before
   const [showSpots, setShowSpotsState] = useState<ShowSpots>(() => {
@@ -748,7 +894,10 @@ export default function App() {
   };
   // bumped when the whole-image base is redrawn, for Visualize Spots
   const [baseTick, setBaseTick] = useState(0);
-  const syncSpots = () => setSpots(session.current?.spots ?? []);
+  const syncSpots = () => {
+    setSpots(session.current?.spots ?? []);
+    setSpotFill(session.current?.fill ?? DEFAULT_FILL);
+  };
   // the engine's map of the selected mask's ranges, for the overlay
   const [rangeMap, setRangeMap] = useState<RangeMap | null>(null);
   // the Zone System: the engine's zones of the image, made again after
@@ -765,6 +914,8 @@ export default function App() {
   const setZoneOverlay = (o: ZoneOverlay) => { setZoneOverlayState(o); saveZoneOverlay(o); };
   const zoneBox = useRef<HTMLDivElement>(null);
   const zoneCanvas = useRef<HTMLCanvasElement>(null);
+  const spotRangeBox = useRef<HTMLDivElement>(null);
+  const spotRangeCanvas = useRef<HTMLCanvasElement>(null);
   // ⌥-dragging a detail slider: the module's mask in black and white, or
   // the photo in grayscale (Control.optionPreview)
   const [optPreview, setOptPreview] = useState<OptionPreview | null>(null);
@@ -906,10 +1057,31 @@ export default function App() {
     if (!s) return;
     leaveBefore();
     try {
-      const { sx, sy } = await commands.spotSource(spot);
+      let made: Spot;
+      if (spot.mode === "fill" || spot.mode === "blur") {
+        // no source: a fill takes the color the photo has where it is made,
+        // unless one was picked
+        const t = spotTool;
+        if (spot.mode === "blur")
+          made = { ...spot, blur_type: t.blur_type, blur_radius: t.blur_radius } as Spot;
+        else {
+          let color = t.fill_color;
+          if (t.fill_mode === 1 && !color) {
+            const [x, y] = anchorOf(spot as Spot);
+            const ry = spot.type === "circle" && full.current ? spot.r * full.current.w / full.current.h : 0;
+            const box = spot.type === "circle"
+              ? [Math.max(0, x - spot.r), Math.max(0, y - ry), Math.min(1, x + spot.r), Math.min(1, y + ry)] : null;
+            color = (await commands.sample(x, y, box, "retouch")).picker?.mean ?? null;
+          }
+          made = { ...spot, fill_mode: t.fill_mode, fill_color: color, fill_brightness: t.fill_brightness } as Spot;
+        }
+      } else {
+        const { sx, sy } = await commands.spotSource(spot);
+        made = { ...spot, sx, sy } as Spot;
+      }
       record(["spot:create"]);
-      s.setSpots([...s.spots, { ...spot, sx, sy } as Spot]);
-      setSpotSel(s.spots.length - 1);
+      s.setSpots([...s.spots, made]);
+      setSpotSel(s.spots.indexOf(made));
       syncSpots();
     } catch (e) {
       setStatus(t("app.status.healError", { error: e }));
@@ -922,10 +1094,53 @@ export default function App() {
     s.setSpots(next);
     syncSpots();
   };
+  // the fill and blur spots' shared settings
+  const editFill = (patch: Partial<FillSettings>) => {
+    const s = session.current;
+    if (!s) return;
+    leaveBefore();
+    record(["spot:fill"]);
+    s.setFill(patch);
+    syncSpots();
+  };
+  const editSelectedSpots = (update: (spot: Spot) => Spot, field: string) => {
+    const s = session.current;
+    if (!s || !spotSelection.length) return;
+    const indices = new Set(spotSelection);
+    editSpots(s.spots.map((spot, i) => indices.has(i) ? update(spot) : spot),
+      `spot:edit:${field}:${[...indices].sort((a, b) => a - b).join(".")}`);
+  };
+  // the eyedropper's pick: the photo's color there becomes the selected
+  // fill spot's (and the brush's), or the color range the fill is limited to
+  const pickSpotPoint = async (x: number, y: number, box: [number, number, number, number] | null = null) => {
+    const s = session.current, kind = spotPick;
+    if (!s || !kind) return;
+    setSpotPick(null);
+    try {
+      if (kind === "color") {
+        const targets = new Set(spotSelection.map((i) => s.spots[i]));
+        const color = (await commands.sample(x, y, box, "retouch")).picker?.mean;
+        if (!color || session.current !== s) return;
+        setSpotTool((tl) => ({ ...tl, fill_color: color }));
+        editSpots(s.spots.map((spot) => targets.has(spot) && spot.mode === "fill"
+          ? { ...spot, fill_color: color } : spot), "spot:edit:sample");
+        return;
+      }
+      // the range reads the photo as the fill instance receives it
+      const v = await commands.sample(x, y, null, "retouch_in");
+      if (session.current !== s) return;
+      const r: Range = { type: "color", hue: v.hue, width: 0.04, feather: 0.04, chroma: v.chroma * 0.5 };
+      const custom = (s.fill.ranges as unknown as Range[]).some((q) => q.type === "parametric");
+      editFill({ ranges: [custom ? { type: "parametric", channels: rangeChannels(r) } : r] as unknown as FillSettings["ranges"] });
+    } catch (e) {
+      setStatus(t("app.status.sampleError", { error: e }));
+    }
+  };
   const deleteSpot = () => {
     const s = session.current;
     if (!s || spotSel === null) return;
-    editSpots(s.spots.filter((_, i) => i !== spotSel), "spot:delete");
+    const indices = new Set(spotSelection);
+    editSpots(s.spots.filter((_, i) => !indices.has(i)), "spot:delete");
     setSpotSel(null);
   };
   // a range tool's click: what the mask instances see there, as a band
@@ -1111,7 +1326,7 @@ export default function App() {
   // window, or of the photo
   const viewCenter = () => {
     const p = placementRef.current;
-    if (zoom === "fit" || !p || p.scale <= 0) return { u: 0.5, v: 0.5 };
+    if (centeredZoom(zoom) || !p || p.scale <= 0) return { u: 0.5, v: 0.5 };
     return { u: clamp01((p.x + p.width / 2) / (p.fullWidth * p.scale)),
              v: clamp01((p.y + p.height / 2) / (p.fullHeight * p.scale)) };
   };
@@ -1359,6 +1574,17 @@ export default function App() {
     setMaskTool(t);
     setToolTarget(maskSel ? "add" : "new");
   };
+  const requestReset = (run: () => void, count?: number) => {
+    if (settings.get("immage.skipResetConfirmation") === "1") run();
+    else setResetConfirmation({ run, count });
+  };
+  const requestResetAll = () => {
+    const activeSession = session.current;
+    if (!activeSession || croppingRef.current || pastingRef.current || aiBusy) return;
+    requestReset(() => {
+      if (session.current === activeSession && !croppingRef.current && !pastingRef.current) resetAll();
+    });
+  };
   // everything back to the image's defaults: sliders, crop, look and masks
   // one undo step
   const resetAll = () => {
@@ -1404,7 +1630,7 @@ export default function App() {
     showHover(!key ? null : "tiles", (s, size) => {
       if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
       if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
-      return p ? s.preview(size, p.values) : null;
+      return p ? s.preview(size, filterValuesForPhoto(presetValues(p), s.toneMappable)) : null;
     }, !!key && isStockKey(key));
   };
   const hoverValues = (values: Values | null) =>
@@ -1459,7 +1685,7 @@ export default function App() {
   const applyPreset = (preset: Preset) => {
     const s = session.current;
     if (!s) return;
-    const p = { ...preset, values: presetValues(preset) };
+    const p = { ...preset, values: filterValuesForPhoto(presetValues(preset), s.toneMappable) };
     const before = Object.fromEntries(Object.keys(p.values).map((id) => [id, s.values[id]]));
     changeMany(Object.entries(p.values), `Preset: ${p.name}`);
     setAmount({ name: p.name, value: 100, before, preset: p.values });
@@ -1557,6 +1783,15 @@ export default function App() {
   // the crop tool: while it is open the crop module is bypassed, so the
   // whole image shows under the rectangle, which is applied on Done
   const [cropping, setCropping] = useState(false);
+  useEffect(() => {
+    if (!healMode || !rightOpen || !current || cropping) return;
+    const s = session.current;
+    return () => {
+      setFillHidden(false);
+      if (session.current === s && s?.setFillPreviewHidden(false)) baseStale.current = true;
+    };
+  }, [current, healMode, rightOpen, cropping]);
+  useEffect(() => { setSpotPick(null); }, [current, healMode, rightOpen, cropping]);
   // the side panel scrolls once for every tool: each tool keeps its own
   // place, and a tool opened for the first time starts at the top
   const panelsRef = useRef<HTMLDivElement>(null);
@@ -1607,6 +1842,8 @@ export default function App() {
   healModeRef.current = healMode && !cropping;
   const healKeyRef = useRef<(e: KeyboardEvent) => boolean>(() => false);
   healKeyRef.current = (e) => {
+    if (e.code === "KeyO" && rightOpen && spotRangeAvailable) { if (!e.repeat) toggleSpotRange(); return true; }
+    if (e.key === "Escape" && spotPick) { setSpotPick(null); return true; }
     if (e.key === "Escape" && spotSel !== null) { setSpotSel(null); return true; }
     if ((e.key === "Delete" || e.key === "Backspace") && spotSel !== null) { deleteSpot(); return true; }
     if (e.key === "a" || e.key === "A") { setVisualize((v) => (v === null ? 50 : null)); return true; }
@@ -1649,7 +1886,8 @@ export default function App() {
   // a mask whose name the pointer rests on in the Masks panel: its overlay
   // shows over the image, whether or not overlays are on
   const [peekName, setPeekName] = useState<string | null>(null);
-  const peekMask = masksMode ? masks.find((m) => m.name === peekName) ?? null : null;
+  const [maskPreviewMuted, setMaskPreviewMuted] = useState(false);
+  const peekMask = masksMode && rightOpen && !maskPreviewMuted ? masks.find((m) => m.name === peekName) ?? null : null;
   // a tool in hand to add to the selected mask or take from it: its overlay
   // shows whatever the toggle says, so the shape is drawn against what is
   // there, until O or an adjustment sets it aside (overlayStep)
@@ -1659,7 +1897,32 @@ export default function App() {
   const maskSelRef = useRef<string | null>(null);
   maskSelRef.current = masksMode ? maskSel : null;
   const maskShown = overlayShown(maskOverlay, addingTo, maskSelRef.current);
-  const overlayEvent = (ev: "key" | "adjust" | "stroke") =>
+  const [maskRangeHover, setMaskRangeHover] = useState(false);
+  const hoverMaskRange = useCallback((on: boolean) => {
+    setMaskRangeHover(on);
+    if (on) setMaskPreviewMuted(false);
+  }, []);
+  useEffect(() => {
+    setPeekName(null);
+    setMaskRangeHover(false);
+    setMaskPreviewMuted(false);
+  }, [current, maskSel, masksMode, rightOpen]);
+  const maskEditingShown = !maskPreviewMuted && (refining || (rightOpen && maskRangeHover && !!selMask && !selMask.hidden));
+  const maskToggleRef = useRef(() => {});
+  const toggleMaskOverlay = () => {
+    const shown = maskShown || (!!peekMask && !peekMask.hidden) || maskEditingShown;
+    setMaskPreviewMuted(shown);
+    if (shown) {
+      window.clearTimeout(refineTimer.current);
+      setRefining(false);
+    }
+    setMaskOverlay((state) => overlayStep(state, addingTo, "key", maskSel, shown));
+  };
+  maskToggleRef.current = toggleMaskOverlay;
+  useEffect(() => {
+    if (!peekName && !maskRangeHover && !refining) setMaskPreviewMuted(false);
+  }, [peekName, maskRangeHover, refining, maskPreviewMuted]);
+  const overlayEvent = (ev: "adjust" | "stroke") =>
     setMaskOverlay((t) => overlayStep(t, addingRef.current, ev, maskSelRef.current));
   // a mask an AI selection just made: its overlay shows (overlayShown)
   const aiShown = (name: string | null) => setMaskOverlay((t) => ({ ...t, fresh: name }));
@@ -1676,7 +1939,7 @@ export default function App() {
     const s = session.current, f = full.current;
     const target = peekMask ?? selMask;
     const ranges = target?.shapes.filter(isRange) ?? [];
-    if (!s || !f || !masksMode || (!maskShown && !peekMask && !refining) || !ranges.length) { setRangeMap(null); return; }
+    if (!s || !f || !masksMode || (!maskShown && !peekMask && !maskEditingShown) || !ranges.length) { setRangeMap(null); return; }
     let stale = false;
     const timer = window.setTimeout(async () => {
       let stopped = false;
@@ -1690,7 +1953,7 @@ export default function App() {
       }
       const width = 320, height = Math.max(1, Math.round((width * f.h) / f.w));
       try {
-        const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
+        const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height, null));
         if (!stale) {
           setRangeMap({ width, height, data: new Uint8Array(buf, 8) });
           setRangeFor(target!.name);
@@ -1702,7 +1965,7 @@ export default function App() {
       }
     }, 150);
     return () => { stale = true; window.clearTimeout(timer); };
-  }, [selMask, peekMask, values, look, masksMode, maskShown, refining]);
+  }, [selMask, peekMask, values, look, masksMode, maskShown, maskEditingShown]);
   // darktable's own mask, for the overlay of a refined mask: refinements
   // follow the photo's edges and detail, which the shapes cannot show.
   // fetched again as soon as the last one is in while sliders move, and the
@@ -1721,7 +1984,7 @@ export default function App() {
     const s = session.current, f = full.current;
     const target = peekMask ?? selMask;
     if (!s || !f || !shownView || !masksMode || !target || !wantsFinal(target) || target.hidden
-        || (!maskShown && !peekMask && !refining)) return;
+        || (!maskShown && !peekMask && !maskEditingShown)) return;
     finalTarget.current = target.name;
     finalView.current = shownView;
     finalWant.current++;
@@ -1760,7 +2023,7 @@ export default function App() {
         finalBusy.current = false;
       }
     })();
-  }, [selMask, peekMask, values, look, masksMode, maskShown, refining, shownView]);
+  }, [selMask, peekMask, values, look, masksMode, maskShown, maskEditingShown, shownView]);
   // the range masks' maps for their thumbnails in the panel, small, made
   // again when their ranges change
   const [thumbMaps, setThumbMaps] = useState<Record<string, RangeMap>>({});
@@ -1778,7 +2041,7 @@ export default function App() {
         if (stale) return;
         const ranges = m.shapes.filter(isRange), width = 64, height = Math.max(1, Math.round((width * f.h) / f.w));
         try {
-          const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height));
+          const buf = await track(commands.rangeMap(ranges as unknown as Value[], width, height, null));
           if (stale) return;
           thumbKeys.current[m.name] = JSON.stringify(ranges);
           setThumbMaps((o) => ({ ...o, [m.name]: { width, height, data: new Uint8Array(buf, 8) } }));
@@ -1898,6 +2161,19 @@ export default function App() {
   };
   const placementRef = useRef<Placement | null>(null);
   const session = useRef<Session | null>(null);
+  // the grid keeps the edited photo open, so no close queues its culling
+  // preview: queue it here once its edits are saved (editedPreviews.ts)
+  useEffect(() => {
+    const s = session.current;
+    if (!grid || !s) return;
+    let left = false;
+    void s.saveForPreview().then(() => {
+      if (left || session.current !== s) return;
+      const entry = imagesRef.current.find((i) => i.imgid === s.imgid);
+      if (entry) editedPreviews.schedule(entry);
+    }).catch(() => {});
+    return () => { left = true; };
+  }, [grid]);
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewer = useRef<HTMLDivElement>(null);
   // the edit's pane: the whole viewer, or its half beside the before
@@ -2135,7 +2411,7 @@ export default function App() {
       const s = session.current, f = full.current;
       if (!s || !f || anim.current.raf) return;
       if (!s.idle) { scheduleCopy(400); return; }
-      if (zoomRef.current === "fit") {
+      if (centeredZoom(zoomRef.current)) {
         // a photo that fits at 100% already shows every pixel
         if (fitScale() < 1) s.requestCopy(1, f);
         return;
@@ -2201,9 +2477,15 @@ export default function App() {
     return Math.min(1, (w - m) / f.w, (h - m) / f.h);
   };
 
+  // a view smaller than fit: half of fit, or any scale below fit. it is centered
+  // and cannot be panned
+  const belowFit = (z: Zoom) => z === "half" || (typeof z === "number" && z < fitScale() * 0.999);
+  const centeredZoom = (z: Zoom) => z === "fit" || belowFit(z);
+
   const scaleFor = (z: Zoom): number => {
     const f = full.current;
     if (z === "fit" || !f) return fitScale();
+    if (z === "half") return fitScale() * 0.5;
     const { w, h } = viewport();
     return z === "fill" ? Math.max(w / f.w, h / f.h) : z;
   };
@@ -2488,7 +2770,7 @@ export default function App() {
       const sx = bx + (bm.x / bm.scale) * k * z, sy = by + (bm.y / bm.scale) * k * z;
       placeCanvas(bcv, bm.width, bm.height, { x: sx, y: sy, k: (z * k) / bm.scale }, dpr);
     }
-    zoomShow.current?.(z, zoomRef.current === "fit");
+    zoomShow.current?.(z, Math.abs(z / fitScale() - 1) < 0.001);
     const hc = hoverCanvas.current;
     if (hc) {
       layerStyle(hc, "left", `${ox / dpr}px`);
@@ -2497,7 +2779,7 @@ export default function App() {
       layerStyle(hc, "height", `${(f.h * z) / dpr}px`);
     }
     // the mask editor and the zone overlay cover the whole image, wherever it is
-    for (const mb of [maskBox.current, zoneBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
+    for (const mb of [maskBox.current, zoneBox.current, spotRangeBox.current, detailBox.current, guideBox.current, negBox.current, checkerBox.current]) {
       if (!mb) continue;
       layerStyle(mb, "left", `${ox / dpr}px`);
       layerStyle(mb, "top", `${oy / dpr}px`);
@@ -2884,8 +3166,8 @@ export default function App() {
     const rgb = t.at ? sampleSpot(px, width, height, t.at.ix, t.at.iy) : whitePatch(px, width, height);
     const cur: WB = { temp: s.values.temp, tint: s.values.tint };
     const next = rgb && neutralize(cur, rgb);
-    const settled = !!next && Math.abs(1e6 / next.temp - 1e6 / cur.temp) < 2 && Math.abs(next.tint - cur.tint) < 1;
-    if (!next || settled || t.round >= 4) {
+    const settled = !!next && wbConverged(cur, next);
+    if (!next || settled || t.round >= WB_REFINEMENTS) {
       wbTarget.current = null;
       if (!next && t.round === 0) {
         setStatus(t.at ? translate("app.status.pickLighterSpot") : translate("app.status.noUsableColors"));
@@ -2910,7 +3192,7 @@ export default function App() {
       const m = await commands.meta(s.imgid)
         .catch(() => null);
       if (session.current !== s) return;
-      if (/^auto/i.test(m?.image.exif?.white_balance ?? "")) anchor = { temp: s.neutral.temp, tint: s.neutral.tint };
+      if (cameraUsedAutoWB(m?.image.exif?.white_balance)) anchor = { temp: s.neutral.temp, tint: s.neutral.tint };
     }
     wbTarget.current = { at, round: 0, anchor };
     const img = bc.getContext("2d")!.getImageData(0, 0, bc.width, bc.height);
@@ -2983,7 +3265,7 @@ export default function App() {
     a.zoom = z;
     a.anchor = anchor;
     a.settleAt = performance.now() + settleDelay;
-    a.end = !ahead ? null : z === "fit" ? { x: 0.5, y: 0.5 }
+    a.end = !ahead ? null : centeredZoom(z) ? { x: 0.5, y: 0.5 }
           : anchor ? anchoredCenter(anchor, a.target) : { ...center.current };
     a.asked = null;
     const running = !!a.raf;
@@ -2997,7 +3279,7 @@ export default function App() {
     const step = () => {
       const zz = easeZoom(viewZ.current, a.target);
       viewZ.current = zz;
-      if (a.zoom === "fit") {
+      if (centeredZoom(a.zoom)) {
         center.current = { x: center.current.x + (0.5 - center.current.x) * ZOOM_EASE,
                            y: center.current.y + (0.5 - center.current.y) * ZOOM_EASE };
       } else if (a.anchor) {
@@ -3006,7 +3288,7 @@ export default function App() {
       placeLayers();
       if (zz === a.target && performance.now() >= a.settleAt) {
         a.raf = null;
-        if (a.zoom === "fit") center.current = { x: 0.5, y: 0.5 };
+        if (centeredZoom(a.zoom)) center.current = { x: 0.5, y: 0.5 };
         placeLayers();
         zoomRef.current = a.zoom;
         setZoomState(a.zoom);
@@ -3112,6 +3394,8 @@ export default function App() {
     if (!again) {
       shownGen.current++;
       loader.current!.clear();
+      editedPreviews.clear();
+      setExpandedStacks(new Set());
       // Return to browsing this folder with the current filters.
       const fs = folderSearch(immichFormRef.current);
       immichFormRef.current = fs; setImmichForm(fs); storeSearch(fs);
@@ -3119,11 +3403,37 @@ export default function App() {
       // the last folder's photos go at once: listing a folder on a network
       // share can take seconds before its first batch
       updateImages([]);
+      setFolderSource(null);
     }
-    let got: ImageEntry[] = [];
+    // the photos in the order they were read, sorted and shown together:
+    // sorting and drawing a 140,000-photo folder at every batch of a few
+    // photos froze the page for minutes, so after the first batch they show
+    // at most every few times the last showing took (`cost`), within 150 ms
+    // to 2 s
+    const read: ImageEntry[] = [];
+    // this read's, until it ends or another read takes over
+    const reading = new Map<number, ImageEntry>();
+    readingById.current = reading;
     let files: string[] = [];
     let listed = false;
     let known: Known[] = [];
+    let source: FolderSource | null = null;
+    let progress = { done: 0, total: 0 };
+    let timer = 0, dirty = false, newPhotos = false, shownAt = 0, cost = 0;
+    const show = () => {
+      timer = 0;
+      if (!dirty) return;
+      dirty = false;
+      const start = performance.now();
+      if (!again && newPhotos) {
+        const got = byCaptureTime(edits.apply(read));
+        updateImages(got);
+        seen?.(got);
+      }
+      newPhotos = false;
+      setReading({ ...progress, files: again ? [] : files, listed, known });
+      requestAnimationFrame(() => { shownAt = performance.now(); cost = shownAt - start; });
+    };
     const edits = new FolderEdits<ImageEntry>();
     folderEdits.current.add(edits);
     try {
@@ -3140,23 +3450,45 @@ export default function App() {
           files = all;
           listed = true;
         }
-        got = byCaptureTime(edits.apply([...got, ...batch]));
-        if (!again && batch.length) { updateImages(got); seen?.(got); }
+        for (const image of batch) {
+          read.push(image);
+          // the first one read of an imgid wins
+          if (!reading.has(image.imgid)) reading.set(image.imgid, image);
+        }
+        if (batch.length) newPhotos = true;
         loader.current!.request(batch.map((i) => i.imgid));
-        setReading({ done, total, files: again ? [] : files, listed, known });
+        progress = { done, total };
+        dirty = true;
+        if (!timer) {
+          const wait = shownAt + Math.min(2000, Math.max(150, cost * 4)) - performance.now();
+          timer = window.setTimeout(show, Math.max(0, wait));
+        }
+      }, (from) => {
+        if (immichRef.current) return;
+        source = from;
+        setFolderSource(from);
       });
       if (immichRef.current) return list;
       setReading(null);
       const sorted = byCaptureTime(edits.apply(list));
       updateImages(sorted);
-      setStatus(t("app.status.photoCount", { count: list.length }));
+      // the server did not answer: say the photos are the local copy
+      const shown = source as FolderSource | null;
+      const localCopy = shown?.localCopy ? shown : null;
+      setStatus(localCopy
+        ? t("app.status.localCatalog", {
+            time: localCopy.syncedAt ? formatDate(localCopy.syncedAt * 1000, { dateStyle: "medium", timeStyle: "short" }) : "-" })
+        : t("app.status.photoCount", { count: list.length }));
       if (!again) saveLibrary({ recent: [dir, ...(loadLibrary().recent ?? []).filter((d) => d !== dir)].slice(0, 10) });
       return sorted;
     } catch (e) {
       // another folder was opened meanwhile, and shows its own progress
       if (String(e) === "superseded") return [];
       setReading(null);
-      if (String(e).startsWith("Reading photos timed out")) {
+      if (String(e).startsWith("morfphoto-unavailable:")) {
+        // neither the server nor a local copy can list it, and the share is not read instead
+        setStatus(t("app.status.morfphotoUnavailable", { path: dir }));
+      } else if (String(e).startsWith("Reading photos timed out")) {
         setStatus(t("app.status.error", { error: e }));
       } else if (!(await commands.pathExists(dir))) {
         updateImages([]);
@@ -3165,9 +3497,34 @@ export default function App() {
       } else setStatus(t("app.status.error", { error: e }));
       return null;
     } finally {
+      // a showing still to come would put back the progress the end cleared
+      window.clearTimeout(timer);
       folderEdits.current.delete(edits);
+      if (readingById.current === reading) readingById.current = null;
     }
   };
+
+  // the local copy of the catalog changed under the open folder (the sync
+  // committed rows in its directory): read it again, once a burst of pages
+  // has settled and no read or search is using the grid
+  const showFolderRef = useRef(showFolder);
+  showFolderRef.current = showFolder;
+  useEffect(() => {
+    let timer = 0;
+    const off = listen<MirrorChange>("mirror-changed", ({ payload }) => {
+      if (!mirrorChangeTouches(folderRef.current, includeSubRef.current, folderSourceRef.current?.root ?? null, payload)) return;
+      window.clearTimeout(timer);
+      let tries = 0;
+      const run = () => {
+        const dir = folderRef.current;
+        if (!dir || immichRef.current) return;
+        if (readingRef.current && tries++ < 8) { timer = window.setTimeout(run, 1500); return; }
+        void showFolderRef.current(dir, true);
+      };
+      timer = window.setTimeout(run, 1500);
+    });
+    return () => { window.clearTimeout(timer); void off.then((f) => f()); };
+  }, []);
 
   type SearchQuery = { form: ImmichSearch; filters: Filter; folder: string; recursive: boolean; imageVariant?: string };
   const combined = useRef<ReturnType<typeof createCombinedSearchCoordinator<SearchQuery, { local: ImageEntry; immich: ImageEntry }>> | null>(null);
@@ -3206,6 +3563,7 @@ export default function App() {
     }
     thumbError.current = false;
     loader.current!.clear();
+    editedPreviews.clear();
     setReading(null);
     setGrid(true);
     // Immich not available: the local part only (reach.skipped)
@@ -3213,7 +3571,7 @@ export default function App() {
     const enabled: ("local" | "immich")[] = !avail || q.source === "local" ? ["local"]
       : q.source === "immich" ? ["immich"] : ["local", "immich"];
     const f = filters ?? filterRef.current;
-    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
+    await combined.current!.search({ form: effectiveSearch(q, smartAvailable(clipReadyRef.current, avail, remoteClipRef.current)), filters: effectiveFilter({ search: q, filter: f }, avail), folder: folderRef.current ?? "", recursive: includeSubRef.current, imageVariant }, enabled);
   };
 
   const showSimilar = async (hit: ImageEntry) => {
@@ -3232,6 +3590,12 @@ export default function App() {
   // first; from then on the cell is that file, the engine's like any other
   const resolving = useRef(new Set<number>());
   const openEntry = async (i: ImageEntry) => {
+    // a photo on an offline drive is listed from the local copy of the
+    // catalog, not opened
+    if (!isRemote(i) && isOffline(i.path, folderSourceRef.current)) {
+      setStatus(t("app.status.photoOffline", { name: i.filename }));
+      return false;
+    }
     if (!isRemote(i)) return openFile(i.path, i.imgid);
     // a double click opens the cell twice, once for each of its clicks. the
     // second would find the first's open under way, take the session before
@@ -3324,6 +3688,50 @@ export default function App() {
     void showFolder(dir);
   };
 
+  const showInLibrary = (target: LibraryJumpTarget) => {
+    window.clearTimeout(immichTimer.current);
+    addPathToLibrary(target.dir);
+    const root = foldersRef.current.find((r) => within(target.dir, r));
+    const mount = root ? volumes.get(root)?.mount : undefined;
+    if (mount && foldedVolumes.has(mount)) {
+      const next = new Set(foldedVolumes);
+      next.delete(mount);
+      setFoldedVolumes(next);
+      saveLibrary({ foldedVolumes: [...next] });
+    }
+    setLeftOpen((old) => new Set([...old, "folders"]));
+    try { settings.set("immage.folders.open", "1"); } catch { /* not kept */ }
+    setLayout((old) => ({ ...old, left: true }));
+    setFolderRevealKey((k) => k + 1);
+    filterRef.current = NO_FILTER;
+    setFilter(NO_FILTER);
+    setGrid(true);
+
+    const wantGen = shownGen.current + 1;
+    const selectMatch = (list: ImageEntry[]) => {
+      if (shownGen.current !== wantGen || immichRef.current) return;
+      const match = findTargetEntry(list, target.path, target.version);
+      if (!match) return;
+      if (stackPairs) {
+        const listPartners = pairPartners(list);
+        const isStackedCompanion = [...listPartners.values()].some((companions) =>
+          companions.some((p) => p.imgid === match.imgid),
+        );
+        if (isStackedCompanion) {
+          const key = stackKey(match.path);
+          setExpandedStacks((prev) => (prev.has(key) ? prev : new Set([...prev, key])));
+        }
+      }
+      pickAnchor.current = match.imgid;
+      setSelection(new Set([match.imgid]));
+      setThumbRevealKey((k) => k + 1);
+    };
+
+    void showFolder(target.dir, false, (got) => selectMatch(got)).then((sorted) => {
+      if (sorted) selectMatch(sorted);
+    });
+  };
+
   // the importer's Immich buttons open Preferences there; stable, as the
   // importer keeps it
   const openImmichPrefs = useCallback(() => setPrefsOpen("immich"), []);
@@ -3352,12 +3760,19 @@ export default function App() {
 
   // a photo handed over from outside (the command line, or macOS's open
   // and Finder): its folder is shown and kept in the list, and it opens
+  // the photo opens once its folder lists it, not after the whole folder:
+  // a folder of thousands of photos takes minutes to read
   const openLaunched = async (path: string) => {
     const dir = parentDir(path);
     addPathToLibrary(dir);
-    const list = await showFolder(dir);
+    let opening: Promise<boolean> | null = null;
+    const tryOpen = (list: ImageEntry[]) => {
+      if (!opening && list.some((i) => i.path === path)) opening = openFile(path);
+    };
+    const list = await showFolder(dir, false, tryOpen);
     if (!list) return;
-    if (list.some((i) => i.path === path)) await openFile(path);
+    tryOpen(list);
+    if (opening) await opening;
     else setStatus(t("app.status.notOpenable", { path }));
   };
 
@@ -3410,7 +3825,7 @@ export default function App() {
       }
     }
     if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
-    if (importOpenRef.current && !["preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
+    if (importOpenRef.current && !["import", "preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
     const last = lastKeyActionRef.current;
     if (last && last.id === id && performance.now() - last.t < 150) return;
     menuActionsRef.current[id]?.();
@@ -3636,11 +4051,17 @@ export default function App() {
     // Secondary-button clicks belong to the context menu and must not change
     // selection before showFileMenu captures its targets.
     if (e.button !== 0) return;
-    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? listedEntry?.imgid ?? null) : null;
+    const baseAnchor = gridRef.current
+      ? (gridActivePhoto(shownRef.current, selectionRef.current, pickAnchor.current)?.imgid ?? listedEntry?.imgid ?? null)
+      : (listedEntry?.imgid ?? null);
+    const from = e.shiftKey && !cmd(e) ? (pickAnchor.current ?? baseAnchor) : null;
     if (!(from !== null && shownRef.current.some((x) => x.imgid === from))) pickAnchor.current = i.imgid;
     if (cmd(e)) {
       setSelection((old) => {
-        const next = new Set(old.size ? old : listedEntry ? [listedEntry.imgid] : []);
+        const seed = old.size ? old
+          : gridRef.current ? (inspectedRef.current ? [inspectedRef.current.imgid] : [])
+          : listedEntry ? [listedEntry.imgid] : [];
+        const next = new Set(seed);
         if (next.has(i.imgid)) next.delete(i.imgid); else next.add(i.imgid);
         return next;
       });
@@ -3660,7 +4081,7 @@ export default function App() {
       return;
     }
     setSelection(new Set([i.imgid]));
-    void openEntry(i);
+    if (shouldOpenOnPick(gridRef.current)) void openEntry(i);
   };
   const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
     patchImage(imgid, fields);
@@ -3688,15 +4109,28 @@ export default function App() {
   };
   // photos dropped on a folder of the Folders panel (photoDrag.ts): asks
   // what moving them there would do, for the confirmation
-  const askMove = async (list: ImageEntry[], dest: string, copy: boolean) => {
-    if (!list.length || moveDialog || folderMoveDialog) return;
+  // a stack's JPEG or HEIF goes with its raw unless the file-type filter
+  // leaves it out; the confirmation can change that
+  const askMove = async (all: ImageEntry[], dest: string, copy: boolean) => {
+    if (!all.length || moveDialog || folderMoveDialog) return;
+    const kinds = filterRef.current.kinds;
+    const { companions, include } = movedCompanions(all, partnersRef.current, (c) => kindsInclude(kinds, c.filename));
+    // Immich's path map is read once here, so a plan made again from the
+    // open confirmation has nothing to wait for and no old plan to confirm
+    const map = all.some(isRemote) ? await pathMap() : null;
+    planMove({ all, companions, withCompanions: include, dest, copy, pattern: loadMoveSubfolders(), map });
+  };
+  const planMove = async (ask: MoveAsk) => {
+    const left = new Set(ask.withCompanions ? [] : ask.companions.map((c) => c.imgid));
+    const list = ask.all.filter((i) => !left.has(i.imgid));
     const req: MoveRequest = {
       sources: list.map((i) => (isRemote(i) && i.remote
         ? { imgid: null, asset: i.remote.assetId, assetPath: i.remote.originalPath }
-        : { imgid: i.imgid, asset: null, assetPath: null })),
-      dest, map: list.some(isRemote) ? await pathMap() : null,
+        : { imgid: i.imgid, asset: null, assetPath: null }))
+        .map((src, n) => ({ ...src, subdir: ask.pattern === null ? null : folderPath(ask.pattern, list[n]) || null })),
+      dest: ask.dest, map: ask.map,
     };
-    setMoveDialog({ list, req, copy, plan: null, error: null });
+    setMoveDialog({ ...ask, list, req, plan: null, error: null });
     try {
       const plan = await commands.movePlan(req);
       setMoveDialog((d) => (d?.req === req ? { ...d, plan } : d));
@@ -3704,6 +4138,25 @@ export default function App() {
       setMoveDialog((d) => (d?.req === req ? { ...d, error: String(e) } : d));
     }
   };
+  // Photo > Move to Folder… and Copy to Folder…, and the photo menu's: the
+  // photos (a selection, or the open one) go to a folder chosen in the
+  // system picker, which can also make a new one; the same confirmation
+  // follows as for a drop
+  const LAST_MOVE_FOLDER = "immage.moveFolder";
+  const moveToFolder = async (copy: boolean, list?: ImageEntry[]) => {
+    if (moveDialog || folderMoveDialog) return;
+    const sel = selectionRef.current, all = imagesRef.current;
+    const picked = withPartners(list ?? (sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i))));
+    if (!picked.length) { setStatus(t("app.status.moveNothing")); return; }
+    let start = folderRef.current ?? "";
+    try { start = settings.get(LAST_MOVE_FOLDER) || start; } catch { /* the current folder */ }
+    const dest = await commands.pickFolder(start).catch(() => null);
+    if (!dest) return;
+    try { settings.set(LAST_MOVE_FOLDER, dest); } catch { /* not kept */ }
+    await askMove(picked, dest, copy);
+  };
+  const moveToFolderRef = useRef(moveToFolder);
+  moveToFolderRef.current = moveToFolder;
   // the confirmed move or copy, as a background job. a move hides the
   // photos at once, leaving the open one first so the engine writes no
   // sidecar beside a file that is going; the folder is read again for any
@@ -3750,7 +4203,11 @@ export default function App() {
     const now = folderRef.current;
     if (!now || immichRef.current) return;
     const stayed = moving && now === dir && (!r || r.removed.length < list.filter((i) => !isRemote(i)).length);
-    const arrived = now === dest || (includeSubRef.current && within(dest, now));
+    // sorted into subfolders, they may arrive in a folder under the destination
+    const sorted = req.sources.some((s) => s.subdir);
+    const arrived = now === dest || (includeSubRef.current && within(dest, now)) || (sorted && within(now, dest));
+    // the Folders card shows the subfolders made
+    if (sorted) setFolderRefresh((n) => n + 1);
     if (stayed || arrived) await showFolder(now, true);
   };
   const askFolderMove = (source: string, dest: string, copy: boolean) => {
@@ -3899,6 +4356,7 @@ export default function App() {
       .map((row) => [row.oldPath, row.newPath]));
     const refresh = moved.size > 0 || result.rows.some((row) => row.error);
     if (refresh) {
+      followed.current = followRename(followed.current, selected, anchor, moved, Date.now() + 30000);
       loader.current!.clear();
       updateImages(imagesRef.current.filter((photo) => !moved.has(photo.path)));
       if (search && query && search.generation === combined.current?.getState().generation) {
@@ -4024,6 +4482,7 @@ export default function App() {
     const s = session.current;
     if (!s) return;
     await s.close(confirmSave);
+    await commands.closeImage().catch(() => {});
     session.current = null;
     currentRef.current = null;
     setCurrent(null);
@@ -4047,14 +4506,78 @@ export default function App() {
   const [waiting, setWaiting] = useState<Waiting[]>([]);
   const waitingRef = useRef(waiting);
   waitingRef.current = waiting;
-  const editIn = async (cfg: PluginConfig, targets: ImageEntry[]) => {
+  const [photoCraftBusy, setPhotoCraftBusy] = useState(false);
+  const [heliconBusy, setHeliconBusy] = useState(false);
+  const editIn = async ({ cfg, mode }: EditInAction, targets: ImageEntry[]) => {
     const kind = kindOf(cfg.kind);
     if (!kind) return;
-    // a virtual copy sends its file, once
-    const photos = [...new Map(targets.map((t) => [t.remote?.localPath ?? t.path, t])).entries()];
-    const originals = photos.map(([path]) => path);
-    let send = originals;
+    const settleSelectedEdit = async () => {
+      const s = session.current;
+      if (s && targets.some((photo) => photo.imgid === s.imgid)) {
+        s.flushEdits();
+        await s.settled();
+      }
+    };
     try {
+      if (kind.handoff === "photocraft") {
+        if (photoCraftBusy) return;
+        setPhotoCraftBusy(true);
+        try {
+          const path = await runRenderedEditIn(t("app.status.pluginRendering", { name: cfg.name }), targets.length,
+            t("app.status.pluginPreparingLayers", { name: cfg.name }), async (job) => {
+              await settleSelectedEdit();
+              return commands.pluginPhotoCraft(cfg.id, job, targets.map((photo) => photo.imgid));
+            }, (result) => ({
+              text: t("app.status.pluginSentItems", { items: baseName(result), name: cfg.name }),
+              ok: true,
+            }), cfg.name);
+          const folder = folderRef.current;
+          if (path?.endsWith(".tif") && folder && !immichRef.current &&
+              (parentDir(path) === folder || (includeSubRef.current && within(path, folder)))) {
+            void showFolder(folder, true);
+          }
+        } finally {
+          setPhotoCraftBusy(false);
+        }
+        return;
+      }
+      if (kind.handoff === "helicon") {
+        if (!mode || heliconBusy) return;
+        setHeliconBusy(true);
+        try {
+          const rendered = mode === "tiff";
+          const manual = mode !== "auto-dng";
+          const stacking = manual ? t("app.status.pluginFinishInHelicon") : t("app.status.pluginStacking", { name: cfg.name });
+          const run = async (job: number) => {
+            if (rendered) await settleSelectedEdit();
+            const result = await commands.pluginHeliconFocus(cfg.id, job, targets.map((photo) => photo.imgid), mode);
+            if (result) {
+              returns.current.set(result.result, result);
+              if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === result.original))
+                await showFolder(folderRef.current, true);
+            }
+            return result;
+          };
+          const summarize = (result: PluginReturn | null) => result && ({
+            text: t("app.status.pluginStackSaved", { name: cfg.name, file: baseName(result.result) }),
+            ok: true,
+            action: generatedAction(result.result),
+          });
+          if (rendered) {
+            await runRenderedEditIn(t("app.status.pluginRendering", { name: cfg.name }), targets.length,
+              stacking, run, summarize, cfg.name);
+          } else {
+            await runInBackground(stacking, () => run(nextJobId()), summarize, cfg.name);
+          }
+        } finally {
+          setHeliconBusy(false);
+        }
+        return;
+      }
+      // a virtual copy sends its file, once
+      const photos = [...new Map(targets.map((t) => [t.remote?.localPath ?? t.path, t])).entries()];
+      const originals = photos.map(([path]) => path);
+      let send = originals;
       // TIFFs with the edit, beside each photo as Lightroom's "-Edit" files;
       // a result named from one is still named from its photo
       if (kind.send === "tiff" || (kind.send === "choice" && cfg.send === "tiff")) {
@@ -4102,7 +4625,7 @@ export default function App() {
   // the hand-off's first opened
   const pluginReturned = useRef<(r: PluginReturn & { token: number }) => void>(() => {});
   pluginReturned.current = async (r) => {
-    returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: false });
+    returns.current.set(r.result, { original: r.original, result: r.result, plugin: r.plugin, applied: r.applied ?? false });
     const w = waitingRef.current.find((x) => x.token === r.token);
     // Claim the first result before awaiting the folder refresh or another return.
     waitingRef.current = waitingRef.current.map((x) =>
@@ -4110,10 +4633,11 @@ export default function App() {
     setWaiting(waitingRef.current);
     if (folderRef.current && !immichRef.current && imagesRef.current.some((i) => i.path === r.original))
       await showFolder(folderRef.current, true);
-    void runInBackground(`${w?.name ?? "Plugin"}: result`, async () => r, () => ({
-      text: `${w?.name ?? "Plugin"}: ${baseName(r.result)} is back`, ok: true,
+    const name = w?.name ?? plugins.find((cfg) => cfg.id === r.plugin)?.name ?? t("app.status.pluginFallbackName");
+    void runInBackground(t("app.status.pluginResult", { name }), async () => r, () => ({
+      text: t("app.status.pluginResultBack", { name, file: baseName(r.result) }), ok: true,
       action: generatedAction(r.result, undefined, !!w && !w.opened),
-    }), "Plugin result");
+    }), t("app.status.pluginResultFailed"));
   };
   useEffect(() => {
     const offs = [
@@ -4216,6 +4740,9 @@ export default function App() {
       if (folderRef.current && !immichRef.current) void showFolder(folderRef.current, true);
       return false;
     }
+    if (id !== null) editedPreviews.cancel(id);
+    // render-ahead waits for this photo's first frame
+    editedPreviews.hold();
     const old = session.current;
     let closed = false;
     // the new session once opened, until session.current adopts it
@@ -4231,6 +4758,9 @@ export default function App() {
                              masks: structuredClone(o.masks), advanced };
         await o.close();
         closed = true;
+        // the save is on disk: render its culling preview ahead, behind everything else
+        const left = imagesRef.current.find((i) => i.imgid === o.imgid);
+        if (left) editedPreviews.schedule(left);
       }
       setLoupeShown(false);
       if (loupeCanvas.current) loupeCanvas.current.style.display = "none";
@@ -4259,6 +4789,7 @@ export default function App() {
       const s = await timeTunerWork("Photo open", () => track(Session.open(path, id, currentView, (f) => {
         if (frameOwner.current !== token) return;
         drawFrame(f);
+        editedPreviews.release();
         const ready = onFirstFrame;
         onFirstFrame = undefined;
         ready?.();
@@ -4392,13 +4923,15 @@ export default function App() {
       // darktable it is a demosaiced raw (sraw), which the engine does not
       // call raw, as it has no mosaic for capture sharpening or hot pixels
       const pano = back?.plugin === "panorama" && !back.applied && !s.wasEdited;
-      // and so does a stack Macro Studio made from raws
+      // and so does a focus stack made from raws
       const backCfg = back && plugins.find((p) => p.id === back.plugin);
+      const backKind = back && kindOf(back.plugin.split(":")[0]);
       const stacked = !!back && !back.applied && !s.wasEdited && /\.dng$/i.test(path)
-        && !!kindOf(back.plugin.split(":")[0])?.linearDng && backCfg?.send !== "tiff";
+        && !!backKind?.linearDng && (backKind.handoff === "helicon" || backCfg?.send !== "tiff");
       const raw = s.raw || pano || stacked;
-      if (!s.wasEdited && s.values.tm_mode !== 1) {
-        s.setMany([["tm_mode", 1]]);
+      const toneMappable = s.toneMappable || pano || stacked;
+      if (!s.wasEdited && toneMappable && s.values.tm_mode !== TM_AGX) {
+        s.setMany([["tm_mode", TM_AGX]]);
         base.push({ op: "tonemapper", name: "agx", label: "tone mapper", enabled: true });
       }
       // and a raw with Preferences' exposure compensation, on an instance of
@@ -4422,7 +4955,7 @@ export default function App() {
         : !denoised && !s.wasEdited && back && !back.applied
         ? returnValues(back.plugin.split(":")[0], plugins.find((p) => p.id === back.plugin)) : null;
       const presetVals = preset && (raw || !preset.rawOnly)
-        ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw()) : null;
+        ? newPhotoPresetValues(presetValues(preset), raw, loadNewPhotosNonRaw(), toneMappable) : null;
       if (preset && presetVals) {
         s.setMany(Object.entries({ ...presetVals, ...plugin?.values }));
         setStatus(t("app.status.newPhotoPreset", { name: preset.name }));
@@ -4433,9 +4966,9 @@ export default function App() {
       // and a raw with the profile chosen in Preferences, over the preset's
       // AgX Default (0) included: it puts back a profile the preset set
       const profile = loadNewPhotosProfile();
-      if (!s.wasEdited && raw && s.values.profile !== profile) {
-        s.setMany(Object.entries(profileSelection(profile)));
-        base.push({ op: "profile", name: profileLabel(profile).toLowerCase(),
+      if (!s.wasEdited && toneMappable && s.values.profile !== profile) {
+        s.setMany(Object.entries(profileSelection(profile, toneMappable)));
+        base.push({ op: "profile", name: profileLabel(profile, toneMappable).toLowerCase(),
                     label: "profile", enabled: true });
       }
       // and its lens correction method, once the preset has set the corrections
@@ -4447,6 +4980,7 @@ export default function App() {
       if (back && plugin) {
         back.applied = true;
         void commands.pluginReturnApplied(path);
+        if (Object.keys(plugin.values).length) s.commitBaseline();
         if (plugin.labels.length) {
           const name = kindOf(back.plugin.split(":")[0])?.label ?? "plugin";
           base.push({ op: "plugin", name, label: `${name}: ${plugin.labels.join(", ")} off`, enabled: true });
@@ -4471,6 +5005,7 @@ export default function App() {
       // it, stopping its save timer and render loop. not close(): that asks
       // for one more render of the photo that failed, and nothing was edited
       if (fresh && session.current !== fresh) fresh.abandon();
+      editedPreviews.release();
       // the engine closes the old photo before it opens the next, so a failed
       // open leaves none: drop the old session rather than send it edits
       if (closed && old && session.current === old) {
@@ -4493,7 +5028,7 @@ export default function App() {
   // alike. a run of changes to the same thing (a slider drag, a curve or
   // shape drag, the white balance picker settling) is one step
   // `label` names the change that follows the state, for the History panel
-  type Snap = { values: Values; masks: Mask[]; spots: Spot[]; look: { name: string | null; path: string | null };
+  type Snap = { values: Values; masks: Mask[]; spots: Spot[]; fill: FillSettings; look: { name: string | null; path: string | null };
                 lookAmount: number; label: string;
                 // the History panel's switched instances, and those deleted
                 modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
@@ -4502,7 +5037,7 @@ export default function App() {
                 advanced: Map<string, AdvancedState>; instances: InstanceEntry[] | null };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
-    look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
+    fill: structuredClone(s.fill), look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
     modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
     instances: s.instanceLayout(),
   });
@@ -4589,6 +5124,10 @@ export default function App() {
       syncSpots();
       setSpotSel(null);
     }
+    if (JSON.stringify(target.fill) !== JSON.stringify(s.fill)) {
+      s.setFill(target.fill);
+      syncSpots();
+    }
   };
   // an undo or redo in the crop tool, whose guide stays its own until
   // Done: a turn undone turns the guide back, keeping how it was dragged;
@@ -4618,6 +5157,26 @@ export default function App() {
     if (!target.some((t) => t.name === maskSel)) setMaskSel(target[0]?.name ?? null);
   };
   const copySettings = async (on: Set<string>) => {
+    const gridSource = gridRef.current ? gridActivePhoto(shownRef.current, selectionRef.current, pickAnchor.current) : null;
+    if (gridSource && !isRemote(gridSource) && (!session.current || !isOpen(gridSource))) {
+      // Read the selected grid photo's settings in a background session without
+      // rendering it into the hidden viewer or writing any sidecar.
+      await closePhoto();
+      let s: Session | null = null;
+      try {
+        s = await Session.open(gridSource.path, gridSource.imgid, () => ({ width: 1, height: 1 }), () => {}, () => {}, true);
+        const advanced = on.has("advanced") ? await s.copyAdvanced() : undefined;
+        if (on.has("masks") && s.masks.length) await s.refreshMaskStates();
+        clip.current = makeClip(on, s.values, { name: s.look, path: s.lookPath, amount: s.lookAmount }, s.masks, advanced);
+        setHasClip(true);
+        setStatus(t("app.status.settingsCopied"));
+      } catch (e) {
+        setStatus(t("app.status.copyError", { error: e }));
+      } finally {
+        s?.abandon();
+      }
+      return;
+    }
     const s = session.current;
     if (!s) return;
     let advanced;
@@ -4631,11 +5190,17 @@ export default function App() {
     setHasClip(true);
     setStatus(t("app.status.settingsCopied"));
   };
+  // a photo a paste, reset, undo or redo saved: its thumbnail is rendered
+  // again, culling forgets the preview it holds, and an edited one has its
+  // culling preview rendered ahead (editedPreviews.ts)
   const pasteSaved = (i: PasteUpdate) => {
     loader.current?.invalidate(i.imgid);
+    pasteRevisions.current.set(i.imgid, (pasteRevisions.current.get(i.imgid) ?? 0) + 1);
     patchImage(i.imgid, { edited: i.edited });
     void syncEditedKeywords(i.imgid, i.edited);
     if (i.edited) void fillEditedMeta(i.imgid);
+    const entry = imagesRef.current.find((e) => e.imgid === i.imgid);
+    if (entry) editedPreviews.schedule(entry);
   };
   const pauseForPaste = async () => {
     window.clearTimeout(baseTimer.current);
@@ -4644,6 +5209,7 @@ export default function App() {
     setBaMode("off");
     setAmount(null);
     await session.current?.close();
+    await commands.closeImage();
     pasteUndoSession.current = session.current;
     session.current = null;
   };
@@ -4655,34 +5221,41 @@ export default function App() {
   };
   const pasteSettings = async (previousClip?: Clip) => {
     const c = previousClip ?? clip.current, active = currentRef.current;
-    if (!c || !active || !session.current || croppingRef.current || pastingRef.current || aiBusy) return;
-    const entry = imagesRef.current.find(i => isOpen(i, active)) ?? openCell;
+    if (!c || croppingRef.current || pastingRef.current || aiBusy) return;
+    const entry = gridRef.current
+      ? (inspectedRef.current ?? (active ? imagesRef.current.find(i => isOpen(i, active)) : null) ?? openCell)
+      : (imagesRef.current.find(i => isOpen(i, active)) ?? openCell);
     const { targets, skipped } = pasteTargets(imagesRef.current, previousClip ? new Set<number>() : selectionRef.current, entry, isRemote);
     if (!targets.length) { setStatus(t("app.status.pasteNoLocalPhotos")); return; }
     const frozen = structuredClone(c);
     const defaults = newPhotoDefaults();
-    const before = snapshot(session.current, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`);
+    const hadSession = !!session.current && !!active;
+    const before = hadSession ? snapshot(session.current!, `Paste settings on ${targets.length} photo${targets.length === 1 ? "" : "s"}`) : null;
     pastingRef.current = true;
     setPasting(t("app.status.pastePreparing"));
     let message = "";
     try {
-      await pauseForPaste();
+      if (hadSession) await pauseForPaste();
       const result = await runPaste(targets, frozen,
         (done, total) => setPasting(t("app.status.pasteProgress", { done, total })), pasteSaved, s => preparePastePhoto(s, defaults));
       if (result.token !== null) {
-        discardPastes(undo.current.future);
-        undo.current.future = [];
-        undo.current.key = "";
-        before.batch = { token: result.token, recovery: result.recovery };
-        undo.current.past.push(before);
-        if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+        if (before) {
+          discardPastes(undo.current.future);
+          undo.current.future = [];
+          undo.current.key = "";
+          before.batch = { token: result.token, recovery: result.recovery };
+          undo.current.past.push(before);
+          if (undo.current.past.length > 200) discardPastes(undo.current.past.splice(0, 1));
+        } else {
+          void commands.pasteBatch("release", result.token, null).catch(() => {});
+        }
       }
       message = result.error ? t("app.status.pasteError", { error: result.error })
         : t("app.status.pasteSuccess", { count: targets.length, plural: targets.length === 1 ? "" : "s", skipped: skipped ? t("app.status.pasteSkipped", { count: skipped }) : "" });
     } catch (e) { message = t("app.status.pasteError", { error: e }); }
     finally {
       // No normal navigation: preserve selection and both undo stacks.
-      if (!session.current && !await openFile(active.path, active.imgid, true))
+      if (hadSession && !session.current && !await openFile(active.path, active.imgid, true))
         message += t("app.status.pasteReopenError");
       pastingRef.current = false;
       setPasting(null);
@@ -4734,6 +5307,38 @@ export default function App() {
     } catch (e) { message = t("app.status.historyDiscardError", { error: e }); }
     finally {
       if (!session.current && !await openFile(active.path, active.imgid, true))
+        message += t("app.status.pasteReopenPhotoError");
+      pastingRef.current = false;
+      setPasting(null);
+      setHistoryRev(n => n + 1);
+      setStatus(message);
+    }
+  };
+  const requestResetPhotos = (targets: ImageEntry[]) => {
+    if (!targets.length || croppingRef.current || pastingRef.current || aiBusy) return;
+    requestReset(() => void resetPhotos(targets), targets.length);
+  };
+  const resetPhotos = async (targets: ImageEntry[]) => {
+    if (!targets.length || croppingRef.current || pastingRef.current || aiBusy) return;
+    const active = currentRef.current;
+    const hadSession = !!session.current && !!active;
+    const before = hadSession ? snapshot(session.current!, targets.length === 1 ? "Reset photo" : `Reset ${targets.length} photos`) : null;
+    pastingRef.current = true;
+    setPasting(t("app.status.resetProgress", { done: 0, total: targets.length }));
+    let message = "";
+    try {
+      if (hadSession) await pauseForPaste();
+      else await commands.closeImage();
+      const result = await runReset(targets, (done, total) => setPasting(t("app.status.resetProgress", { done, total })), pasteSaved);
+      if (result.token !== null) {
+        if (before) discardPastes(pushBatchStep(undo.current, before, { token: result.token, recovery: result.recovery }));
+        else void commands.pasteBatch("release", result.token, null).catch(() => {});
+      }
+      message = result.error ? t("app.status.resetError", { error: result.error })
+        : t("app.status.resetSuccess", { n: targets.length, count: formatNumber(targets.length) });
+    } catch (e) { message = t("app.status.resetError", { error: e }); }
+    finally {
+      if (hadSession && !session.current && !await openFile(active.path, active.imgid, true))
         message += t("app.status.pasteReopenPhotoError");
       pastingRef.current = false;
       setPasting(null);
@@ -4849,9 +5454,37 @@ export default function App() {
       changeMany(ids.map((id) => [id, s.neutral[id]]), `Reset ${h.name}`);
       return;
     }
+    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
+    if (how === "toggle" && !on && TONE_MAPPER_ALL_OPS.has(h.op)) {
+      if (!s.toneMappable) { setStatus(t("fields.advanced.toneMapperNonRaw")); return; }
+      const others = s.activeToneMappers({ op: h.op, priority: h.priority! });
+      if (others.length) {
+        setTmWarning({
+          current: others.map((x) => fieldText(x.title)).join(", "),
+          next: fieldText(h.name),
+          onSwitch: () => {
+            leaveBefore();
+            setBaMode("off");
+            record([`history:${key}:switch`], `Switch tone mapper: ${h.name}`);
+            baseStale.current = true;
+            s.disableOtherToneMappers({ op: h.op, priority: h.priority! });
+            s.setModuleState(h, { enabled: true });
+            setHistoryRev((n) => n + 1);
+          },
+          onEnableAnyway: () => {
+            leaveBefore();
+            setBaMode("off");
+            record([`history:${key}`], `Switch on ${h.name}`);
+            baseStale.current = true;
+            s.setModuleState(h, { enabled: true });
+            setHistoryRev((n) => n + 1);
+          },
+        });
+        return;
+      }
+    }
     leaveBefore();
     setBaMode("off");
-    const on = s.moduleStates.get(key)?.enabled ?? h.enabled;
     record([`history:${key}`], how === "toggle" ? `${on ? "Switch off" : "Switch on"} ${h.name}`
       : how === "reset" ? `Reset ${h.name}` : `Delete ${h.name}`);
     baseStale.current = true;
@@ -5021,6 +5654,10 @@ export default function App() {
   sfStocksRef.current = sfStocks;
   const [sfFetch, setSfFetch] = useState<FetchStatus | null>(null);
   const [exclusive, setExclusive] = useState<{ title: string; body: string; go: () => void } | null>(null);
+  const [tmWarning, setTmWarning] = useState<ToneMapperGuardRequest | null>(null);
+  // Advanced mode's Module order dialog, closed with the photo it was opened on
+  const [orderOpen, setOrderOpen] = useState(false);
+  useEffect(() => { setOrderOpen(false); }, [current]);
   const filmView = !!current && layout.right && rightMode === "film";
   useEffect(() => {
     if (!filmView || sfStocks?.pack) return;
@@ -5095,6 +5732,60 @@ export default function App() {
   // held; the edit stays live
   const [baMode, setBaModeState] = useState<BaMode>("off");
   const baModeRef = useRef<BaMode>("off");
+  const [spotRangeMap, setSpotRangeMap] = useState<{ photo: Opened; map: RangeMap; size: string } | null>(null);
+  const spotRangeShown = healMode && rightOpen && !cropping && !preview && baMode === "off" && spotRangeAvailable && spotRangePreview;
+  const spotRangeWidth = placement?.fullWidth ?? 0, spotRangeHeight = placement?.fullHeight ?? 0;
+  const spotRangeSize = `${spotRangeWidth}x${spotRangeHeight}`;
+  const spotRanges = spotFill.ranges;
+  useEffect(() => {
+    const s = session.current;
+    if (!s || !current || !spotRangeShown || !spotRanges.length || !spotRangeWidth || !spotRangeHeight) {
+      setSpotRangeMap(null);
+      return;
+    }
+    let stale = false;
+    // Let the current edit render first. Wait for a pause in the range controls
+    // before asking the preview pipe to sample retouch's input.
+    let timer = window.setTimeout(async function readRange() {
+      if (stale || session.current !== s) return;
+      if (!s.idle) {
+        timer = window.setTimeout(readRange, 50);
+        return;
+      }
+      const scale = Math.min(1, 480 / Math.max(spotRangeWidth, spotRangeHeight));
+      const width = Math.max(1, Math.round(spotRangeWidth * scale));
+      const height = Math.max(1, Math.round(spotRangeHeight * scale));
+      try {
+        const buf = await track(commands.rangeMap(spotRanges, width, height, true));
+        if (!stale && session.current === s)
+          setSpotRangeMap({ photo: current, size: spotRangeSize, map: { width, height, data: new Uint8Array(buf, 8) } });
+      } catch (e) {
+        if (!stale && session.current === s) {
+          setSpotRangeMap(null);
+          setStatus(t("app.status.rangeMapError", { error: e }));
+        }
+      }
+    }, 80);
+    return () => { stale = true; window.clearTimeout(timer); };
+  }, [current, spotRangeShown, spotRangeSize, spotRangeWidth, spotRangeHeight, spotRanges, spots, values, look, lookAmount, masks]);
+
+  const spotTint = spotRangeShown && spotRanges.length && spotRangeMap?.photo === current
+    && spotRangeMap.size === spotRangeSize ? spotRangeMap.map : null;
+  useEffect(() => {
+    const c = spotRangeCanvas.current;
+    if (!c || !spotTint) return;
+    const { width, height, data } = spotTint;
+    const img = new ImageData(width, height);
+    for (let i = 0; i < data.length; i++) {
+      img.data[4 * i] = 255;
+      img.data[4 * i + 1] = 220;
+      img.data[4 * i + 3] = Math.round(data[i] * 0.55);
+    }
+    c.width = width;
+    c.height = height;
+    c.getContext("2d")!.putImageData(img, 0, 0);
+    placeLayers();
+  }, [spotTint]); // eslint-disable-line react-hooks/exhaustive-deps
   const [splitPos, setSplitPos] = useState(0.5);
   const [holding, setHolding] = useState(false);
   const [modeFlash, setModeFlash] = useState<string | null>(null);
@@ -5389,6 +6080,14 @@ export default function App() {
       void openEntry(picked[0]);
       return;
     }
+    if (gridRef.current && picked.length === 1 && !isOpen(picked[0])) {
+      const idx = list.findIndex((i) => i.imgid === picked[0].imgid);
+      const pick = list.slice(idx + 1).find(local) ?? list.slice(0, idx).reverse().find(local);
+      if (!pick) { setStatus(t("app.status.compareNeedsPhoto")); return; }
+      setCompare(pick.imgid);
+      void openEntry(picked[0]);
+      return;
+    }
     const at = list.findIndex((i) => isOpen(i));
     if (at < 0) return;
     const pick = list.find((i, k) => k !== at && sel.has(i.imgid) && local(i))
@@ -5488,9 +6187,28 @@ export default function App() {
   };
 
   const change = (c: Control, v: number) => perf.time("slider.handler", () => {
-    if (c.id === "profile" && v >= AGX_USER_FIRST) {
-      changeMany(Object.entries(profileSelection(v)), "Profile");
-      return;
+    if (c.id === "profile") {
+      const s = session.current;
+      if (!s) return;
+      if (!s.toneMappable) {
+        const safe = isColorBalanceProfile(v) ? v : 0;
+        if (s.values.profile !== safe) changeMany([["profile", safe]], "Profile");
+        return;
+      }
+      const agxPick = v >= AGX_USER_FIRST || isAgxProfile(v) || (v === 0 && s.values.tm_mode !== TM_AGX);
+      if (agxPick) {
+        const sel = profileSelection(v, true);
+        const entries: [string, number][] = Object.entries(s.values.tm_mode === TM_AGX ? sel : { ...sel, tm_mode: TM_AGX });
+        leaveBefore();
+        setBaMode("off");
+        setAmount(null);
+        record(["profile"], "Profile");
+        baseStale.current = true;
+        s.disableOtherToneMappers({ op: "agx", priority: 0 });
+        setValues((old) => ({ ...old, ...Object.fromEntries(entries) }));
+        s.setMany(entries, dragging.current);
+        return;
+      }
     }
     if (session.current?.values[c.id] === v) return;
     leaveBefore();
@@ -5703,7 +6421,7 @@ export default function App() {
   };
   // Space held on a zoomed photo: pan, before any overlay or tool sees the press
   const onSpacePanDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (!spaceHeldRef.current || !current || zoomRef.current === "fit" || !viewZ.current || e.button !== 0) return false;
+    if (!spaceHeldRef.current || !current || centeredZoom(zoomRef.current) || !viewZ.current || e.button !== 0) return false;
     if ((e.target as Element).closest(".cand-pane")) return false;
     e.stopPropagation();
     e.preventDefault();
@@ -5749,7 +6467,7 @@ export default function App() {
       return;
     }
     const d = drag.current, f = full.current;
-    if (!d || !f || zoomRef.current === "fit") return;
+    if (!d || !f || centeredZoom(zoomRef.current)) return;
     const dx = e.clientX - d.x, dy = e.clientY - d.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     if (!d.moved) return;
@@ -5813,7 +6531,14 @@ export default function App() {
       let to = Math.min(MAX_SCALE, from * Math.exp(-delta * (e.ctrlKey ? 0.006 : 0.0008)));
       // a detent at 100%: crossing it stops there, the next notch moves on
       if ((from < 1 && to > 1) || (from > 1 && to < 1)) to = 1;
-      if (to <= fitScale() * 1.001) { animateTo("fit", null, 150, false); return; }
+      // and at 50%, the navigator's 1:2
+      if ((from < .5 && to > .5) || (from > .5 && to < .5)) to = .5;
+      // the same at fit; below it the photo floats centered, down to half of fit
+      const F = fitScale(), atFit = Math.abs(from - F) <= F * 0.001;
+      if (to <= F * 0.5 * 1.001) { animateTo("half", null, 150, false); return; }
+      if ((from > F * 1.001 && to <= F * 1.001) || (from < F / 1.001 && to >= F / 1.001)
+          || (atFit && Math.abs(to - F) <= F * 0.001)) { animateTo("fit", null, 150, false); return; }
+      if (to < F) { animateTo(to, null, 150, false); return; }
       const { sx, sy } = paneXY(e.clientX, e.clientY);
       animateTo(to, { ...imageAt(sx, sy), sx, sy }, 150, false);
     };
@@ -6052,11 +6777,15 @@ export default function App() {
       },
       "export": () => { setExporting(true); },
       "print": () => { showRightRef.current("print"); },
-      "copy-settings": () => { if (session.current) setCopying(true); },
+      "copy-settings": () => {
+        if (session.current || (gridRef.current && inspectedRef.current && !isRemote(inspectedRef.current))) setCopying(true);
+      },
       "paste-settings": () => { pasteSettingsRef.current(); },
       "paste-previous": () => { pastePreviousRef.current(); },
       "start-over": () => { startOverRef.current(); },
       "shortcuts": () => { setShortcutsOpen(true); },
+      "move-to-folder": () => { void moveToFolderRef.current(false); },
+      "copy-to-folder": () => { void moveToFolderRef.current(true); },
       "virtual-copy": () => {
         const sel = selectionRef.current, all = imagesRef.current;
         const list = sel.size ? all.filter((i) => sel.has(i.imgid)) : all.filter((i) => isOpen(i));
@@ -6075,7 +6804,7 @@ export default function App() {
         else setStatus(t("app.status.panoramaNeedsRaws"));
       },
       "preferences": () => { setPrefsOpen(true); },
-      "import": () => { setImportOpen(true); },
+      "import": openImport,
       "undo": () => { stepHistory(true); },
       "redo": () => { stepHistory(false); },
       // in the grid, the thumbnails' size rather than the photo hidden under it
@@ -6099,7 +6828,7 @@ export default function App() {
         });
       },
       "hide-panels": () => { hidePanels(["left", rightPanelRef.current]); },
-      "grid": () => { if (!croppingRef.current) setGrid(!gridRef.current); },
+      "grid": () => { if (!croppingRef.current) { if (gridRef.current) leaveGridRef.current(); else setGrid(true); } },
       "before-after": () => { if (!croppingRef.current) cycleBaModeRef.current(); },
       "compare": () => { if (!croppingRef.current) toggleCompareRef.current(); },
       "wb-picker": () => {
@@ -6187,7 +6916,12 @@ export default function App() {
         return;
       }
       if ((e.key === "g" || e.key === "G") && !croppingRef.current) { run("grid"); return; }
-      if (e.key === "Escape" && gridRef.current) { setGrid(false); return; }
+      if (e.key === "Escape" && gridRef.current) { leaveGridRef.current(); return; }
+      if (e.key === "Enter" && gridRef.current && !(t instanceof HTMLElement && t.closest("button, a, select, input, textarea, [role='button']"))) {
+        e.preventDefault();
+        leaveGridRef.current();
+        return;
+      }
       if (e.key === "\\" && !croppingRef.current) { setBaModeRef.current("off"); setBefore(!beforeRef.current); return; }
       if ((e.key === "y" || e.key === "Y") && !croppingRef.current) { run("before-after"); return; }
       if ((e.key === "c" || e.key === "C") && !croppingRef.current) { run("compare"); return; }
@@ -6219,7 +6953,7 @@ export default function App() {
       }
       if (masksModeRef.current) {
         if (e.key === "Escape") { setMaskTool(null); return; }
-        if (e.key === "o" || e.key === "O") { overlayEvent("key"); return; }
+        if (e.code === "KeyO") { if (!e.repeat) maskToggleRef.current(); return; }
         if (e.key === "[" || e.key === "]") {
           setBrush((b) => ({ ...b, size: Math.min(0.4, Math.max(0.005, b.size * (e.key === "]" ? 1.15 : 1 / 1.15))) }));
           return;
@@ -6263,8 +6997,17 @@ export default function App() {
       }
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         stepDir.current = e.key === "ArrowRight" ? 1 : -1;
-        const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
-        if (next) { e.preventDefault(); void openEntry(next); }
+        if (gridRef.current) {
+          const next = stepGridSelection(list, selectionRef.current, pickAnchor.current, currentRef.current?.imgid ?? null, stepDir.current);
+          if (next) {
+            e.preventDefault();
+            pickAnchor.current = next.imgid;
+            setSelection(new Set([next.imgid]));
+          }
+        } else {
+          const next = list[Math.min(list.length - 1, Math.max(0, at + stepDir.current))];
+          if (next) { e.preventDefault(); void openEntry(next); }
+        }
       }
       else if (!keyPhoto()) return;
       else if (e.key >= "0" && e.key <= "5") run(`rate-${e.key}` as ActionId);
@@ -6279,7 +7022,7 @@ export default function App() {
   useEffect(() => {
     let t: number | undefined;
     const ro = new ResizeObserver(() => {
-      if (zoomRef.current === "fit" && full.current) { viewZ.current = fitScale(); placeLayers(); }
+      if ((zoomRef.current === "fit" || zoomRef.current === "half") && full.current) { viewZ.current = scaleFor(zoomRef.current); placeLayers(); }
       window.clearTimeout(t);
       t = window.setTimeout(() => {
         baseStale.current = true;
@@ -6291,25 +7034,41 @@ export default function App() {
   }, []);
 
   // stacked pairs: a raw's JPEG or HEIF hides behind it, unless the
-  // filters leave the raw out
-  const partners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
-  partnersRef.current = partners;
+  // filters leave the raw out or the stack is expanded
+  const allPartners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
   // results show through the filter their search used: an Immich-only search hides the folder lists
   const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
-  const behind = new Set(passing.flatMap((i) => (partners.get(i.imgid) ?? []).map((p) => p.imgid)));
   // the photos the folder's last read found that this one has not reached:
   // shown as they were, through the filters, until they are read. once the
   // folder is listed, those no longer in it go
-  const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+  // kept while the read's progress stands: a folder's listing can be 140,000
+  // files, and the page draws again far more often than the read moves on
+  const readingSets = useMemo(() => {
+    const knownPaths = reading?.known.length ? new Set(reading.known.map((k) => k.path)) : null;
+    return {
+      knownPaths,
+      listedPaths: knownPaths && reading!.listed ? new Set(reading!.files) : null,
+      rawNames: stackPairs && reading ? pairedRaws(reading.files) : null,
+    };
+  }, [reading, stackPairs]);
+  const { knownPaths, listedPaths } = readingSets;
   const readPaths = knownPaths && new Set(images.map((i) => i.path));
-  const listedPaths = knownPaths && reading!.listed ? new Set(reading!.files) : null;
   const unread = !readPaths ? []
     : reading!.known.filter((k) => !readPaths.has(k.path) && (!listedPaths || listedPaths.has(k.path)) && passes(k, filter));
   // a raw not yet read stacks its companions too, read or not
   const stackRaw = (i: Known) => !i.copy && isPrimaryRaw(i.filename);
   const unreadRaws = stackPairs ? new Set(unread.filter(stackRaw).map((k) => pairKey(k.path))) : null;
   const stacked = (i: Known) => !i.copy && isCompanion(i.filename) && !!unreadRaws?.has(pairKey(i.path));
-  const shown = passing.filter((i) => !behind.has(i.imgid) && !stacked(i));
+  const { shown, collapsedPartners: partners, badges: stackBadges } = buildStackView(passing, allPartners, expandedStacks, stacked);
+  partnersRef.current = partners;
+  const toggleStack = (badge: StackBadge) => {
+    if (badge.expanded) {
+      const next = selectionAfterCollapse(selectionRef.current, pickAnchor.current, badge.memberIds, badge.headId);
+      pickAnchor.current = next.anchor;
+      setSelection(next.selection);
+    }
+    setExpandedStacks((prev) => toggleStackKey(prev, badge.key));
+  };
   const hasCullingPhotos = grid && shown.some((i) => !isRemote(i));
   const hasPhoto = current !== null;
   const disabledMenuActions = useMemo(
@@ -6326,7 +7085,7 @@ export default function App() {
   // the files still to be read and not known, as empty cells after the
   // photos: unless the filters ask for what only reading tells (ratings,
   // labels, rejects)
-  const rawNames = stackPairs && reading ? pairedRaws(reading.files) : null;
+  const { rawNames } = readingSets;
   const pending = !reading || needsRead(filter) ? []
     : reading.files.slice(reading.done).filter((p) => kindsInclude(filter.kinds, p))
         .filter((p) => !knownPaths?.has(p))
@@ -6338,6 +7097,16 @@ export default function App() {
   // its entry whichever folder is shown
   const listedEntry = images.find((i) => isOpen(i, current)) ?? null;
   const currentEntry = listedEntry ?? (openCell && isOpen(openCell, current) ? openCell : null);
+  // in Grid view, clicking selects a photo without opening it in the darkroom;
+  // Metadata, Keywording, Export and the grid highlight follow this selection
+  const gridEntry = grid ? gridActivePhoto(shown, selection, pickAnchor.current) : null;
+  const inspectedEntry = gridEntry ?? currentEntry;
+  inspectedRef.current = inspectedEntry;
+  leaveGridRef.current = () => {
+    const target = photoToOpenOnLeaveGrid(gridRef.current, shownRef.current, selectionRef.current, pickAnchor.current, (i) => isOpen(i));
+    setGrid(false);
+    if (target) void openEntry(target);
+  };
   // the Print panel's Cells layout prints the photos selected, in the filmstrip's order, else the open one
   const sheetPhotos: SheetPhoto[] = (() => {
     if (!printOpen || printSettings.layout !== "cells") return [];
@@ -6373,15 +7142,15 @@ export default function App() {
        (shownView.y + shownView.height) / (shownView.scale * full.current.h)]
     : null;
 
-  // the open image's text fields come from the engine, which read them from
-  // the sidecar on import
-  const currentId = currentEntry?.imgid;
+  // the inspected image's text fields come from the engine, which read them from
+  // the sidecar on import (lightweight metadata read, no RAW decode)
+  const inspectedId = inspectedEntry && !isRemote(inspectedEntry) ? inspectedEntry.imgid : undefined;
   useEffect(() => {
     setMetaText(null);
     setKeywords(null);
-    if (currentId === undefined) return;
+    if (inspectedId === undefined) return;
     let stale = false;
-    commands.meta(currentId)
+    commands.meta(inspectedId)
       .then((r) => {
         if (stale) return;
         setMetaText(r.image.metadata);
@@ -6390,24 +7159,24 @@ export default function App() {
       .catch((e) => setStatus(t("app.status.error", { error: e })));
     commands.keywords().then((k) => { if (!stale) setKnownKeywords(k); }).catch(() => {});
     return () => { stale = true; };
-  }, [currentId]);
+  }, [inspectedId]);
   // keywords added by something other than the Keywording card: an export
   // that adds its keywords to the originals
   const reloadKeywords = () => {
-    if (currentId !== undefined)
-      commands.meta(currentId)
+    if (inspectedId !== undefined)
+      commands.meta(inspectedId)
         .then((r) => setKeywords(r.image.keywords)).catch(() => {});
     commands.keywords().then(setKnownKeywords).catch(() => {});
   };
-  // the open photo's keywords, for a save made after the render they came
+  // the inspected photo's keywords, for a save made after the render they came
   // from (Session.onSaved)
   const keywordsRef = useRef<{ imgid: number; list: string[] } | null>(null);
-  keywordsRef.current = keywords && currentId !== undefined ? { imgid: currentId, list: keywords } : null;
+  keywordsRef.current = keywords && inspectedId !== undefined ? { imgid: inspectedId, list: keywords } : null;
   // into the filmstrip's entry too, which the Filters popup reads
   useEffect(() => {
-    if (!keywords || currentId === undefined) return;
-    const e = imagesRef.current.find((i) => i.imgid === currentId);
-    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(currentId, { keywords });
+    if (!keywords || inspectedId === undefined) return;
+    const e = imagesRef.current.find((i) => i.imgid === inspectedId);
+    if (e && e.keywords?.join("\n") !== keywords.join("\n")) patchImage(inspectedId, { keywords });
   }, [keywords]);
   // Preferences' keywords for edited photos: on once a save finds the photo
   // edited, off again once one finds it unedited
@@ -6429,9 +7198,9 @@ export default function App() {
       setStatus(t("app.status.error", { error: e }));
     }
   };
-  // the open photo's text fields, as keywordsRef
+  // the inspected photo's text fields, as keywordsRef
   const metaTextRef = useRef<{ imgid: number; text: TextFields } | null>(null);
-  metaTextRef.current = metaText && currentId !== undefined ? { imgid: currentId, text: metaText } : null;
+  metaTextRef.current = metaText && inspectedId !== undefined ? { imgid: inspectedId, text: metaText } : null;
   // Preferences' copyright and creator, into an edited photo's empty fields
   // only, so the camera's own copyright stays; a reset leaves them
   const fillEditedMeta = async (imgid: number) => {
@@ -6457,9 +7226,9 @@ export default function App() {
     }
   };
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
-    if (currentId === undefined || (!add.length && !remove.length)) return;
+    if (inspectedId === undefined || (!add.length && !remove.length)) return;
     try {
-      setKeywords(await commands.keywordsSet(currentId, add, remove));
+      setKeywords(await commands.keywordsSet(inspectedId, add, remove));
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
     } catch (e) {
       setStatus(t("app.status.error", { error: e }));
@@ -6487,8 +7256,8 @@ export default function App() {
   useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
   const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
-              smart={smartAvailable(clipReady, !!immichBase)}
-              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone) ? {
+              smart={smartAvailable(clipReady, !!immichBase, remoteClip)}
+              clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone, allRemoteClip) ? {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
               } : undefined}
@@ -6509,16 +7278,18 @@ export default function App() {
   // arrow keys), and keeps to the photos still listed
   const currentImgid = currentEntry?.imgid;
   useEffect(() => {
-    if (currentImgid === undefined) return;
+    if (currentImgid === undefined || gridRef.current) return;
     setSelection((old) => (old.has(currentImgid) ? old : new Set([currentImgid])));
   }, [currentImgid]);
+  // a photo whose id changes (a refresh, a rename) stays selected, found by
+  // its path and version; photos no longer listed leave the selection
   useEffect(() => {
-    setSelection((old) => {
-      const ids = new Set(shown.map((i) => i.imgid));
-      const kept = [...old].filter((id) => ids.has(id));
-      return kept.length === old.size ? old : new Set(kept);
-    });
-  }, [shown]);
+    const r = followSelection(shown, selectionRef.current, pickAnchor.current, followed.current, Date.now());
+    followed.current = r.followed;
+    if (!r.changed) return;
+    pickAnchor.current = r.anchor;
+    setSelection(r.selection);
+  }, [shown, selection]);
 
   const [infoMode, setInfoMode] = useState(loadInfoMode);
   useEffect(() => { try { settings.set(INFO_MODE_KEY, String(infoMode)); } catch { /* not kept */ } }, [infoMode]);
@@ -6554,9 +7325,11 @@ export default function App() {
       anchor={pickAnchor.current}
       thumbnail={id => loader.current?.get(id)}
       activeEditorId={session.current?.imgid}
+      revisionOf={id => pasteRevisions.current.get(id) ?? 0}
+      refreshPending={id => loader.current?.refreshPending(id) ?? false}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
-      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === currentId) setKeywords(list); }} />}
+      onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === inspectedId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
     {/* full screen has no traffic lights to hold, and the photo wants the room */}
@@ -6571,27 +7344,27 @@ export default function App() {
       <aside className="left" ref={leftAside} style={{ width: layout.leftWidth }}>
         <div className="panel-head"><h1>{t("app.library.title")}</h1>{pinButton("left")}</div>
         <Navigator thumb={navThumb} zoom={zoom} placement={placement} disabled={!current}
-                   onZoom={(z) => { if (z !== "fit") navZoom.current = z; setZoom(z); }}
+                   onZoom={(z) => { if (z !== "fit" && z !== "half") navZoom.current = z; setZoom(z); }}
                    onPan={(x, y, done) => {
                      center.current = { x: clamp01(x), y: clamp01(y) };
                      placeLayers();
                      if (done) { updatePlacement(); session.current?.requestRender(); }
                    }} />
-        <MetadataPanel image={currentEntry} text={metaText}
-                       onLocationSaved={(location) => currentEntry && patchImage(currentEntry.imgid, { location })}
-                       onCaptureTime={() => { if (currentEntry) {
+        <MetadataPanel image={inspectedEntry} text={metaText}
+                       onLocationSaved={(location) => inspectedEntry && !isRemote(inspectedEntry) && patchImage(inspectedEntry.imgid, { location })}
+                       onCaptureTime={() => { if (inspectedEntry && !isRemote(inspectedEntry)) {
                          const sel = selectionRef.current;
-                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(currentEntry.imgid)
-                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [currentEntry]), currentEntry);
+                         startCaptureAdjustment(withPartners(sel.size > 1 && sel.has(inspectedEntry.imgid)
+                           ? imagesRef.current.filter((i) => sel.has(i.imgid)) : [inspectedEntry]), inspectedEntry);
                        } }}
                        open={leftOpen.has("metadata")} onToggle={(alt) => toggleLeft("metadata", alt)}
-                       onMeta={(fields) => currentEntry && setMeta(currentEntry.imgid, fields)}
+                       onMeta={(fields) => inspectedEntry && !isRemote(inspectedEntry) && setMeta(inspectedEntry.imgid, fields)}
                        onText={(field, value) => {
-                         if (!currentEntry) return;
+                         if (!inspectedEntry || isRemote(inspectedEntry)) return;
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
-                         void setMeta(currentEntry.imgid, { [field]: value });
+                         void setMeta(inspectedEntry.imgid, { [field]: value });
                        }} />
-        <KeywordingPanel keywords={currentEntry ? keywords : null} known={knownKeywords}
+        <KeywordingPanel keywords={inspectedId !== undefined ? keywords : null} known={knownKeywords}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}
                          onAdd={(names) => void setPhotoKeywords(names, [])}
                          onRemove={(name) => void setPhotoKeywords([], [name])} />
@@ -6623,7 +7396,7 @@ export default function App() {
               </label>
               <FolderTree roots={folders} volumes={volumes} hostNames={hostNames} folded={foldedVolumes}
                           current={immich ? null : folder} photo={photoDir} expanded={expanded} hidden={hidden}
-                          refresh={folderRefresh} transfer={folderTransfer}
+                          refresh={folderRefresh} revealKey={folderRevealKey} transfer={folderTransfer}
                           onDropFolder={(source, dest, copy) => {
                             if (!folderMoveDialog && !moveDialog && !folderTransfer) askFolderMove(source, dest, copy);
                           }}
@@ -6672,7 +7445,7 @@ export default function App() {
       <Splitter axis="x" value={layout.leftWidth} min={220} max={560} hidden={!docked.left}
                 onChange={(v) => setLayout((l) => ({ ...l, leftWidth: v }))} />
       <section className="center">
-        <main data-tour="viewer" className={`viewer zoom-${zoom === "fit" ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && zoom !== "fit" ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
+        <main data-tour="viewer" className={`viewer zoom-${centeredZoom(zoom) ? "fit" : "in"}${picking || loupePicking || wbPicking ? " picking" : ""}${aiBusy ? " busy" : ""}${spaceHeld && current && !centeredZoom(zoom) ? (spaceDragging ? " space-pan space-dragging" : " space-pan") : ""}${straightening || line || (shiftHeld && current && !grid && (cropping || (!masksMode && !healMode)) && !preview) ? " straightening" : ""}${canvasColor !== "dark" ? ` canvas-${canvasColor}` : ""}${baMode === "overlay" ? " hold-view" : ""}${optPreview?.kind === "gray" ? " gray-view" : ""}${sheet ? " print-view" : ""}`} ref={viewer}
               onPointerDownCapture={(e) => { if (onSpacePanDown(e)) return; if (!(e.target as Element).closest(".checker-corner") && !onLoupePickDown(e)) onStraightenDown(e); }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
               onPointerLeave={leaveProbe}>
@@ -6762,7 +7535,7 @@ export default function App() {
                              })()}
                              overlayColor={maskOverlayRgb(overlayColor)}
                              onHoverPick={pickShow && selMask?.shapes[shapeSel]?.type === "parametric" ? hoverPick : null}
-                             tool={maskTool} brush={brush} showOverlay={(maskShown && !adjusting) || refining} adding={addingTo} shaping={refining} selected={shapeSel}
+                             tool={maskTool} brush={brush} showOverlay={(maskShown && !adjusting) || maskEditingShown} adding={addingTo} shaping={refining} selected={shapeSel}
                              newMask={toolTarget === "new" && !!maskTool}
                              subtract={toolTarget === "subtract" && !!maskTool}
                              onSelect={setShapeSel}
@@ -6779,6 +7552,11 @@ export default function App() {
               <div className="mask-box" ref={zoneBox}>
                 {zoneShown && <canvas ref={zoneCanvas} className="mask-tint zone-tint" />}
                 {zoneBoxing && <ObjectBox onPrompt={boxZoneObject} />}
+              </div>
+            )}
+            {spotTint && (
+              <div className="mask-box" ref={spotRangeBox} aria-hidden="true">
+                <canvas ref={spotRangeCanvas} className="mask-tint" />
               </div>
             )}
             <div className="mask-box checker-box" ref={setCheckerBox} />
@@ -6807,10 +7585,19 @@ export default function App() {
             )}
             {healMode && current && !cropping && !preview && full.current && (
               <div className="mask-box" ref={maskBox}>
-                <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} tool={spotTool}
+                <SpotOverlay boxRef={maskBox} image={full.current} region={shownRegion} spots={spots} selected={spotSel} selection={spotSelection} tool={spotTool}
                              show={showSpots} visualize={visualize} base={baseCanvas} baseTick={baseTick} overlayColor={maskOverlayRgb(overlayColor)}
+                             picking={spotPick !== null} onPickPoint={(x, y) => void pickSpotPoint(x, y)}
                              onSelect={setSpotSel} onCreate={(sp) => void createSpot(sp)}
                              onChange={(next) => editSpots(next, "spot:drag")} />
+                {spotPick === "color" && <ObjectBox onPrompt={({ box, points }) => {
+                  if (box && box[0] < box[2] && box[1] < box[3]) {
+                    void pickSpotPoint((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, box);
+                  } else {
+                    const [x, y] = points?.[0] ?? (box ? [box[0], box[1]] : [0.5, 0.5]);
+                    void pickSpotPoint(x, y);
+                  }
+                }} />}
               </div>
             )}
             {transformView && full.current && (
@@ -6932,7 +7719,11 @@ export default function App() {
           )}
           {morfPhotoFallback && (
             <Notice className="activity waiting" stamp={morfPhotoFallback} onDone={() => setMorfPhotoFallback(null)} role="status">
-              <span>{t("morfphoto.fallback", morfPhotoFallback)}</span>
+              <span>{"immichReason" in morfPhotoFallback
+                ? t("immich.semanticFallback", { reason: morfPhotoFallback.immichReason })
+                : "reason" in morfPhotoFallback
+                ? t(morfPhotoFallback.fallback === "immich" ? "morfphoto.semanticFallbackImmich" : "morfphoto.semanticFallback", morfPhotoFallback)
+                : t("morfphoto.fallback", morfPhotoFallback)}</span>
             </Notice>
           )}
           {engineNotice?.kind === "slow" && (
@@ -6983,13 +7774,14 @@ export default function App() {
               <Splitter axis="y" value={layout.stripHeight} min={90} max={300} invert hidden={!layout.strip}
                         onChange={(v) => setLayout((l) => ({ ...l, stripHeight: v }))} />
             )}
-            <Filmstrip images={cells} partners={partners} pending={pending}
+            <Filmstrip images={cells} stackBadges={stackBadges} onToggleStack={toggleStack} pending={pending}
                        empty={immich ? (immich.busy ? "searching photos…" : "no photos match the search")
                               : reading ? "reading the folder…"
                               : images.length ? "no photos match the filters"
                               : folder ? `no photos in this folder${includeSub ? "" : " (Include subfolders shows its subfolders' photos)"}`
-                              : "add a folder to start"} current={currentEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
+                              : "add a folder to start"} current={inspectedEntry?.imgid ?? null} loader={loader.current!} onMenu={showFileMenu}
                        height={layout.stripHeight} grid={grid} gridSize={gridSize} onGridZoom={zoomGrid} selection={selection} onPick={pickPhoto}
+                       revealThumb={thumbRevealKey} source={folderSource}
                        onPress={(i, e) => pressPhoto(e, {
                          count: () => dragSet(i).length,
                          from: () => [...new Set(dragSet(i).filter((p) => !isRemote(p)).map((p) => parentDir(p.path)))],
@@ -7001,6 +7793,7 @@ export default function App() {
                          // a comparison's candidate waits for its photo to be read, and so
                          // does a virtual copy: by its path alone, the original would open
                          if ((compare !== null && !double) || k.copy) return;
+                         if (isOffline(k.path, folderSource)) { setStatus(t("app.status.photoOffline", { name: k.filename })); return; }
                          if (double) { setCompare(null); setGrid(false); }
                          setSelection(new Set());
                          void openFile(k.path);
@@ -7012,7 +7805,7 @@ export default function App() {
         </div>
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
-                 onFindMenu={immich ? showResultsMenu : undefined}
+                 onFindMenu={canShowResultsMenu(immichBase, immich?.search) ? showResultsMenu : undefined}
                  savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
@@ -7082,7 +7875,7 @@ export default function App() {
             <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
                 <FoldIcon open={anyOpen} /></button>
-            <ResetAll disabled={!current} onReset={resetAll} />
+            <ResetAll disabled={!current} onReset={requestResetAll} />
           </div></div>
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
@@ -7103,7 +7896,7 @@ export default function App() {
                                onFocusCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = true; refined(); } }}
                                onBlurCapture={() => { if (c.id.startsWith("r_c")) { rangeInteracting.current = false; refined(); } }}>
                           <Slider control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
-                                  values={selMask?.values ?? values} onChange={onChange} glow={glow}
+                                  values={selMask ? { ...values, ...selMask.values } : values} onChange={onChange} glow={glow}
                                   moduleChoice={module?.choice} moduleValue={module?.value} onModule={module?.onPick}
                                   moduleScope="masks" /></div>
                         )}
@@ -7139,7 +7932,7 @@ export default function App() {
                         onResetAdjustments={resetMaskAdjustments}
                         raw={session.current?.raw ?? true} image={full.current} thumbMaps={thumbMaps}
                         onDelete={deleteMask}
-                        onPeek={setPeekName}
+                        onPeek={setPeekName} onRangeHover={hoverMaskRange}
                         onRename={(from, to) => {
                           const s = session.current;
                           if (!s) return;
@@ -7150,7 +7943,7 @@ export default function App() {
                           syncMasks();
                         }}
                         onBrush={setBrush}
-                        onOverlay={() => overlayEvent("key")}
+                        onOverlay={toggleMaskOverlay}
                         onLocal={(id, v) => { if (maskSel) { adjusted(); overlayEvent("adjust"); record([`mask:${maskSel}:${id}`]); session.current?.setLocal(maskSel, id, v); syncMasks(); } }}
                         onLocalMany={(entries, gesture) => {
                           const s = session.current;
@@ -7176,17 +7969,21 @@ export default function App() {
                         }} />
           )}
           {healMode && !cropping && (
-            <HealPanel tool={spotTool} spots={spots} selected={spotSel} show={showSpots} visualize={visualize} disabled={!current}
+            <HealPanel key={current?.imgid ?? current?.path} tool={spotTool} spots={spots} selection={spotSelection} onSelect={toggleSpotSelection} show={showSpots} visualize={visualize} disabled={!current}
+                       fill={spotFill} picking={spotPick} onFill={editFill} onPick={setSpotPick}
+                       fillHidden={fillHidden} onFillHidden={(hidden) => {
+                         setFillHidden(hidden);
+                         baseStale.current = true;
+                         session.current?.setFillPreviewHidden(hidden);
+                       }}
+                       rangePreviewPinned={spotRangePinned} onRangePreviewToggle={toggleSpotRange} onRangeHover={hoverSpotRange}
+                       onDeselect={() => setSpotSel(null)}
                        renderSlider={(c, v, onChange) => (
                          <Slider key={c.id} control={c} value={v} neutral={c.neutral ?? 0} disabled={!current}
                                  values={values} onChange={onChange} />
                        )}
                        onTool={setSpotTool}
-                       onSpot={(patch) => {
-                         const s = session.current;
-                         if (!s || spotSel === null) return;
-                         editSpots(s.spots.map((x, i) => (i === spotSel ? { ...x, ...patch } as Spot : x)), `spot:edit:${spotSel}`);
-                       }}
+                       onSpot={editSelectedSpots}
                        onDelete={deleteSpot}
                        onClear={() => { editSpots([], "spot:clear"); setSpotSel(null); }}
                        onShow={setShowSpots} onVisualize={setVisualize} />
@@ -7409,11 +8206,17 @@ export default function App() {
             </div>
           )}
           {rightMode === "adjust" && !cropping && editMode === "advanced" && (
-            <AdvancedSearch photo={!!current} onPick={searchPick}
-                            applicable={(op) => { const i = session.current?.instances.find((x) => x.op === op && x.priority === 0); return !!i && i.switchable !== false; }} />
+            <AdvancedSearch photo={!!current} onPick={searchPick} onOrder={() => setOrderOpen(true)}
+                            applicable={(op) => {
+                              if (TONE_MAPPER_OPS.has(op) && !session.current?.toneMappable) return false;
+                              const i = session.current?.instances.find((x) => x.op === op && x.priority === 0);
+                              return !!i && i.switchable !== false;
+                            }}
+                            reasonFor={(op) => TONE_MAPPER_OPS.has(op) && session.current && !session.current.toneMappable
+                              ? t("fields.advanced.toneMapperNonRaw") : undefined} />
           )}
           {rightMode === "adjust" && !cropping && panels.filter((p) => !p.hidden && (!p.showIf || editMode === "advanced" || p.showIf(values))).map((p) => (
-            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
+            <Profiler key={p.id} id={`panel.${p.id}`} onRender={perf.reactCommit}><PanelView editMode={editMode} sessionRevision={historyRev} onPeek={peekPanel} advancedEdits={photoAdvancedEdits?.counts.get(p.id) ?? 0} onAdvancedEdits={openEditingMode} pick={pick?.group === p.id ? pick : null} onPicked={searchPicked} photos={shown} onAdvancedEdit={record} onToneMapperGuard={setTmWarning} onTurn={(how) => void turn(how)} panel={p} open={openPanels.has(p.id)} onToggle={(solo) => togglePanel(p.id, solo)}
                        values={values} session={session.current} disabled={!current} onChange={change}
                        detailLoupe={p.id === "detail" ? renderLoupe("detail") : undefined}
                        presenceLoupe={p.id === "basic" ? renderLoupe("presence") : undefined}
@@ -7499,14 +8302,14 @@ export default function App() {
                           turnOffLabel={t("app.film.turnOff")}
                           turnOffTitle={t("app.film.turnOffTitle")} />
         )}
-        <div className="right-foot">
-          <button className="btn small" disabled={!current || cropping} onClick={() => setCopying(true)}
-                  data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
-          <button className="btn small" disabled={!current || cropping || !hasClip} onClick={() => void pasteSettings()}
-                  data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
-          <button className="btn small" disabled={!current || cropping || !previous.current} onClick={pastePrevious}
-                  title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
+        <div className="right-foot">
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping} onClick={() => setCopying(true)}
+                  data-action="copy-settings" title={keys(t("app.action.copyHint"))}>{t("app.action.copy")}</button>
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping || !hasClip} onClick={() => void pasteSettings()}
+                  data-action="paste-settings" title={keys(t("app.action.pasteHint"))}>{t("app.action.paste")}</button>
+          <button className="btn small" disabled={(!current && inspectedId === undefined) || cropping || !previous.current} onClick={pastePrevious}
+                  data-action="paste-previous" title={keys(t("app.action.previousHint"))}>{t("app.action.previous")}</button>
         </div>
       </aside>
       </div>
@@ -7515,11 +8318,11 @@ export default function App() {
       <nav className="rail" ref={rail}>
         {/* in the order of the work: bring photos in, edit them, send them out */}
         <button className={`tool${importOpen ? " on" : ""}`} title={keys(t("app.rail.import"))} data-tour="import"
-                onClick={() => setImportOpen(true)}><ImportIcon /></button>
+                onClick={openImport}><ImportIcon /></button>
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
-                onClick={() => { if (!croppingRef.current) setGrid(!grid); }}>
+                onClick={() => { if (!croppingRef.current) { if (grid) leaveGridRef.current(); else setGrid(true); } }}>
           <LibraryIcon /></button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
@@ -7557,11 +8360,27 @@ export default function App() {
       </nav>
     </div>
     {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    {resetConfirmation && <ResetPhotosDialog count={resetConfirmation.count}
+      onClose={() => setResetConfirmation(null)} onConfirm={(skipConfirmation) => {
+        setResetConfirmation(null);
+        if (skipConfirmation) settings.set("immage.skipResetConfirmation", "1");
+        resetConfirmation.run();
+      }} />}
     {supportBundle && <SupportBundleDialog values={supportBundle} onClose={() => setSupportBundle(null)} />}
     {folderMoveDialog && <FolderMoveDialog key={folderMoveDialog.job} {...folderMoveDialog}
       onConfirm={(copy, overwrite) => void confirmFolderMove(copy, overwrite)} onClose={closeFolderMove} />}
     {moveDialog && <MoveDialog plan={moveDialog.plan} error={moveDialog.error} copy={moveDialog.copy}
+                               companions={moveDialog.companions.length} withCompanions={moveDialog.withCompanions}
+                               onCompanions={(on) => void planMove({ ...moveDialog, withCompanions: on })}
+                               pattern={moveDialog.pattern} lastPattern={loadMovePattern()}
+                               onPattern={(pattern) => {
+                                 storeMoveSubfolders(pattern);
+                                 if (pattern !== moveDialog.pattern) void planMove({ ...moveDialog, pattern });
+                               }}
                                onConfirm={(copy, keep) => void confirmMove(copy, keep)} onClose={() => setMoveDialog(null)} />}
+    {orderOpen && current && session.current && <ModuleOrderDialog session={session.current}
+      onBeforeApply={() => record([`order:${performance.now()}`], t("dialogs.moduleOrder.title"))}
+      onClose={() => setOrderOpen(false)} />}
     {renameGroups && <RenameDialog groups={renameGroups} onApply={applyRename} onClose={() => setRenameGroups(null)} />}
     {captureDialog && <CaptureTimeDialog {...captureDialog} onApply={applyCaptureTimes} onClose={() => setCaptureDialog(null)} />}
     {fileMenu && (() => {
@@ -7571,6 +8390,9 @@ export default function App() {
       const behindRaw = new Set([...partners.values()].flat().map((p) => p.imgid));
       const sources = local.filter((i) => !behindRaw.has(i.imgid));
       const copies = local.filter((i) => i.copy);
+      const resettable = grid ? resetTargets(fileMenu.targets, behindRaw, isRemote) : [];
+      const jumpTarget = showInLibraryTarget(hit, { activeSearch: !!immich, currentFolder: folder, grid, roots: folders });
+      const immichItems = immichMenuState({ immichBase, immichSearch: immich?.search, hit, photoUrl, searchUrl });
       return (
         <FileMenu x={fileMenu.x} y={fileMenu.y}
                   onSimilar={grid && hit && !isRemote(hit) && clipReady ? () => void showSimilar(hit) : undefined}
@@ -7585,23 +8407,39 @@ export default function App() {
                   onKeywords={grid && local.length ? () => window.dispatchEvent(new CustomEvent("grid-keywords", {
                     detail: local.map(i => i.imgid),
                   })) : undefined}
+                  onMoveTo={fileMenu.targets.length ? (copy) => void moveToFolder(copy, fileMenu.targets) : undefined}
                   onRename={grid && local.length > 0 && local.length === fileMenu.targets.length
                     ? () => startRename(local) : undefined}
                   captureCount={local.length} onCaptureTime={() => startCaptureAdjustment(local, hit)}
                   canUndoCapture={captureUndo.length > 0} onUndoCapture={startCaptureUndo}
+                  resetCount={resettable.length}
+                  onReset={resettable.length ? () => requestResetPhotos(resettable) : undefined}
                   copyable={sources.length} copies={copies.length === local.length ? copies.length : 0}
                   onCopy={() => void createCopies(sources)} onRemoveCopies={() => void removeCopies(copies)}
                   mergeable={hdrBrackets(local).length} onMergeHdr={() => setHdrMerging(hdrBrackets(local))}
                   stitchable={panoFrames(sources).length} onMergePano={() => setPanoMerging(panoFrames(sources))}
+                  onShowInLibrary={jumpTarget ? () => showInLibrary(jumpTarget) : undefined}
                   reveal={!hit ? null : hit.remote ? hit.remote.localPath ?? (isRemote(hit) ? null : hit.path) : hit.path}
                   rejected={hit && !isRemote(hit) ? local.filter((i) => i.rejected).length : null}
-                  photo={immichBase && hit?.remote ? photoUrl(immichBase, hit.remote.assetId) : null}
-                  results={immichBase && immich ? searchUrl(immichBase, immich.search) : null}
-                  parentFolder={immichBase && hit?.remote ? hit.remote.localPath : undefined}
+                  photo={immichItems.photo}
+                  results={immichItems.results}
+                  parentFolder={immichItems.parentFolder}
                   onImportParent={importImmichParent}
                   onDelete={() => void deleteRejected(local.filter((i) => i.rejected))}
-                  editIn={hit && !isRemote(hit) ? plugins.map((cfg) => ({ cfg, why: unfit(cfg, sources) })) : null}
-                  onEditIn={(cfg) => void editIn(cfg, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
+                  editIn={hit && !isRemote(hit) ? plugins.flatMap((cfg) => {
+                    const kind = kindOf(cfg.kind);
+                    const choices: EditInAction[] = kind?.handoff === "helicon"
+                      ? [{ cfg, mode: "raw" }, { cfg, mode: "tiff" }, { cfg, mode: "auto-dng" }]
+                      : [{ cfg }];
+                    const busy = photoCraftBusy && kind?.handoff === "photocraft"
+                      || heliconBusy && kind?.handoff === "helicon";
+                    return choices.map((action) => ({
+                      action,
+                      label: action.mode ? t(`plugins.helicon.mode.${action.mode}`, { name: cfg.name }) : cfg.name,
+                      why: busy ? t("app.status.pluginBusy", { name: cfg.name }) : unfit(action, sources),
+                    }));
+                  }) : null}
+                  onEditIn={(action) => void editIn(action, sources)} onSetUpPlugins={() => setPrefsOpen("plugins")}
                   onClose={() => setFileMenu(null)} />
       );
     })()}
@@ -7619,7 +8457,7 @@ export default function App() {
                          editMode={editMode} onEditMode={chooseEditMode}
                          accel={accel}
                          autoHide={autoHide} onAutoHide={(on) => { setAutoHide(on); storeAutoHide(on); }}
-                         stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); }}
+                         stackPairs={stackPairs} onStackPairs={(on) => { setStackPairs(on); storeStackPairs(on); if (!on) setExpandedStacks(new Set()); }}
                          perfHud={perfHud} onPerfHud={(on) => { setPerfHud(on); perf.enable(on); }}
                          onBenchmark={current ? () => {
                            setPrefsOpen(false);
@@ -7709,7 +8547,24 @@ export default function App() {
         </div>
       </div>
     )}
-    {exporting && <ExportDialog current={currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
+    {tmWarning && (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t("app.tonemapper.warningTitle")} data-tonemapper-warning>
+        <div className="modal neg-warn">
+          <div className="modal-head"><h2>{t("app.tonemapper.warningTitle")}</h2></div>
+          <div className="modal-body">
+            <p>{t("app.tonemapper.warningBody", { current: tmWarning.current, next: tmWarning.next })}</p>
+          </div>
+          <div className="modal-foot">
+            <button className="btn" onClick={() => setTmWarning(null)}>{t("app.action.cancel")}</button>
+            <button className="btn" onClick={() => { const go = tmWarning.onEnableAnyway; setTmWarning(null); go(); }}>
+              {t("app.tonemapper.enableAnyway")}</button>
+            <button className="btn primary" autoFocus onClick={() => { const go = tmWarning.onSwitch; setTmWarning(null); go(); }}>
+              {t("app.tonemapper.switchTo", { name: tmWarning.next })}</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {exporting && <ExportDialog current={inspectedEntry && !isRemote(inspectedEntry) ? inspectedEntry : currentEntry} shown={shown.filter((i) => !isRemote(i))} canUpscale={!!accel?.length}
                                 selected={shown.filter((i) => selection.has(i.imgid) && !isRemote(i))}
                                 onClose={() => setExporting(false)} onKeywordsChanged={reloadKeywords} />}
     </div>

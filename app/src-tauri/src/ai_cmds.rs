@@ -21,7 +21,7 @@ async fn on_engine_thread(state: &AppState, mut req: Value) -> Result<Value, Str
     let tag = tagged.tag();
     req["tag"] = json!(tag);
     let answer = tagged.expect(tag)?;
-    if let Err(e) = state.engine("on_engine_thread").request(req) {
+    if let Err(e) = state.request("on_engine_thread", req) {
         tagged.forget(tag);
         return Err(e);
     }
@@ -400,13 +400,12 @@ pub(crate) async fn ai_model_ensure(app: AppHandle, state: State<'_, AppState>, 
             .await
             .map_err(|e| e.to_string())?;
     }
-    let reply = state.engine("ai_model_ensure").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("ai_model_ensure", json!({ "cmd": "version" }))?;
     let version = reply["version"].as_str().unwrap_or("").to_string();
     tauri::async_runtime::spawn_blocking(move || {
         install_once(&dir, &id, || {
             let unpack = |archive: &Path, into: &Path| {
-                app.state::<AppState>().engine("ai_model_unpack")
-                    .request(json!({ "cmd": "unpack", "archive": archive, "dir": into }))
+                app.state::<AppState>().request("ai_model_unpack", json!({ "cmd": "unpack", "archive": archive, "dir": into }))
                     .map(|_| ())
             };
             install_model(&|v| { let _ = app.emit("ai-model", v); }, &unpack, &DARKTABLE_AI, &dir, &id, &version)
@@ -526,7 +525,7 @@ pub(crate) async fn ai_denoise_preview(state: State<'_, AppState>, u: Number, v:
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn ai_accel(state: State<'_, AppState>) -> Result<Vec<AccelProvider>, String> {
-    let reply = state.engine("ai_accel").request(json!({ "cmd": "ai_accel" }))?;
+    let reply = state.request("ai_accel", json!({ "cmd": "ai_accel" }))?;
     serde_json::from_value::<AiAccelReply>(reply).map(|r| r.providers).map_err(|e| format!("ai_accel: unexpected reply: {e}"))
 }
 

@@ -36,9 +36,10 @@ const snapshot=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const ctx={sensorWidth:128,sensorHeight:96,orientation:0,camera:0};
 let state,edited=false;
 perf.command=async command=>{
-  if(command==='open_image')return {imgid:1,sensor_width:128,sensor_height:96,orientation:0,raw:false,fresh:!edited,edited,look:null};
+  if(command==='open_image')return {imgid:1,sensor_width:128,sensor_height:96,orientation:0,raw:true,ldr:false,fresh:!edited,edited,look:null};
   if(command==='get_params')return {modules:state};
-  if(command==='history'||command==='spots')return [];
+  if(command==='history')return [];
+  if(command==='spots')return {spots:[]};
   throw Error(`Unexpected command ${command}`);
 };
 Session.prototype.loadMasks=async()=>{};
@@ -94,8 +95,8 @@ for(const [id,neutral]of Object.entries(s.neutral)){
   assert.equal(s.snap(id,NaN,neutral),neutral,id);
   assert.equal(s.snap(id,neutral+c.step*.49,neutral),neutral,id);checks+=2;
 }
-// Combined tone mapper and shared tool choices must leave exactly one mapper on.
-for(const tm of [0,1])for(const contrast of MODULE_CHOICES.find(c=>c.id==='contrast').options)
+// Combined tone mapper and shared tool choices must leave at most one mapper on (none for TM_NONE=2).
+for(const tm of [0,1,2])for(const contrast of MODULE_CHOICES.find(c=>c.id==='contrast').options)
 for(const blacks of MODULE_CHOICES.find(c=>c.id==='blacks').options)
 for(const saturation of MODULE_CHOICES.find(c=>c.id==='saturation').options){
   const values={...s.values,tm_mode:tm,mod_contrast:contrast.value,

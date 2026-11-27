@@ -7,7 +7,7 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -31,11 +31,63 @@ pub fn volume(path: &str) -> Volume {
     describe(path, answering(Path::new(path)) && Path::new(path).is_dir())
 }
 
+// the folders configured as network shares (Immich and morfPhoto local
+// roots). LOCK ORDER: a leaf lock, held only to clone or replace the Vec,
+// never together with DRIVES or any other lock, and with no I/O inside
+static SHARE_ROOTS: LazyLock<Mutex<Vec<PathBuf>>> = LazyLock::new(Default::default);
+
+pub fn set_share_roots(roots: Vec<PathBuf>) {
+    let roots = share_roots_kept(roots);
+    *SHARE_ROOTS.lock().unwrap_or_else(|e| e.into_inner()) = roots;
+}
+
+// a file system root (/, C:\) is never a share root: it would put every
+// folder on the computer offline
+fn share_roots_kept(roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    roots.into_iter().filter(|r| r.parent().is_some()).collect()
+}
+
+fn share_roots() -> Vec<PathBuf> { SHARE_ROOTS.lock().unwrap_or_else(|e| e.into_inner()).clone() }
+
+// the roots not on a network mount, by the mount table alone (no server is
+// asked): an unmounted share is an empty local folder
+fn unmounted_roots_with(roots: &[PathBuf], drive: impl Fn(&Path) -> Option<Volume>) -> Vec<PathBuf> {
+    roots.iter().filter(|r| !drive(r).is_some_and(|v| v.network)).cloned().collect()
+}
+
+// the unmounted share roots now: one snapshot of the roots, one table read per
+// root; empty (and no read) when no share is configured
+pub fn unmounted_roots() -> Vec<PathBuf> { unmounted_roots_with(&share_roots(), drive_of) }
+
+// the unmounted root holding the path, when the path is not itself on a
+// network mount (a share mounted below the root)
+fn unmounted_in(roots: &[PathBuf], path: &Path, drive: impl Fn(&Path) -> Option<Volume>) -> Option<PathBuf> {
+    let root = roots.iter().filter(|r| path.starts_with(r)).max_by_key(|r| r.as_os_str().len())?;
+    if drive(path).is_some_and(|v| v.network) || drive(root).is_some_and(|v| v.network) {
+        return None;
+    }
+    Some(root.clone())
+}
+
+pub fn unmounted_share(path: &Path) -> Option<PathBuf> { unmounted_in(&share_roots(), path, drive_of) }
+
+// whether the path is under one of these (already computed) unmounted roots
+pub fn under_any(roots: &[PathBuf], path: &Path) -> bool { roots.iter().any(|r| path.starts_with(r)) }
+
+// the drive of an unmounted share root: the share, offline, never seen
+fn unmounted_volume(root: &Path) -> Volume {
+    let mount = root.to_string_lossy().into_owned();
+    Volume { path: String::new(), name: last_component(&mount), mount, host: None, network: true, online: false }
+}
+
 // the drive of a folder the caller has just found answering and there, so
 // it is not asked again (volume() would stat it twice more)
 pub fn volume_online(path: &str) -> Volume { describe(path, true) }
 
 fn describe(path: &str, online: bool) -> Volume {
+    if let Some(root) = unmounted_share(Path::new(path)) {
+        return Volume { path: path.to_string(), ..unmounted_volume(&root) };
+    }
     let found = if online { probe(Path::new(path)) } else { drive_of(Path::new(path)) };
     let mut v = found.unwrap_or_else(|| Volume {
         path: String::new(),
@@ -51,7 +103,12 @@ fn describe(path: &str, online: bool) -> Volume {
 }
 
 // Mount-table-only identity for background scans: never asks a server.
-pub fn mount_identity(path: &Path) -> Option<String> { drive_of(path).map(|v|v.mount) }
+pub fn mount_identity(path: &Path) -> Option<String> {
+    if let Some(root) = unmounted_share(path) {
+        return Some(root.to_string_lossy().into_owned());
+    }
+    drive_of(path).map(|v|v.mount)
+}
 
 // Snapshot mount points once for a recursive walk. Individual entries may
 // themselves be file mounts, which cannot be detected from the parent's device.
@@ -71,6 +128,51 @@ pub(crate) fn mount_points() -> std::collections::HashSet<std::path::PathBuf> {
         // Junctions and other reparse points are found by symlink_metadata.
         std::collections::HashSet::new()
     }
+}
+
+// the network mount points, from the mount table alone: no stat, no server
+pub fn network_mounts() -> Vec<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        network_mounts_in(&std::fs::read_to_string("/proc/self/mounts").unwrap_or_default())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        mounts().into_iter()
+            .filter(|(_, _, fstype, local)| !local || matches!(fstype.as_str(), "smbfs" | "afpfs" | "nfs" | "webdav"))
+            .map(|(_, at, _, _)| PathBuf::from(at)).collect()
+    }
+    #[cfg(windows)]
+    {
+        // mapped drive letters; the drive type asks no server. UNC paths have
+        // no mount point and are matched by `is_unc`
+        use windows::core::HSTRING;
+        use windows::Win32::Storage::FileSystem::GetDriveTypeW;
+        const DRIVE_REMOTE: u32 = 4;
+        ('A'..='Z').map(|c| format!("{c}:\\"))
+            .filter(|root| unsafe { GetDriveTypeW(&HSTRING::from(root.as_str())) } == DRIVE_REMOTE)
+            .map(PathBuf::from).collect()
+    }
+}
+
+// a UNC path (not the \\?\ form of a local drive): always a share
+#[cfg(windows)]
+pub fn is_unc(path: &Path) -> bool {
+    let p = path.to_string_lossy();
+    p.starts_with(r"\\?\UNC\") || (p.starts_with(r"\\") && !p.starts_with(r"\\?\"))
+}
+#[cfg(not(windows))]
+pub fn is_unc(_path: &Path) -> bool { false }
+
+#[cfg(any(target_os = "linux", test))]
+fn network_mounts_in(table: &str) -> Vec<PathBuf> {
+    table.lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            let (_, at, fs) = (f.next()?, f.next()?, f.next()?);
+            is_network_fs(fs).then(|| PathBuf::from(unescape(at)))
+        })
+        .collect()
 }
 
 // whether the path is on a network share, from the mount table alone
@@ -96,6 +198,9 @@ static DRIVES: LazyLock<Mutex<HashMap<String, Drive>>> = LazyLock::new(Default::
 // whether the path can be touched without waiting for ever: its drive has
 // answered a stat within DRIVE_WAIT
 pub fn answering(path: &Path) -> bool {
+    if unmounted_share(path).is_some() {
+        return false;
+    }
     let drive = drive_of(path).map(|v| v.mount).unwrap_or_default();
     {
         let mut drives = DRIVES.lock().unwrap();
@@ -131,6 +236,18 @@ pub fn answering(path: &Path) -> bool {
     false
 }
 
+// Whether the path is on a drive known to be offline, from state already
+// learned and the mount table alone: an unmounted share, or a drive whose last
+// stat is still stuck. Never touches the drive, so a listing can ask it before
+// any check has answered. LOCK ORDER: only DRIVES, held for the lookup.
+pub fn cached_offline(path: &Path) -> bool {
+    if unmounted_share(path).is_some() {
+        return true;
+    }
+    let drive = drive_of(path).map(|v| v.mount).unwrap_or_default();
+    DRIVES.lock().unwrap_or_else(|e| e.into_inner()).get(&drive).is_some_and(|d| d.stuck)
+}
+
 // the server in a mount's source: //user@nas.local/Pictures, nas:/export,
 // \\nas\share
 fn host_of(source: &str) -> Option<String> {
@@ -147,7 +264,6 @@ fn host_of(source: &str) -> Option<String> {
     (!host.is_empty()).then_some(host)
 }
 
-#[cfg(not(windows))]
 fn last_component(mount: &str) -> String {
     Path::new(mount).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| mount.to_string())
 }
@@ -341,6 +457,12 @@ nas:/export/photos /mnt/My\\040Photos nfs4 rw 0 0
 ";
 
     #[test]
+    fn network_mounts_from_table() {
+        let table = "/dev/sda1 / ext4 rw 0 0\nnas:/pics /mnt/nas\\040pics nfs4 rw 0 0\n//h/s /mnt/s cifs rw 0 0\n";
+        assert_eq!(network_mounts_in(table), vec![PathBuf::from("/mnt/nas pics"), PathBuf::from("/mnt/s")]);
+    }
+
+    #[test]
     fn longest_mount_wins() {
         let v = from_table(TABLE, Path::new("/mnt/Pictures/2026/05")).unwrap();
         assert_eq!(v.mount, "/mnt/Pictures");
@@ -387,6 +509,43 @@ nas:/export/photos /mnt/My\\040Photos nfs4 rw 0 0
         assert!(start.elapsed() < Duration::from_millis(100));
         DRIVES.lock().unwrap().remove(&drive);
         assert!(answering(&dir));
+    }
+
+    const ROOTS_TABLE: &str = "\
+/dev/nvme0n1p2 / ext4 rw 0 0
+//nas.local/Pictures /mnt/nas cifs rw 0 0
+";
+
+    fn at(table: &'static str) -> impl Fn(&Path) -> Option<Volume> { move |p| from_table(table, p) }
+
+    #[test]
+    fn unmounted_share_roots() {
+        let nas = vec![PathBuf::from("/mnt/nas")];
+        // mounted: a path under the root on the cifs mount
+        assert_eq!(unmounted_in(&nas, Path::new("/mnt/nas/2026/a.jpg"), at(ROOTS_TABLE)), None);
+        assert!(unmounted_roots_with(&nas, at(ROOTS_TABLE)).is_empty());
+        // only "/" holds it: unmounted
+        let bare = "/dev/nvme0n1p2 / ext4 rw 0 0\n";
+        assert_eq!(unmounted_in(&nas, Path::new("/mnt/nas/2026/a.jpg"), at(bare)), Some(PathBuf::from("/mnt/nas")));
+        assert_eq!(unmounted_in(&nas, Path::new("/mnt/nas"), at(bare)), Some(PathBuf::from("/mnt/nas")));
+        assert_eq!(unmounted_roots_with(&nas, at(bare)), nas);
+        // outside any root, and a sibling that only shares the prefix
+        assert_eq!(unmounted_in(&nas, Path::new("/home/me/a.jpg"), at(bare)), None);
+        assert_eq!(unmounted_in(&nas, Path::new("/mnt/nas2/a.jpg"), at(bare)), None);
+        assert!(under_any(&nas, Path::new("/mnt/nas/a")) && !under_any(&nas, Path::new("/mnt/nas2/a")));
+    }
+
+    #[test]
+    fn a_file_system_root_is_never_a_share_root() {
+        let kept = share_roots_kept(vec![PathBuf::from("/"), PathBuf::from("/mnt/nas")]);
+        assert_eq!(kept, vec![PathBuf::from("/mnt/nas")]);
+    }
+
+    #[test]
+    fn unmounted_share_is_an_offline_network_drive() {
+        let v = Volume { path: "/mnt/nas/x".into(), ..unmounted_volume(Path::new("/mnt/nas")) };
+        assert_eq!((v.mount.as_str(), v.name.as_str()), ("/mnt/nas", "nas"));
+        assert!(v.network && !v.online);
     }
 
     #[test]

@@ -70,15 +70,18 @@ starts with default settings. To start with defaults on purpose, see
   **Darktable Grey** (the `darktable-elegant-grey` palette),
   **Classic Grey Balanced**, **Soft Grey** and **Light**. Imported themes
   appear after the built-in themes.
-  The selected name and **Import theme…** action appear below the swatches;
-  **Remove theme** appears beside Import for custom themes. The
+  Below the swatches, the selected theme name sits alongside aligned icon
+  buttons for **Import theme…**, **Export**, and **Delete**. The
   interface changes immediately, including the cards around Texture, Clarity
   and Advanced modules, and remembers your choice. Editor dropdowns such as
   Profile and White Balance use the theme’s inset color. **Import theme…**
   loads a JSON theme and selects it after it is saved. An imported theme with
-  the same name as an existing one is given a numbered name. **Remove theme**
-  appears for the selected imported theme; removing it returns the interface
-  to Dark. Built-in themes cannot be removed.
+  the same name as an existing one is given a numbered name. **Export**
+  saves the active theme (built-in or custom) as a JSON file, so you can back
+  up a theme or use any built-in theme as a starting point. **Delete** removes
+  the selected imported theme and returns the interface to Dark; for built-in
+  themes, the delete button remains visible but disabled, as built-in themes
+  cannot be deleted.
 
   A theme file is UTF-8 JSON no larger than 64 KiB. It must contain exactly
   these top-level fields: `version` (the number `1`), `name` (1–80 printable
@@ -162,8 +165,9 @@ starts with default settings. To start with defaults on purpose, see
 **Library**
 
 - **Stack RAW+JPEG pairs as one photo**: a raw and the JPEG, HEIF or OM
-  System .ORI of the same name show as one, and a rating, reject or delete
-  takes them all.
+  System .ORI of the same name show as one. Stacked thumbnails can be
+  expanded and collapsed from their format badge in Grid view or the filmstrip
+  to inspect or edit either file.
 
 **Smart search (CLIP)** (below Library)
 
@@ -173,14 +177,23 @@ The optional CLIP model that lets Find search by what is in a photo.
   files from Hugging Face only when you press **Download or repair**. Valid local
   files are checked and reused. **Cancel** stops further download work after the
   current network read returns; a stalled read times out after a minute.
-  Until the model is downloaded (and without an Immich connection), Find searches
-  file names only and **Show more like this** is not offered; both appear when the
-  download finishes or Preferences is closed.
+  Until the model is downloaded (and without morfPhoto CLIP or an Immich
+  connection), Find searches file names only and **Show more like this** is not
+  offered; both appear when the download finishes or Preferences is closed.
 - **Model check** tests both CPU inference towers using a test prompt and a
   synthetic image, with the time including model loading. It requires verified
   model files and resumed background work. It does not upload photos or test
   the relevance of search results. Model downloads have their own Cancel button
   and are independent of Pause.
+
+Per-folder CLIP precedence is **morfPhoto**, then **Immich**, then **local CLIP**.
+Folders already served by morfPhoto or Immich CLIP skip local CLIP background
+analysis (including edited photos and virtual copies). Immich folders fall
+through to local CLIP automatically if the Immich server stops answering.
+While morfPhoto is set up, Immage never analyzes photos in the morfPhoto folder
+or on any other network drive itself, even when the morfPhoto server is slow or
+not answering. Their Smart search comes from the morfPhoto server, and photos
+on drives in your computer are analyzed as before.
 
 While CLIP analyses your photos in the background, Immage's performance is
 impacted because the analysis uses the CPU. Pause background work under
@@ -241,9 +254,33 @@ Immage keeps to make it so.
 
 **GPU**
 
-- **GPU**: what AI upscaling at export runs on. **Automatic** picks the
-  first one found. If none is found, AI upscaling isn't offered.
-- **Device**: which graphics card, when there is more than one.
+- **Edit on the GPU**: renders the photo on the graphics card while you
+  edit. Exports and the whole-photo render behind the viewer use the
+  graphics card either way; turned off, edits stay on the CPU. A change
+  applies once Immage restarts. The line below the name says which graphics
+  card photo processing is using, or that none was found and the CPU does
+  the work. If the graphics card fails repeatedly, darktable stops using it
+  until Immage restarts, and the line says so.
+- **AI upscaling**: the graphics card AI upscaling at export runs on.
+  **Automatic** picks the first one found. When there is none it can use,
+  AI upscaling isn't offered. This list is separate from **Edit on the
+  GPU**: AI has its own GPU support, and current Linux builds run AI on the
+  CPU only, so the list is empty there even when edits and exports use the
+  graphics card.
+- **Device**: which graphics card AI upscaling uses, when there is more than
+  one.
+
+Photo processing uses the graphics card through OpenCL, from the drivers
+installed on your computer. On Linux, if **Edit on the GPU** reports no
+graphics card, check that the OpenCL loader and your card's OpenCL driver
+are installed. On Ubuntu and Linux Mint with an NVIDIA card these are the
+`ocl-icd-libopencl1` package and the `libnvidia-compute` package matching
+your driver; `clinfo -l` should list the card. **GPU check**, below, also
+names the graphics card it ran on.
+
+On Linux with an AMD graphics card, Immage uses AMD's ROCm OpenCL driver
+whenever it is installed, and leaves Mesa's RustiCL driver off so the card is
+not claimed twice. Without ROCm, RustiCL is used when it is installed.
 
 
 **Interface rendering** (Linux)
@@ -351,7 +388,7 @@ performance; results still vary by system.
   size and editing settings. The reports record the selected path,
   environment, WebKitGTK version and WebGL renderer.
 
-**Editing**
+**Previews**
 
 - **Performance profile**: how much the photo gives up for speed while you
   edit, chosen by the kind of computer. Export is never affected. Each
@@ -457,6 +494,11 @@ empties one.
 
 - **Library thumbnails**: so a folder seen before opens at once. 1 GB by
   default.
+- **Library thumbnails** also shows, as a second segment on its bar and a
+  caption below the rows, how much of it is previews of edited photos. Those
+  are kept longest when the cache is trimmed, up to half the limit; beyond that
+  they go with the other thumbnails, oldest first. Raise the limit to keep more.
+  **Clear** empties them too.
 - **Immich thumbnails**: search results scrolled through. 512 MB by
   default.
 - **Immich originals**: photos opened from Immich. One you have edited is
@@ -487,16 +529,19 @@ photos analysed and the total analyses. A photo counts once however many
 analyses it has (older cache entries may include original analyses, which
 Find no longer uses). Directory
 status appears below in a fixed-height
-scrollable box, with one row per path and a right-aligned green (connected) or
-red (offline) dot. Hover a truncated path to see it in full; hover its dot for
-connection details or an error. The list can also be focused and scrolled with
-the keyboard.
+scrollable box, with one row per path, a badge showing the active CLIP provider
+(**morfPhoto**, **Immich**, or **Local**), and a right-aligned green (connected)
+or red (offline) dot. Hover a truncated path to see it in full; hover its badge
+or dot for CLIP provider or connection details. The list can also be focused
+and scrolled with the keyboard.
 
 After downloading the optional CLIP package, background CPU analysis fills
-an embedding of each photo as edited. Reconciled paths receive bounded metadata imports
-before analysis, including folders you have not browsed. Pause stops new jobs;
-active jobs can finish. Clear cancels old jobs and removes their cached output.
-Rebuild checks your saved folders again before backfilling metadata and analysis.
+an embedding of each photo as edited in folders using local CLIP (folders served
+by morfPhoto or Immich CLIP skip local CLIP analysis). Reconciled paths receive
+bounded metadata imports before analysis, including folders you have not browsed.
+Pause stops new jobs; active jobs can finish. Clear cancels old jobs and removes
+their cached output. Rebuild checks your saved folders again before backfilling
+metadata and analysis.
 
 **Measuring**
 
@@ -553,9 +598,10 @@ photo's starting point: they don't mark it as edited.
 
 - **Profile**: the color look a raw starts with: one of AgX's looks
   (**AgX Default**, the default) or one of color balance rgb's
-  (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs
-  keep the camera's look. It takes precedence over a profile saved in the
-  **Apply preset** preset.
+  (**Standard**, **Natural Skin**, **Vibrant Colors**, **Legacy**). JPEGs,
+  PNGs, 8/16-bit TIFFs and other already tone-mapped formats keep the camera's
+  look with no tone mapper enabled. It takes precedence over a profile saved
+  in the **Apply preset** preset.
 - **Lens correction method**: where a new raw's lens corrections take their
   data from: the **Lensfun database** (the default) or the **Embedded
   metadata** in the raw file. It is set after the preset, so it wins over a

@@ -54,7 +54,7 @@ pub(crate) async fn positive_export(state: State<'_, AppState>, plugins: State<'
     };
     let t = state.tagged.clone();
     let held = t.tag();
-    if let Err(e) = state.engine("positive_export").request(json!({
+    if let Err(e) = state.request("positive_export", json!({
         "cmd": "export_hold", "job": held, "imgids": [imgid],
     })) {
         let _ = std::fs::remove_file(&target);
@@ -132,7 +132,7 @@ pub(crate) async fn hdr_merge(app: AppHandle, state: State<'_, AppState>, job: u
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn hdr_can_align(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine("hdr_can_align").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("hdr_can_align", json!({ "cmd": "version" }))?;
     Ok(reply["hdr_align"].as_bool().unwrap_or(false))
 }
 
@@ -182,7 +182,7 @@ pub(crate) async fn pano_preview(app: AppHandle, state: State<'_, AppState>, job
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn pano_can_merge(state: State<'_, AppState>) -> Result<bool, String> {
-    let reply = state.engine("pano_can_merge").request(json!({ "cmd": "version" }))?;
+    let reply = state.request("pano_can_merge", json!({ "cmd": "version" }))?;
     Ok(reply["pano"].as_bool().unwrap_or(false))
 }
 
@@ -201,6 +201,12 @@ fn export_dir(dir: &str, subfolder: Option<&str>) -> PathBuf {
         d.push(sub.trim());
     }
     d
+}
+
+// the folder one image goes into: the export's, or a subfolder of it from
+// the subfolder pattern
+fn item_dir(dir: &Path, item: &ExportItem) -> Result<PathBuf, String> {
+    Ok(dir.join(crate::move_cmds::subfolder(item.subdir.as_deref())?))
 }
 
 fn export_stem(item: &ExportItem) -> String {
@@ -224,22 +230,37 @@ pub(crate) async fn export_existing(items: Vec<ExportItem>, dir: String, subfold
         }
         let ext = extension(&format);
         items.iter().map(|item| {
+            // a subfolder refused here is refused again by the export, which reports it
+            let dir = item_dir(&dir, item).unwrap_or_else(|_| dir.clone());
             let path = dir.join(format!("{}.{ext}", export_stem(item)));
             ExistingFile { exists: path.exists(), path: path.to_string_lossy().into_owned() }
         }).collect()
     }).await.unwrap_or_default()
 }
 
-// the target for one image, or None when an existing file is to be left alone
-fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str) -> Option<PathBuf> {
+// a target's key among this export's, without case: macOS and Windows names ignore it
+fn target_key(p: &Path) -> String {
+    p.to_string_lossy().to_lowercase()
+}
+
+// the target for one image, or None when an existing file is to be left alone.
+// `taken` holds the targets this export has already given out: overwrite and
+// skip are for files that were there before, so a second photo with the same
+// name (a raw and its JPEG, a virtual copy) gets a number instead of
+// replacing the first or being dropped. `asked` is a choice the dialog asked
+// the user for that photo, which stands
+fn export_target(dir: &Path, stem: &str, ext: &str, conflict: &str, asked: bool,
+                 taken: &std::collections::HashSet<String>) -> Option<PathBuf> {
     let first = dir.join(format!("{stem}.{ext}"));
-    if !first.exists() || conflict == "overwrite" {
+    let repeat = !asked && taken.contains(&target_key(&first));
+    if !repeat && (!first.exists() || conflict == "overwrite") {
         return Some(first);
     }
-    if conflict == "skip" {
+    if !repeat && conflict == "skip" {
         return None;
     }
-    (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}"))).find(|p| !p.exists())
+    (1..).map(|n| dir.join(format!("{stem}-{n}.{ext}")))
+        .find(|p| !p.exists() && !taken.contains(&target_key(p)))
 }
 
 // export images one at a time on the engine's export thread (main.c,
@@ -286,12 +307,13 @@ pub(crate) async fn export_images(
     let tagged = state.tagged.clone();
     let held = tagged.tag();
     let imgids: Vec<i64> = items.iter().map(|i| i.imgid).collect();
-    state.engine("export_images").request(json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
+    state.request("export_images", json!({ "cmd": "export_hold", "job": held, "imgids": imgids }))?;
     let cancel = Arc::new(AtomicBool::new(false));
     state.export_cancels.lock().unwrap().insert(job, cancel.clone());
     // removed on every exit, including an early return, a panic or a dropped future
     let _registered = CancelEntry { map: &state.export_cancels, job };
     let mut cancelled = false;
+    let mut taken = std::collections::HashSet::<String>::new();
     for (n, item) in items.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             cancelled = true;
@@ -302,9 +324,24 @@ pub(crate) async fn export_images(
             (None, Some(c)) => c,
             _ => conflict,
         };
-        match export_target(&dir, &stem, ext, conflict) {
-            None => skipped.push(path_text(&dir.join(format!("{stem}.{ext}")))),
+        // to Immich every image renders into the one cache folder
+        let item_dir = match &immich {
+            Some(_) => Ok(dir.clone()),
+            None => item_dir(&dir, item),
+        };
+        let item_dir = match item_dir {
+            Ok(d) => d,
+            Err(error) => {
+                failed.push(ExportFailure { file: path_text(&dir.join(format!("{stem}.{ext}"))), error });
+                let _ = app.emit("export-progress", json!({ "job": job, "done": n + 1, "total": total }));
+                continue;
+            }
+        };
+        let asked = immich.is_none() && item.conflict.is_some();
+        match export_target(&item_dir, &stem, ext, conflict, asked, &taken) {
+            None => skipped.push(path_text(&item_dir.join(format!("{stem}.{ext}")))),
             Some(target) => {
+                taken.insert(target_key(&target));
                 let mut req = json!({
                     "cmd": "export", "job": held, "imgid": item.imgid, "out": target, "format": options.format,
                     "color_space": options.color_space,
@@ -328,9 +365,13 @@ pub(crate) async fn export_images(
                     .await.map_err(|e| e.to_string()).and_then(|r| r);
                 if result.is_ok() && tag_original {
                     let req = json!({ "cmd": "keywords_set", "imgid": item.imgid, "add": keywords, "remove": [] });
-                    if let Err(e) = state.engine("export_images").request(req) {
-                        failed.push(ExportFailure { file: path_text(&target),
-                            error: format!("exported, but the keywords were not added to the original: {e}") });
+                    match state.request("export_images", req) {
+                        Err(e) => failed.push(ExportFailure { file: path_text(&target),
+                            error: format!("exported, but the keywords were not added to the original: {e}") }),
+                        Ok(reply) => if let Ok(reply) = serde_json::from_value::<crate::typed_library::KeywordsReply>(reply) {
+                            crate::mirror_notes::fields(&state, state.tagged.known_photo(item.imgid),
+                                crate::mirror_notes::keywords_fields(reply.keywords));
+                        },
                     }
                 }
                 match (result, &immich) {
@@ -513,8 +554,8 @@ pub(crate) async fn export_preview(
         "px_long_edge": options.long_edge.unwrap_or(0), "draft": true, "transient": true,
     });
     if let Some(f) = &item.frame { req["frame"] = f.clone(); }
-    let mut engine = state.engine("export_preview");
-    let result = engine.request(req).and_then(|_| {
+    // read while the engine is still ours, so no other preview overwrites it
+    let result = state.request_then("export_preview", req, |_| {
         frame_output::FrameOutput::read(&out).map(|b| bindings::Frame(Response::new(b))).map_err(|e| format!("preview: {e}"))
     });
     state._frame_output.remove(&out);
@@ -608,6 +649,57 @@ mod tests {
         assert_eq!(extension("jxl"), "jxl");
         assert_eq!(extension("jpeg"), "jpg");
         assert_eq!(extension("tiff"), "tif");
+    }
+
+    #[test]
+    fn an_image_subfolder_stays_inside_the_export_folder() {
+        let dir = Path::new("/exports");
+        let item = |sub: Option<&str>| ExportItem { subdir: sub.map(String::from), ..Default::default() };
+        assert_eq!(item_dir(dir, &item(None)).unwrap(), dir);
+        assert_eq!(item_dir(dir, &item(Some("2026/11/18"))).unwrap(), dir.join("2026").join("11").join("18"));
+        assert!(item_dir(dir, &item(Some("../elsewhere"))).is_err());
+        assert!(item_dir(dir, &item(Some("/etc"))).is_err());
+    }
+
+    #[test]
+    fn export_existing_looks_in_each_photos_subfolder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::create_dir_all(dir.join("2026/11/18")).unwrap();
+        std::fs::write(dir.join("2026/11/18/a.jpg"), b"x").unwrap();
+        let item = |sub: &str| ExportItem { stem: "a".into(), subdir: Some(sub.into()), ..Default::default() };
+        let files = tauri::async_runtime::block_on(export_existing(
+            vec![item("2026/11/18"), item("2026/11/19")], dir.to_string_lossy().into_owned(), None, "jpeg".into()));
+        assert_eq!(files.len(), 2);
+        assert!(Path::new(&files[0].path).ends_with("2026/11/18/a.jpg") && files[0].exists);
+        assert!(Path::new(&files[1].path).ends_with("2026/11/19/a.jpg") && !files[1].exists);
+    }
+
+    #[test]
+    fn photos_named_alike_in_one_export_all_get_a_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("old.jpg"), b"x").unwrap();
+        for conflict in ["overwrite", "skip", "unique"] {
+            let mut taken = std::collections::HashSet::new();
+            let mut got = vec![];
+            // a raw and its JPEG, and a virtual copy: three photos, one name
+            for _ in 0..3 {
+                let t = export_target(dir, "IMG_1", "jpg", conflict, false, &taken).unwrap();
+                taken.insert(target_key(&t));
+                got.push(t.file_name().unwrap().to_string_lossy().into_owned());
+            }
+            assert_eq!(got, ["IMG_1.jpg", "IMG_1-1.jpg", "IMG_1-2.jpg"], "{conflict}");
+        }
+        // a file there before the export still follows the choice
+        let none = std::collections::HashSet::new();
+        assert_eq!(export_target(dir, "old", "jpg", "overwrite", false, &none).unwrap(), dir.join("old.jpg"));
+        assert!(export_target(dir, "old", "jpg", "skip", false, &none).is_none());
+        // and an answer the dialog asked for stands, even for a repeat
+        let taken = std::collections::HashSet::from([target_key(&dir.join("IMG_1.jpg"))]);
+        assert_eq!(export_target(dir, "IMG_1", "jpg", "overwrite", true, &taken).unwrap(), dir.join("IMG_1.jpg"));
+        // names differing only in case are one name
+        assert_eq!(export_target(dir, "img_1", "jpg", "overwrite", false, &taken).unwrap(), dir.join("img_1-1.jpg"));
     }
 
     #[test]

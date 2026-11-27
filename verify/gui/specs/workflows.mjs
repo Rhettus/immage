@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from 'node:assert/strict';
 import { click, reveal, inspect, openTool } from '../support/controls.mjs';
-import { panel, expandSections, textButton, choose, Blocked, openMaskGroup, openStep } from '../support/scenario.mjs';
+import { resetAll, panel, expandSections, textButton, choose, Blocked, openMaskGroup, openStep } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
 import { settledPhoto, settledReset } from './smoke.mjs';
 
@@ -23,7 +23,7 @@ export async function nativeReset(t) {
   const r = await reveal(t, '[data-control-id="contrast"] input[type=range]');
   await t.driver.drag({ x:r.x, y:r.y }, { x:r.x + r.bounds.width * .1, y:r.y });
   const edited = await settledPhoto(t); await t.evidence('native-edited');
-  await click(t, 'button[aria-label="reset all"]');
+  await resetAll(t);
   await settledPhoto(t); assert.equal(await moduleChoice(),Number(alternative.value),'Reset All preserves selected backend');
   const log=await t.engineLog();assert(/"cmd":"module_state"[^\n]*"reset":true/.test(log),'Reset All requests native parameter reset');
   await t.evidence('native-reset');
@@ -43,7 +43,7 @@ export async function curves(t) {
   // Reset All clears the New Photos preset by design: reset first, so the
   // closing Reset All can reproduce the baseline (as history does)
   const opened = await settledPhoto(t);
-  await click(t, 'button[aria-label="reset all"]');
+  await resetAll(t);
   try { await settledPhoto(t, q => q.hash !== opened.hash); } catch {}
   const baseline = await settledPhoto(t);
   const p = await panel(t, 'tonecurve');
@@ -98,7 +98,7 @@ export async function curves(t) {
   await t.driver.drag(s0, { x: s0.x, y: g.bounds.y + g.bounds.height * 1.4 }); await count(CURVE_MAX_NODES - 1);
   t.measure({ name:'max-points', photoHash:full.hash, limit:CURVE_MAX_NODES });
 
-  await click(t, 'button[aria-label="reset all"]'); await count(2);
+  await resetAll(t); await count(2);
   await settledReset(t, baseline, full, 'reset-all');
   await textButton(t, `${p} .tabs`, 'Parametric'); await expandSections(t,p);
   await t.evidence('parametric');

@@ -31,8 +31,8 @@ is no process version to choose: the tone mapper, AgX, plays that part.
 **Panels:** click a panel's title to open it. With **Focus mode** on (the
 default), opening one closes the others; ⌥-click opens one alongside.
 Opening a photo shows Adjustments with only Basic open. The buttons in the
-panel's head collapse or expand them all, and **Reset all** takes the photo
-back to its starting point (⌘Z undoes it).
+panel's head collapse or expand them all. **Reset all** asks before restoring
+the photo’s default adjustments (⌘Z undoes it). See [Reset all](history-and-sync.md#reset-all).
 
 **Preset rows:** some sections have a row of swatches or buttons, such as
 the B&W filters or the grain amounts. Hover over one to preview it on the
@@ -49,7 +49,14 @@ the tone curve: **AgX Default**, **Unmodified Primaries**, **Blender**,
 values. The second group is darktable's color balance rgb: **Standard**,
 **Natural Skin**, **Vibrant Colors** and **Legacy**, which add
 colorfulness on top of AgX Default. New raws get the profile set in
-Preferences (AgX Default unless you change it).
+Preferences (AgX Default unless you change it). Already tone-mapped photos
+such as JPEGs, PNGs and 8/16-bit TIFFs do not enable AgX or any other tone
+mapper: their Profile menu offers **None** and the Color Balance RGB looks
+only.
+
+In Simple mode, at most one tone mapper is active on a raw photo. Choosing
+an AgX profile on a raw that uses Sigmoid, Filmic rgb or Base curve switches
+to AgX and turns the previous tone mapper off.
 
 Choose **Load AgX Preset** below the spacer at the bottom of Profile to bring in your own AgX
 presets. Open a photo first. The dialog lists user presets from darktable's
@@ -101,6 +108,9 @@ for **B&W Mix**.
 - **Auto** judges the light by the brightest unclipped parts of the photo.
   When the camera set its own white balance, Auto trusts it and only nudges
   it, so a sunset or a field of green keeps its color.
+- To run Auto on several photos, choose **Auto on Paste** in
+  [Copy Settings](history-and-sync.md#copying-settings-to-other-photos), select
+  the destinations, and paste.
 
 **Tone**
 
@@ -117,9 +127,15 @@ for **B&W Mix**.
   AgX off.
 - **Exposure**: -5 to +5 stops.
 - **Contrast**, **Highlights**, **Shadows**, **Whites**, **Blacks**: -100 to
-  +100. Whites moves the top of the tone mapper's curve, and under AgX
-  also brightens or darkens the brightest tones ahead of it; Blacks moves
-  the black point, and works the same at any Exposure.
+  +100. On raw photos with a tone mapper, Whites moves the top of the tone
+  mapper's curve (and under AgX also brightens or darkens the brightest tones
+  ahead of it), and Blacks moves the black point, working the same at any
+  Exposure. On JPEGs, PNGs, 8/16-bit TIFFs and other photos without a tone
+  mapper, Basic remaps these controls to the same non-tone-mapper modules used
+  by masks: Contrast and Saturation use **color balance rgb** (with contrast
+  equalizer and saturation curve still available), Whites uses **color balance
+  rgb** highlights brilliance, and Blacks uses **exposure**. No Simple slider
+  enables a tone mapper on an already tone-mapped photo.
 - **Highlight Brilliance** (AgX only, among Basic's More controls),
   0% to 200%, sets how much of that brightening Whites adds; 100% is the
   usual amount.

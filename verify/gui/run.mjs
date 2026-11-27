@@ -4,12 +4,12 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
-import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp, rm, link } from 'node:fs/promises';
+import { constants, rmSync, readFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { dirname, resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AppDriver, until } from './support/webdriver.mjs';
+import { AppDriver, until, pause } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
 import { pathFree, visiblePath } from './support/privacy.mjs';
 import { availableMemory } from './support/memory.mjs';
@@ -61,9 +61,96 @@ const journal = new Journal(out);
 journal.checkpoint(report);
 let monitor, monitoring = false, resourceFailure, driverStart;
 let driver, processDriver, lock, logHandle, acquired = false;
+// morfphoto-mirror only: a scratch tree on the 9p host share, and a private
+// session bus and keychain so the API key Save never reaches the user's own.
+// Everything here is this run's own: the daemons are its children (each in its
+// own process group) and only the one scratch tree and bus folder are removed.
+const SCRATCH_PREFIX = '/mnt/mac/.immage-gui-test-';
+const BUS_PREFIX = join(tmpdir(), 'immage-gui-bus-');
+const mirrorRun = { scratch: null, busDir: null, address: null, children: [] };
+// a path is removed only when it is exactly a run's own folder under the prefix
+const removable = (path, prefix) => typeof path === 'string' && path.startsWith(prefix) && path.length > prefix.length
+  && !path.slice(prefix.length).includes('/') && !path.includes('..');
+async function cleanupMirror() {
+  for (const child of mirrorRun.children.splice(0)) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} }
+  for (const [key, prefix] of [['scratch', SCRATCH_PREFIX], ['busDir', BUS_PREFIX]]) {
+    const path = mirrorRun[key];
+    if (!path) continue;
+    mirrorRun[key] = null;
+    if (!removable(path, prefix)) { report.errors.push(`Refused to remove ${path}: not a folder this run made`); continue; }
+    await pause(1500); // the app and its engine may still be flushing
+    try {
+      await rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+      report.mirrorCleanup = { ...report.mirrorCleanup, [key]: { path, removed: !(await stat(path).then(() => true, () => false)) } };
+    } catch (e) { report.errors.push(`Could not remove ${path}: ${e.message}`); }
+  }
+  journal.checkpoint(report);
+}
+// last resort if the runner dies without reaching its cleanup
+process.once('exit', () => {
+  for (const child of mirrorRun.children) { try { process.kill(-child.pid, 'SIGTERM'); } catch {} }
+  for (const [key, prefix] of [['scratch', SCRATCH_PREFIX], ['busDir', BUS_PREFIX]])
+    if (removable(mirrorRun[key], prefix)) { try { rmSync(mirrorRun[key], { recursive: true, force: true }); } catch {} }
+});
+function requireHostShare() {
+  const mounts = readFileSync('/proc/self/mounts', 'utf8').split('\n').map(l => l.split(' '));
+  if (!mounts.some(m => m[1] === '/mnt/mac' && m[2] === '9p'))
+    throw new Blocked('morfphoto-mirror needs /mnt/mac to be a 9p mount (the host share used as the network mount)');
+}
+async function startPrivateKeychain(profile, out) {
+  const { open } = await import('node:fs/promises');
+  mirrorRun.busDir = await mkdtemp(BUS_PREFIX);
+  await chmod(mirrorRun.busDir, 0o700);
+  const address = `unix:path=${join(mirrorRun.busDir, 'bus')}`;
+  // XDG_RUNTIME_DIR here is the bus folder for the two daemons only; the app keeps its own
+  const env = { ...process.env, XDG_RUNTIME_DIR: mirrorRun.busDir, XDG_DATA_HOME: join(profile, 'data'),
+    DBUS_SESSION_BUS_ADDRESS: address };
+  // a fresh keyring has no default collection, and creating one asks for a
+  // password through a prompter. An unencrypted (empty password) default
+  // keyring written first opens unlocked without any prompt.
+  const keyrings = join(profile, 'data', 'keyrings');
+  await mkdir(keyrings, { recursive: true, mode: 0o700 });
+  await writeFile(join(keyrings, 'default'), 'immage_gui');
+  await writeFile(join(keyrings, 'immage_gui.keyring'),
+    '[keyring]\ndisplay-name=immage-gui\nctime=0\nmtime=0\nlock-on-idle=false\nlock-after=false\n', { mode: 0o600 });
+  const busLog = await open(join(out, 'private-dbus.log'), 'w'), keyLog = await open(join(out, 'private-keyring.log'), 'w');
+  const bus = spawn('dbus-daemon', ['--session', '--nofork', '--print-address=1', `--address=${address}`],
+    { env, detached: true, stdio: ['ignore', 'pipe', busLog.fd] });
+  mirrorRun.children.push(bus);
+  const failed = new Promise((_, no) => { bus.once('error', e => no(new Blocked(`private session bus did not start: ${e.message}`)));
+    bus.once('exit', c => no(new Blocked(`private session bus exited at once (${c})`))); });
+  const printed = new Promise(yes => bus.stdout.once('data', d => yes(String(d).trim())));
+  const said = await Promise.race([printed, failed, pause(5000).then(() => null)]);
+  if (!said) throw new Blocked('private session bus did not print its address');
+  mirrorRun.address = address;
+  // empty password on stdin, then closed: unlocks a fresh login keyring
+  const keyring = spawn('gnome-keyring-daemon', ['--foreground', '--components=secrets', '--unlock'],
+    { env, detached: true, stdio: ['pipe', keyLog.fd, keyLog.fd] });
+  mirrorRun.children.push(keyring);
+  let keyringExit = null;
+  keyring.once('error', e => { keyringExit = `did not start: ${e.message}`; });
+  keyring.once('exit', c => { keyringExit = `exited (${c})`; });
+  keyring.stdin.on('error', () => {});
+  keyring.stdin.end();
+  const owned = () => { try {
+    return /boolean true/.test(execFileSync('dbus-send', ['--session', '--print-reply', '--dest=org.freedesktop.DBus', '/org/freedesktop/DBus',
+      'org.freedesktop.DBus.NameHasOwner', 'string:org.freedesktop.secrets'], { env, encoding: 'utf8', timeout: 3000 }));
+  } catch { return false; } };
+  const deadline = Date.now() + 15000;
+  while (!owned()) {
+    if (keyringExit) throw new Blocked(`private keyring daemon ${keyringExit}`);
+    if (Date.now() > deadline) throw new Blocked('private keyring daemon never claimed org.freedesktop.secrets on the private bus');
+    await pause(250);
+  }
+  await busLog.close(); await keyLog.close();
+  report.privateKeychain = { bus: address, busPid: bus.pid, keyringPid: keyring.pid,
+    commands: ['dbus-daemon --session --nofork --print-address=1 --address=<bus>', 'gnome-keyring-daemon --foreground --components=secrets --unlock (empty password on stdin, closed)',
+      'an unencrypted default keyring written to <profile>/data/keyrings first'] };
+}
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => {
   report.status = 'failure'; report.errors.push(`Interrupted by ${signal}`);
   if (processDriver?.pid) { try { process.kill(-processDriver.pid, 'SIGTERM'); } catch {} }
+  await cleanupMirror();
   if (acquired) lock.stdin.end();
   await finishReport();
   process.exit(signal === 'SIGINT' ? 130 : 143);
@@ -163,6 +250,21 @@ try {
     copiedFixture=join(fixtures,generated[fixtureName].file);
     report.syntheticFixture={name:fixtureName,...generated[fixtureName]};
   }
+  // edited-culling-preview: the feature is RAW-only, so two copies of a corpus
+  // RAW (never the configured fixture, which may be a JPEG) are the launch photo
+  // and its neighbour. It needs the launch file to itself: run it alone.
+  if (selectedCases.includes('edited-culling-preview')) {
+    if (selectedCases.some(n => !['startup', 'edited-culling-preview'].includes(n)))
+      throw Error('edited-culling-preview launches with its own RAW copies and must run alone (after startup)');
+    const corpus = join(root, 'benchmarking/corpus');
+    const names = await readdir(corpus).catch(() => []);
+    const source = names.includes('P6060404.ORF') ? 'P6060404.ORF' : names.find(n => /\.(orf|arw|cr2|rw2)$/i.test(n));
+    if (!source) throw new Blocked('edited-culling-preview needs a RAW (*.ORF, *.ARW, *.CR2 or *.RW2) in the local benchmarking/corpus/');
+    const ext = source.match(/\.[^.]+$/)[0];
+    for (const stem of ['ecp-a', 'ecp-b', 'ecp-c']) await copyFile(join(corpus, source), join(fixtures, stem + ext));
+    copiedFixture = join(fixtures, 'ecp-a' + ext);
+    report.editedCullingPreviewFixture = { source, copies: ['ecp-a' + ext, 'ecp-b' + ext, 'ecp-c' + ext] };
+  }
   if (selectedCases.includes('advanced-presets')) {
     await copyFile(join(root, 'verify/gui/support/exposure.dtpreset'), join(fixtures, 'exposure.dtpreset'));
     report.modulePresetFixture = 'Exposure preset from the darktable exporter';
@@ -222,6 +324,13 @@ try {
     for (const name of gridZoomFixtures) await copyFile(copiedFixture, join(fixtures, name + ext));
     report.gridZoomFixtures = gridZoomFixtures.length;
   }
+  // a folder of 20,000 photos: hard links to the run's own copy, never the original
+  if (selectedCases.includes('large-folder')) {
+    const { largeFolderCount, largeFolderName } = await import('./specs/large-folder.mjs');
+    const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
+    for (let i = 0; i < largeFolderCount; i++) await link(copiedFixture, join(fixtures, largeFolderName(i) + ext));
+    report.largeFolderFixtures = largeFolderCount;
+  }
   if (selectedCases.includes('library-menu-rate')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `rate-menu-${i}${ext}`));
@@ -260,6 +369,28 @@ try {
     report.moveFixtures = { ext: await moveFixtures(fixtures, copiedFixture),
       files: ['move-a', 'move-b', 'move-c', 'dest/inner/', 'clash/move-b (other content)', 'clash/move-c (identical)'] };
   }
+  // move options: raw+JPEG pairs (and the stacking preference), dated JPEGs, destination folders
+  if (['move-companions', 'move-subfolders'].some(n => selectedCases.includes(n))) {
+    const { moveOptionFixtures } = await import('./specs/move-options.mjs');
+    report.moveOptionFixtures = await moveOptionFixtures(fixtures, root,
+      { companions: selectedCases.includes('move-companions'), subfolders: selectedCases.includes('move-subfolders') });
+    if (selectedCases.includes('move-companions')) {
+      const runtime = join(profile, 'data', 'app.immage');
+      await mkdir(runtime, { recursive: true });
+      await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1', 'immage.stackPairs': '1' }, null, 2));
+    }
+  }
+  // export-subfolders: dated JPEGs, and the export destination seeded in the saved export settings
+  // (the native folder chooser is never operated)
+  if (selectedCases.includes('export-subfolders')) {
+    const { exportSubfolderFixtures } = await import('./specs/export-subfolders.mjs');
+    const dest = await exportSubfolderFixtures(fixtures, root);
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.export': JSON.stringify({ dir: dest, conflict: 'unique', askMigrated: true }) }, null, 2));
+    report.exportSubfolderFixtures = { dest, dated: ['dated-a.jpg', 'dated-b.jpg'] };
+  }
   let crossFolderTarget = null;
   if (selectedCases.includes('move-folders')) {
     const { folderMoveFixtures } = await import('./specs/move-folders.mjs');
@@ -273,6 +404,37 @@ try {
       }));
       report.folderMoveCrossFilesystem = crossFolderTarget;
     }
+  }
+  // unmounted-share: nas and local scratch folders beside the fixtures, both
+  // seeded as library folders (no Immich mapping: the case sets it live)
+  if (selectedCases.includes('unmounted-share')) {
+    const { unmountedShareFixtures } = await import('./specs/unmounted-share.mjs');
+    const share = await unmountedShareFixtures(fixtures, copiedFixture);
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.library': JSON.stringify({ folders: [fixtures, share.nas, share.local], expanded: [] }) }, null, 2));
+    report.unmountedShareFixtures = share;
+  }
+  // morfphoto-mirror: photos on a scratch folder of the 9p host share (the network
+  // mount), the same names in a plain local twin, both seeded as library folders;
+  // the private keychain starts here too, before the app is launched
+  let mirrorFixtures = null;
+  if (selectedCases.includes('morfphoto-mirror')) {
+    if (selectedCases.some(n => !['startup', 'morfphoto-mirror'].includes(n)))
+      throw Error('morfphoto-mirror gives the app a private keychain and must run alone (after startup)');
+    requireHostShare();
+    mirrorRun.scratch = `${SCRATCH_PREFIX}${id}`;
+    const { morfphotoMirrorFixtures } = await import('./specs/morfphoto-mirror.mjs');
+    try { mirrorFixtures = await morfphotoMirrorFixtures(fixtures, copiedFixture, mirrorRun.scratch); }
+    catch (e) { throw new Blocked(`cannot make the scratch folder on /mnt/mac: ${e.message}`); }
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
+      'immage.library': JSON.stringify({ folders: [fixtures, mirrorFixtures.share, mirrorFixtures.twin], expanded: [] }) }, null, 2));
+    report.morfphotoMirrorFixtures = { ...mirrorFixtures, created: new Date().toISOString() };
+    journal.checkpoint(report);
+    await startPrivateKeychain(profile, out);
   }
   if (selectedCases.includes('rename-photos')) {
     const { renameFixtures } = await import('./specs/rename-photos.mjs');
@@ -366,7 +528,8 @@ try {
   const env = { ...process.env,
     XDG_DATA_HOME: join(profile, 'data'), XDG_CONFIG_HOME: join(profile, 'config'),
     XDG_CACHE_HOME: join(profile, 'cache'), XDG_STATE_HOME: join(profile, 'state'),
-    DT_ENGINE_BIN: engine, TAURI_WEBVIEW_AUTOMATION: 'true' };
+    DT_ENGINE_BIN: engine, TAURI_WEBVIEW_AUTOMATION: 'true',
+    ...(mirrorRun.address ? { DBUS_SESSION_BUS_ADDRESS: mirrorRun.address } : {}) };
   report.profile = { path: profile, variables: Object.fromEntries(Object.entries(env).filter(([k]) => /^XDG_(DATA|CONFIG|CACHE|STATE)_HOME$/.test(k))) };
   await memoryPreflight('before-launch');
   const { open } = await import('node:fs/promises'); logHandle = await open(join(out, 'driver-app.log'), 'w');
@@ -514,8 +677,10 @@ try {
       // move one such file into this case's evidence folder (the profile is on the same filesystem)
       runtimeAside: async function (file, to) { const dest = join(caseDir, to); await rename(this.runtimeFile(file), dest); journal.event('runtime-file-moved', { case: name, file, to: dest }); return dest; },
       // this run's own copied fixture folder and darktable config folder, for cases that add files to them
-      fixtureDir: fixtures, crossFolderTarget, configDir: join(profile, 'data', 'app.immage', 'config'),
+      fixtureDir: fixtures, crossFolderTarget, morfphotoMirror: mirrorFixtures, configDir: join(profile, 'data', 'app.immage', 'config'),
       fixtureFiles:()=>readdir(fixtures), engineLog:()=>readFile(join(profile,'data','app.immage','engine.log'),'utf8'),
+      // names in this run's own thumbnail cache folder (cache.rs, XDG_CACHE_HOME/app.immage/thumbs); empty before it exists
+      thumbCacheNames: () => readdir(join(profile, 'cache', 'app.immage', 'thumbs')).catch(() => []),
       thumbnailCacheEntry: async (path, version) => {
         if (!path.startsWith(fixtures + '/')) throw Error('Thumbnail probe must use a disposable fixture');
         const cache = join(profile, 'cache', 'app.immage', 'thumbs');
@@ -589,6 +754,7 @@ try {
   if (monitor) clearInterval(monitor);
   if (driver?.session) { try { await driver.close(); } catch (e) { report.errors.push(`Session cleanup: ${e.message}`); if (report.status === 'pass') report.status = 'failure'; } }
   if (processDriver?.pid) { try { process.kill(-processDriver.pid, 'SIGTERM'); } catch {} }
+  await cleanupMirror();
   // Content security policy violations (main.rs, csp_violation) fail the run,
   // checked whatever the outcome, so a blocked or failed run still reports them.
   {

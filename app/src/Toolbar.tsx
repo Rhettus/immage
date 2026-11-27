@@ -45,10 +45,10 @@ export function ResetAll({ disabled, onReset }: { disabled: boolean; onReset: ()
 }
 
 // the zoom bar: Fit rests in the middle, zooming in to 400% to the right
-// and out to a quarter of Fit to the left, evenly in ratio; near the middle
+// and out to half of Fit (1:2) to the left, evenly in ratio; near the middle
 // it snaps to Fit, and a double-click goes between Fit and 100%
 export const ZOOM_MAX = 4;
-export const ZOOM_OUT = 4;
+export const ZOOM_OUT = 2;
 export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
   disabled: boolean;
   register: (show: (z: number, isFit: boolean) => void) => void;
@@ -73,7 +73,7 @@ export function ZoomBar({ disabled, register, onZoom, onToggle, fit }: {
              aria-label={t("library.toolbar.zoomHint")}
              onChange={(e) => {
                const p = Number(e.target.value), f = fit();
-               onZoom(Math.abs(p) < 25 ? "fit" : p > 0 ? f * (ZOOM_MAX / f) ** (p / 1000) : f * ZOOM_OUT ** (p / 1000));
+               onZoom(Math.abs(p) < 25 ? "fit" : p <= -1000 ? "half" : p > 0 ? f * (ZOOM_MAX / f) ** (p / 1000) : f * ZOOM_OUT ** (p / 1000));
              }} />
       <span ref={label} className="zoom-label">{t("library.toolbar.fit")}</span>
     </div>

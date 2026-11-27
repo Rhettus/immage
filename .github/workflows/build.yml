@@ -101,30 +101,41 @@ jobs:
           node --test \
             verify/agx-profiles.test.mjs \
             verify/ai-mask-paste.test.mjs \
+            verify/batch-reset.test.mjs \
+            verify/blocking-commands.test.mjs \
             verify/chord-actions.test.mjs \
             verify/color-range.test.mjs \
             verify/locales.test.mjs \
             verify/field-text.test.mjs \
             verify/contrast-equalizer.test.mjs \
             verify/culling.test.mjs \
+            verify/selection-identity.test.mjs \
             verify/culling-zoom.test.mjs \
             verify/crop-corner.test.mjs \
             verify/crop-transition.test.mjs \
             verify/demosaic-options.test.mjs \
             verify/curves.test.mjs \
             verify/detail-preview.test.mjs \
+            verify/edited-previews.test.mjs \
             verify/engine-commands.test.mjs \
             verify/engine-state.test.mjs \
             verify/export-format.test.mjs \
+            verify/file-menu.test.mjs \
             verify/filter-rejected.test.mjs \
             verify/find-model.test.mjs \
+            verify/find-facets.test.mjs \
             verify/saved-filters.test.mjs \
+            verify/stacking.test.mjs \
+            verify/film-window.test.mjs \
             verify/folder-edits.test.mjs \
+            verify/folder-source.test.mjs \
             verify/fit-preview.test.mjs \
             verify/front-logic.test.mjs \
             verify/gui-suites.test.mjs \
             verify/gpu-check.test.mjs \
+            verify/grid-browse.test.mjs \
             verify/grid-size.test.mjs \
+            verify/import-view.test.mjs \
             verify/menus.test.mjs \
             verify/mask-module-flags.test.mjs \
             verify/mask-modules.test.mjs \
@@ -135,15 +146,18 @@ jobs:
             verify/pixel-worker.test.mjs \
             verify/preview-handoff.test.mjs \
             verify/saturation-curve.test.mjs \
+            verify/colorzones-graph.test.mjs \
             verify/secondary-click.test.mjs \
             verify/settings-store.test.mjs \
             verify/startup-restore.test.mjs \
             verify/theme.test.mjs \
+            verify/tonemapper-guard.test.mjs \
             verify/search-identity.test.mjs \
             verify/search-query-lifecycle.test.mjs \
             verify/combined-search.test.mjs \
             verify/local-search-ui.test.mjs \
             verify/search-prefs.test.mjs \
+            verify/shortcuts-search.test.mjs \
             verify/typed-commands.test.mjs \
             verify/undo-stack.test.mjs \
             verify/ui-updates.test.mjs \
@@ -201,7 +215,7 @@ jobs:
           persist-credentials: false
       - name: homebrew packages
         run: brew bundle install --file .github/Brewfile
-      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
+      - uses: hendrikmuhs/ccache-action@e91f31892a1d1b8c44424b1a94c0b7f52d337168 # v1.2.26
         with:
           key: macos-arm64
           max-size: 2G
@@ -250,7 +264,7 @@ jobs:
         with:
           persist-credentials: false
       # the packages app/WINDOWS.md lists, plus ccache
-      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+      - uses: msys2/setup-msys2@3c51bf698df1e37b2261f53cb67797b97761185c # v2.34.0
         with:
           msystem: UCRT64
           update: true
@@ -386,7 +400,7 @@ jobs:
         with:
           path: build/webkitgtk/install
           key: webkitgtk-2.54.2-ubuntu22-${{ matrix.arch }}-${{ matrix.cc }}-${{ hashFiles('app/scripts/build_webkitgtk.sh', 'patches/webkitgtk-*.patch') }}
-      - uses: hendrikmuhs/ccache-action@dbeefd73e8e2ffc1bbc412570072735eb4db3607 # v1.2.25
+      - uses: hendrikmuhs/ccache-action@e91f31892a1d1b8c44424b1a94c0b7f52d337168 # v1.2.26
         with:
           key: linux-ubuntu22-webkit254-${{ matrix.arch }}
           max-size: 2G

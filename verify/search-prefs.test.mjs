@@ -26,7 +26,7 @@ const {SearchPrefs,ClipPrefs}=await import(source);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(Comp=SearchPrefs){
  const calls=[],slots=[],effects=[];let index=0,mounted=false;
- const status={counts:{assets:3,variants:4,metadata:4,analyses:0,analysed_photos:0},roots:[{path:'/photos',state:'offline',error:'unmounted'}],queue:{paused:false,active:0,queued:0},model:{bytes:607974672,verified:true,downloading:false,error:null}};
+ const status={counts:{assets:3,variants:4,metadata:4,analyses:0,analysed_photos:0},roots:[{path:'/photos',state:'offline',error:'unmounted'}],clip_providers:[{path:'/photos',provider:'local'},{path:'/nas',provider:'morfPhoto'}],remote_clip:true,queue:{paused:false,active:0,queued:0},model:{bytes:607974672,verified:true,downloading:false,error:null}};
  const f={calls,status,commands:{
   async searchStatus(){calls.push(['status']);return structuredClone(status);},
   async searchPause(v){calls.push(['pause',v]);status.queue.paused=v;},
@@ -49,4 +49,7 @@ test('clear and rebuild remain distinct, and remembered pause gates the CPU chec
 });
 test('download errors are visible and do not start inference',async()=>{
  const f=fixture(ClipPrefs);f.commands.searchModelDownload=async()=>{throw Error('download failed');};try{await f.mount();button(f,'Download or repair').onClick();await tick();assert.ok(nodes(f.render()).some(n=>n.props?.role==='alert'&&String(n.props.children).includes('download failed')));assert.equal(f.calls.some(c=>c[0]==='probe'),false);}finally{f.cleanup();}
+});
+test('directory status renders per-folder CLIP provider badges including remote-only roots',async()=>{
+ const f=fixture(SearchPrefs);try{await f.mount();const all=nodes(f.render());const badges=all.filter(n=>typeof n.props?.className==='string'&&n.props.className.includes('cache-directory-provider')).map(n=>n.props.children);assert.deepEqual(badges,['morfPhoto','Local']);}finally{f.cleanup();}
 });

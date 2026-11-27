@@ -38,11 +38,19 @@ pub(crate) async fn morf_photo_metrics(
 #[specta::specta]
 pub(crate) async fn morf_photo_thumbnail(
     state: State<'_, crate::AppState>,
+    caches: State<'_, crate::cache::Caches>,
     path: String,
 ) -> Result<crate::bindings::Frame, String> {
+    // browsing: Smart search waits, as for thumb_cached
+    state.tagged.mark_active();
     let runtime = state.runtime.clone();
-    let jpeg = worker(move || Ok(morf_photo::load(&runtime)
-        .thumbnail(Path::new(&path)).unwrap_or_default())).await?;
+    let cache = caches.morfphoto_thumbs.clone();
+    let jpeg = worker(move || {
+        Ok(morf_photo::load(&runtime)
+            .thumbnail_cached(Path::new(&path), &cache)
+            .unwrap_or_default())
+    })
+    .await?;
     Ok(crate::bindings::Frame(tauri::ipc::Response::new(jpeg)))
 }
 
@@ -79,10 +87,16 @@ pub(crate) async fn morf_photo_save(
     settings: Config,
     key: Option<String>,
 ) -> Result<(), String> {
+    let runtime = app.state::<crate::AppState>().runtime.clone();
     worker(move || {
         if settings.enabled {
             settings.validate_mapping()?;
         }
+        let previous_settings = morf_photo::load(&runtime);
+        let mapping_changed = previous_settings.url.trim() != settings.url.trim()
+            || previous_settings.server_path.trim() != settings.server_path.trim()
+            || previous_settings.local_path.trim() != settings.local_path.trim();
+        let previous_identity = identity(&previous_settings);
         let saved = serde_json::to_string(&settings).map_err(|_| "Invalid morfPhoto settings")?;
         let store = app.state::<crate::settings::Settings>();
         if let Some(key) = key {
@@ -100,11 +114,13 @@ pub(crate) async fn morf_photo_save(
             entry
                 .set_password(&next)
                 .map_err(|_| "Could not store morfPhoto API key")?;
+            morf_photo::invalidate_credential_cache();
             if let Err(error) = store.set(SETTINGS, &saved) {
                 let restored = match previous {
                     Some(previous) => entry.set_password(&previous),
                     None => entry.delete_credential(),
                 };
+                morf_photo::invalidate_credential_cache();
                 if restored.is_err() {
                     return Err(
                         "Could not save morfPhoto settings or restore the previous key".into(),
@@ -112,6 +128,12 @@ pub(crate) async fn morf_photo_save(
                 }
                 return Err(error);
             }
+            if mapping_changed {
+                morf_photo::clear_caches(Some(&runtime));
+            }
+            app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+            crate::clip_providers::refresh_share_roots(&app, &runtime);
+            changed_mirror(&app, previous_identity, &settings);
             return Ok(());
         }
         if settings.enabled {
@@ -122,7 +144,14 @@ pub(crate) async fn morf_photo_save(
                 return Err("morfPhoto API key is required for this server".into());
             }
         }
-        store.set(SETTINGS, &saved)
+        store.set(SETTINGS, &saved)?;
+        if mapping_changed {
+            morf_photo::clear_caches(Some(&runtime));
+        }
+        app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+        crate::clip_providers::refresh_share_roots(&app, &runtime);
+        changed_mirror(&app, previous_identity, &settings);
+        Ok(())
     })
     .await
 }
@@ -138,18 +167,57 @@ pub(crate) async fn morf_photo_test(settings: Config, key: Option<String>) -> Re
 pub(crate) async fn morf_photo_forget(
     app: AppHandle,
     state: State<'_, crate::AppState>,
+    caches: State<'_, crate::cache::Caches>,
 ) -> Result<(), String> {
     let runtime = state.runtime.clone();
+    let thumbs = caches.morfphoto_thumbs.clone();
     worker(move || {
         let mut settings = morf_photo::load(&runtime);
         settings.enabled = false;
         let saved = serde_json::to_string(&settings).map_err(|_| "Invalid morfPhoto settings")?;
         app.state::<crate::settings::Settings>()
             .set(SETTINGS, &saved)?;
+        morf_photo::clear_caches(Some(&runtime));
+        thumbs.clear();
+        // the local catalog goes with the key; the sync thread empties it
+        app.state::<crate::AppState>().mirror.request_reset();
+        app.state::<crate::AppState>().clip_providers.invalidate_morfphoto();
+        crate::clip_providers::refresh_share_roots(&app, &runtime);
         match morf_photo::entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err("Could not remove morfPhoto API key".into()),
         }
     })
     .await
+}
+
+fn identity(config: &Config) -> Option<(String, String)> {
+    Some((config.origin().ok()?, config.server_root()))
+}
+
+// a saved change of server or server folder empties the local catalog; any
+// save starts a sync, as it may have turned the Accelerator on
+fn changed_mirror(app: &AppHandle, previous: Option<(String, String)>, next: &Config) {
+    let mirror = &app.state::<crate::AppState>().mirror;
+    if previous.is_some() && previous != identity(next) {
+        mirror.request_reset();
+    } else {
+        mirror.kick();
+    }
+}
+
+// memory only: the sync thread's last report
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn morf_mirror_status(
+    state: State<'_, crate::AppState>,
+) -> crate::morf_mirror::MirrorStatus {
+    state.mirror.status()
+}
+
+// Preferences' Resync: the sync thread empties the local catalog and starts over
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn morf_mirror_resync(state: State<'_, crate::AppState>) {
+    state.mirror.request_reset();
 }

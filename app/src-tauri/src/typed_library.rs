@@ -65,7 +65,8 @@ pub struct KeywordsReply {
     pub keywords: Vec<String>,
 }
 
-// `thumb`'s reply: the size of the pixels it wrote
+// `thumb`'s reply: the size of the pixels it wrote (and `stale`, read by
+// library_cmds.rs thumb before a JPEG reply is decoded)
 #[derive(Deserialize)]
 pub struct ThumbReply {
     pub width: u32,

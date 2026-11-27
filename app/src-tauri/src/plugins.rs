@@ -9,6 +9,7 @@
 // it beside that photo wherever the application put it
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -16,6 +17,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+
+use crate::library_ids::Photo;
+use crate::typed_export::{ExportItem, ExportOptions};
+use crate::AppState;
 
 pub struct Plugins {
     returns_path: PathBuf,
@@ -33,6 +38,11 @@ pub struct Plugins {
     jobs_dir: PathBuf,
     // the hand-offs still waiting, by token; a cancelled one leaves
     live: Mutex<HashSet<u64>>,
+    // set while a PhotoCraft or Helicon Focus hand-off runs, so a second
+    // one is refused. flags, not locks: nothing waits on them, and a
+    // hand-off holds one through its renders and the editor's whole session
+    photo_craft_busy: AtomicBool,
+    helicon_busy: AtomicBool,
     // one reader or writer of the returns file at a time
     io: Mutex<()>,
     // and of the ledger
@@ -44,7 +54,9 @@ impl Plugins {
         let jobs_dir = returns_path.with_file_name("plugin-jobs");
         let config_path = returns_path.with_file_name("plugins.json");
         Plugins { returns_path, config_path, offered: Mutex::new(HashSet::new()), config_io: Mutex::new(()),
-                  jobs_dir, live: Mutex::new(HashSet::new()), io: Mutex::new(()), jobs_io: Mutex::new(()) }
+                  jobs_dir, live: Mutex::new(HashSet::new()), photo_craft_busy: AtomicBool::new(false),
+                  helicon_busy: AtomicBool::new(false),
+                  io: Mutex::new(()), jobs_io: Mutex::new(()) }
     }
 
     // None when there is no file yet; a file that does not parse is as good
@@ -283,6 +295,18 @@ fn app_folders() -> Vec<PathBuf> {
     v
 }
 
+// on Linux an application is a program on the system's path, beside every
+// other program there, so only these names are looked for. a pattern from
+// the page is never matched against those folders
+const LINUX_APPS: &[&str] = &["photocraft"];
+const LINUX_BIN: &[&str] = &["/usr/local/bin", "/usr/bin"];
+
+fn linux_apps(names: &[String], out: &mut Vec<PathBuf>) {
+    for name in names.iter().filter(|n| LINUX_APPS.contains(&n.as_str())) {
+        out.extend(LINUX_BIN.iter().map(|dir| Path::new(dir).join(name)).filter(|p| p.is_file()));
+    }
+}
+
 // the installed applications a plugin kind can use, newest version first
 // (the highest name: "DxO PureRAW 5" before "DxO PureRAW 4")
 #[tauri::command]
@@ -294,6 +318,9 @@ pub fn plugin_find_apps(state: State<'_, Plugins>, patterns: Vec<String>) -> Vec
             let parts: Vec<&str> = p.split(['/', '\\']).filter(|s| !s.is_empty()).collect();
             find(&base, &parts, &mut out);
         }
+    }
+    if cfg!(target_os = "linux") {
+        linux_apps(&patterns, &mut out);
     }
     let mut out: Vec<String> = out.into_iter().map(|p| p.to_string_lossy().into_owned()).collect();
     out.sort_by_key(|a| std::cmp::Reverse(a.to_lowercase()));
@@ -334,8 +361,10 @@ pub async fn plugin_choose_app(app: AppHandle, state: State<'_, Plugins>, id: St
         let mut dialog = handle.dialog().file();
         dialog = if cfg!(windows) {
             dialog.add_filter("Applications", &["exe"])
-        } else {
+        } else if cfg!(target_os = "macos") {
             dialog.set_directory("/Applications").add_filter("Applications", &["app"])
+        } else {
+            dialog
         };
         dialog.blocking_pick_file().and_then(|f| f.into_path().ok())
     })
@@ -392,6 +421,417 @@ pub async fn plugin_launch(state: State<'_, Plugins>, id: String, files: Vec<Str
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("could not start {name}: {e}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_photo_craft(
+    app: AppHandle, state: State<'_, AppState>, plugins: State<'_, Plugins>,
+    id: String, job: u64, imgids: Vec<i64>,
+) -> Result<String, String> {
+    let plugin = plugins.ready(&id)?;
+    if plugin.kind != "photocraft" {
+        return Err("Choose PhotoCraft in Preferences".into());
+    }
+    let _handoff = Busy::claim(&plugins.photo_craft_busy).ok_or("A PhotoCraft handoff is already running")?;
+    let editor = PathBuf::from(plugin.app);
+    let cli = photocraft_cli(&editor)?;
+
+    let photos = plugin_photos(&state, imgids)?;
+    folders_answering(&photos).await?;
+    let (_, first) = photos.first().ok_or("Select at least one photo")?;
+    let source = Path::new(&first.path);
+    let folder = source.parent().ok_or("The first photo has no folder")?.to_path_buf();
+    let name = source.file_stem().ok_or("The first photo has no filename")?.to_string_lossy().into_owned();
+    let staging = stack_staging(&folder, ".immage-photocraft-").await?;
+    let rendered = render_plugin_tiffs(app, state, job, &photos, staging.path()).await?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let dimensions = rendered.iter().map(|path| -> Result<_, image::ImageError> {
+            image::ImageReader::open(path)?.into_dimensions()
+        }).collect::<Result<Vec<_>, _>>();
+        let prefer_tiff = dimensions.is_ok_and(photocraft_tiff_fits);
+        let stack = build_photocraft_stack(&cli, staging.path(), &rendered, prefer_tiff)?;
+        let document = publish_stack(&stack, &folder, &format!("{name}-Edit"))
+            .map_err(|e| format!("Could not save the PhotoCraft document: {e}"))?;
+        open_photocraft(&editor, &document)
+            .map_err(|e| format!("Saved {}, but PhotoCraft did not open it: {e}", document.display()))?;
+        Ok(document.to_string_lossy().into_owned())
+    }).await.map_err(|e| e.to_string())?
+}
+
+// a hand-off's busy flag, cleared when the hand-off ends however it ends
+struct Busy<'a>(&'a AtomicBool);
+
+impl<'a> Busy<'a> {
+    fn claim(flag: &'a AtomicBool) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).ok().map(|_| Busy(flag))
+    }
+}
+
+impl Drop for Busy<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+fn editor_command(executable: &Path, headless: bool) -> std::process::Command {
+    let mut command = std::process::Command::new(executable);
+    #[cfg(windows)]
+    if headless {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = headless;
+    if cfg!(target_os = "linux") && std::env::var_os("APPDIR").is_some() {
+        // Immage's AppImage loads its own GTK and WebKit libraries.
+        for key in ["APPDIR", "APPIMAGE", "LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT",
+                    "WEBKIT_EXEC_PATH", "WEBKIT_INJECTED_BUNDLE_PATH", "GTK_PATH", "GTK_EXE_PREFIX",
+                    "GTK_DATA_PREFIX", "GTK_IM_MODULE_FILE", "GIO_MODULE_DIR", "GI_TYPELIB_PATH",
+                    "GSETTINGS_SCHEMA_DIR", "GDK_PIXBUF_MODULE_FILE"] {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
+fn photocraft_cli(editor: &Path) -> Result<PathBuf, String> {
+    let cli = if cfg!(target_os = "macos") {
+        editor.join("Contents/MacOS/photocraft-cli")
+    } else if cfg!(windows) {
+        editor.with_file_name("photocraft-cli.exe")
+    } else if is_appimage(editor) {
+        editor.to_path_buf()
+    } else {
+        editor.with_file_name("photocraft-cli")
+    };
+    if !cli.is_file() {
+        return Err("Choose a PhotoCraft application with photocraft-cli in Preferences".into());
+    }
+    Ok(cli)
+}
+
+fn is_appimage(path: &Path) -> bool {
+    cfg!(target_os = "linux")
+        && path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("appimage"))
+}
+
+fn open_photocraft(editor: &Path, document: &Path) -> Result<(), String> {
+    if cfg!(target_os = "macos") {
+        let output = std::process::Command::new("open").arg("-a").arg(editor).arg(document)
+            .output().map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+        }
+    } else {
+        let mut child = editor_command(editor, false).arg(document).spawn().map_err(|e| e.to_string())?;
+        std::thread::spawn(move || { let _ = child.wait(); });
+    }
+    Ok(())
+}
+
+fn plugin_photos(state: &AppState, imgids: Vec<i64>) -> Result<Vec<(i64, Photo)>, String> {
+    imgids.into_iter().map(|id| {
+        state.tagged.known_photo(id).map(|photo| (id, photo))
+            .ok_or_else(|| format!("Unknown photo {id}"))
+    }).collect()
+}
+
+// the photos' folders, touched (canonicalized, staged in) only once each
+// one's drive answers, so a share whose server has gone does not hang
+// the hand-off
+async fn folders_answering(photos: &[(i64, Photo)]) -> Result<(), String> {
+    let folders: HashSet<PathBuf> = photos.iter()
+        .filter_map(|(_, photo)| Path::new(&photo.path).parent().map(Path::to_path_buf)).collect();
+    let silent = tauri::async_runtime::spawn_blocking(move || {
+        folders.into_iter().find(|folder| !crate::volumes::answering(folder))
+    }).await.map_err(|e| e.to_string())?;
+    match silent {
+        Some(folder) => Err(format!("{} is not answering", folder.display())),
+        None => Ok(()),
+    }
+}
+
+async fn stack_staging(folder: &Path, prefix: &'static str) -> Result<tempfile::TempDir, String> {
+    let folder = folder.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || tempfile::Builder::new().prefix(prefix).tempdir_in(folder))
+        .await.map_err(|e| e.to_string())?.map_err(|e| format!("Cannot write beside the first photo: {e}"))
+}
+
+async fn render_plugin_tiffs(
+    app: AppHandle, state: State<'_, AppState>, job: u64, photos: &[(i64, Photo)], staging: &Path,
+) -> Result<Vec<String>, String> {
+    let items = photos.iter().map(|(imgid, photo)| {
+        let file = Path::new(&photo.path).file_name().ok_or("A selected photo has no filename")?;
+        let mut stem = file.to_string_lossy().into_owned();
+        if photo.version > 0 {
+            stem = format!("{stem} ({})", photo.version);
+        }
+        Ok(ExportItem { imgid: *imgid, stem, ..Default::default() })
+    }).collect::<Result<Vec<_>, String>>()?;
+    let count = items.len();
+    let rendered = crate::export_cmds::export_images(app, state, job, items, ExportOptions {
+        dir: staging.to_string_lossy().into_owned(),
+        format: "tiff".into(),
+        bpp: Some(16),
+        color_space: "prophoto".into(),
+        conflict: "unique".into(),
+        ..Default::default()
+    }).await?;
+    if let Some(failure) = rendered.failed.first() {
+        return Err(failure.error.clone());
+    }
+    if rendered.written.len() != count {
+        return Err("Could not render every selected photo".into());
+    }
+
+    Ok(rendered.written)
+}
+
+#[derive(Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeliconMode {
+    Raw,
+    Tiff,
+    AutoDng,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_helicon_focus(
+    app: AppHandle, state: State<'_, AppState>, plugins: State<'_, Plugins>,
+    id: String, job: u64, imgids: Vec<i64>, mode: HeliconMode,
+) -> Result<Option<Return>, String> {
+    if !cfg!(any(target_os = "macos", windows)) {
+        return Err("Helicon Focus Edit In requires macOS or Windows".into());
+    }
+    let plugin = plugins.ready(&id)?;
+    if plugin.kind != "helicon-focus" {
+        return Err("Choose Helicon Focus in Preferences".into());
+    }
+    let _handoff = Busy::claim(&plugins.helicon_busy).ok_or("A Helicon Focus stack is already running")?;
+    let cli = if cfg!(target_os = "macos") {
+        Path::new(&plugin.app).join("Contents/MacOS/HeliconFocus")
+    } else {
+        PathBuf::from(&plugin.app)
+    };
+    if !cli.is_file() {
+        return Err("Choose the Helicon Focus application in Preferences".into());
+    }
+
+    let photos = plugin_photos(&state, imgids)?;
+    folders_answering(&photos).await?;
+    if photos.len() < 2 {
+        return Err("Select at least two photos".into());
+    }
+    let original = photos[0].1.path.clone();
+    let source = Path::new(&original);
+    let folder = source.parent().ok_or("The first photo has no folder")?.to_path_buf();
+    let name = source.file_stem().ok_or("The first photo has no filename")?.to_string_lossy().into_owned();
+    let staging = stack_staging(&folder, ".immage-helicon-").await?;
+    let inputs = if matches!(mode, HeliconMode::Tiff) {
+        render_plugin_tiffs(app.clone(), state, job, &photos, staging.path()).await?
+    } else {
+        let mut distinct = HashSet::new();
+        let mut inputs = Vec::with_capacity(photos.len());
+        for (_, photo) in photos {
+            photo_file(&photo.path)?;
+            let ext = Path::new(&photo.path).extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+            if !crate::immich_search::RAW_EXTENSIONS.contains(&ext.as_str()) {
+                return Err("Select RAW files or choose the TIFF handoff".into());
+            }
+            if !distinct.insert(photo.path.clone()) {
+                return Err("Select distinct RAW files".into());
+            }
+            inputs.push(photo.path);
+        }
+        inputs
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let list = staging.path().join("inputs.txt");
+        if inputs.iter().any(|path| path.contains(['\r', '\n'])) {
+            return Err("Helicon Focus cannot read a filename containing a line break".to_string());
+        }
+        std::fs::write(&list, inputs.join("\n") + "\n").map_err(|e| format!("Could not list the source photos: {e}"))?;
+        let plugins = app.state::<Plugins>();
+        if !matches!(mode, HeliconMode::AutoDng) {
+            let report = staging.path().join("outputs.txt");
+            let mut command = if cfg!(target_os = "macos") {
+                let mut open = std::process::Command::new("open");
+                open.args(["-n", "-W", "-a"]).arg(&plugin.app).arg("--args");
+                open
+            } else {
+                editor_command(&cli, false)
+            };
+            let mut child = command.arg("-i").arg(&list)
+                .arg("-o").arg(&report)
+                .arg("--preferred-output-path").arg(&folder)
+                .spawn().map_err(|e| format!("Could not open Helicon Focus: {e}"))?;
+            let mut reported = HashSet::new();
+            // a stack of rendered TIFFs is no raw, whatever it is saved as:
+            // marked applied, as a positive is, it opens without a stacked
+            // raw's new-photo defaults
+            let rendered = matches!(mode, HeliconMode::Tiff);
+            let send_back = |result: String| {
+                let r = Return { original: original.clone(), result, plugin: id.clone(), applied: rendered };
+                if let Err(e) = plugins.record_new(r.clone()) {
+                    eprintln!("{e}");
+                }
+                let _ = app.emit("plugin-returned", json!({
+                    "token": job, "plugin": r.plugin, "original": r.original, "result": r.result,
+                    "applied": r.applied,
+                }));
+            };
+            loop {
+                let status = child.try_wait().map_err(|e| format!("Could not wait for Helicon Focus: {e}"))?;
+                if let Ok(saved) = std::fs::read_to_string(&report) {
+                    // Helicon reports completed saves as newline-terminated absolute paths.
+                    for result in saved.split_inclusive('\n').filter_map(|line| {
+                        line.strip_suffix('\n').map(|path| path.strip_suffix('\r').unwrap_or(path))
+                    }) {
+                        // a save into the staging folder, beside the rendered
+                        // TIFFs, is moved out once Helicon has quit
+                        let path = Path::new(result);
+                        if !path.is_absolute() || path.starts_with(staging.path())
+                            || inputs.iter().any(|input| input == result)
+                            || photo_file(result).is_err() || !reported.insert(result.to_owned()) {
+                            continue;
+                        }
+                        send_back(result.to_owned());
+                    }
+                }
+                if let Some(status) = status {
+                    let (moved, kept) = rescue_staged(staging.path(), &inputs, &folder);
+                    for path in moved {
+                        reported.insert(path.clone());
+                        send_back(path);
+                    }
+                    if let Some(e) = kept {
+                        // the folder is kept, so what could not be moved is not lost
+                        let left = staging.keep();
+                        return Err(format!("Helicon Focus saved into {}, and Immage could not move it beside the photos: {e}",
+                                           left.display()));
+                    }
+                    // Helicon, and `open -W` with it, can quit nonzero after
+                    // saving; a session that sent a result back succeeded
+                    return if status.success() || !reported.is_empty() {
+                        Ok(None)
+                    } else {
+                        Err(format!("Could not open Helicon Focus ({status})"))
+                    };
+                }
+                std::thread::sleep(POLL);
+            }
+        }
+
+        let stack = staging.path().join("stack.dng");
+        let mut save = std::ffi::OsString::from("-save:");
+        save.push(&stack);
+        let output = editor_command(&cli, true).args(["-silent", "-i"]).arg(list).arg(save)
+            .output().map_err(|e| format!("Could not run Helicon Focus: {e}"))?;
+        if !output.status.success() || !std::fs::metadata(&stack).is_ok_and(|m| m.is_file() && m.len() > 0) {
+            let error = String::from_utf8_lossy(&output.stderr);
+            let log = String::from_utf8_lossy(&output.stdout);
+            let detail = error.lines().rev().find(|l| !l.trim().is_empty())
+                .or_else(|| log.lines().rev().find(|l| !l.trim().is_empty())).unwrap_or_default();
+            return Err(format!("Helicon Focus did not save the DNG ({}). Check Helicon Focus Pro, Adobe DNG Converter and the Raw-in-DNG-out loader. {}", output.status, detail).trim_end().to_string());
+        }
+        let path = publish_stack(&stack, &folder, &format!("{name}-Helicon"))
+            .map_err(|e| format!("Could not save the Helicon Focus stack: {e}"))?;
+        let result = Return { original, result: path.to_string_lossy().into_owned(), plugin: id, applied: false };
+        plugins.record(result.clone())?;
+        Ok(Some(result))
+    }).await.map_err(|e| e.to_string())?
+}
+
+// the photos Helicon saved into a hand-off's staging folder, moved beside
+// the source photos under their own names. what could not be moved stays,
+// with the first error
+fn rescue_staged(staging: &Path, inputs: &[String], folder: &Path) -> (Vec<String>, Option<String>) {
+    let (mut moved, mut kept) = (Vec::new(), None);
+    let Ok(entries) = std::fs::read_dir(staging) else { return (moved, kept) };
+    let mut saved: Vec<PathBuf> = entries.flatten().map(|e| e.path())
+        .filter(|p| !inputs.iter().any(|input| Path::new(input) == p))
+        .filter(|p| photo_file(&p.to_string_lossy()).is_ok())
+        .collect();
+    saved.sort();
+    for path in saved {
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        match publish_stack(&path, folder, &stem) {
+            Ok(target) => moved.push(target.to_string_lossy().into_owned()),
+            Err(e) => { kept.get_or_insert_with(|| e.to_string()); }
+        }
+    }
+    (moved, kept)
+}
+
+fn photocraft_tiff_fits(dimensions: Vec<(u32, u32)>) -> bool {
+    let (mut width, mut height, mut layer_pixels) = (0, 0, 0u128);
+    for (w, h) in dimensions {
+        width = width.max(w);
+        height = height.max(h);
+        layer_pixels += u128::from(w) * u128::from(h);
+    }
+    // Budget four 16-bit channels per layer and for the merged canvas.
+    // Keep space below classic TIFF's 4 GiB limit for layer data and metadata.
+    let canvas_pixels = u128::from(width) * u128::from(height);
+    (layer_pixels + canvas_pixels) * 8 < 2 * (1 << 30)
+}
+
+fn build_photocraft_stack(cli: &Path, staging: &Path, photos: &[String], prefer_tiff: bool) -> Result<PathBuf, String> {
+    let params = json!({ "paths": photos }).to_string();
+    let build = |extension, flags: &[&str]| {
+        let stack = staging.join(format!("stack.{extension}"));
+        let mut command = editor_command(cli, true);
+        if is_appimage(cli) {
+            command.arg("--cli");
+        }
+        let result = command.args(["run", "--new", r#"{"width":1,"height":1}"#,
+                   "--cmd", "file.scripts.loadFilesIntoStack", "--params"])
+            .arg(&params)
+            .arg("--out").arg(&stack)
+            .args(flags)
+            .output().map_err(|e| format!("Could not run PhotoCraft: {e}"))?;
+        if result.status.success() && stack.is_file() {
+            Ok(stack)
+        } else {
+            Err(format!("PhotoCraft could not build the {extension} stack ({}): {}",
+                        result.status, String::from_utf8_lossy(&result.stderr).trim()))
+        }
+    };
+
+    if prefer_tiff {
+        return match build("tif", &["--tiff-layers", "--tiff-compression", "zip"]) {
+            Ok(stack) => Ok(stack),
+            Err(tiff_error) => build("psb", &[]).map_err(|psb_error| format!("{tiff_error}\n{psb_error}")),
+        };
+    }
+    build("psb", &[])
+}
+
+fn publish_stack(stack: &Path, folder: &Path, name: &str) -> std::io::Result<PathBuf> {
+    let extension = stack.extension().unwrap_or_default().to_string_lossy();
+    for n in 0u64.. {
+        let filename = if n == 0 { format!("{name}.{extension}") } else { format!("{name}-{n}.{extension}") };
+        if folder.join(format!("{filename}.xmp")).exists() {
+            continue;
+        }
+        let target = folder.join(filename);
+        match std::fs::File::create_new(&target) {
+            Ok(file) => drop(file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+        if let Err(e) = std::fs::rename(stack, &target) {
+            let _ = std::fs::remove_file(&target);
+            return Err(e);
+        }
+        return Ok(target);
+    }
+    unreachable!()
 }
 
 #[derive(Deserialize, specta::Type)]
@@ -890,6 +1330,54 @@ pub fn plugin_job(app: AppHandle, state: State<'_, Plugins>, job: Job) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_discovery_takes_only_known_names() {
+        let mut out = Vec::new();
+        linux_apps(&["sh".into(), "*".into(), "../bin/sh".into()], &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn rescue_staged_moves_saved_photos_but_not_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = root.path().join(".immage-helicon-x");
+        std::fs::create_dir(&staging).unwrap();
+        let input = staging.join("a.CR3.tif");
+        for f in [&input, &staging.join("a(B,R8,S4).tif"), &staging.join("inputs.txt")] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        std::fs::write(root.path().join("a(B,R8,S4).tif"), b"earlier").unwrap();
+        let (moved, kept) = rescue_staged(&staging, &[input.to_string_lossy().into_owned()], root.path());
+        assert_eq!(kept, None);
+        assert_eq!(moved, vec![root.path().join("a(B,R8,S4)-1.tif").to_string_lossy().into_owned()]);
+        assert!(input.is_file());
+        assert_eq!(std::fs::read(root.path().join("a(B,R8,S4).tif")).unwrap(), b"earlier");
+    }
+
+    #[test]
+    fn photocraft_budgets_layers_and_the_full_composite_for_tiff() {
+        assert!(photocraft_tiff_fits(vec![(7980, 5320); 5]));
+        assert!(!photocraft_tiff_fits(vec![(7980, 5320); 6]));
+        assert!(!photocraft_tiff_fits(vec![(20_000, 4_000), (4_000, 20_000)]));
+    }
+
+    #[test]
+    fn publish_stack_preserves_existing_outputs_and_skips_old_sidecars() {
+        let folder = tempfile::tempdir().unwrap();
+        let dir = folder.path();
+        for ext in ["dng", "tif"] {
+            let staged = dir.join(format!("stack.{ext}"));
+            let existing = dir.join(format!("first-Helicon.{ext}"));
+            std::fs::write(&staged, b"new stack").unwrap();
+            std::fs::write(&existing, b"existing stack").unwrap();
+            std::fs::write(dir.join(format!("first-Helicon-1.{ext}.xmp")), b"old edit").unwrap();
+            let result = publish_stack(&staged, dir, "first-Helicon").unwrap();
+            assert_eq!(result, dir.join(format!("first-Helicon-2.{ext}")));
+            assert_eq!(std::fs::read(result).unwrap(), b"new stack");
+            assert_eq!(std::fs::read(existing).unwrap(), b"existing stack");
+        }
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join(format!("{name}-{}", std::process::id()));

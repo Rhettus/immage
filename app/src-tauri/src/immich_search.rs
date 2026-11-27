@@ -164,7 +164,7 @@ pub fn filter(a: &SearchArgs) -> Value {
 // host's Path rules cannot judge it: "/photos" is not absolute on Windows.
 // Both separators are accepted. The root is "/", a drive ("C:", any case), or
 // "\\" for UNC; a relative path has none.
-fn server_path(p: &str) -> Option<(String, Vec<&str>)> {
+pub(crate) fn server_path(p: &str) -> Option<(String, Vec<&str>)> {
     let b = p.as_bytes();
     let (root, rest) = if b.len() >= 2 && (p.starts_with("\\\\") || p.starts_with("//")) {
         ("\\\\".to_string(), &p[2..])
@@ -177,6 +177,45 @@ fn server_path(p: &str) -> Option<(String, Vec<&str>)> {
     };
     let parts = rest.split(['/', '\\']).filter(|c| !c.is_empty()).collect();
     Some((root, parts))
+}
+
+/// Reverse of `local_path`: translate a local directory inside `map.local`
+/// into the corresponding Immich server folder prefix with a trailing separator
+/// so prefix filters never match sibling directories.
+pub(crate) fn local_to_server_folder(
+    folder: &Path,
+    map: &PathMap,
+    canonical_local: Option<&Path>,
+) -> Option<String> {
+    let local_root = Path::new(map.local.trim());
+    let server_raw = map.immich.trim();
+    let (server_root, _) = server_path(server_raw)?;
+    if !local_root.is_absolute() || !folder.is_absolute() {
+        return None;
+    }
+    let relative = folder
+        .strip_prefix(local_root)
+        .ok()
+        .or_else(|| canonical_local.and_then(|c| folder.strip_prefix(c).ok()))?;
+    let sep = if server_root == "\\\\" || (server_root != "/" && server_raw.contains('\\')) {
+        '\\'
+    } else {
+        '/'
+    };
+    let mut out = server_raw.trim_end_matches(['/', '\\']).to_string();
+    for part in relative.components() {
+        let std::path::Component::Normal(name) = part else {
+            return None;
+        };
+        let name = name.to_str()?;
+        if name.contains(['/', '\\', '\0']) {
+            return None;
+        }
+        out.push(sep);
+        out.push_str(name);
+    }
+    out.push(sep);
+    Some(out)
 }
 
 // a path as Immich has it, on this computer, when the file is there
@@ -426,6 +465,346 @@ impl Immich {
         status(self.http.get(self.url(&format!("/assets/{}/original", safe_id(id)?))).send()
             .map_err(|e| e.to_string())?)
     }
+
+    /// Whether this Immich server answers, has Smart Search (CLIP) enabled,
+    /// and accepts our API key with `asset.read`.
+    pub fn smart_search_available(&self) -> Result<bool, String> {
+        let resp = self
+            .http
+            .get(self.url("/server/features"))
+            .send()
+            .map_err(|e| e.to_string())?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            // Fallback for future Immich versions that drop deprecated /server/features
+            status(
+                self.http
+                    .get(self.url("/server/ping"))
+                    .send()
+                    .map_err(|e| e.to_string())?,
+            )?;
+        } else {
+            let features: Value = status(resp)?.json().map_err(|e| e.to_string())?;
+            if features.get("smartSearch").and_then(Value::as_bool) == Some(false) {
+                return Ok(false);
+            }
+        }
+        let missing = self.lacks(&["asset.read"])?;
+        Ok(missing.is_empty())
+    }
+
+    /// Run Immich Smart Search scoped to a local mapped directory, returning
+    /// local `LibraryImage` hits enriched with any cached local metadata and
+    /// filtered by `args.filters`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn smart_in_folder(
+        &self,
+        folder: &Path,
+        recursive: bool,
+        hidden: &[PathBuf],
+        excluded: &[PathBuf],
+        map: &PathMap,
+        canonical_local: Option<&Path>,
+        args: &crate::local_search::LocalSearchArgs,
+        cache: &crate::search_cache::SearchCache,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<crate::local_search::LocalPage, String> {
+        use crate::local_search::{LocalHit, LocalPage};
+        const MAX_PAGES: usize = 4;
+
+        let mut start_page: u64 = 1;
+        if let Some(cursor) = args.next.as_deref() {
+            let page = cursor
+                .strip_prefix("immich:")
+                .and_then(|s| s.parse::<u64>().ok())
+                .filter(|p| *p >= 1)
+                .ok_or("Invalid Immich search cursor")?;
+            start_page = page;
+        }
+
+        let mut immich_args = args.remote.clone();
+        immich_args.mode = "smart".into();
+        immich_args.text = args.text.clone();
+        if immich_args.library.is_empty() {
+            immich_args.library = "external".into();
+        }
+        if args.filters.min_rating > 0 {
+            immich_args.min_rating = Some(
+                immich_args
+                    .min_rating
+                    .unwrap_or(0)
+                    .max(args.filters.min_rating),
+            );
+        }
+        if immich_args.taken_from.as_deref().unwrap_or("").is_empty()
+            && !args.filters.taken_from.is_empty()
+        {
+            immich_args.taken_from = Some(args.filters.taken_from.clone());
+        }
+        if immich_args.taken_to.as_deref().unwrap_or("").is_empty()
+            && !args.filters.taken_to.is_empty()
+        {
+            immich_args.taken_to = Some(args.filters.taken_to.clone());
+        }
+        if args.filters.kinds.len() == 1 && args.filters.kinds[0] == "RAW" {
+            immich_args.raw_only = true;
+        }
+
+        let server_prefix = local_to_server_folder(folder, map, canonical_local);
+        let canonical_folder = crate::volumes::answering(folder)
+            .then(|| std::fs::canonicalize(folder).ok())
+            .flatten()
+            .filter(|c| c != folder);
+
+        let needed = args.size as usize + 1;
+        let mut hits: Vec<LocalHit> = Vec::new();
+        let mut seen_paths = std::collections::HashSet::new();
+        let mut use_path_filter = server_prefix.is_some();
+        let mut current_page = start_page;
+        let mut next_server_page: Option<u64> = None;
+        let mut rank: usize = ((start_page.saturating_sub(1)) as usize).saturating_mul(250);
+        let empty_remote = SearchArgs::default();
+
+        for _ in 0..MAX_PAGES {
+            if cancelled() {
+                return Err("Search cancelled".into());
+            }
+            let mut f = filter(&immich_args);
+            if use_path_filter {
+                if let (Some(prefix), Some(obj)) = (server_prefix.as_deref(), f.as_object_mut()) {
+                    obj.insert("originalPath".into(), json!({ "startsWith": prefix }));
+                }
+            }
+            let body = json!({
+                "filter": f,
+                "query": immich_args.text.trim(),
+                "page": current_page,
+                "size": 250,
+                "withExif": true,
+            });
+            let response = self
+                .http
+                .post(self.url("/search/smart"))
+                .json(&body)
+                .send()
+                .map_err(|e| e.to_string())?;
+            let response = match status(response) {
+                Ok(ok) => ok,
+                Err(err)
+                    if use_path_filter
+                        && err.starts_with("Immich: 400")
+                        && err.contains("originalPath") =>
+                {
+                    // Defensive compatibility if a server rejects originalPath in SearchFilter.
+                    use_path_filter = false;
+                    let fallback_body = json!({
+                        "filter": filter(&immich_args),
+                        "query": immich_args.text.trim(),
+                        "page": current_page,
+                        "size": 250,
+                        "withExif": true,
+                    });
+                    status(
+                        self.http
+                            .post(self.url("/search/smart"))
+                            .json(&fallback_body)
+                            .send()
+                            .map_err(|e| e.to_string())?,
+                    )?
+                }
+                Err(err) => return Err(err),
+            };
+            if cancelled() {
+                return Err("Search cancelled".into());
+            }
+            let r: Value = response.json().map_err(|e| e.to_string())?;
+            let assets = &r["assets"];
+            let items = assets["items"].as_array().cloned().unwrap_or_default();
+            for raw_asset in items {
+                if cancelled() {
+                    return Err("Search cancelled".into());
+                }
+                if raw_asset["isTrashed"] == true {
+                    continue;
+                }
+                let mapped_asset = asset(&raw_asset, map);
+                let Some(local_str) = mapped_asset.local_path.as_deref() else {
+                    continue;
+                };
+                let local_p = Path::new(local_str);
+                let in_folder = if recursive {
+                    local_p.starts_with(folder)
+                        || canonical_folder
+                            .as_deref()
+                            .is_some_and(|c| local_p.starts_with(c))
+                } else {
+                    local_p.parent() == Some(folder)
+                        || canonical_folder
+                            .as_deref()
+                            .is_some_and(|c| local_p.parent() == Some(c))
+                };
+                if !in_folder
+                    || hidden.iter().any(|h| local_p.starts_with(h))
+                    || excluded.iter().any(|ex| local_p.starts_with(ex))
+                    || !crate::library_cmds::photo_candidate(local_p)
+                {
+                    continue;
+                }
+                if !seen_paths.insert(local_str.to_string()) {
+                    continue;
+                }
+                let (image, capture, asset_id, variant_id) =
+                    enrich_immich_hit(cache, local_str, &mapped_asset);
+                if !crate::search_filters::passes(
+                    &image,
+                    capture.as_deref(),
+                    &args.filters,
+                    &empty_remote,
+                ) {
+                    continue;
+                }
+                rank += 1;
+                let score = 1.0 / (60.0 + rank as f64);
+                hits.push(LocalHit {
+                    asset_id,
+                    variant_id,
+                    subject: "original".into(),
+                    score,
+                    image,
+                });
+                if hits.len() >= needed {
+                    break;
+                }
+            }
+            let next_raw = match &assets["nextPage"] {
+                Value::String(s) => s.parse::<u64>().ok(),
+                Value::Number(n) => n.as_u64(),
+                _ => None,
+            };
+            next_server_page = next_raw.filter(|p| *p > current_page);
+            if hits.len() >= needed || next_server_page.is_none() {
+                break;
+            }
+            current_page = next_server_page.unwrap();
+        }
+
+        let has_more = hits.len() > args.size as usize || next_server_page.is_some();
+        hits.truncate(args.size as usize);
+        let next = if has_more {
+            next_server_page.map(|p| format!("immich:{p}"))
+        } else {
+            None
+        };
+        Ok(LocalPage {
+            items: hits,
+            next,
+            revision: "immich".into(),
+        })
+    }
+}
+
+fn parse_exposure_seconds(raw: Option<&str>) -> serde_json::Number {
+    let val = raw
+        .and_then(|s| {
+            let trimmed = s.trim();
+            if let Some((a, b)) = trimmed.split_once('/') {
+                let num = a.trim().parse::<f64>().ok()?;
+                let den = b.trim().parse::<f64>().ok()?;
+                (den != 0.0).then_some(num / den)
+            } else {
+                trimmed.parse::<f64>().ok()
+            }
+        })
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(0.0);
+    serde_json::Number::from_f64(val).unwrap_or_else(|| serde_json::Number::from(0))
+}
+
+fn immich_datetime(raw: Option<&str>) -> String {
+    let s = raw.unwrap_or("").trim();
+    if s.len() >= 19 && s.as_bytes()[4] == b'-' && s.as_bytes()[7] == b'-' {
+        format!(
+            "{} {}",
+            s[..10].replace('-', ":"),
+            &s[11..19]
+        )
+    } else {
+        s.to_string()
+    }
+}
+
+fn asset_to_library_image(local_path: &str, a: &Asset) -> crate::typed_library::LibraryImage {
+    let filename = Path::new(local_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&a.name)
+        .to_string();
+    let zero = || serde_json::Number::from(0);
+    crate::typed_library::LibraryImage {
+        imgid: 0,
+        path: local_path.to_string(),
+        filename,
+        rating: a.rating.clamp(0, 5) as u8,
+        rejected: false,
+        labels: 0,
+        edited: false,
+        width: u32::try_from(a.width).unwrap_or(0),
+        height: u32::try_from(a.height).unwrap_or(0),
+        location: None,
+        exif: crate::bindings::MetaExif {
+            maker: a.exif.make.clone().unwrap_or_default(),
+            model: a.exif.model.clone().unwrap_or_default(),
+            lens: a.exif.lens.clone().unwrap_or_default(),
+            body_serial: String::new(),
+            exposure: parse_exposure_seconds(a.exif.exposure.as_deref()),
+            aperture: a.exif.aperture.clone().unwrap_or_else(zero),
+            iso: a.exif.iso.clone().unwrap_or_else(zero),
+            focal_length: a.exif.focal.clone().unwrap_or_else(zero),
+            exposure_bias: zero(),
+            focus_distance: zero(),
+            crop_factor: zero(),
+            white_balance: String::new(),
+            flash: String::new(),
+            exposure_program: String::new(),
+            metering_mode: String::new(),
+            file_width: 0,
+            file_height: 0,
+            sensor_width: 0,
+            sensor_height: 0,
+            datetime: immich_datetime(a.exif.datetime.as_deref().or(a.date.as_deref())),
+            capture_time_raw: String::new(),
+            capture_offset: String::new(),
+            file_datetime: String::new(),
+        },
+        keywords: Vec::new(),
+        version: 0,
+        copy: false,
+        morfphoto_preview: None,
+    }
+}
+
+fn enrich_immich_hit(
+    cache: &crate::search_cache::SearchCache,
+    local_path: &str,
+    a: &Asset,
+) -> (
+    crate::typed_library::LibraryImage,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
+    if let Ok(Some(variant)) = cache.variant(local_path, "") {
+        if let Ok(Some(raw)) = cache.metadata(variant.id) {
+            if let Some(cached) = crate::local_search::cached_image(&raw, local_path, 0) {
+                return (
+                    cached,
+                    variant.capture_time_raw,
+                    Some(variant.asset_id.to_string()),
+                    Some(variant.id.to_string()),
+                );
+            }
+        }
+    }
+    (asset_to_library_image(local_path, a), None, None, None)
 }
 
 pub struct OriginalInfo {
@@ -632,6 +1011,191 @@ mod tests {
         assert_eq!(std::fs::read(&f).unwrap(), b"raw bytes");
         orig.assert();
         assert!(c.thumb("../x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn smart_search_availability_checks_features_and_permissions() {
+        let mut server = mockito::Server::new();
+        let _f = server
+            .mock("GET", "/api/server/features")
+            .with_body(r#"{"smartSearch":true}"#)
+            .create();
+        let _me = server
+            .mock("GET", "/api/api-keys/me")
+            .with_body(r#"{"permissions":["asset.read"]}"#)
+            .create();
+        assert_eq!(client(&server.url()).smart_search_available().unwrap(), true);
+
+        let mut server = mockito::Server::new();
+        let _f = server
+            .mock("GET", "/api/server/features")
+            .with_body(r#"{"smartSearch":false}"#)
+            .create();
+        assert_eq!(client(&server.url()).smart_search_available().unwrap(), false);
+
+        // 404 on deprecated /server/features falls back to /server/ping
+        let mut server = mockito::Server::new();
+        let _f = server
+            .mock("GET", "/api/server/features")
+            .with_status(404)
+            .create();
+        let _p = server
+            .mock("GET", "/api/server/ping")
+            .with_body(r#"{"res":"pong"}"#)
+            .create();
+        let _me = server
+            .mock("GET", "/api/api-keys/me")
+            .with_body(r#"{"permissions":["all"]}"#)
+            .create();
+        assert_eq!(client(&server.url()).smart_search_available().unwrap(), true);
+
+        // Missing asset.read permission -> false
+        let mut server = mockito::Server::new();
+        let _f = server
+            .mock("GET", "/api/server/features")
+            .with_body(r#"{"smartSearch":true}"#)
+            .create();
+        let _me = server
+            .mock("GET", "/api/api-keys/me")
+            .with_body(r#"{"permissions":["album.read"]}"#)
+            .create();
+        assert_eq!(client(&server.url()).smart_search_available().unwrap(), false);
+    }
+
+    #[test]
+    fn local_to_server_folder_translates_posix_and_windows_roots() {
+        let posix = PathMap {
+            immich: "/mnt/photos".into(),
+            local: "/Volumes/photos".into(),
+        };
+        assert_eq!(
+            local_to_server_folder(Path::new("/Volumes/photos"), &posix, None).as_deref(),
+            Some("/mnt/photos/")
+        );
+        assert_eq!(
+            local_to_server_folder(Path::new("/Volumes/photos/2026/Trip"), &posix, None).as_deref(),
+            Some("/mnt/photos/2026/Trip/")
+        );
+        assert_eq!(
+            local_to_server_folder(Path::new("/Volumes/photos-other"), &posix, None),
+            None
+        );
+
+        let win = PathMap {
+            immich: "C:\\Photos".into(),
+            local: "/Volumes/photos".into(),
+        };
+        assert_eq!(
+            local_to_server_folder(Path::new("/Volumes/photos/2026"), &win, None).as_deref(),
+            Some("C:\\Photos\\2026\\")
+        );
+    }
+
+    #[test]
+    fn smart_in_folder_scopes_recursive_nonrecursive_exclusions_and_400_fallback() {
+        let dir = test_dir("immich-smart-folder");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::create_dir_all(dir.join("hidden")).unwrap();
+        std::fs::create_dir_all(dir.join("morf")).unwrap();
+        std::fs::write(dir.join("a.jpg"), b"a").unwrap();
+        std::fs::write(dir.join("sub/b.jpg"), b"b").unwrap();
+        std::fs::write(dir.join("hidden/h.jpg"), b"h").unwrap();
+        std::fs::write(dir.join("morf/m.jpg"), b"m").unwrap();
+
+        let cache = crate::search_cache::SearchCache::open(&dir.join("cache.sqlite")).unwrap();
+        let map = PathMap {
+            immich: "/mnt/photos".into(),
+            local: dir.to_string_lossy().into(),
+        };
+
+        let mut server = mockito::Server::new();
+        let body = r#"{"assets":{"items":[
+            {"id":"1","originalFileName":"a.jpg","originalPath":"/mnt/photos/a.jpg","localDateTime":"2026-05-01T10:00:00.000Z","exifInfo":{"rating":5}},
+            {"id":"2","originalFileName":"b.jpg","originalPath":"/mnt/photos/sub/b.jpg","localDateTime":"2026-05-02T10:00:00.000Z","exifInfo":{"rating":4}},
+            {"id":"3","originalFileName":"h.jpg","originalPath":"/mnt/photos/hidden/h.jpg","localDateTime":"2026-05-03T10:00:00.000Z","exifInfo":{"rating":5}},
+            {"id":"4","originalFileName":"m.jpg","originalPath":"/mnt/photos/morf/m.jpg","localDateTime":"2026-05-04T10:00:00.000Z","exifInfo":{"rating":5}}
+        ],"nextPage":null}}"#;
+        let _smart = server
+            .mock("POST", "/api/search/smart")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "query": "dog",
+                "filter": { "originalPath": { "startsWith": "/mnt/photos/" } }
+            })))
+            .with_body(body)
+            .create();
+
+        let args = crate::local_search::LocalSearchArgs {
+            text: "dog".into(),
+            scope: "folder".into(),
+            folder: Some(dir.to_string_lossy().into()),
+            ..Default::default()
+        };
+        let canon = std::fs::canonicalize(&dir).unwrap();
+        let non_rec = client(&server.url())
+            .smart_in_folder(
+                &dir,
+                false,
+                &[canon.join("hidden")],
+                &[canon.join("morf")],
+                &map,
+                Some(&canon),
+                &args,
+                &cache,
+                || false,
+            )
+            .unwrap();
+        assert_eq!(non_rec.items.len(), 1);
+        assert_eq!(non_rec.items[0].image.filename, "a.jpg");
+
+        let rec = client(&server.url())
+            .smart_in_folder(
+                &dir,
+                true,
+                &[canon.join("hidden")],
+                &[canon.join("morf")],
+                &map,
+                Some(&canon),
+                &args,
+                &cache,
+                || false,
+            )
+            .unwrap();
+        let names: Vec<_> = rec.items.iter().map(|i| i.image.filename.as_str()).collect();
+        assert_eq!(names, vec!["a.jpg", "b.jpg"]);
+
+        // Server rejecting originalPath with HTTP 400 triggers fallback without originalPath
+        let mut server = mockito::Server::new();
+        let reject = server
+            .mock("POST", "/api/search/smart")
+            .match_body(mockito::Matcher::Regex("originalPath".into()))
+            .with_status(400)
+            .with_body(r#"{"message":"property originalPath should not exist"}"#)
+            .expect(1)
+            .create();
+        let retry = server
+            .mock("POST", "/api/search/smart")
+            .with_body(body)
+            .expect(1)
+            .create();
+        let fallback_page = client(&server.url())
+            .smart_in_folder(
+                &dir,
+                false,
+                &[],
+                &[],
+                &map,
+                Some(&canon),
+                &args,
+                &cache,
+                || false,
+            )
+            .unwrap();
+        reject.assert();
+        retry.assert();
+        assert_eq!(fallback_page.items.len(), 1);
+        assert_eq!(fallback_page.items[0].image.filename, "a.jpg");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

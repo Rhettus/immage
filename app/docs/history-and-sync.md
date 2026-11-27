@@ -16,7 +16,8 @@ continuous slider drag counts as one step.
 ## The History card
 
 The **History** card in the Library panel lists the edit, newest at the
-top:
+top. Every step is shown at once; a long history extends the Library
+panel, which scrolls as a whole:
 
 - this session's steps, named after what changed, such as
   **Exposure** or **New mask**. Click one to go back to it; steps above it
@@ -69,10 +70,24 @@ orientation, and modules added in darktable. It works the same on a
 virtual copy, so you can try a different approach on a copy. It is one
 step: ⌘Z brings the whole history back, and ⇧⌘Z discards it again.
 
+In Library Grid view, you can also right-click an edited photo (or a selection
+containing edited photos) and choose **Reset Photo** (or **Reset N Photos…**)
+to discard their edit history and return them to unedited. Immage asks for
+confirmation whether you reset one photo or several. Check **Don’t show this
+confirmation again** and choose **Reset** to skip future prompts for grid
+resets and **Reset all**, including after restarting Immage. **Cancel** leaves
+your photos and the confirmation preference as they were. Immage skips
+unedited photos in a mixed selection. When a photo is open in the editor,
+⌘Z undoes the reset as one step.
+
 ![The History card: four slider moves above the steps the photo opened with](images/history.png)
 <!-- screenshot: Library panel, History card open, several steps above the opening stack -->
 
 ## Reset all
+
+Choose **Reset all** at the top of Adjustments, then confirm with **Reset**.
+Check **Don’t show this confirmation again** to skip future prompts here
+and in the Library grid.
 
 **Reset all**, in the Adjustments panel's head, takes the photo back to its
 defaults: sliders, crop, look, masks and spots. It also takes off what the
@@ -86,16 +101,17 @@ orientation, and modules added in darktable. To remove those too, use
 
 ## Copying settings to other photos
 
-The buttons at the bottom of the right panel:
+The buttons at the bottom of the right panel stay available in both the editor
+and Grid view (below Find's filter footer):
 
 - **Copy…** (⇧⌘C) opens **Copy Settings**: tick what to copy, then copy
-  it.
+  it from the open photo (or the selected photo in Grid view).
 - **Paste** (⇧⌘V) pastes those settings onto the selected photos in the
   grid or filmstrip. A single selection is also the target, even if another
   photo is open. Without a selection, Paste uses the open photo. The open
   photo and selection stay in place.
 - **Previous** (⌥⌘V) pastes the previous photo's settings, the parts ticked
-  in Copy Settings.
+  in Copy Settings, onto the open photo or the selected photo in Grid view.
 
 **Copy Settings** groups: **Profile**, **Treatment**, **White Balance**,
 **Tone**, **Presence**, **Tone Curve**, **HSL / Color**, **B&W Mix**, **Color
@@ -103,6 +119,19 @@ Grading**, **Sharpening**, **Profiled Denoise**, **Lens
 Corrections**, **Transform**, **Post-Crop Vignetting**, **Grain**,
 **Crop**, **Look**, **Masks** and **Advanced modules**. **Crop** and **Masks**
 start unticked. Your choice is remembered.
+
+**Profile**, the first checkbox, copies the Basic profile and its tone
+mapper setting to photos that support RAW tone mapping. For AgX, it also
+copies the source photo’s black and white relative exposure, including the
+range set by a custom AgX preset. JPEGs and other already tone-mapped photos
+accept Color Balance RGB profiles.
+
+Under **White Balance**, check **Auto on Paste** to calculate
+temperature and tint from each destination photo before applying the copied
+edits. This works with **Paste** and **Previous**. It skips destinations
+already set to black and white or in negative conversion, and keeps the
+existing white balance when the photo has no usable colors. Leave the option
+unchecked to copy the source photo’s temperature and tint.
 
 Only the groups ticked in Copy Settings change; other edits stay as they
 were. **Look**, ticked by default, includes the film style's own module

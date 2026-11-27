@@ -1,7 +1,10 @@
 # Keyboard shortcuts
 
 Press ⌘/ in Immage for this list. On Windows and Linux, ⌘ is Ctrl, ⌥ is Alt
-and ⇧ is Shift. Most keys are the ones mainstream editors use.
+and ⇧ is Shift. Most keys are the ones mainstream editors use. The sheet
+includes a search box at the top: start typing to filter to partial matches
+across actions, keys, and sections, clear it (or press Esc once) to return to
+the full list, and press Esc again (or ⌘/) to close.
 
 The File, Edit, Photo, View and Help menus show each command's shortcut
 beside it, so the menus are another place to find a key. See
@@ -40,7 +43,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | Tab | Hide or show the side panels |
 | ⇧Tab | Hide or show the side panels and filmstrip |
 | Z | Fit or the navigator's zoom (100% until another is picked) |
-| ⌘= ⌘- | Zoom in or out: fit, fill, 1:1, 2:1, 3:1, 4:1 |
+| ⌘= ⌘- | Zoom in or out, in order of size: half of fit, 1:2 (50%), fit, fill, 1:1, 2:1, 3:1, 4:1 |
 | Click | Zoom to 100% there, or back to fit |
 | Scroll | Zoom around the pointer (a brush in hand: its size) |
 | Space-drag | Pan a zoomed-in photo, in any tool |
@@ -102,7 +105,7 @@ In full screen preview, Z, ⌘= ⌘-, Y, X, I, L, \, 0-9 and ← → still work.
 | [ ] | Brush size |
 | Scroll | With the brush: its size; ⇧ its feather |
 | ⌥-drag | Brush away |
-| O | Show or hide the overlay |
+| O | Show or hide the selected mask overlay, including while hovering over range controls |
 | Esc | Put the tool down |
 | Space-drag | Pan a zoomed-in photo, without painting or moving a mask |
 
@@ -122,9 +125,10 @@ The mask keys work from anywhere: they open Masks with that tool.
 | Key | Action |
 | --- | --- |
 | Q | Heal and clone |
+| O | Show or hide the **Limit to color** overlay |
 | [ ] | Brush size |
 | Scroll | Brush size; ⇧ its feather |
 | A | Visualize spots |
 | H | Hide the spots, or show them again |
-| Delete | Remove the selected spot |
-| Esc | Deselect the spot |
+| Delete | Remove the selected spots |
+| Esc | Cancel the eyedropper or clear the selection |

@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire, registerHooks } from "node:module";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,8 +82,20 @@ test("film simulation: stocks, on and back, and Export to Library", { timeout: 6
     // the panel's hash must be the module's, or a preset names no stock
     for (const s of stocks.stocks) assert.equal(stockHash(s.stock), s.hash, `hash of ${s.stock}`);
 
-    const path = join(dir, "photo.jpg");
-    copyFileSync(join(root, "app/sample/stairs-to-mountain.jpg"), path);
+    // Minimal linear-float PFM (non-LDR) so AgX runs ahead of Film Simulation.
+    const path = join(dir, "photo.pfm");
+    {
+      const w = 96, h = 64;
+      const head = Buffer.from(`PF\n${w} ${h}\n-1.0\n`, "ascii");
+      const data = Buffer.alloc(w * h * 12);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const o = (y * w + x) * 12;
+        data.writeFloatLE(0.04 + 0.8 * (x / (w - 1)), o);
+        data.writeFloatLE(0.04 + 0.8 * (y / (h - 1)), o + 4);
+        data.writeFloatLE(0.04 + 0.8 * (1 - x / (w - 1)), o + 8);
+      }
+      writeFileSync(path, Buffer.concat([head, data]));
+    }
     const { imgid } = await request({ cmd: "open", path });
     let s = await Session.open(path, imgid, view, () => {}, () => {}, true);
     await s.settled();
@@ -96,8 +108,8 @@ test("film simulation: stocks, on and back, and Export to Library", { timeout: 6
     };
     const get = () => request({ cmd: "get", modules: { agx: [], sigmoid: [], exposure: ["exposure"],
                                                        spektrafilm: ["film_hash"] } });
-    // AgX with Contrast on it, as a new photo in the app has
-    s.setMany([["tm_mode", 1], ["contrast", 20]]);
+    // AgX with Contrast and Exposure on, as a new raw photo in the app has
+    s.setMany([["tm_mode", 1], ["exposure", 0.1], ["contrast", 20]]);
     const plain = await render();
     const tmOn = "agx";
     assert.ok((await get()).modules.agx.enabled, "the photo starts on AgX");

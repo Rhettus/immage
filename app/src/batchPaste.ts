@@ -2,10 +2,12 @@
 // Copyright (C) 2026 the Immage authors
 import type { Clip } from "./CopySettings";
 import { Session, instanceKey, mapOpOf } from "./session";
-import { CONVERSIONS } from "./manifest";
+import { CONVERSIONS, TM_AGX, TM_SIGMOID, TONE_MAPPER_ALL_OPS } from "./manifest";
+import { filterValuesForPhoto } from "./pasteDefaults";
 import { withModel } from "./aiModel";
 import { NO_REFINE, type ObjectShape, type Backdrop, type Mask } from "./masks";
 import { commands, type PasteUpdate } from "./commands";
+import { anchored, cameraUsedAutoWB, neutralize, whitePatch, wbConverged, WB_REFINEMENTS } from "./wb";
 
 export type PasteTarget = { imgid: number; path: string };
 export type { PasteUpdate } from "./commands";
@@ -17,6 +19,14 @@ export function pasteTargets<T extends PasteTarget>(images: T[], selection: Set<
   const chosen = selection.size ? images.filter(i => selection.has(i.imgid)) : current ? [current] : [];
   return { targets: [...new Map(chosen.filter(i => !remote(i)).map(i => [i.imgid, i])).values()],
     skipped: chosen.filter(remote).length };
+}
+
+export function resetTargets<T extends PasteTarget & { edited: boolean }>(
+  targets: T[],
+  behindRaw: Set<number>,
+  remote: (image: T) => boolean,
+): T[] {
+  return [...new Map(targets.filter(i => !remote(i) && !behindRaw.has(i.imgid) && i.edited).map(i => [i.imgid, i])).values()];
 }
 
 export function replaceMasks(s: Session, target: Mask[]) {
@@ -44,8 +54,12 @@ export function applyClip(s: Session, c: Clip, reapplyLook = false) {
   s.endBaseline();
   // a negative's conversion or a film simulation, pasted onto a photo
   // without it, turns off the modules it replaces that no slider covers
-  const converts = CONVERSIONS.filter((v) => c.values[v.flag] === 1 && s.values[v.flag] !== 1);
-  s.setMany(Object.entries(c.values));
+  const values = filterValuesForPhoto(c.values, s.toneMappable);
+  const converts = CONVERSIONS.filter((v) => values[v.flag] === 1 && s.values[v.flag] !== 1);
+  if (values.tm_mode === TM_AGX || values.tm_mode === TM_SIGMOID) {
+    s.disableOtherToneMappers({ op: values.tm_mode === TM_AGX ? "agx" : "sigmoid", priority: 0 });
+  }
+  s.setMany(Object.entries(values));
   if (converts.length) {
     const done = new Set<string>();
     for (const h of s.history) {
@@ -95,9 +109,41 @@ export async function recalculateAiMasks(c: Clip): Promise<Clip> {
   return result;
 }
 
+// Analyze the destination before applying the clip. Temporary previews let
+// refinements use the new balance without saving intermediate edits.
+async function estimatePasteWB(s: Session) {
+  if (s.values.bw_mode === 1 || s.values.neg_on === 1) return null;
+  const { image } = await commands.meta(s.imgid);
+  const anchor = cameraUsedAutoWB(image.exif?.white_balance)
+    ? { temp: s.neutral.temp, tint: s.neutral.tint } : null;
+  let current = { temp: s.values.temp, tint: s.values.tint };
+  for (let round = 0; ; round++) {
+    const frame = await s.preview(640, round ? current : {});
+    const rgb = whitePatch(frame.pixels, frame.width, frame.height);
+    const next = rgb && neutralize(current, rgb);
+    if (!next && round === 0) return null;
+    if (!next || wbConverged(current, next) || round >= WB_REFINEMENTS)
+      return anchor ? anchored(anchor, next ?? current) : round ? current : null;
+    current = next;
+  }
+}
+
 export async function restorePaste(token: number, action: "undo" | "redo" | "abort") {
   const r = await commands.pasteBatch(action, token, null);
   return r.updates ?? [];
+}
+
+async function rollbackBatch(token: number, e: unknown, saved: (update: PasteUpdate) => void) {
+  try {
+    const updates = await restorePaste(token, "abort");
+    updates.forEach(saved);
+    const failures = updates.filter(i => i.error);
+    if (failures.length) return { token, error: `${e}; recovery failed for ${failures.length} photo(s). Undo retries recovery.`, recovery: true };
+    await commands.pasteBatch("release", token, null);
+    return { token: null, error: `${e}; batch rolled back`, recovery: false };
+  } catch (recovery) {
+    return { token, error: `${e}; recovery failed: ${recovery}. Undo retries recovery.`, recovery: true };
+  }
 }
 
 // The caller must quiesce the viewer session, block editing/navigation, and
@@ -126,12 +172,18 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
       const s = await Session.open(target.path, target.imgid, () => ({ width: 1, height: 1 }),
         () => {}, e => { failure ??= e; }, true);
       try {
-        applyClip(s, { ...c, masks: undefined }, true);
+        const wb = c.autoWB ? await estimatePasteWB(s) : null;
+        applyClip(s, { ...c, values: wb ? { ...c.values, ...wb } : c.values, masks: undefined }, true);
         await s.settled();
         if (failure) throw Error(failure);
         const calculated = await recalculateAiMasks(c).catch(e => { throw Error(`${target.path}: ${e}`); });
         if (calculated.masks) replaceMasks(s, calculated.masks);
-        if (c.advanced) await s.pasteAdvanced(c.advanced);
+        if (c.advanced) {
+          const filtered = s.toneMappable ? c.advanced : c.advanced.filter((a) => !TONE_MAPPER_ALL_OPS.has(a.op));
+          const pastedTm = filtered.find((a) => TONE_MAPPER_ALL_OPS.has(a.op) && a.state.enabled);
+          if (pastedTm) s.disableOtherToneMappers({ op: pastedTm.op, priority: pastedTm.priority });
+          if (filtered.length) await s.pasteAdvanced(filtered);
+        }
       }
       finally { await s.settled(); }
       if (failure) throw Error(failure);
@@ -145,15 +197,29 @@ export async function runPaste(targets: PasteTarget[], clip: Clip,
     progress(targets.length, targets.length);
     return { token, error: null as string | null, recovery: false };
   } catch (e) {
-    try {
-      const updates = await restorePaste(token, "abort");
-      updates.forEach(saved);
-      const failures = updates.filter(i => i.error);
-      if (failures.length) return { token, error: `${e}; recovery failed for ${failures.length} photo(s). Undo retries recovery.`, recovery: true };
-      await commands.pasteBatch("release", token, null);
-      return { token: null, error: `${e}; batch rolled back`, recovery: false };
-    } catch (recovery) {
-      return { token, error: `${e}; recovery failed: ${recovery}. Undo retries recovery.`, recovery: true };
+    return rollbackBatch(token, e, saved);
+  }
+}
+
+// Discards saved history for each target in a pasteBatch transaction without
+// running preparePastePhoto, leaving targets genuinely unedited until reopened.
+export async function runReset(
+  targets: PasteTarget[],
+  progress: (done: number, total: number) => void,
+  saved: (update: PasteUpdate) => void,
+) {
+  const { token } = await commands.pasteBatch("begin", null, targets.map(i => i.imgid));
+  if (token == null) throw Error("the engine gave no paste token");
+  try {
+    for (const [n, target] of targets.entries()) {
+      progress(n, targets.length);
+      const r = await commands.historyDiscard(target.imgid);
+      saved({ imgid: target.imgid, edited: r.edited, error: null });
     }
+    await commands.pasteBatch("commit", token, null);
+    progress(targets.length, targets.length);
+    return { token, error: null as string | null, recovery: false };
+  } catch (e) {
+    return rollbackBatch(token, e, saved);
   }
 }

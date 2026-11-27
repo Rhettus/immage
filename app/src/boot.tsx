@@ -11,6 +11,7 @@ import { loadThemes } from "./themes";
 import SelectMenu from "./SelectMenu";
 import { perf } from "./perf";
 import { logCspViolations } from "./cspLog";
+import { watchStalls } from "./commands";
 import "@fontsource/poppins/400.css";
 import "@fontsource/poppins/500.css";
 import "@fontsource/poppins/600.css";
@@ -22,6 +23,7 @@ import "./styles.css";
 document.documentElement.classList.toggle("windows", navigator.userAgent.includes("Windows"));
 
 logCspViolations();
+watchStalls();
 loadThemes();
 await loadAgxProfiles();
 

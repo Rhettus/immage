@@ -6,6 +6,12 @@ export class Blocked extends Error { constructor(message) { super(message); this
 export async function requireElement(t, selector, reason = selector) {
   if (!await t.driver.observe(s => !!document.querySelector(s), selector)) throw new Blocked(`Missing prerequisite: ${reason}`);
 }
+export async function resetAll(t) {
+  const dialog = 'dialog.reset-photos-dialog[open]';
+  await click(t, 'button[aria-label="reset all"]');
+  await click(t, `${dialog} button.danger`);
+  await until(() => t.driver.observe(s => !document.querySelector(s), dialog), 'Reset All confirmation closed');
+}
 export async function textButton(t, scope, text) {
   // Resolve by readonly text observation at interaction time; no DOM mutations.
   // reveal scrolls a button below or above its list into view first.

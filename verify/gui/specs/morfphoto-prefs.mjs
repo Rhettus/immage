@@ -30,7 +30,7 @@ export async function morfphotoPrefs(t) {
     await click(t, 'button[data-tour="prefs"]');
     const tab = await until(() => t.driver.observe(() => {
       const button = [...document.querySelectorAll('.prefs-tabs button')]
-        .find(node => node.textContent.trim() === 'morfPhoto (Experimental)');
+        .find(node => node.textContent.trim() === 'Immage Accelerator (Experimental)');
       if (!button) return null;
       const { x, y, width, height } = button.getBoundingClientRect();
       return { x: x + width / 2, y: y + height / 2 };
@@ -40,7 +40,7 @@ export async function morfphotoPrefs(t) {
       const toggle = document.querySelector(enable);
       const button = document.querySelector(test);
       return toggle && button ? { enabled: toggle.checked, canTest: !button.disabled } : null;
-    }, field('Use morfPhoto'), testButton), 'morfPhoto settings loaded');
+    }, field('Enable Immage Accelerator'), testButton), 'morfPhoto settings loaded');
     assert.deepEqual(disabledByDefault, { enabled: false, canTest: false });
 
     await typeInto(t, 'Server URL', `http://127.0.0.1:${server.address().port}`);

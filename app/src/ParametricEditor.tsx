@@ -80,7 +80,7 @@ function move(p: ChannelRange["p"], k: number, v: number): ChannelRange["p"] {
 const PAD = 7, TRACK_TOP = 13, TRACK_H = 10, TRI = 6, HEIGHT = 36;
 
 export function ParametricEditor({ range, picked, showing, setting, disabled, renderSlider, onChange, onShow, onSet,
-                                   onTab }: {
+                                   onTab, pickers = true }: {
   range: ParametricRange;
   picked: Picked | null;                       // what the show picker reads under the pointer
   showing: boolean;                            // the show picker is on
@@ -91,6 +91,7 @@ export function ParametricEditor({ range, picked, showing, setting, disabled, re
   onShow: (on: boolean) => void;
   onSet: (channel: BlendifChannel | null) => void;
   onTab: (channel: BlendifChannel | null) => void;   // the channel shown, for the overlay's color; null when gone
+  pickers?: boolean;                           // the two pickers are offered (a panel without them leaves them out)
 }) {
   const [tab, setTab] = useState<BlendifChannel>("g");
   useEffect(() => { onTab(tab); }, [tab]);
@@ -170,12 +171,16 @@ export function ParametricEditor({ range, picked, showing, setting, disabled, re
                     onClick={() => { setTab(c.id); if (setting) onSet(c.id); }}>{t(`fields.parametric.channel.${c.id}`)}</button>
           ))}
         </div>
-        <button className={`pm-tool${showing ? " on" : ""}`} disabled={disabled}
-                title={t("fields.parametric.showPicker")}
-                onClick={() => onShow(!showing)}>{DROPPER}</button>
-        <button className={`pm-tool${setting ? " on" : ""}`} disabled={disabled}
-                title={t("fields.parametric.setRange")}
-                onClick={() => onSet(setting ? null : tab)}>{DROPPER_SET}</button>
+        {pickers && (
+          <>
+            <button className={`pm-tool${showing ? " on" : ""}`} disabled={disabled}
+                    title={t("fields.parametric.showPicker")}
+                    onClick={() => onShow(!showing)}>{DROPPER}</button>
+            <button className={`pm-tool${setting ? " on" : ""}`} disabled={disabled}
+                    title={t("fields.parametric.setRange")}
+                    onClick={() => onSet(setting ? null : tab)}>{DROPPER_SET}</button>
+          </>
+        )}
       </div>
       <div className="pm-row">
         <button className="pm-polarity" disabled={disabled}

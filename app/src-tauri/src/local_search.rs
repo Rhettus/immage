@@ -33,6 +33,9 @@ pub struct LocalSearchArgs {
     pub remote: SearchArgs,
     pub next: Option<String>,
     pub size: u32,
+    /// Set by Find's "Both" mode when Immich is already queried in parallel,
+    /// so `local_search` does not issue a duplicate Immich request.
+    pub immich_searched: bool,
 }
 impl Default for LocalSearchArgs {
     fn default() -> Self {
@@ -48,6 +51,7 @@ impl Default for LocalSearchArgs {
             remote: SearchArgs::default(),
             next: None,
             size: 100,
+            immich_searched: false,
         }
     }
 }
@@ -98,7 +102,14 @@ struct Cursor {
     revision: String,
     score: f64,
     variant_id: i64,
+    /// Where a page that ended in the local morfPhoto copy resumes, by server
+    /// path and version; `variant_id` then names no cache row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mirror: Option<crate::mirror_query::After>,
 }
+/// Ids of rows read from the local morfPhoto copy, below every provider and
+/// cache id, so they rank first and keep their server path order.
+const MIRROR_BASE: i64 = -(1 << 40);
 struct Ranked {
     score: f64,
     id: i64,
@@ -146,7 +157,7 @@ fn validate_vector(values: &[f32]) -> Result<(), String> {
     }
     Ok(())
 }
-fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
+pub(crate) fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
     let mut value: serde_json::Value = serde_json::from_str(raw).ok()?;
     value.as_object_mut()?.insert("imgid".into(), serde_json::json!(0));
     let image: LibraryImage = serde_json::from_value(value).ok()?;
@@ -156,7 +167,7 @@ fn cached_image(raw: &str, path: &str, version: u32) -> Option<LibraryImage> {
         .then_some(image)
 }
 
-fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[PathBuf]) -> bool {
+pub(crate) fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[PathBuf]) -> bool {
     if hidden.iter().any(|p| path.starts_with(p)) || !roots.iter().any(|p| path.starts_with(p)) {
         return false;
     }
@@ -172,17 +183,34 @@ fn in_scope(path: &Path, args: &LocalSearchArgs, roots: &[PathBuf], hidden: &[Pa
 }
 /// Complete morfPhoto scopes replace their local metadata candidates for one
 /// query. Local cache IDs and embeddings still belong to the local index.
+/// `excluded_vector_scopes` lists subtrees handled by higher-precedence remote
+/// CLIP providers (morfPhoto / Immich) for the current semantic query.
 #[derive(Default)]
 pub struct ProviderMetadata {
     scopes: Vec<(PathBuf, bool)>,
     images: BTreeMap<(String, u32), LibraryImage>,
+    excluded_vector_scopes: Vec<PathBuf>,
+    /// The local copy of a mapped catalog, read by SQL rather than loaded:
+    /// metadata queries only (a vector query needs its images by path).
+    mirror: Option<crate::mirror_query::Source>,
 }
 impl ProviderMetadata {
+    pub fn add_mirror(&mut self, source: crate::mirror_query::Source) {
+        self.scopes.extend(source.scopes.iter().cloned());
+        self.mirror = Some(source);
+    }
+
     pub fn add(&mut self, scope: PathBuf, recursive: bool, images: Vec<LibraryImage>) {
         self.scopes.push((scope, recursive));
         for image in images {
             self.images.insert((image.path.clone(), image.version), image);
         }
+    }
+
+    pub fn exclude_vector_scopes(&mut self, scopes: Vec<PathBuf>) {
+        self.excluded_vector_scopes = scopes;
+        self.excluded_vector_scopes.sort();
+        self.excluded_vector_scopes.dedup();
     }
 
     fn covers(&self, path: &Path) -> bool {
@@ -195,8 +223,15 @@ impl ProviderMetadata {
         })
     }
 
+    fn vector_excluded(&self, path: &Path) -> bool {
+        self.excluded_vector_scopes
+            .iter()
+            .any(|scope| path.starts_with(scope))
+    }
+
     fn hash(&self, hash: &mut Sha256, cancelled: &impl Fn() -> bool) -> Result<(), String> {
         hash.update(serde_json::to_vec(&self.scopes).map_err(|e| e.to_string())?);
+        hash.update(serde_json::to_vec(&self.excluded_vector_scopes).map_err(|e| e.to_string())?);
         for image in self.images.values() {
             if cancelled() {
                 return Err("Search cancelled".into());
@@ -281,8 +316,11 @@ pub fn retrieve_with_provider(
     let mut heap = BinaryHeap::new();
     let needed = args.size as usize + 1;
     let filename_query = (args.mode == "filename").then(|| args.text.to_lowercase());
+    // chosen cameras and lenses in either spelling match the one every source is
+    // mapped to
+    let filters = args.filters.canonical();
     let matches = |image: &LibraryImage, capture: Option<&str>| {
-        search_filters::passes(image, capture, &args.filters, &args.remote)
+        search_filters::passes(image, capture, &filters, &args.remote)
             && filename_query
                 .as_ref()
                 .is_none_or(|needle| image.filename.to_lowercase().contains(needle))
@@ -290,9 +328,54 @@ pub fn retrieve_with_provider(
     let follows = |score: f64, id: i64| {
         cursor.as_ref().is_none_or(|c| score < c.score || (score == c.score && id > c.variant_id))
     };
+    // The local copy of a mapped catalog answers by SQL, reading only the rows
+    // that match, in server path order, from where the last page stopped. A
+    // cursor from a later source means the copy was read to its end.
+    let mut mirror_keys: std::collections::HashMap<i64, crate::mirror_query::After> =
+        std::collections::HashMap::new();
+    if let (None, Some(source)) = (&vector, &provider.mirror) {
+        let resume = match &cursor {
+            None => Some(None),
+            Some(c) => c.mirror.clone().map(Some),
+        };
+        if let Some(resume) = resume {
+            let accept = |image: &LibraryImage| {
+                in_scope(Path::new(&image.path), args, roots, hidden)
+                    && filename_query
+                        .as_ref()
+                        .is_none_or(|needle| image.filename.to_lowercase().contains(needle))
+            };
+            let rows = source.page(
+                &filters,
+                &args.remote,
+                hidden,
+                filename_query.as_deref(),
+                resume.as_ref(),
+                needed,
+                &accept,
+                &cancelled,
+            )?;
+            for (offset, (key, image)) in rows.into_iter().enumerate() {
+                debug_assert!(search_filters::passes(&image, None, &filters, &args.remote));
+                let id = MIRROR_BASE + offset as i64;
+                mirror_keys.insert(id, key);
+                heap.push(Ranked {
+                    score: 0.0,
+                    id,
+                    hit: LocalHit {
+                        asset_id: None,
+                        variant_id: None,
+                        subject: args.subject.clone(),
+                        score: 0.0,
+                        image,
+                    },
+                });
+            }
+        }
+    }
     // Metadata-only API rows sort before positive SQLite IDs, in path/version
     // order. These cursor keys never escape as local embedding identities.
-    if vector.is_none() {
+    if vector.is_none() && heap.len() < needed {
         let first_id = -(provider.images.len() as i64);
         for (offset, image) in provider.images.values().enumerate() {
             if cancelled() {
@@ -349,7 +432,9 @@ pub fn retrieve_with_provider(
             if cancelled() {
                 return Err("Search cancelled".into());
             }
-            if exclude == Some(row.asset_id) || !in_scope(Path::new(&row.path), args, roots, hidden)
+            if exclude == Some(row.asset_id)
+                || !in_scope(Path::new(&row.path), args, roots, hidden)
+                || (vector.is_some() && provider.vector_excluded(Path::new(&row.path)))
             {
                 continue;
             }
@@ -429,6 +514,7 @@ pub fn retrieve_with_provider(
                     revision: revision.clone(),
                     score: last.score,
                     variant_id: last.id,
+                    mirror: mirror_keys.get(&last.id).cloned(),
                 })
                 .map_err(|e| e.to_string())
             })

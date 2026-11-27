@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { until } from '../support/webdriver.mjs';
 import { click, openTool } from '../support/controls.mjs';
-import { panel } from '../support/scenario.mjs';
+import { Blocked, panel } from '../support/scenario.mjs';
 import { settledPhoto } from './smoke.mjs';
 import { setMode } from './editing-mode.mjs';
 import { waitSetting } from '../support/settings.mjs';
@@ -43,6 +43,7 @@ const toneCards = t => t.driver.observe((basic, ops) => ops.flatMap(op =>
   [...document.querySelectorAll(`${basic} [data-module^="${op}#"]`)].map(c => ({ op, title: c.querySelector('.module-card-title')?.textContent.trim() }))), BASIC, TONE_OPS);
 
 export async function advancedSearch(t) {
+  if (!t.fixture.raw) throw new Blocked('Advanced search tone-mapper switching requires a RAW fixture');
   await settledPhoto(t);
   await openTool(t, 'adjust');
   const originalValue = await waitSetting(t, KEY, () => true, 'settings file readable');

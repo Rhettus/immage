@@ -23,6 +23,7 @@ async function preferences(t) {
     const card = row.closest('.pref-card');
     const swatches = row.querySelector('.pref-swatches').getBoundingClientRect();
     const actions = row.querySelector('.theme-prefs-actions').getBoundingClientRect();
+    const actionButtons = [...row.querySelectorAll('.theme-prefs-actions button')];
     const buttons = [...row.querySelectorAll('.swatch, .theme-prefs-actions button')];
     const hittable = buttons.every(button => {
       const r = button.getBoundingClientRect();
@@ -30,12 +31,18 @@ async function preferences(t) {
       return hit === button || button.contains(hit);
     });
     const canvas = card.querySelector('[data-pref-label="Canvas"] .pref-swatches').getBoundingClientRect();
+    const actionRects = actionButtons.map(b => b.getBoundingClientRect());
+    const actionsInline = actionButtons.length === 3
+      && actionRects.every((r, i) => i === 0 || (Math.abs(r.top - actionRects[0].top) <= 1 && r.left >= actionRects[i - 1].right));
+    const deleteDisabled = actionButtons[2]?.disabled === true;
     return { hittable, labels: [...card.querySelectorAll('.pref-row')].map(e => e.dataset.prefLabel),
       aligned: Math.abs(swatches.right - canvas.right) <= 1,
       separated: actions.top >= swatches.bottom,
-      contained: actions.right <= row.getBoundingClientRect().right + 1 };
+      contained: actions.right <= row.getBoundingClientRect().right + 1,
+      actionsInline, deleteDisabled };
   });
-  assert(layout.hittable && layout.aligned && layout.separated && layout.contained, 'theme swatches align right with actions below');
+  assert(layout.hittable && layout.aligned && layout.separated && layout.contained && layout.actionsInline && layout.deleteDisabled,
+    'theme swatches align right with aligned import/export/delete icon buttons below and delete disabled for built-in themes');
   assert.deepEqual(layout.labels.filter(label => label !== 'Scroll amount'), [
     'Theme', 'Language', 'Canvas', 'Overlay color', 'Overlay opacity', 'Guide color',
     'Focus mode', 'Auto-hide panels', 'Scroll adjusts sliders', 'Open generated photos',
