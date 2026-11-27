@@ -24,6 +24,12 @@ Performance
   Pastes that include masks, Advanced modules or Auto white balance on
   Paste still open each photo fully.
 
+Bug fixes
+
+- Importing from a memory card directly to a mounted NAS share on macOS
+  works when the share requires a standard file flush. Copies are still
+  verified by hash.
+
 ## 0.48.0
 
 Improvements

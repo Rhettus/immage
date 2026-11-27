@@ -51,6 +51,8 @@ Immich set up, ones already on the server are marked **In Immich**.
   pick it; the list keeps the last 16 destinations you chose.
   The importer reads only from cards, drives and folders you chose, and
   writes only into a destination you chose.
+  On macOS, you can browse to a writable NAS share mounted in Finder and
+  import directly to it.
 - The folder template sorts photos into dated folders. The default makes
   `2026/October`. Tokens include `{YYYY}`, `{MMMM}`, `{MM}`, `{DD}`,
   `{camera}` and `{original}`; a `/` makes a subfolder.
