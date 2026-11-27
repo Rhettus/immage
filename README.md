@@ -58,6 +58,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   folder changes and remembers its own width and visibility separately from
   the editing panel.
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox. Use **×** beside a recent keyword to remove it from the recent list.
+- Remove a photo keyword from a selection with **×** on its chip in the **Keywording** card.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - [Reset edits](app/docs/history-and-sync.md#reset-all) from Adjustments or the Library grid, with a confirmation you can turn off.
 - Drag photos or [whole folders](app/docs/library.md#moving-and-copying-folders) onto another folder, including a mounted SMB share, to move or copy them along with their sidecars. Folder copies skip Finder’s `.DS_Store` and Windows Explorer’s `Thumbs.db`. See [macOS SMB troubleshooting](app/docs/library.md#troubleshooting-macos-smb-transfers) to capture transfer errors.

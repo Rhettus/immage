@@ -7182,6 +7182,8 @@ export default function App() {
   // the inspected image's text fields come from the engine, which read them from
   // the sidecar on import (lightweight metadata read, no RAW decode)
   const inspectedId = inspectedEntry && !isRemote(inspectedEntry) ? inspectedEntry.imgid : undefined;
+  const inspectedIdRef = useRef(inspectedId);
+  inspectedIdRef.current = inspectedId;
   useEffect(() => {
     setMetaText(null);
     setKeywords(null);
@@ -7266,12 +7268,31 @@ export default function App() {
   };
   const setPhotoKeywords = async (add: string[], remove: string[]) => {
     if (inspectedId === undefined || (!add.length && !remove.length)) return;
-    try {
-      setKeywords(await commands.keywordsSet(inspectedId, add, remove));
+    const selected = selectionRef.current;
+    // Keep the original targets even as the keyword filter drops updated photos.
+    const targets = remove.length && selected.has(inspectedId)
+      ? [...selected].filter((id) => id >= 0) : [inspectedId];
+    const results = await Promise.allSettled(targets.map(async (id) => {
+      const list = await commands.keywordsSet(id, add, remove);
+      return [id, list] as const;
+    }));
+    const updated = new Map(results.flatMap(r => r.status === "fulfilled" ? [r.value] : []));
+    if (updated.size) {
+      for (const [id, list] of updated)
+        for (const edits of folderEdits.current) edits.patch(id, { keywords: list });
+      const withKeywords = (image: ImageEntry) => {
+        const list = updated.get(image.imgid);
+        return list ? { ...image, keywords: list } : image;
+      };
+      updateImages(imagesRef.current.map(withKeywords));
+      setOpenCell((image) => image ? withKeywords(image) : image);
+      const inspected = inspectedIdRef.current;
+      const list = inspected === undefined ? undefined : updated.get(inspected);
+      if (list) setKeywords(list);
       if (add.length) setKnownKeywords((k) => [...new Set([...k, ...add])].sort((a, b) => a.localeCompare(b)));
-    } catch (e) {
-      setStatus(t("app.status.error", { error: e }));
     }
+    const failure = results.find(r => r.status === "rejected");
+    if (failure) setStatus(t("app.status.error", { error: failure.reason }));
   };
 
   // which side panels float (auto-hide) and which take their space

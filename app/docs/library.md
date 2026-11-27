@@ -880,7 +880,11 @@ works offline.
 ## Keywords
 
 The **Keywording** card lists the open photo's keywords; click **×** on one
-to remove it. To add some, type them separated by commas and press Enter.
+to remove it. When the card shows a photo in a multi-photo selection, **×**
+removes the keyword from all selected photos. You can filter by a keyword in
+**Find**, select all matching photos, and remove the keyword in one step.
+Photos drop out of the filtered results as the removal takes effect.
+To add some, type them separated by commas and press Enter.
 Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
 have used before. Click a keyword under **Recent keywords** to add it to the
 photo or remove it from the photo. Click the **×** beside a recent keyword to
