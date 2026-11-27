@@ -133,6 +133,7 @@ jobs:
             verify/performance-tuner.test.mjs \
             verify/perf-tracing.test.mjs \
             verify/pixel-worker.test.mjs \
+            verify/preset-film.test.mjs \
             verify/preview-handoff.test.mjs \
             verify/saturation-curve.test.mjs \
             verify/secondary-click.test.mjs \
