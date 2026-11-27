@@ -1563,7 +1563,7 @@ pub(crate) struct Photo {
     pub(crate) exif: serde_json::Map<String, Value>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Version {
     pub(crate) version: u32,
     pub(crate) copy: bool,
@@ -1575,6 +1575,8 @@ pub(crate) struct Version {
     pub(crate) latitude: Option<f64>,
     pub(crate) longitude: Option<f64>,
     pub(crate) keywords: Vec<String>,
+    #[serde(flatten)]
+    pub(crate) text: VersionText,
 }
 
 // the listing fields of a photo that every one of its versions shares
@@ -1590,9 +1592,15 @@ pub(crate) struct ExifFields {
     pub(crate) focal: f64,
     pub(crate) bias: f64,
     pub(crate) mtime: Option<i64>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 impl ExifFields {
+    pub(crate) fn dimension(exif: &serde_json::Map<String, Value>, key: &str) -> u32 {
+        exif.get(key).and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0)
+    }
+
     fn from_listing(exif: &serde_json::Map<String, Value>) -> Self {
         let text = |key: &str| exif.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
         let number = |key: &str| exif.get(key).and_then(Value::as_f64).unwrap_or(0.0);
@@ -1607,23 +1615,95 @@ impl ExifFields {
             focal: number("focal_length"),
             bias: number("exposure_compensation"),
             mtime: exif.get("mtime").and_then(Value::as_i64),
+            width: Self::dimension(exif, "original_width"),
+            height: Self::dimension(exif, "original_height"),
         }
     }
 }
 
-// one version's fields, from the server's listing or from the local copy
-#[derive(Clone, Debug)]
-pub(crate) struct VersionFields {
-    pub(crate) version: u32,
-    pub(crate) copy: bool,
-    pub(crate) rating: u8,
-    pub(crate) rejected: bool,
-    pub(crate) labels: u32,
-    pub(crate) edited: Option<bool>,
-    pub(crate) taken_at: Option<String>,
-    pub(crate) latitude: Option<f64>,
-    pub(crate) longitude: Option<f64>,
-    pub(crate) keywords: Vec<String>,
+pub(crate) type VersionFields = Version;
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub(crate) struct VersionText {
+    pub(crate) title: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) creator: Option<String>,
+    pub(crate) publisher: Option<String>,
+    pub(crate) rights: Option<String>,
+    pub(crate) notes: Option<String>,
+    pub(crate) version_name: Option<String>,
+}
+
+impl VersionText {
+    pub(crate) fn from_request(fields: &serde_json::Map<String, Value>) -> Self {
+        let field = |key| fields.get(key).and_then(Value::as_str).map(str::to_owned);
+        Self {
+            title: field("title"),
+            description: field("description"),
+            creator: field("creator"),
+            publisher: field("publisher"),
+            rights: field("rights"),
+            notes: field("notes"),
+            version_name: None,
+        }
+    }
+
+    pub(crate) fn merge(&mut self, later: Self) {
+        self.title = later.title.or(self.title.take());
+        self.description = later.description.or(self.description.take());
+        self.creator = later.creator.or(self.creator.take());
+        self.publisher = later.publisher.or(self.publisher.take());
+        self.rights = later.rights.or(self.rights.take());
+        self.notes = later.notes.or(self.notes.take());
+        self.version_name = later.version_name.or(self.version_name.take());
+    }
+
+    pub(crate) fn converged(&self, server: &Self) -> bool {
+        [
+            (&self.title, &server.title),
+            (&self.description, &server.description),
+            (&self.creator, &server.creator),
+            (&self.publisher, &server.publisher),
+            (&self.rights, &server.rights),
+            (&self.notes, &server.notes),
+            (&self.version_name, &server.version_name),
+        ]
+        .into_iter()
+        .all(|(wanted, actual)| {
+            wanted.as_deref().is_none_or(|text| text == actual.as_deref().unwrap_or_default())
+        })
+    }
+
+    pub(crate) fn from_image(image: &LibraryImage) -> Self {
+        let Some(meta) = &image.metadata else {
+            return Self { version_name: image.version_name.clone(), ..Self::default() };
+        };
+        Self {
+            title: Some(meta.title.clone()),
+            description: Some(meta.description.clone()),
+            creator: Some(meta.creator.clone()),
+            publisher: Some(meta.publisher.clone()),
+            rights: Some(meta.rights.clone()),
+            notes: Some(meta.notes.clone()),
+            version_name: image.version_name.clone(),
+        }
+    }
+
+    pub(crate) fn metadata(&self) -> Option<crate::bindings::MetaText> {
+        if self.title.is_none() && self.description.is_none() && self.creator.is_none()
+            && self.publisher.is_none() && self.rights.is_none() && self.notes.is_none()
+        {
+            return None;
+        }
+        Some(crate::bindings::MetaText {
+            title: self.title.clone().unwrap_or_default(),
+            description: self.description.clone().unwrap_or_default(),
+            creator: self.creator.clone().unwrap_or_default(),
+            publisher: self.publisher.clone().unwrap_or_default(),
+            rights: self.rights.clone().unwrap_or_default(),
+            notes: self.notes.clone().unwrap_or_default(),
+        })
+    }
 }
 
 // The one mapping from a morfPhoto photo version to a library image: the
@@ -1673,13 +1753,15 @@ pub(crate) fn library_image(
         "labels": version.labels & 31, "edited": version.edited.unwrap_or(false),
         "width": 0, "height": 0, "location": location, "keywords": version.keywords,
         "version": version.version, "copy": version.copy,
+        "metadata": version.text.metadata(), "version_name": version.text.version_name,
         "morfphotoPreview": true,
         "exif": {
             "maker": maker, "model": model, "lens": lens,
             "body_serial": exif.body_serial, "exposure": exif.shutter,
             "aperture": exif.aperture, "iso": exif.iso, "focal_length": exif.focal,
             "exposure_bias": exif.bias, "focus_distance": 0,
-            "datetime": datetime, "capture_time_raw": capture, "file_datetime": file_datetime
+            "datetime": datetime, "capture_time_raw": capture, "file_datetime": file_datetime,
+            "file_width": exif.width, "file_height": exif.height
         }
     }))
     .map_err(|_| "Invalid morfPhoto metadata".into())
@@ -1702,23 +1784,7 @@ impl Photo {
                 if !versions.insert(version.version) {
                     return Err("Duplicate morfPhoto version".into());
                 }
-                library_image(
-                    path,
-                    filename,
-                    &exif,
-                    VersionFields {
-                        version: version.version,
-                        copy: version.copy,
-                        rating: version.rating,
-                        rejected: version.rejected,
-                        labels: version.labels,
-                        edited: version.edited,
-                        taken_at: version.taken_at,
-                        latitude: version.latitude,
-                        longitude: version.longitude,
-                        keywords: version.keywords,
-                    },
-                )
+                library_image(path, filename, &exif, version)
             })
             .collect()
     }

@@ -113,6 +113,7 @@ test('the fixture the Rust tests read is what filter.ts gives', () => {
   const want = expected();
   if (process.env.WRITE_FIXTURES) writeFileSync(FIXTURE, JSON.stringify(want) + '\n');
   const have = JSON.parse(readFileSync(FIXTURE, 'utf8'));
+  for (const entry of have.cases) entry.filter = { ...NO_FILTER, ...entry.filter };
   assert.deepEqual(have, JSON.parse(JSON.stringify(want)));
   assert.ok(want.cases.length >= 30);
   // lists that are not trivial

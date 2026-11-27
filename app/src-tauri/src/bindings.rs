@@ -302,7 +302,7 @@ pub struct MetaImage {
     // the file's version: every one but the lowest is a virtual copy
     pub version: u32,
     pub copy: bool,
-    // the text fields, which `meta` (unlike a folder listing) always sends
+    // the text fields, which `meta` always sends
     pub metadata: MetaText,
 }
 
@@ -361,7 +361,7 @@ pub struct MetaExif {
     pub file_datetime: String,
 }
 
-#[derive(Serialize, Deserialize, Type)]
+#[derive(Clone, Serialize, Deserialize, Type)]
 pub struct MetaText {
     pub title: String,
     pub description: String,

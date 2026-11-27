@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 use crate::{immich_search::SearchArgs, typed_library::LibraryImage};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveTime};
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct GridFilter {
@@ -17,10 +17,83 @@ pub struct GridFilter {
     pub keywords: Vec<String>,
     pub taken_from: String,
     pub taken_to: String,
+    pub gps: String,
     pub iso: Vec<String>,
     pub aperture: Vec<String>,
     pub focal: Vec<String>,
     pub shutter: Vec<String>,
+    pub text_field: String,
+    pub text_query: String,
+    pub orientations: Vec<String>,
+    pub aspect_ratios: Vec<String>,
+    pub width: u32,
+    pub height: u32,
+    pub min_megapixels: f64,
+    pub max_megapixels: f64,
+}
+
+pub(crate) const TEXT_FIELDS: [&str; 7] = [
+    "title", "description", "creator", "publisher", "rights", "notes", "version_name",
+];
+
+pub(crate) fn ratio_parts(value: &str) -> Option<(u64, u64)> {
+    let (a, b) = value.split_once(':')?;
+    let a = a.parse::<u64>().ok()?;
+    let b = b.parse::<u64>().ok()?;
+    ((1..=1000).contains(&a) && (1..=1000).contains(&b)).then_some((a.max(b), a.min(b)))
+}
+
+fn geometry_matches(width: u32, height: u32, filter: &GridFilter) -> bool {
+    if filter.orientations.is_empty() && filter.aspect_ratios.is_empty()
+        && filter.width == 0 && filter.height == 0
+        && filter.min_megapixels == 0.0 && filter.max_megapixels == 0.0
+    {
+        return true;
+    }
+    if width == 0 || height == 0 {
+        return false;
+    }
+    let orientation = match width.cmp(&height) {
+        std::cmp::Ordering::Greater => "landscape",
+        std::cmp::Ordering::Less => "portrait",
+        std::cmp::Ordering::Equal => "square",
+    };
+    let long = u64::from(width.max(height));
+    let short = u64::from(width.min(height));
+    let megapixels = (long * short) as f64 / 1_000_000.0;
+    selected(&filter.orientations, orientation)
+        && (filter.width == 0 || filter.width == width)
+        && (filter.height == 0 || filter.height == height)
+        && (filter.min_megapixels == 0.0 || megapixels >= filter.min_megapixels)
+        && (filter.max_megapixels == 0.0 || megapixels <= filter.max_megapixels)
+        && (filter.aspect_ratios.is_empty()
+            || filter.aspect_ratios.iter().filter_map(|v| ratio_parts(v)).any(|(a, b)| {
+                (long * b).abs_diff(short * a) * 100 <= short * a
+            }))
+}
+
+fn text_matches(image: &LibraryImage, field: &str, query: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return true;
+    }
+    let matches = |value: &str| value.to_lowercase().contains(&query);
+    let all = field.is_empty() || field == "any";
+    if (all || field == "version_name") && image.version_name.as_deref().is_some_and(matches) {
+        return true;
+    }
+    image.metadata.as_ref().is_some_and(|text| {
+        [
+            ("title", &text.title),
+            ("description", &text.description),
+            ("creator", &text.creator),
+            ("publisher", &text.publisher),
+            ("rights", &text.rights),
+            ("notes", &text.notes),
+        ]
+        .into_iter()
+        .any(|(key, value)| (all || field == key) && matches(value))
+    })
 }
 // Years are four digits, so the day as text sorts as the date does (the
 // mirror's SQL compares days as text).
@@ -29,19 +102,30 @@ fn day(value: &str) -> Option<NaiveDate> {
         .ok()
         .filter(|d| (0..=9999).contains(&chrono::Datelike::year(d)))
 }
-/// A filter's day as the text the mirror stores days in; None when invalid.
-pub(crate) fn day_text(value: &str) -> Option<String> {
-    day(value).map(|d| d.format("%Y-%m-%d").to_string())
-}
-/// The capture day (YYYY-MM-DD) of a morfPhoto version's `taken_at`, as
-/// `morf_photo::library_image` writes it into `exif.datetime` and `passes` reads
-/// it back. None when there is no valid date.
+/// The capture day of a morfPhoto version's `taken_at`.
 pub(crate) fn capture_day(taken_at: &str) -> Option<String> {
-    let datetime = taken_at.get(..10).zip(taken_at.get(10..)).map_or_else(
-        || taken_at.to_owned(),
-        |(date, time)| format!("{}{}", date.replace('-', ":"), time.replacen('T', " ", 1)),
-    );
-    day(&datetime).map(|d| d.format("%Y-%m-%d").to_string())
+    day(taken_at).map(|d| d.format("%Y-%m-%d").to_string())
+}
+fn minute(value: &str) -> Option<NaiveTime> {
+    if !matches!(value.as_bytes().get(10), Some(b'T' | b' ')) {
+        return None;
+    }
+    let time = value.get(11..16)?;
+    if !time.bytes().enumerate().all(|(i, b)| {
+        if i == 2 { b == b':' } else { b.is_ascii_digit() }
+    }) {
+        return None;
+    }
+    NaiveTime::parse_from_str(time, "%H:%M").ok()
+}
+/// Capture filter bounds use a date or the recorded local minute.
+pub(crate) fn date_bound(value: &str) -> Option<(NaiveDate, Option<NaiveTime>)> {
+    let date = day(value)?;
+    match value.len() {
+        10 => Some((date, None)),
+        16 if value.as_bytes()[10] == b'T' => Some((date, Some(minute(value)?))),
+        _ => None,
+    }
 }
 fn selected(values: &[String], value: &str) -> bool {
     values.is_empty() || (!value.is_empty() && values.iter().any(|v| v == value))
@@ -63,20 +147,36 @@ fn exact(expected: &Option<String>, value: &str) -> bool {
         .as_ref()
         .is_none_or(|s| s.trim().is_empty() || (!value.is_empty() && s == value))
 }
-fn date_range(value: Option<NaiveDate>, from: &str, to: &str) -> bool {
-    if from.is_empty() && to.is_empty() {
-        return true;
-    }
-    value.is_some_and(|value| {
-        (from.is_empty() || day(from).is_some_and(|d| value >= d))
-            && (to.is_empty() || day(to).is_some_and(|d| value <= d))
-    })
+fn date_range(value: Option<&str>, from: &str, to: &str) -> bool {
+    let compare = |bound: &str| {
+        let (bound_day, bound_time) = date_bound(bound)?;
+        let value = value?;
+        let value_day = day(value)?;
+        Some(match bound_time {
+            Some(bound_time) => (value_day, minute(value)?).cmp(&(bound_day, bound_time)),
+            None => value_day.cmp(&bound_day),
+        })
+    };
+    (from.is_empty() || compare(from).is_some_and(|order| order.is_ge()))
+        && (to.is_empty() || compare(to).is_some_and(|order| order.is_le()))
 }
 pub fn validate(f: &GridFilter, r: &SearchArgs) -> Result<(), String> {
+    if !f.orientations.iter().all(|v| matches!(v.as_str(), "landscape" | "portrait" | "square"))
+        || !f.aspect_ratios.iter().all(|v| ratio_parts(v).is_some())
+        || ![f.min_megapixels, f.max_megapixels].iter().all(|v| v.is_finite() && *v >= 0.0)
+    {
+        return Err("Invalid image geometry filter".into());
+    }
+    if !matches!(f.text_field.as_str(), "" | "any")
+        && !TEXT_FIELDS.contains(&f.text_field.as_str())
+    {
+        return Err("Invalid metadata field".into());
+    }
     if f.min_rating > 5
         || r.min_rating.is_some_and(|v| v > 5)
         || !matches!(f.rejected.as_str(), "" | "all" | "hide" | "only")
         || !matches!(f.edited.as_str(), "" | "all" | "edited" | "unedited")
+        || !matches!(f.gps.as_str(), "" | "any" | "has" | "none")
         || f.labels > 31
     {
         return Err("Invalid local search filter".into());
@@ -87,7 +187,7 @@ pub fn validate(f: &GridFilter, r: &SearchArgs) -> Result<(), String> {
         r.taken_from.as_deref().unwrap_or(""),
         r.taken_to.as_deref().unwrap_or(""),
     ] {
-        if !date.is_empty() && (date.len() != 10 || day(date).is_none()) {
+        if !date.is_empty() && date_bound(date).is_none() {
             return Err("Invalid capture date filter".into());
         }
     }
@@ -203,7 +303,24 @@ pub(crate) fn shutter_key(v: f64) -> String {
 // The capture day of a photo: the precise raw text where there is one, else
 // EXIF's, never the file's time.
 pub(crate) fn date_of(i: &LibraryImage, capture: Option<&str>) -> Option<NaiveDate> {
-    capture.and_then(day).or_else(|| day(&i.exif.datetime))
+    capture_text(i, capture).and_then(day)
+}
+fn capture_text<'a>(i: &'a LibraryImage, capture: Option<&'a str>) -> Option<&'a str> {
+    [
+        capture,
+        Some(i.exif.capture_time_raw.as_str()).filter(|raw| {
+            i.exif.datetime.is_empty() || raw.get(..19) == i.exif.datetime.get(..19)
+        }),
+        Some(i.exif.datetime.as_str()),
+    ]
+        .into_iter()
+        .flatten()
+        .find(|text| day(text).is_some())
+}
+pub(crate) fn gps_coordinates(location: &crate::bindings::Location) -> Option<(f64, f64)> {
+    let lat = location.latitude.as_f64()?;
+    let lon = location.longitude.as_f64()?;
+    (lat.abs() <= 90.0 && lon.abs() <= 180.0).then_some((lat, lon))
 }
 pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &SearchArgs) -> bool {
     // These server identities/fields have no verified local mapping. Unknown
@@ -260,7 +377,7 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
         return false;
     }
     // Capture dates never fall back to filesystem modification dates here.
-    let date = date_of(i, capture);
+    let date = capture_text(i, capture);
     if !date_range(date, &f.taken_from, &f.taken_to)
         || !date_range(
             date,
@@ -268,6 +385,16 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
             r.taken_to.as_deref().unwrap_or(""),
         )
     {
+        return false;
+    }
+    let has_gps = i.location.as_ref().and_then(gps_coordinates).is_some();
+    if (f.gps == "has" && !has_gps) || (f.gps == "none" && has_gps) {
+        return false;
+    }
+    if !text_matches(i, &f.text_field, &f.text_query) {
+        return false;
+    }
+    if !geometry_matches(i.exif.file_width, i.exif.file_height, f) {
         return false;
     }
     let number = |v: &serde_json::Number| v.as_f64().unwrap_or(0.0);
@@ -283,6 +410,37 @@ pub fn passes(i: &LibraryImage, capture: Option<&str>, f: &GridFilter, r: &Searc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn time_bounds_use_recorded_minute_and_include_its_seconds() {
+        let within = |value| {
+            date_range(Some(value), "2026-11-27T12:30", "2026-11-27T12:30")
+        };
+        assert!(within("2026-11-27T12:30:59.123-08:00"));
+        assert!(within("2026:11:27 12:30:00"));
+        assert!(!within("2026-11-27T12:31:00"));
+        assert!(!within("2026-11-27"));
+        assert!(date_range(Some("2026-11-27"), "2026-11-27", "2026-11-27"));
+    }
+
+    #[test]
+    fn image_geometry_requires_known_dimensions_and_accepts_rotated_ratios() {
+        let filter = GridFilter {
+            aspect_ratios: vec!["3:2".into()],
+            orientations: vec!["portrait".into()],
+            min_megapixels: 24.0,
+            max_megapixels: 24.0,
+            width: 4000,
+            height: 6000,
+            ..GridFilter::default()
+        };
+        assert!(geometry_matches(4000, 6000, &filter));
+        assert!(!geometry_matches(6000, 4000, &filter));
+        assert!(!geometry_matches(4000, 0, &filter));
+        let ratio = GridFilter { aspect_ratios: filter.aspect_ratios, ..GridFilter::default() };
+        assert!(geometry_matches(6000, 3990, &ratio));
+        assert!(!geometry_matches(6000, 3950, &ratio));
+    }
     #[test]
     fn decimal_matches_camera_filter_rounding() {
         assert_eq!(decimal(2.55, 1).as_deref(), Some("2.5"));

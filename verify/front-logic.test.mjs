@@ -294,6 +294,39 @@ test('passesSearch uses capture time only, never the file modification fallback'
   assert.ok(F.passesSearch(precise, f({ takenFrom: '2024-03-05', takenTo: '2024-03-05' })));
   assert.ok(!F.passesSearch(precise, f({ takenFrom: '2030-01-01' })));
 });
+test('capture-minute filters include the end minute and require recorded capture time', () => {
+  const range = f({ takenFrom: '2024-03-05T14:06', takenTo: '2024-03-05T14:07' });
+  for (const datetime of ['2024:03:05 14:06:00', '2024:03:05 14:07:59.999', '2024-03-05T14:07:59+04:00']) {
+    assert.ok(F.passes(img({ exif: { datetime } }), range));
+  }
+  for (const datetime of ['2024:03:05', '2024:03:05 14:05:59', '2024:03:05 14:08:00', '']) {
+    assert.ok(!F.passes(img({ exif: { datetime, file_datetime: '2024:03:05 14:07:00' } }), range));
+  }
+  assert.ok(F.passes(img({ exif: { datetime: '2024:03:06 23:59:59' } }), { ...range, takenTo: '2024-03-06' }));
+});
+test('GPS, original geometry and text filter local photos together', () => {
+  const i = img({
+    location: { latitude: 0, longitude: 0 },
+    width: 100, height: 200,
+    exif: { file_width: 6000, file_height: 3999 },
+    metadata: { title: 'Été à Paris', creator: 'John Doe' },
+    version_name: 'BW proof',
+  });
+  const criteria = f({
+    gps: 'has', orientations: ['landscape'], aspectRatios: ['2:3'], width: 6000, height: 3999,
+    minMegapixels: 23.9, maxMegapixels: 24, textQuery: ' été ', textField: 'title',
+  });
+  assert.ok(F.passes(i, criteria));
+  for (const patch of [{ gps: 'none' }, { orientations: ['portrait'] }, { aspectRatios: ['4:3'] },
+    { width: 100 }, { minMegapixels: 24 }, { maxMegapixels: 23.9 }, { textField: 'creator' }]) {
+    assert.ok(!F.passes(i, { ...criteria, ...patch }));
+  }
+  assert.ok(F.passes(i, f({ textQuery: ' bw ' })));
+  assert.ok(F.passes(i, f({ textQuery: 'PROOF', textField: 'version_name' })));
+  assert.ok(F.passes({ ...i, location: null }, f({ gps: 'none' })));
+  assert.ok(F.passes({ ...i, location: { latitude: 91, longitude: 0 } }, f({ gps: 'none' })));
+  assert.ok(!F.passes(img({ width: 6000, height: 3999 }), f({ width: 6000 })));
+});
 test('exposureLabel, popupCount, needsRead, bodyLabel', () => {
   assert.equal(F.exposureLabel('iso', 0), ''); assert.equal(F.exposureLabel('aperture', 2.79), 'f/2.8');
   assert.equal(F.exposureLabel('aperture', 4), 'f/4'); assert.equal(F.exposureLabel('focal', 24.4), '24 mm');

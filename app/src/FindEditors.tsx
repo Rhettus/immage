@@ -8,7 +8,8 @@
 // FindFilters.tsx draws the rows, FindPanel.tsx the panel
 import { useEffect, useState } from "react";
 import { commands, type Named } from "./commands";
-import { bodyLabel, EXPOSURE, facetsWithin, rejectedOptions, type ExposureKey, type Facets, type Filter } from "./filter";
+import { aspectRatio, bodyLabel, dateOfBound, EXPOSURE, facetsWithin, ORIENTATIONS, rejectedOptions, TEXT_FIELDS, timeOfBound,
+         type ExposureKey, type Facets, type Filter, type GpsFilter, type Orientation, type TextField } from "./filter";
 import { MOST_USED, shownValues, type LibraryFacets } from "./libraryFacets";
 import { pickKinds, setKinds, setRawOnly, setStars, setTaken, type CategoryKey, type FindState } from "./findModel";
 import { StarIcon } from "./icons";
@@ -114,14 +115,113 @@ function recent(): Span[] {
   ];
 }
 const same = (s: Span, from: string, to: string) => s.from === from && s.to === to;
+const boundLabel = (bound: string) => {
+  const time = timeOfBound(bound);
+  const date = new Date(`${dateOfBound(bound)}T${time || "00:00"}:00Z`);
+  return Number.isNaN(date.valueOf()) ? bound
+    : formatDate(date, { dateStyle: "medium", timeStyle: time ? "short" : undefined, timeZone: "UTC" });
+};
 // a span by its name where it has one
 export const dates = (from: string, to: string) => {
   if (!from && !to) return "";
   const named = recent().find((s) => same(s, from, to))
     ?? (/^\d{4}-01-01$/.test(from) && same(yearSpan(from.slice(0, 4)), from, to) ? yearSpan(from.slice(0, 4)) : undefined)
     ?? (/-01$/.test(from) && same(monthSpan(from.slice(0, 7)), from, to) ? monthSpan(from.slice(0, 7)) : undefined);
-  return named ? named.label : from && to ? `${from} – ${to}` : from ? t("library.filters.fromDate", { date: from }) : t("library.filters.toDate", { date: to });
+  return named ? named.label : from && to ? `${boundLabel(from)} – ${boundLabel(to)}`
+    : from ? t("library.filters.fromDate", { date: boundLabel(from) }) : t("library.filters.toDate", { date: boundLabel(to) });
 };
+
+export const gpsLabel = (v: GpsFilter) => v === "any" ? t("library.filters.any")
+  : v === "has" ? t("library.filters.hasGps") : t("library.filters.noGps");
+
+export function textFieldLabel(field: TextField): string {
+  switch (field) {
+    case "any": return t("library.filters.allTextFields");
+    case "title": return t("dialogs.metadata.field.title");
+    case "description": return t("dialogs.metadata.field.caption");
+    case "creator": return t("dialogs.metadata.field.creator");
+    case "publisher": return t("library.filters.publisher");
+    case "rights": return t("dialogs.metadata.field.copyright");
+    case "notes": return t("library.filters.notes");
+    case "version_name": return t("library.filters.versionName");
+  }
+}
+
+export const orientationLabel = (v: Orientation) => {
+  switch (v) {
+    case "landscape": return t("dialogs.print.orientation.landscape");
+    case "portrait": return t("dialogs.print.orientation.portrait");
+    case "square": return t("library.filters.square");
+  }
+};
+
+const RATIOS = ["1:1", "5:4", "4:3", "3:2", "16:9"];
+export const ratioLabel = (v: string) => v.split(":").map((n) => formatNumber(Number(n))).join(":");
+type DimensionKey = "width" | "height" | "minMegapixels" | "maxMegapixels";
+const dimensionKeys: DimensionKey[] = ["width", "height", "minMegapixels", "maxMegapixels"];
+export const dimensionLabel = (key: DimensionKey) => {
+  switch (key) {
+    case "width": return t("library.filters.pixelWidth");
+    case "height": return t("library.filters.pixelHeight");
+    case "minMegapixels": return t("library.filters.minMegapixels");
+    case "maxMegapixels": return t("library.filters.maxMegapixels");
+  }
+};
+
+function Geometry({ filter, set }: { filter: Filter; set: (p: Partial<Filter>, now?: boolean) => void }) {
+  const [custom, setCustom] = useState("");
+  const ratio = aspectRatio(custom);
+  const addRatio = () => {
+    if (!ratio) return;
+    if (!filter.aspectRatios.includes(ratio)) set({ aspectRatios: [...filter.aspectRatios, ratio] });
+    setCustom("");
+  };
+  return (
+    <>
+      <div className="fe-sec">
+        <div className="fe-label">{t("library.filters.orientation")}</div>
+        <div className="segmented small" role="group" aria-label={t("library.filters.orientation")}>
+          {ORIENTATIONS.map((v) => {
+            const active = filter.orientations.includes(v);
+            return <button key={v} className={active ? "active" : ""} aria-pressed={active}
+                           onClick={() => set({ orientations: active ? filter.orientations.filter((o) => o !== v) : [...filter.orientations, v] })}>
+              {orientationLabel(v)}
+            </button>;
+          })}
+        </div>
+      </div>
+      <div className="fe-sec">
+        <div className="fe-label">{t("library.filters.aspectRatio")}</div>
+        <Ticks items={[...new Set([...RATIOS, ...filter.aspectRatios])].map((v) => [v, 0])} chosen={filter.aspectRatios}
+               onChange={(aspectRatios) => set({ aspectRatios })} show={ratioLabel} empty="" counts={false} />
+        <div className="filter-custom-ratio">
+          <input className="field" aria-label={t("library.filters.customAspectRatio")} placeholder={t("library.filters.customAspectRatio")}
+                 value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => {
+                   if (e.code !== "Enter" && e.code !== "NumpadEnter") return;
+                   e.stopPropagation();
+                   addRatio();
+                 }} />
+          <button className="btn" type="button" disabled={!ratio} onClick={addRatio}>{t("library.filters.addAspectRatio")}</button>
+        </div>
+      </div>
+      <div className="fe-sec meta-grid">
+        {dimensionKeys.map((key) => {
+          const pixels = key === "width" || key === "height";
+          return (
+            <label className="filter-field-pair" key={key}>
+              <span>{dimensionLabel(key)}</span>
+              <input className="field" type="number" min={0} max={pixels ? 4294967295 : undefined}
+                     step={pixels ? 1 : "any"} value={filter[key] || ""}
+                     onChange={(e) => {
+                       if (e.target.validity.valid) set({ [key]: e.target.valueAsNumber || 0 }, false);
+                     }} />
+            </label>
+          );
+        })}
+      </div>
+    </>
+  );
+}
 
 // the capture dates: typed, or picked from recent spans, years and the
 // months of the year picked. `months` are those the photos hold, with
@@ -129,6 +229,10 @@ export const dates = (from: string, to: string) => {
 function Captured({ from, to, months, onChange }: {
   from: string; to: string; months: [string, number][] | null; onChange: (from: string, to: string) => void;
 }) {
+  const dateFrom = dateOfBound(from), dateTo = dateOfBound(to);
+  const timeFrom = timeOfBound(from), timeTo = timeOfBound(to);
+  const bound = (date: string, time: string) => date && time ? `${date}T${time}` : date;
+  const selectedFrom = months ? from : dateFrom, selectedTo = months ? to : dateTo;
   const now = new Date().getFullYear();
   const years: [string, number | null][] = months
     ? [...months.reduce((m, [ym, n]) => m.set(ym.slice(0, 4), (m.get(ym.slice(0, 4)) ?? 0) + n), new Map<string, number>())]
@@ -139,17 +243,26 @@ function Captured({ from, to, months, onChange }: {
     : months ? months.filter(([ym]) => ym.startsWith(year))
     : Array.from({ length: 12 }, (_, k) => [`${year}-${pad(k + 1)}`, null]);
   const row = (s: Span, n: number | null, indent = false) => (
-    <button key={s.label} role="checkbox" aria-checked={same(s, from, to)} className={`${same(s, from, to) ? "on" : ""}${indent ? " indent" : ""}`}
-            onClick={() => (same(s, from, to) ? onChange("", "") : onChange(s.from, s.to))}>
-      <span className="tick" aria-hidden="true">{same(s, from, to) ? "✓" : ""}</span><span className="name">{s.label}</span>
+    <button key={s.label} role="checkbox" aria-checked={same(s, selectedFrom, selectedTo)} className={`${same(s, selectedFrom, selectedTo) ? "on" : ""}${indent ? " indent" : ""}`}
+            onClick={() => (same(s, selectedFrom, selectedTo) ? onChange("", "") : onChange(s.from, s.to))}>
+      <span className="tick" aria-hidden="true">{same(s, selectedFrom, selectedTo) ? "✓" : ""}</span><span className="name">{s.label}</span>
       {n !== null && <span className="count">{formatNumber(n)}</span>}</button>
   );
   return (
     <>
       <div className="filter-range">
-        <input className="field" type="date" aria-label={t("library.filters.from")} value={from} onChange={(e) => onChange(e.target.value, to)} />
+        <input className="field" type="date" aria-label={t("library.filters.from")} value={dateFrom}
+               onChange={(e) => onChange(bound(e.target.value, months ? timeFrom : ""), to)} />
         <span>{t("library.filters.to")}</span>
-        <input className="field" type="date" aria-label={t("library.filters.through")} value={to} onChange={(e) => onChange(from, e.target.value)} />
+        <input className="field" type="date" aria-label={t("library.filters.through")} value={dateTo}
+               onChange={(e) => onChange(from, bound(e.target.value, months ? timeTo : ""))} />
+        {months && <>
+          <input className="field" type="time" aria-label={t("library.filters.fromTime")} value={timeFrom} disabled={!dateFrom}
+                 onChange={(e) => onChange(bound(dateFrom, e.target.value.slice(0, 5)), to)} />
+          <span aria-hidden="true" />
+          <input className="field" type="time" aria-label={t("library.filters.toTime")} value={timeTo} disabled={!dateTo}
+                 onChange={(e) => onChange(from, bound(dateTo, e.target.value.slice(0, 5)))} />
+        </>}
       </div>
       <div className="filter-ticks">
         <div className="filter-group">{t("library.filters.recent")}</div>
@@ -303,7 +416,7 @@ function Rating({ state, send, images, local }: {
 export type EditorProps = {
   cat: CategoryKey;
   state: FindState;
-  send: (next: FindState) => void;
+  send: (next: FindState, now?: boolean) => void;
   images: ImageEntry[];
   local: boolean;        // this computer's photos are searched
   server: boolean;       // the server's pickers stand in for the folder's lists
@@ -319,7 +432,7 @@ export type EditorProps = {
 export function FilterEditor({ cat, state, send, images, local, server, people, tags, albums, library, busy = false }: EditorProps) {
   const { search: s, filter: f } = state;
   const patchSearch = (p: Partial<ImmichSearch>) => send({ ...state, search: { ...s, ...p } });
-  const patchFilter = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
+  const patchFilter = (p: Partial<Filter>, now = true) => send({ ...state, filter: { ...f, ...p } }, now);
   // a list from the library when it has one, else from the photos shown
   const list: List = (key, clear) => library?.[key] ?? facetsWithin(images, f, clear)[key];
   const byName = !!library;
@@ -379,6 +492,34 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
       return <Captured from={f.takenFrom || s.takenFrom} to={f.takenTo || s.takenTo}
                        months={local ? list("months", { takenFrom: "", takenTo: "" }) : null}
                        onChange={(from, to) => send(setTaken(state, from, to))} />;
+    case "gps":
+      return (
+        <div className="segmented small" role="group" aria-label={t("library.filters.gps")}>
+          {(["any", "has", "none"] as const).map((gps) => (
+            <button key={gps} className={f.gps === gps ? "active" : ""} aria-pressed={f.gps === gps}
+                    onClick={() => patchFilter({ gps })}>{gpsLabel(gps)}</button>
+          ))}
+        </div>
+      );
+    case "geometry":
+      return <Geometry filter={f} set={patchFilter} />;
+    case "metadata":
+      return (
+        <div className="meta-grid filter-text-meta">
+          <label className="filter-field-pair">
+            <span>{t("library.filters.textField")}</span>
+            <select className="field" value={f.textField} onChange={(e) => patchFilter({ textField: e.target.value as TextField })}>
+              {TEXT_FIELDS.map((field) => <option key={field} value={field}>{textFieldLabel(field)}</option>)}
+            </select>
+          </label>
+          <label className="filter-field-pair">
+            <span>{t("library.filters.textContains")}</span>
+            <input className="field" type="search" value={f.textQuery}
+                   onChange={(e) => patchFilter({ textQuery: e.target.value }, false)}
+                   onKeyDown={(e) => { if (e.code === "Enter" || e.code === "NumpadEnter") send(state); }} />
+          </label>
+        </div>
+      );
     case "place":
       return <Place v={s} set={patchSearch} />;
     case "people":

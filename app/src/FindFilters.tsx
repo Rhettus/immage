@@ -9,7 +9,7 @@ import { ChevronRight, X } from "lucide-react";
 import type { Named } from "./commands";
 import { bodyLabel, EXPOSURE } from "./filter";
 import { settingOf, type CategoryKey, type Chip, type FindState, type Group } from "./findModel";
-import { chosen, dates, EXPOSURE_LABEL, keyword } from "./FindEditors";
+import { chosen, dates, dimensionLabel, EXPOSURE_LABEL, gpsLabel, keyword, orientationLabel, ratioLabel, textFieldLabel } from "./FindEditors";
 import { formatNumber, t } from "./i18n";
 import { LABEL_COLORS } from "./library";
 
@@ -29,6 +29,9 @@ export function categoryTitle(key: CategoryKey): string {
     case "lenses": return t("library.filters.lens");
     case "exposure": return t("library.filters.exposure");
     case "taken": return t("library.filters.captured");
+    case "gps": return t("library.filters.gps");
+    case "geometry": return t("library.filters.geometry");
+    case "metadata": return t("library.filters.metadataText");
     case "place": return t("library.filters.place");
     case "people": return t("library.filters.people");
     case "albums": return t("library.filters.albums");
@@ -66,6 +69,17 @@ export function summarize(key: CategoryKey, state: FindState, server: boolean, n
       return set.length === 1 && f[set[0]].length === 1 ? `${set[0] === "iso" ? "ISO " : ""}${f[set[0]][0]}` : set.map((k) => EXPOSURE_LABEL[k]).join(" · ");
     }
     case "taken": return dates(v.from ?? "", v.to ?? "");
+    case "gps": return v.gps ? gpsLabel(v.gps) : "";
+    case "geometry": {
+      const g = v.geometry!;
+      return [
+        ...g.orientations.map(orientationLabel),
+        ...g.aspectRatios.map(ratioLabel),
+        ...(["width", "height", "minMegapixels", "maxMegapixels"] as const).filter((k) => g[k])
+          .map((k) => `${dimensionLabel(k)} ${formatNumber(g[k])}`),
+      ].join(" · ");
+    }
+    case "metadata": return v.textField && v.textQuery ? `${textFieldLabel(v.textField)} · ${v.textQuery}` : "";
     case "place": return [v.city, v.country].filter(Boolean).join(", ");
     case "people": return chosen(list, nameOf(names.people));
     case "albums": return chosen(list, nameOf(names.albums));

@@ -9,6 +9,11 @@ import { fileExt, fileKind, kindsInclude, takenAt, type ImageEntry, type Known }
 
 export const EXPOSURE = ["iso", "aperture", "focal", "shutter"] as const;
 export type ExposureKey = typeof EXPOSURE[number];
+export type GpsFilter = "any" | "has" | "none";
+export const ORIENTATIONS = ["landscape", "portrait", "square"] as const;
+export type Orientation = typeof ORIENTATIONS[number];
+export const TEXT_FIELDS = ["any", "title", "description", "creator", "publisher", "rights", "notes", "version_name"] as const;
+export type TextField = typeof TEXT_FIELDS[number];
 
 // `rejected` hides rejected photos or shows only them; `edited` picks those
 // darktable counts as altered, or those it does not; `kinds` are file
@@ -19,12 +24,18 @@ export type Filter = {
   // any of each list, as a photo has one of each; keywords all of them;
   // exposure settings as exposureLabel() writes them
   kinds: string[]; cameras: string[]; bodies: string[]; lenses: string[]; keywords: string[];
-  takenFrom: string; takenTo: string;       // YYYY-MM-DD, "" for open
+  takenFrom: string; takenTo: string;       // YYYY-MM-DD or YYYY-MM-DDTHH:MM, "" for open
+  gps: GpsFilter;
+  orientations: Orientation[]; aspectRatios: string[];
+  width: number; height: number; minMegapixels: number; maxMegapixels: number;
+  textField: TextField; textQuery: string;
 } & Record<ExposureKey, string[]>;
 
 export const NO_FILTER: Filter = {
   minRating: 0, rejected: "all", edited: "all", labels: 0, unlabeled: false, kinds: [], cameras: [], bodies: [], lenses: [],
-  keywords: [], takenFrom: "", takenTo: "", iso: [], aperture: [], focal: [], shutter: [],
+  keywords: [], takenFrom: "", takenTo: "", gps: "any", iso: [], aperture: [], focal: [], shutter: [],
+  orientations: [], aspectRatios: [], width: 0, height: 0, minMegapixels: 0, maxMegapixels: 0,
+  textField: "any", textQuery: "",
 };
 
 export const cameraOf = (i: Known) => `${i.exif.maker} ${i.exif.model}`.trim();
@@ -53,8 +64,75 @@ export const exposureLabel = (k: ExposureKey, v: number) =>
 // hierarchy nests b in a
 const hasKeyword = (i: Known, k: string) => (i.keywords ?? []).some((x) => x === k || x.startsWith(`${k}|`));
 
-// "YYYY:MM:DD HH:MM:SS" as YYYY-MM-DD
-const day = (i: Known) => takenAt(i).slice(0, 10).replace(/:/g, "-");
+export const dateOfBound = (value: string) => value.slice(0, 10);
+export const timeOfBound = (value: string) => value.slice(11, 16);
+export const hasCaptureTime = (f: Pick<Filter, "takenFrom" | "takenTo">) =>
+  !!(timeOfBound(f.takenFrom) || timeOfBound(f.takenTo));
+
+// "YYYY:MM:DD HH:MM:SS" and ISO timestamps use the same recorded wall time.
+const day = (i: Known) => dateOfBound(takenAt(i)).replace(/:/g, "-");
+
+function passesCapture(i: Known, f: Filter): boolean {
+  const { takenFrom: from, takenTo: to } = f;
+  if (!from && !to) return true;
+  const timed = hasCaptureTime(f);
+  const { datetime: recorded = "", capture_time_raw: raw = "" } = i.exif;
+  const precise = raw && (!recorded || raw.slice(0, 19) === recorded.slice(0, 19)) ? raw : recorded;
+  const datetime = timed ? precise : takenAt(i);
+  const date = dateOfBound(datetime).replace(/:/g, "-");
+  const clock = timeOfBound(datetime);
+  if (!date || (timed && !/^[T ](?:[01]\d|2[0-3]):[0-5]\d$/.test(datetime.slice(10, 16)))) return false;
+  const minute = `${date}T${clock}`;
+  return (!from || (timeOfBound(from) ? minute : date) >= from)
+    && (!to || (timeOfBound(to) ? minute : date) <= to);
+}
+
+function hasGps({ location }: Known): boolean {
+  return location != null && Math.abs(location.latitude) <= 90 && Math.abs(location.longitude) <= 180;
+}
+
+export function aspectRatio(value: string): string {
+  const parts = /^([0-9]{1,4}):([0-9]{1,4})$/.exec(value.trim());
+  if (!parts) return "";
+  const a = Number(parts[1]), b = Number(parts[2]);
+  if (Math.min(a, b) < 1 || Math.max(a, b) > 1000) return "";
+  let divisor = a, remainder = b;
+  while (remainder) [divisor, remainder] = [remainder, divisor % remainder];
+  return `${Math.max(a, b) / divisor}:${Math.min(a, b) / divisor}`;
+}
+
+export const hasGeometry = (f: Filter) =>
+  !!(f.orientations?.length || f.aspectRatios?.length || f.width || f.height || f.minMegapixels || f.maxMegapixels);
+
+function passesGeometry(i: Known, f: Filter): boolean {
+  if (!hasGeometry(f)) return true;
+  const { file_width: width = 0, file_height: height = 0 } = i.exif;
+  const { orientations = [], aspectRatios = [] } = f;
+  if (!(width > 0 && height > 0)) return false;
+  if ((f.width && width !== f.width) || (f.height && height !== f.height)) return false;
+  const orientation = width > height ? "landscape" : width < height ? "portrait" : "square";
+  if (orientations.length && !orientations.includes(orientation)) return false;
+  const megapixels = width * height / 1e6;
+  if ((f.minMegapixels && megapixels < f.minMegapixels) || (f.maxMegapixels && megapixels > f.maxMegapixels)) return false;
+  const long = Math.max(width, height), short = Math.min(width, height);
+  return !aspectRatios.length || aspectRatios.some((ratio) => {
+    const parts = aspectRatio(ratio);
+    if (!parts) return false;
+    const [a, b] = parts.split(":").map(Number);
+    return Math.abs(long * b - short * a) * 100 <= short * a;
+  });
+}
+
+export const hasTextQuery = (f: Filter) => !!f.textQuery?.trim();
+
+function passesText(i: Known, f: Filter): boolean {
+  if (!hasTextQuery(f)) return true;
+  const query = f.textQuery.trim().toLowerCase();
+  const field = f.textField;
+  const fields = !field || field === "any" ? TEXT_FIELDS : [field];
+  return fields.some((key) => key !== "any" &&
+    (key === "version_name" ? i.version_name : i.metadata?.[key])?.toLowerCase().includes(query));
+}
 
 // a known image (library.ts) too, before this read reaches it
 export const passes = (i: Known, f: Filter) =>
@@ -68,8 +146,10 @@ export const passes = (i: Known, f: Filter) =>
   && (!f.bodies.length || f.bodies.includes(bodyOf(i)))
   && (!f.lenses.length || f.lenses.includes(i.exif.lens))
   && f.keywords.every((k) => hasKeyword(i, k))
-  && (!f.takenFrom || (!!takenAt(i) && day(i) >= f.takenFrom))
-  && (!f.takenTo || (!!takenAt(i) && day(i) <= f.takenTo))
+  && passesCapture(i, f)
+  && (!f.gps || f.gps === "any" || (f.gps === "has") === hasGps(i))
+  && passesGeometry(i, f)
+  && passesText(i, f)
   && EXPOSURE.every((k) => !f[k].length || f[k].includes(exposureLabel(k, value(i, k))));
 
 // the Rejected category's rows and their counts: of the photos every other
@@ -95,7 +175,8 @@ export function passesSearch(i: ImageEntry, f: Filter): boolean {
 
 // the popup's fields in use, one each, for its button and the toolbar
 export const popupCount = (f: Filter) =>
-  [f.rejected !== "all", f.kinds.length, f.cameras.length, f.bodies.length, f.lenses.length, f.keywords.length, f.takenFrom || f.takenTo]
+  [f.rejected !== "all", f.kinds.length, f.cameras.length, f.bodies.length, f.lenses.length, f.keywords.length,
+    f.takenFrom || f.takenTo, f.gps && f.gps !== "any", hasGeometry(f), hasTextQuery(f)]
     .filter(Boolean).length + EXPOSURE.filter((k) => f[k].length).length;
 
 // whether the filter asks for what only reading the file tells: everything

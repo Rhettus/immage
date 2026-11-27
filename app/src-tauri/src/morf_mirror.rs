@@ -65,7 +65,7 @@ use std::{
 
 pub(crate) const FILE: &str = "morfphoto-mirror.sqlite";
 const LOCK: &str = "morfphoto-mirror.lock";
-const USER_VERSION: i64 = 3;
+const USER_VERSION: i64 = 4;
 const TICK: Duration = Duration::from_secs(60);
 const WAIT_SLICE: Duration = Duration::from_secs(5);
 const QUIET: Duration = Duration::from_millis(300);
@@ -95,7 +95,7 @@ CREATE TABLE photos (
     size INTEGER, mtime INTEGER, sidecar_fp TEXT,
     make TEXT, model TEXT, lens TEXT, body_key TEXT, body_serial TEXT,
     camera_label TEXT, iso_label TEXT, aperture_label TEXT, focal_label TEXT, shutter_label TEXT,
-    exif_taken_at TEXT,
+    exif_taken_at TEXT, original_width INTEGER NOT NULL, original_height INTEGER NOT NULL,
     iso REAL, aperture REAL, focal REAL, shutter_s REAL, exp_bias REAL,
     seq INTEGER NOT NULL DEFAULT 0,
     gen INTEGER NOT NULL DEFAULT 0,
@@ -123,6 +123,7 @@ CREATE TABLE versions (
     -- the capture day, YYYY-MM-DD, of a valid taken_at; NULL otherwise
     day TEXT,
     latitude REAL, longitude REAL,
+    title TEXT, description TEXT, creator TEXT, publisher TEXT, rights TEXT, notes TEXT, version_name TEXT,
     PRIMARY KEY (photo_id, version)
 ) WITHOUT ROWID;
 CREATE INDEX versions_rating ON versions(rating, rejected);
@@ -1066,10 +1067,10 @@ fn upsert_file(
              sidecar_fp, make, model, lens, body_key, body_serial, camera_label, iso_label,
              aperture_label, focal_label, shutter_label, exif_taken_at, iso, aperture, focal,
              shutter_s, exp_bias, seq, gen, f_ext, f_kind, f_raw, f_camera, f_body, f_iso,
-             f_aperture, f_focal, f_shutter, f_photo, nver)
+             f_aperture, f_focal, f_shutter, f_photo, nver, original_width, original_height)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
              ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
-             ?34, ?35, ?36, ?37, ?38)
+             ?34, ?35, ?36, ?37, ?38, ?39, ?40)
          ON CONFLICT(id) DO UPDATE SET
              server_path = excluded.server_path, dir = excluded.dir,
              filename = excluded.filename, extension = excluded.extension,
@@ -1087,7 +1088,8 @@ fn upsert_file(
              f_body = excluded.f_body, f_iso = excluded.f_iso,
              f_aperture = excluded.f_aperture, f_focal = excluded.f_focal,
              f_shutter = excluded.f_shutter, f_photo = excluded.f_photo,
-             nver = excluded.nver",
+             nver = excluded.nver, original_width = excluded.original_width,
+             original_height = excluded.original_height",
     )?
     .execute(params![
         id,
@@ -1128,6 +1130,8 @@ fn upsert_file(
         keys[7],
         crate::library_cmds::photo_candidate(Path::new(&filename)),
         versions.len() as i64,
+        ExifFields::dimension(fields, "original_width"),
+        ExifFields::dimension(fields, "original_height"),
     ])?;
     tx.prepare_cached("DELETE FROM versions WHERE photo_id = ?1")?
         .execute(params![id])?;
@@ -1135,8 +1139,9 @@ fn upsert_file(
         .execute(params![id])?;
     let mut insert_version = tx.prepare_cached(
         "INSERT OR REPLACE INTO versions (photo_id, version, copy, rating, rejected, labels,
-             edited, taken_at, day, latitude, longitude)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+             edited, taken_at, day, latitude, longitude,
+             title, description, creator, publisher, rights, notes, version_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
     )?;
     let mut insert_keyword = tx.prepare_cached(
         "INSERT OR IGNORE INTO keywords (photo_id, version, keyword) VALUES (?1, ?2, ?3)",
@@ -1154,6 +1159,13 @@ fn upsert_file(
             version.taken_at.as_deref().and_then(sf::capture_day),
             version.latitude,
             version.longitude,
+            version.text.title,
+            version.text.description,
+            version.text.creator,
+            version.text.publisher,
+            version.text.rights,
+            version.text.notes,
+            version.text.version_name,
         ])?;
         for keyword in &version.keywords {
             insert_keyword.execute(params![id, version.version, keyword])?;
@@ -1568,6 +1580,26 @@ pub(crate) fn open_reader(runtime: &Path) -> Option<Connection> {
     let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
     conn.busy_timeout(Duration::from_secs(2)).ok()?;
     conn.pragma_update(None, "query_only", "ON").ok()?;
+    conn.create_scalar_function(
+        "find_text_contains",
+        2,
+        rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            let text: Option<String> = context.get(0)?;
+            let lowered_query: String = context.get(1)?;
+            Ok(text.is_some_and(|text| text.to_lowercase().contains(&lowered_query)))
+        },
+    ).ok()?;
+    conn.create_scalar_function(
+        "find_megapixels",
+        2,
+        rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            let width = u64::from(context.get::<u32>(0)?);
+            let height = u64::from(context.get::<u32>(1)?);
+            Ok((width * height) as f64 / 1_000_000.0)
+        },
+    ).ok()?;
     Some(conn)
 }
 
@@ -1762,6 +1794,8 @@ pub(crate) fn apply_to_images(
             focal: 0.0,
             bias: 0.0,
             mtime: None,
+            width: 0,
+            height: 0,
         };
         let versions = own.iter().map(crate::mirror_overrides::version_from_image).collect();
         let Some(photo) = overrides.effective(&server, Some(PhotoRow { exif, versions })) else { continue };
@@ -1779,12 +1813,24 @@ pub(crate) fn apply_to_images(
             image.labels = version.labels & 31;
             image.edited = version.edited.unwrap_or(false);
             image.keywords = version.keywords;
+            if version.text != before.text {
+                image.metadata = version.text.metadata();
+                image.version_name = version.text.version_name;
+            }
             if version.taken_at != before.taken_at {
                 if let Some(taken) = version.taken_at {
                     image.exif.datetime = crate::morf_photo::exif_datetime(&taken);
                     image.exif.capture_time_raw = taken;
                     image.exif.file_datetime = String::new();
                 }
+            }
+            if (version.latitude, version.longitude) != (before.latitude, before.longitude) {
+                image.location = version.latitude.zip(version.longitude).and_then(|(lat, lon)| {
+                    Some(crate::bindings::Location {
+                        latitude: serde_json::Number::from_f64(lat)?,
+                        longitude: serde_json::Number::from_f64(lon)?,
+                    })
+                });
             }
             kept.push(image);
         }
@@ -1827,7 +1873,8 @@ pub(crate) fn added_outside(
 pub(crate) const ROW_COLUMNS: &str = "p.id, p.server_path, p.make, p.model, p.lens, p.body_serial,
     p.iso, p.aperture, p.focal, p.shutter_s, p.exp_bias, p.mtime,
     v.version, v.copy, v.rating, v.rejected, v.labels, v.edited, v.taken_at,
-    v.latitude, v.longitude";
+    v.latitude, v.longitude, p.original_width, p.original_height,
+    v.title, v.description, v.creator, v.publisher, v.rights, v.notes, v.version_name";
 
 pub(crate) fn row_from(r: &rusqlite::Row) -> Result<Row, rusqlite::Error> {
     let text = |i: usize| -> Result<String, rusqlite::Error> {
@@ -1850,6 +1897,8 @@ pub(crate) fn row_from(r: &rusqlite::Row) -> Result<Row, rusqlite::Error> {
             shutter: real(9)?,
             bias: real(10)?,
             mtime: r.get(11)?,
+            width: r.get(21)?,
+            height: r.get(22)?,
         },
         version: VersionFields {
             version: r.get(12)?,
@@ -1861,6 +1910,15 @@ pub(crate) fn row_from(r: &rusqlite::Row) -> Result<Row, rusqlite::Error> {
             taken_at: r.get(18)?,
             latitude: r.get(19)?,
             longitude: r.get(20)?,
+            text: crate::morf_photo::VersionText {
+                title: r.get(23)?,
+                description: r.get(24)?,
+                creator: r.get(25)?,
+                publisher: r.get(26)?,
+                rights: r.get(27)?,
+                notes: r.get(28)?,
+                version_name: r.get(29)?,
+            },
             keywords: Vec::new(),
         },
     })

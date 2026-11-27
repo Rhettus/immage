@@ -641,10 +641,19 @@ export type GridFilter = {
 	keywords?: string[],
 	takenFrom?: string,
 	takenTo?: string,
+	gps?: string,
 	iso?: string[],
 	aperture?: string[],
 	focal?: string[],
 	shutter?: string[],
+	textField?: string,
+	textQuery?: string,
+	orientations?: string[],
+	aspectRatios?: string[],
+	width?: number,
+	height?: number,
+	minMegapixels?: number | null,
+	maxMegapixels?: number | null,
 };
 
 export type HdrReply = {
@@ -712,6 +721,8 @@ export type LibraryImage = {
 	height: number,
 	location: Location | null,
 	exif: MetaExif,
+	metadata?: MetaText | null,
+	version_name?: string | null,
 	keywords: string[],
 	version: number,
 	copy: boolean,

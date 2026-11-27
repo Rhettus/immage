@@ -521,9 +521,10 @@ cameras, dates and so on) are limited in height and scroll inside the editor.
 
 The filters are grouped:
 
-- **Photo**: **Rating & flags**, **Edit status**, **File type**, **Keywords**.
+- **Photo**: **Rating & flags**, **Edit status**, **File type**, **Image dimensions**,
+  **Keywords**, **Metadata text**.
 - **Camera**: **Camera**, **Camera body**, **Lens**, **Exposure**.
-- **When & where**: **Captured**, **Place**.
+- **When & where**: **Captured**, **GPS coordinates**, **Place**.
 - **Immich**: **People**, **Albums**, **Favorites**.
 
 **Camera body** and **Exposure** apply only to photos on this computer.
@@ -546,6 +547,12 @@ list the server's values.
   you can tick **ORF** alone or **All RAW**. Tick several to show any of them.
   A saved filter made before extensions were listed, with **RAW** or **JPEG**,
   still matches the same photos.
+- **Image dimensions**: choose an orientation or aspect ratio, enter an exact
+  pixel width or height, or enter a megapixel range. These filters use the
+  source pixel dimensions before applying rotation or crop. Aspect ratios apply in both orientations and
+  allow a small tolerance. Photos need known dimensions to match. For photos
+  indexed by morfPhoto, dimensions become available as the server updates its
+  catalog with the new fields.
 - **Camera** and **Lens**: tick any to show photos of those. Each lists what
   the search holds, with how many photos of each.
 - **Camera body**: distinguish physical bodies of the same model by their
@@ -558,10 +565,22 @@ list the server's values.
 - **Keywords**: tick one or more to show photos with all of them. A keyword
   includes those under it, so **Places** shows photos tagged **Places › Norway**
   too.
+- **Metadata text**: search for text anywhere in title, description, creator,
+  publisher, rights, notes or version name. Choose a field to search it alone.
+  The search ignores letter case and checks the metadata of each virtual
+  copy separately. After upgrading Immage, text becomes searchable as existing
+  photos are indexed in the background. An older morfPhoto catalog may supply
+  fewer fields.
 - **Captured**: photos taken between two dates. Type them, or pick a recent
   span (**Last 30 days**, **This month**, **Last year** and others), a year,
-  or a month of the year. A photo with no capture time goes by its file's date
-  here too.
+  or a month of the year. Add a time to either date to narrow the range to
+  the minute for photos on this computer, including those indexed through
+  morfPhoto. Times use the clock recorded with the photo, and the end time
+  includes the full minute. A time bound requires a recorded capture time.
+  In folder browsing, a date-only filter can use a photo's file date when
+  its capture date is missing.
+- **GPS coordinates**: select **With GPS** or **Without GPS**. This applies
+  to photos on this computer, including those indexed through morfPhoto.
 - **Exposure**: tabs for ISO, aperture, focal length and shutter speed; a dot
   marks a tab with values chosen. Tick any values, for example ISO 100 and 200.
 

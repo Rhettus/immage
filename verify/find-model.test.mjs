@@ -79,15 +79,33 @@ test('visibleCategories', () => {
   const hidden = ['place', 'people', 'albums', 'favorites'];
   const local = keys(visibleCategories({ ...NO_SEARCH, source: 'local' }, true));
   for (const k of hidden) assert.ok(!local.includes(k));
-  assert.equal(local.length, 9);
+  assert.equal(local.length, 12);
   assert.equal(local[local.indexOf('rating') + 1], 'edits');
   assert.ok(!keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true)).includes('edits'));
   const im = keys(visibleCategories({ ...NO_SEARCH, source: 'immich' }, true));
   assert.ok(!im.includes('bodies') && !im.includes('exposure'));
+  for (const k of ['gps', 'geometry', 'metadata']) {
+    assert.ok(local.includes(k));
+    assert.ok(!im.includes(k));
+  }
   for (const k of hidden) assert.ok(im.includes(k));
   const both = visibleCategories({ ...NO_SEARCH, source: 'both' }, true);
-  assert.equal(both.length, 13);
+  assert.equal(both.length, 16);
   assert.deepEqual(both, CATEGORIES);
+});
+
+test('local metadata filters keep saved values while Immich uses only capture days', () => {
+  const base = st({ source: 'both' }, { gps: 'none', orientations: ['portrait'], textField: 'title', textQuery: 'Sun' });
+  const state = setTaken(base, '2024-03-05T14:01', '2024-03-05T14:07');
+  assert.equal(state.search.takenFrom, '2024-03-05');
+  assert.equal(state.filter.takenFrom, '2024-03-05T14:01');
+  const localOnly = ['gps', 'geometry', 'metadata', 'taken'];
+  assert.deepEqual(chips(state, true).filter((c) => c.excludes === 'immich').map((c) => c.key).sort(), localOnly.sort());
+  const immich = { ...state, search: withSearchIn(state.search, 'immich') };
+  assert.deepEqual(effectiveFilter(immich, true), { ...NO_FILTER, takenFrom: '2024-03-05', takenTo: '2024-03-05' });
+  assert.deepEqual(settingOf('taken', immich, true), { from: '2024-03-05', to: '2024-03-05' });
+  assert.deepEqual(normalizeFind(JSON.parse(JSON.stringify(state))), state);
+  assert.deepEqual(clearAll(state).filter, NO_FILTER);
 });
 
 const busy = () => st({ source: 'immich' }, { cameras: ['A'], keywords: ['k'], rejected: 'hide', minRating: 3, takenFrom: '2020-01-01',

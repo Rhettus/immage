@@ -91,20 +91,92 @@ impl Where {
             values.iter().map(|v| Value::Text(v.clone())),
         );
     }
-    fn day(&mut self, from: &str, to: &str) {
-        if from.is_empty() && to.is_empty() {
-            return;
-        }
-        self.and("v.day IS NOT NULL", []);
+    fn date_range(&mut self, from: &str, to: &str) {
         for (bound, op) in [(from, ">="), (to, "<=")] {
             if bound.is_empty() {
                 continue;
             }
-            match sf::day_text(bound) {
-                Some(text) => self.and(format!("v.day {op} ?"), [Value::Text(text)]),
-                None => self.none(),
+            let Some((date, time)) = sf::date_bound(bound) else {
+                self.none();
+                continue;
+            };
+            let date = date.format("%Y-%m-%d").to_string();
+            self.and(format!("v.day {op} ?"), [Value::Text(date.clone())]);
+            if let Some(time) = time {
+                // The coarse date predicate uses the day index. Compare the
+                // camera's clock on the boundary day and require a known minute.
+                let clock = "substr(v.taken_at, 12, 5)";
+                self.and(
+                    format!("substr(v.taken_at, 11, 1) IN ('T', ' ')
+                        AND {clock} GLOB '[0-2][0-9]:[0-5][0-9]'
+                        AND {clock} < '24:00' AND (v.day != ? OR {clock} {op} ?)"),
+                    [Value::Text(date), Value::Text(time.format("%H:%M").to_string())],
+                );
             }
         }
+    }
+    fn geometry(&mut self, f: &GridFilter) {
+        const WIDTH: &str = "p.original_width";
+        const HEIGHT: &str = "p.original_height";
+        if f.orientations.is_empty() && f.aspect_ratios.is_empty()
+            && f.width == 0 && f.height == 0
+            && f.min_megapixels == 0.0 && f.max_megapixels == 0.0
+        {
+            return;
+        }
+        self.and(format!("{WIDTH} > 0 AND {HEIGHT} > 0"), []);
+        if !f.orientations.is_empty() {
+            self.one_of(
+                &format!("CASE WHEN {WIDTH} > {HEIGHT} THEN 'landscape'
+                    WHEN {WIDTH} < {HEIGHT} THEN 'portrait' ELSE 'square' END"),
+                &f.orientations, false,
+            );
+        }
+        for (column, size) in [(WIDTH, f.width), (HEIGHT, f.height)] {
+            if size > 0 {
+                self.and(format!("{column} = ?"), [Value::Integer(size.into())]);
+            }
+        }
+        for (operator, megapixels) in [(">=", f.min_megapixels), ("<=", f.max_megapixels)] {
+            if megapixels > 0.0 {
+                self.and(
+                    format!("find_megapixels({WIDTH}, {HEIGHT}) {operator} ?"),
+                    [Value::Real(megapixels)],
+                );
+            }
+        }
+        if !f.aspect_ratios.is_empty() {
+            let mut clauses = Vec::new();
+            let mut params = Vec::new();
+            for (long, short) in f.aspect_ratios.iter().filter_map(|ratio| sf::ratio_parts(ratio)) {
+                clauses.push(format!("abs(max({WIDTH}, {HEIGHT}) * ? - min({WIDTH}, {HEIGHT}) * ?) * 100
+                    <= min({WIDTH}, {HEIGHT}) * ?"));
+                params.extend([short, long, long].map(|n| Value::Integer(n as i64)));
+            }
+            if clauses.is_empty() {
+                self.none();
+            } else {
+                self.and(format!("({})", clauses.join(" OR ")), params);
+            }
+        }
+    }
+    fn metadata_text(&mut self, field: &str, query: &str) {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return;
+        }
+        let fields: Vec<_> = sf::TEXT_FIELDS.into_iter()
+            .filter(|key| field.is_empty() || field == "any" || field == *key)
+            .collect();
+        if fields.is_empty() {
+            self.none();
+            return;
+        }
+        let predicates: Vec<_> = fields.iter().map(|key| format!("find_text_contains(v.{key}, ?)")).collect();
+        self.and(
+            format!("({})", predicates.join(" OR ")),
+            fields.into_iter().map(|_| Value::Text(query.clone())),
+        );
     }
     fn sql(&self) -> String {
         if self.clauses.is_empty() { "1".into() } else { self.clauses.join(" AND ") }
@@ -250,8 +322,17 @@ pub(crate) fn compile(
             ],
         );
     }
-    w.day(&f.taken_from, &f.taken_to);
-    w.day(r.taken_from.as_deref().unwrap_or(""), r.taken_to.as_deref().unwrap_or(""));
+    const GPS: &str = "(v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+        AND v.latitude BETWEEN -90 AND 90 AND v.longitude BETWEEN -180 AND 180)";
+    match f.gps.as_str() {
+        "has" => w.and(GPS, []),
+        "none" => w.and(format!("NOT {GPS}"), []),
+        _ => {}
+    }
+    w.geometry(f);
+    w.metadata_text(&f.text_field, &f.text_query);
+    w.date_range(&f.taken_from, &f.taken_to);
+    w.date_range(r.taken_from.as_deref().unwrap_or(""), r.taken_to.as_deref().unwrap_or(""));
     w.one_of("p.f_iso", &f.iso, true);
     w.one_of("p.f_aperture", &f.aperture, true);
     w.one_of("p.f_focal", &f.focal, true);
@@ -687,6 +768,11 @@ pub(crate) mod tests {
     const TAKEN: &[Option<&str>] = &[
         None,
         Some("2024-05-06T10:11:12"),
+        Some("2024-05-06T10:11:59.999-07:00"),
+        Some("2024:05:06 10:10:59"),
+        Some("2024-05-06T10:12:00"),
+        Some("2024-05-06T24:00:00"),
+        Some("2024-05-06T10:60:00"),
         Some("2024-05-06"),
         Some("2023-12-31T23:59:59"),
         Some("2024-02-30T10:00:00"),
@@ -724,18 +810,31 @@ pub(crate) mod tests {
                         let rating = rng.below(6);
                         let keywords: Vec<&str> =
                             (0..rng.below(4)).map(|_| *rng.pick(KEYWORDS)).collect();
+                        let (lat, lon) = [(None, None), (Some(0.0), Some(0.0)),
+                            (Some(-90.0), Some(180.0)), (Some(91.0), Some(8.0)),
+                            (Some(8.0), Some(181.0)), (None, Some(2.0))][(n + v as usize) % 6];
+                        let title = ["", "Échelle", "Κόσμος"][(n + v as usize) % 3];
+                        let description = ["", "sun and sea", "100%"][(n + 2 * v as usize) % 3];
                         json!({
                             "version": v, "copy": v > 0, "rating": rating,
                             "rejected": rng.chance(20), "labels": rng.below(32),
                             "edited": match rng.below(3) { 0 => Json::Null, 1 => json!(true), _ => json!(false) },
-                            "taken_at": rng.pick(TAKEN), "latitude": null, "longitude": null,
+                            "taken_at": rng.pick(TAKEN), "latitude": lat, "longitude": lon,
                             "keywords": keywords,
+                            "title": title, "description": description,
+                            "creator": "Author", "publisher": "Collection", "rights": "CC BY",
+                            "notes": if n % 2 == 0 { Some("Field note") } else { None },
+                            "version_name": if v == 0 { None } else { Some("Alternate") },
                         })
                     })
                     .collect();
+                let (width, height) = [(0u32, 0), (0, 4000), (6000, 4000), (4000, 6000),
+                    (1024, 1024), (1920, 1080), (375, 500), (6001, 4000), (u32::MAX, u32::MAX)]
+                    [n % 9];
                 json!({
                     "id": n as i64 + 1, "seq": 1, "state": "present",
                     "path": format!("{dir}/{n}-{name}"),
+                    "original_width": width, "original_height": height,
                     "make": make, "camera_model": model, "lens": rng.pick(LENSES),
                     "body_serial": rng.pick(SERIALS),
                     "iso": rng.pick(ISO), "aperture": rng.pick(APERTURE),
@@ -847,10 +946,32 @@ pub(crate) mod tests {
             add(GridFilter { keywords: keywords.iter().map(|s| s.to_string()).collect(), ..Default::default() }, SearchArgs::default());
         }
         for (from, to) in [("2024-05-06", ""), ("", "2024-05-06"), ("2024-05-06", "2024-05-06"), ("2023-12-31", "2024-01-01"),
+                           ("2024-05-06T10:11", "2024-05-06T10:11"), ("2024-05-06", "2024-05-06T10:11"),
+                           ("2024-05-06T10:11", "2024-05-06"), ("2024-05-06T10:11", ""),
+                           ("", "2024-05-06T10:11"), ("2024-05-06T24:00", ""),
                            ("2024-02-30", ""), ("2025-01-01", "2025-12-31"), ("2000-01-01", "2030-01-01"), ("", "2021-01-01")] {
             add(GridFilter { taken_from: from.into(), taken_to: to.into(), ..Default::default() }, SearchArgs::default());
             add(GridFilter::default(), SearchArgs { taken_from: Some(from.into()).filter(|s: &String| !s.is_empty()),
                 taken_to: Some(to.into()).filter(|s: &String| !s.is_empty()), ..Default::default() });
+        }
+        for gps in ["has", "none"] {
+            add(GridFilter { gps: gps.into(), ..Default::default() }, SearchArgs::default());
+            add(GridFilter { gps: gps.into(), taken_to: "2024-05-06T10:11".into(), ..Default::default() }, SearchArgs::default());
+        }
+        for orientations in [vec!["portrait"], vec!["landscape", "square"]] {
+            add(GridFilter { orientations: orientations.into_iter().map(str::to_owned).collect(),
+                ..Default::default() }, SearchArgs::default());
+        }
+        for ratio in ["1:1", "3:2", "16:9", "3:4"] {
+            add(GridFilter { aspect_ratios: vec![ratio.into()], ..Default::default() }, SearchArgs::default());
+        }
+        add(GridFilter { min_megapixels: 24.0, max_megapixels: 24.0, ..Default::default() }, SearchArgs::default());
+        add(GridFilter { width: 6000, height: 4000, ..Default::default() }, SearchArgs::default());
+        add(GridFilter { height: 4000, ..Default::default() }, SearchArgs::default());
+        for (field, query) in [("any", " ÉCHELLE "), ("title", "ΚόσΜΟΣ"), ("description", "%"),
+            ("creator", "author"), ("publisher", "collection"), ("rights", "cc by"),
+            ("notes", "note"), ("version_name", "alternate"), ("version_name", "author")] {
+            add(GridFilter { text_field: field.into(), text_query: query.into(), ..Default::default() }, SearchArgs::default());
         }
         for (iso, ap, fo, sh) in [("100", "f/2.3", "24 mm", "1/250"), ("101", "f/2.5", "35 mm", "0.3s"), ("3200", "f/2.8", "0 mm", "1/3"),
                                   ("6400", "f/11", "50 mm", "2.5s"), ("12800", "f/22", "200 mm", "30s"), ("1600", "f/1.8", "24 mm", "1/80"),
@@ -1049,6 +1170,9 @@ pub(crate) mod tests {
         }
         if rng.chance(30) { p.edited = Some(rng.chance(50)); }
         if rng.chance(30) { p.taken_at = rng.pick(TAKEN).map(str::to_owned); }
+        if rng.chance(30) { p.location = Some(rng.chance(50).then_some((0.0, 0.0))); }
+        if rng.chance(30) { p.text.title = Some("Échelle".into()); }
+        if rng.chance(30) { p.text.notes = Some("".into()); }
         p
     }
 
@@ -1124,6 +1248,12 @@ pub(crate) mod tests {
                     if let Some(k) = &patch.keywords { version.keywords = k.clone(); }
                     if let Some(e) = patch.edited { version.edited = Some(e); }
                     if let Some(t) = &patch.taken_at { version.taken_at = Some(t.clone()); }
+                    if let Some(t) = &patch.text.title { version.text.title = Some(t.clone()); }
+                    if let Some(t) = &patch.text.notes { version.text.notes = Some(t.clone()); }
+                    if let Some(location) = patch.location {
+                        version.latitude = location.map(|(lat, _)| lat);
+                        version.longitude = location.map(|(_, lon)| lon);
+                    }
                 }
                 Op::Gone(p) => { model.remove(p); }
                 Op::Removed(p, v) => {

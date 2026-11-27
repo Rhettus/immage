@@ -549,6 +549,21 @@ impl Immich {
             immich_args.raw_only = true;
         }
 
+        // A server timestamp can use a different offset than the capture
+        // clock. Apply minute bounds to the enriched local hit instead.
+        let mut local_capture = SearchArgs::default();
+        if immich_args.taken_from.as_ref().is_some_and(|bound| bound.len() > 10) {
+            immich_args.taken_from = None;
+            local_capture.taken_from = args.remote.taken_from.clone();
+        }
+        if immich_args.taken_to.as_ref().is_some_and(|bound| bound.len() > 10) {
+            immich_args.taken_to = None;
+            local_capture.taken_to = args.remote.taken_to.clone();
+        }
+
+        let needs_local_capture = args.filters.taken_from.len() > 10 || args.filters.taken_to.len() > 10
+            || local_capture.taken_from.is_some() || local_capture.taken_to.is_some();
+
         let server_prefix = local_to_server_folder(folder, map, canonical_local);
         let canonical_folder = crate::volumes::answering(folder)
             .then(|| std::fs::canonicalize(folder).ok())
@@ -562,7 +577,6 @@ impl Immich {
         let mut current_page = start_page;
         let mut next_server_page: Option<u64> = None;
         let mut rank: usize = ((start_page.saturating_sub(1)) as usize).saturating_mul(250);
-        let empty_remote = SearchArgs::default();
 
         for _ in 0..MAX_PAGES {
             if cancelled() {
@@ -654,11 +668,16 @@ impl Immich {
                 }
                 let (image, capture, asset_id, variant_id) =
                     enrich_immich_hit(cache, local_str, &mapped_asset);
+                // The server fallback has no local GPS metadata and its date
+                // can be the upload date. Only a cached photo is authoritative.
+                if variant_id.is_none() && (args.filters.gps == "none" || needs_local_capture) {
+                    continue;
+                }
                 if !crate::search_filters::passes(
                     &image,
                     capture.as_deref(),
                     &args.filters,
-                    &empty_remote,
+                    &local_capture,
                 ) {
                     continue;
                 }
@@ -750,6 +769,8 @@ fn asset_to_library_image(local_path: &str, a: &Asset) -> crate::typed_library::
         width: u32::try_from(a.width).unwrap_or(0),
         height: u32::try_from(a.height).unwrap_or(0),
         location: None,
+        metadata: None,
+        version_name: None,
         exif: crate::bindings::MetaExif {
             maker: a.exif.make.clone().unwrap_or_default(),
             model: a.exif.model.clone().unwrap_or_default(),

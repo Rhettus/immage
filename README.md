@@ -50,8 +50,10 @@ and Linux. **All builds are alpha; bugs are expected.**
   when enabled. Immich also supports search and export.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
-  keeps filters active across folder changes and remembers its own width and
-  visibility separately from the editing panel.
+  filters by capture date and time, GPS availability, image dimensions,
+  descriptive metadata, and camera settings. It keeps filters active across
+  folder changes and remembers its own width and visibility separately from
+  the editing panel.
 - Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - [Reset edits](app/docs/history-and-sync.md#reset-all) from Adjustments or the Library grid, with a confirmation you can turn off.

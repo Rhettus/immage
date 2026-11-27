@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Find can narrow local photos by capture time and show photos with or without
+  GPS coordinates, including photos indexed by morfPhoto.
+- Find can filter by original dimensions, aspect ratio, orientation and
+  megapixels, and search descriptive metadata such as title and creator.
 - Presets can include Film Simulation. Tick it in the New Preset dialog to
   save the film, paper and every film setting. Applying the preset turns the
   simulation on or off as the Film Simulation panel does, and Amount blends
@@ -29,6 +33,8 @@ Performance
 
 Bug fixes
 
+- Notes use the standard XMP field for compatibility with darktable and
+  morfPhoto.
 - Importing from a memory card directly to a mounted NAS share on macOS
   works when the share requires a standard file flush. Copies are still
   verified by hash.

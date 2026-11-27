@@ -610,7 +610,9 @@ pub(crate) fn supplement_morf_metadata(image: &mut LibraryImage, cached: &Librar
     if image.path != cached.path || image.version != cached.version || image.filename != cached.filename {
         return;
     }
-    (image.width, image.height) = (cached.width, cached.height);
+    if cached.width > 0 && cached.height > 0 {
+        (image.width, image.height) = (cached.width, cached.height);
+    }
     let (target, source) = (&mut image.exif, &cached.exif);
     target.focus_distance = source.focus_distance.clone();
     target.crop_factor = source.crop_factor.clone();
@@ -618,7 +620,9 @@ pub(crate) fn supplement_morf_metadata(image: &mut LibraryImage, cached: &Librar
     target.flash.clone_from(&source.flash);
     target.exposure_program.clone_from(&source.exposure_program);
     target.metering_mode.clone_from(&source.metering_mode);
-    (target.file_width, target.file_height) = (source.file_width, source.file_height);
+    if target.file_width == 0 || target.file_height == 0 {
+        (target.file_width, target.file_height) = (source.file_width, source.file_height);
+    }
     (target.sensor_width, target.sensor_height) = (source.sensor_width, source.sensor_height);
 }
 

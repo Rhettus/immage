@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use specta::Type;
 
-// an image as the engine's library lists it (`import`, `copy`): `meta`'s
-// image without the text fields, which a listing leaves out
+// an image as the engine's library lists it (`import`, `copy`)
 #[derive(Clone, Serialize, Deserialize, Type)]
 pub struct LibraryImage {
     pub imgid: i64,
@@ -28,6 +27,10 @@ pub struct LibraryImage {
     pub height: u32,
     pub location: Option<Location>,
     pub exif: MetaExif,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::bindings::MetaText>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_name: Option<String>,
     // darktable's tags, "|" between levels
     pub keywords: Vec<String>,
     // the file's version: every one but the lowest is a virtual copy

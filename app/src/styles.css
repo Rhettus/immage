@@ -2122,6 +2122,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .fr-editor .filter-ticks button { min-height: 28px; }
 .fr-editor .meta-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 10px; align-items: center; color: var(--text-2); }
 .fr-editor .meta-grid .field { width: 100%; }
+.filter-field-pair { display: contents; }
+.filter-custom-ratio { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-block-start: 6px; }
 .fr-editor .filter-bodies .fe-hint { margin-top: 8px; }
 .fe-sec + .fe-sec { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--hover); }
 .fe-label { display: flex; align-items: center; justify-content: space-between; min-height: 22px; margin-bottom: 5px; color: var(--text-2); }

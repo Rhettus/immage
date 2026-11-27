@@ -579,11 +579,11 @@ const char *library_meta_keys[6][2] = {
   { "creator", "Xmp.dc.creator" },
   { "publisher", "Xmp.dc.publisher" },
   { "rights", "Xmp.dc.rights" },
-  { "notes", "Xmp.darktable.notes" },
+  { "notes", "Xmp.acdsee.notes" },
 };
 
-// one image as JSON: identity, rating, labels and the EXIF summary; with
-// `full`, its editable metadata too
+// one image as JSON: identity, rating, labels and EXIF, plus searchable
+// text fields for library listings and metadata reads
 // Lightroom's keywords are darktable's tags, "|" between the levels of a
 // hierarchy; the "darktable|..." ones are darktable's own bookkeeping
 static void _keywords_json(JsonBuilder *b, const dt_imgid_t imgid)
@@ -779,15 +779,36 @@ void library_image_json(JsonBuilder *b, const dt_imgid_t imgid, const gboolean f
 
   if(full)
   {
+    GList *metadata = dt_metadata_get_list_id(imgid);
     json_builder_set_member_name(b, "metadata");
     json_builder_begin_object(b);
     for(size_t k = 0; k < G_N_ELEMENTS(library_meta_keys); k++)
     {
-      GList *res = dt_metadata_get(imgid, library_meta_keys[k][1], NULL);
-      engine_add_string(b, library_meta_keys[k][0], res ? (const char *)res->data : "");
-      g_list_free_full(res, g_free);
+      const int key = dt_metadata_get_keyid(library_meta_keys[k][1]);
+      const int old_notes = !strcmp(library_meta_keys[k][0], "notes")
+                               ? dt_metadata_get_keyid("Xmp.darktable.notes") : -1;
+      const char *value = "";
+      for(const GList *entry = metadata; entry && entry->next; entry = entry->next->next)
+      {
+        const int id = atoi(entry->data);
+        if(id == key)
+        {
+          value = entry->next->data;
+          break;
+        }
+        if(id == old_notes) value = entry->next->data;
+      }
+      engine_add_string(b, library_meta_keys[k][0], value);
     }
     json_builder_end_object(b);
+    const int version_key = dt_metadata_get_keyid("Xmp.darktable.version_name");
+    for(const GList *entry = metadata; entry && entry->next; entry = entry->next->next)
+      if(atoi(entry->data) == version_key)
+      {
+        engine_add_string(b, "version_name", entry->next->data);
+        break;
+      }
+    g_list_free_full(metadata, g_free);
   }
   // always, as the filmstrip's filter narrows the folder by them
   _keywords_json(b, imgid);
@@ -819,7 +840,7 @@ GList *library_image_versions(const dt_imgid_t imgid)
 static void _image_versions_json(JsonBuilder *b, const dt_imgid_t imgid)
 {
   GList *ids = library_image_versions(imgid);
-  for(GList *l = ids; l; l = g_list_next(l)) library_image_json(b, GPOINTER_TO_INT(l->data), FALSE);
+  for(GList *l = ids; l; l = g_list_next(l)) library_image_json(b, GPOINTER_TO_INT(l->data), TRUE);
   g_list_free(ids);
 }
 
@@ -871,7 +892,7 @@ gboolean library_copy(const dt_imgid_t src, JsonBuilder *b, char **err)
     return FALSE;
   }
   json_builder_set_member_name(b, "image");
-  library_image_json(b, newid, FALSE);
+  library_image_json(b, newid, TRUE);
   return TRUE;
 }
 
@@ -2287,8 +2308,13 @@ gboolean library_meta_set(const dt_imgid_t imgid, JsonObject *req, char **err)
   }
   for(size_t k = 0; k < G_N_ELEMENTS(library_meta_keys); k++)
     if(json_object_has_member(req, library_meta_keys[k][0]))
+    {
       dt_metadata_set(imgid, library_meta_keys[k][1],
                       json_object_get_string_member(req, library_meta_keys[k][0]), FALSE);
+      if(!strcmp(library_meta_keys[k][0], "notes")
+         && dt_metadata_get_keyid("Xmp.darktable.notes") != (uint32_t)-1)
+        dt_metadata_set(imgid, "Xmp.darktable.notes", "", FALSE);
+    }
   // TRUE means it failed
   if(_write_sidecar_location(imgid, json_object_has_member(req, "location")))
   {

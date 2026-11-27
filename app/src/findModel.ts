@@ -11,7 +11,7 @@
 // `search` is what the server and the local index are asked. A row that
 // means the same on both (rating, capture date, RAW) writes both, so the
 // server narrows its pages and `passes` still checks what comes back.
-import { EXPOSURE, NO_FILTER, type Filter } from "./filter";
+import { dateOfBound, EXPOSURE, hasCaptureTime, hasGeometry, hasTextQuery, NO_FILTER, type Filter } from "./filter";
 import { fileKind } from "./library";
 import { NO_SEARCH, type ImmichSearch } from "./immich";
 
@@ -87,7 +87,7 @@ export type Group = "photo" | "camera" | "when" | "immich";
 export const GROUPS: Group[] = ["photo", "camera", "when", "immich"];
 
 export type CategoryKey = "rating" | "edits" | "kinds" | "keywords" | "cameras" | "bodies" | "lenses" | "exposure"
-  | "taken" | "place" | "people" | "albums" | "favorites";
+  | "taken" | "gps" | "geometry" | "metadata" | "place" | "people" | "albums" | "favorites";
 
 // `local`: needs this computer's photos (hidden for Immich-only searches);
 // `immich`: a server field (shown, tagged IMMICH, once Immich is in the
@@ -100,12 +100,15 @@ export const CATEGORIES: Category[] = [
   { key: "rating", group: "photo", only: null },
   { key: "edits", group: "photo", only: "local" },
   { key: "kinds", group: "photo", only: null },
+  { key: "geometry", group: "photo", only: "local" },
   { key: "keywords", group: "photo", only: null },
+  { key: "metadata", group: "photo", only: "local" },
   { key: "cameras", group: "camera", only: null },
   { key: "bodies", group: "camera", only: "local" },
   { key: "lenses", group: "camera", only: null },
   { key: "exposure", group: "camera", only: "local" },
   { key: "taken", group: "when", only: null },
+  { key: "gps", group: "when", only: "local" },
   { key: "place", group: "when", only: "immich" },
   { key: "people", group: "immich", only: "immich" },
   { key: "albums", group: "immich", only: "immich" },
@@ -134,7 +137,8 @@ export const serverPickers = (s: ImmichSearch, immichAvailable: boolean) => {
 export function effectiveFilter(st: FindState, immichAvailable: boolean): Filter {
   if (!serverPickers(st.search, immichAvailable)) return st.filter;
   const f = st.filter;
-  return { ...NO_FILTER, minRating: f.minRating, takenFrom: f.takenFrom, takenTo: f.takenTo, kinds: f.kinds };
+  return { ...NO_FILTER, minRating: f.minRating, takenFrom: dateOfBound(f.takenFrom),
+           takenTo: dateOfBound(f.takenTo), kinds: f.kinds };
 }
 
 // ---- what each category is set to ------------------------------------
@@ -149,6 +153,9 @@ export type Setting = {
   rejected?: Filter["rejected"]; edited?: Filter["edited"]; labels?: number; unlabeled?: boolean;
   values?: string[];
   from?: string; to?: string;
+  gps?: Filter["gps"];
+  geometry?: Pick<Filter, "orientations" | "aspectRatios" | "width" | "height" | "minMegapixels" | "maxMegapixels">;
+  textField?: Filter["textField"]; textQuery?: string;
   make?: string; model?: string; lens?: string; country?: string; city?: string;
   flags?: ("favorites" | "raw")[];
 };
@@ -185,9 +192,18 @@ export function settingOf(key: CategoryKey, st: FindState, server: boolean): Set
       return values.length ? { values } : null;
     }
     case "taken": {
-      const from = f.takenFrom || s.takenFrom, to = f.takenTo || s.takenTo;
+      const from = (server ? dateOfBound(f.takenFrom) : f.takenFrom) || s.takenFrom;
+      const to = (server ? dateOfBound(f.takenTo) : f.takenTo) || s.takenTo;
       return from || to ? { from, to } : null;
     }
+    case "gps":
+      return f.gps !== "any" ? { gps: f.gps } : null;
+    case "geometry": {
+      const { orientations, aspectRatios, width, height, minMegapixels, maxMegapixels } = f;
+      return hasGeometry(f) ? { geometry: { orientations, aspectRatios, width, height, minMegapixels, maxMegapixels } } : null;
+    }
+    case "metadata":
+      return hasTextQuery(f) ? { textField: f.textField, textQuery: f.textQuery.trim() } : null;
     case "place":
       return s.country || s.city ? { country: s.country, city: s.city } : null;
     case "people":
@@ -213,6 +229,9 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
     case "lenses": return { search: { ...s, lens: "" }, filter: { ...f, lenses: [] } };
     case "exposure": return { search: s, filter: { ...f, ...Object.fromEntries(EXPOSURE.map((k) => [k, []])) } };
     case "taken": return { search: { ...s, takenFrom: "", takenTo: "" }, filter: { ...f, takenFrom: "", takenTo: "" } };
+    case "gps": return { search: s, filter: { ...f, gps: "any" } };
+    case "geometry": return { search: s, filter: { ...f, orientations: [], aspectRatios: [], width: 0, height: 0, minMegapixels: 0, maxMegapixels: 0 } };
+    case "metadata": return { search: s, filter: { ...f, textField: "any", textQuery: "" } };
     case "place": return { search: { ...s, country: "", city: "" }, filter: f };
     case "people": return { search: { ...s, personIds: [] }, filter: f };
     case "albums": return { search: { ...s, albumIds: [] }, filter: f };
@@ -234,7 +253,8 @@ export const setStars = (st: FindState, n: number): FindState =>
   ({ search: { ...st.search, minRating: n }, filter: { ...st.filter, minRating: n } });
 
 export const setTaken = (st: FindState, from: string, to: string): FindState =>
-  ({ search: { ...st.search, takenFrom: from, takenTo: to }, filter: { ...st.filter, takenFrom: from, takenTo: to } });
+  ({ search: { ...st.search, takenFrom: dateOfBound(from), takenTo: dateOfBound(to) },
+     filter: { ...st.filter, takenFrom: from, takenTo: to } });
 
 // the file types: the server can narrow only to RAW, so it does when RAW is
 // the one ticked; with others ticked too `passes` sorts the results by name
@@ -259,7 +279,7 @@ export const setRawOnly = (st: FindState, on: boolean): FindState =>
 // the toolbar and the popup set these through the folder Filter; mirror the
 // fields both halves share into the search so the two never disagree
 export function withFilter(st: FindState, f: Filter): FindState {
-  return { filter: f, search: { ...st.search, minRating: f.minRating, takenFrom: f.takenFrom, takenTo: f.takenTo,
+  return { filter: f, search: { ...st.search, minRating: f.minRating, takenFrom: dateOfBound(f.takenFrom), takenTo: dateOfBound(f.takenTo),
                                  rawOnly: RAW_ONLY(f.kinds) } };
 }
 
@@ -274,7 +294,8 @@ export type Chip = { key: CategoryKey; setting: Setting; excludes: "local" | "im
 const dropsImmich = (key: CategoryKey, st: FindState) => {
   const f = st.filter;
   if (key === "rating") return f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
-  return key === "edits" || key === "bodies" || key === "keywords";
+  if (key === "taken") return hasCaptureTime(f);
+  return key === "edits" || key === "bodies" || key === "keywords" || key === "gps" || key === "geometry" || key === "metadata";
 };
 
 export function chips(st: FindState, immichAvailable: boolean): Chip[] {
@@ -305,7 +326,11 @@ function canonical(st: FindState): unknown {
     const v = o[k];
     return [k, Array.isArray(v) ? [...v].sort() : v];
   }));
-  return { search: sort({ ...NO_SEARCH, ...st.search, text: st.search.text.trim() }), filter: sort({ ...NO_FILTER, ...st.filter }) };
+  const textQuery = (st.filter.textQuery ?? "").trim().toLowerCase();
+  return {
+    search: sort({ ...NO_SEARCH, ...st.search, text: st.search.text.trim() }),
+    filter: sort({ ...NO_FILTER, ...st.filter, textQuery, textField: textQuery ? st.filter.textField : "any" }),
+  };
 }
 
 export const sameFind = (a: FindState, b: FindState) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));

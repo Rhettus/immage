@@ -70,7 +70,17 @@ pub(crate) fn gone(state: &AppState, paths: Vec<String>) {
 pub(crate) fn meta_fields(fields: &Map<String, Value>) -> FieldOverride {
     let rating = fields.get("rating").and_then(Value::as_i64).map(|r| r.clamp(0, 5) as u8);
     let rejected = fields.get("rejected").and_then(Value::as_bool);
+    let location = fields.get("location").and_then(|value| {
+        if value.is_null() {
+            Some(None)
+        } else {
+            let parsed = serde_json::from_value(value.clone()).ok()?;
+            crate::search_filters::gps_coordinates(&parsed).map(Some)
+        }
+    });
     FieldOverride {
+        location,
+        text: morf_photo::VersionText::from_request(fields),
         rating: rating.filter(|_| rejected != Some(true)),
         rejected: rejected.or_else(|| rating.map(|_| false)),
         labels: fields.get("labels").and_then(Value::as_i64).map(|l| (l & 31) as u32),
@@ -114,8 +124,15 @@ mod tests {
         assert_eq!((rejected.rating, rejected.rejected), (None, Some(true)));
         let restored = meta_fields(&given(json!({"rejected": false})));
         assert_eq!((restored.rating, restored.rejected), (None, Some(false)));
-        // text fields and a location change nothing the filters read
-        assert!(meta_fields(&given(json!({"title": "x", "location": {"latitude": 1}}))).is_empty());
+        assert!(meta_fields(&given(json!({"location": {"latitude": 1}}))).is_empty());
+        let text = meta_fields(&given(json!({"title": "x", "notes": ""}))).text;
+        assert_eq!(text.title.as_deref(), Some("x"));
+        assert_eq!(text.notes.as_deref(), Some(""));
+        assert_eq!(meta_fields(&given(json!({"location": null}))).location, Some(None));
+        assert_eq!(
+            meta_fields(&given(json!({"location": {"latitude": 0, "longitude": 0}}))).location,
+            Some(Some((0.0, 0.0))),
+        );
     }
 
     #[test]

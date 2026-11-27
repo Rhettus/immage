@@ -782,6 +782,18 @@ class Run:
             self.state('6 forget folder', [R('open', path=str(moved), imgid=image['imgid'], label=label)])
             assert self.results[f'6 forget folder / {label}']['replies'][0]['ok']
         self.state('6 forget folder', [R('close', label='close moved photo')])
+        # The catalog lists text for each copy after it has re-read its XMP.
+        copy_id = next(image['imgid'] for image in images if image['version'] == 1)
+        metadata = {'title': 'Dawn', 'creator': 'Élodie', 'notes': 'First pass'}
+        edit = self.run_one('7 library metadata', R('meta_set', imgid=copy_id, **metadata))[0]
+        assert edit['ok'], edit
+        forget = self.run_one('7 library metadata', R('forget_folder', path=str(archived)))[0]
+        assert forget['ok'], forget
+        reloaded = self.run_one('7 library metadata', R('import', files=[str(moved)]))[0]['images']
+        copy = next(image for image in reloaded if image['version'] == 1)
+        original = next(image for image in reloaded if image['version'] == 0)
+        assert {key: copy['metadata'][key] for key in metadata} == metadata, copy
+        assert original['metadata']['title'] == '', original
         self.state('5 dated', [R('quit')])
 
 

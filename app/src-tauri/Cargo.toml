@@ -49,7 +49,7 @@ tauri-specta = { version = "=2.0.0-rc.28", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.28", features = ["derive", "function", "serde_json"] }
 specta-typescript = "=0.0.15"
 serde_json = { version = "1", features = ["float_roundtrip"] }
-rusqlite = "0.41.1"
+rusqlite = { version = "0.41.1", features = ["functions"] }
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 # the zip crate leaves flate2's backend to the caller; the pure-Rust one, already in the tree

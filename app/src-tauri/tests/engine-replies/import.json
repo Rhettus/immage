@@ -55,6 +55,14 @@
      "keywords": [],
      "labels": 0,
      "location": null,
+     "metadata": {
+      "creator": "",
+      "description": "",
+      "notes": "",
+      "publisher": "",
+      "rights": "",
+      "title": ""
+     },
      "path": "/tmp/immage-fixture/photos/a.tif",
      "rating": 0,
      "rejected": false,
@@ -107,6 +115,14 @@
      ],
      "labels": 0,
      "location": null,
+     "metadata": {
+      "creator": "",
+      "description": "",
+      "notes": "",
+      "publisher": "",
+      "rights": "",
+      "title": ""
+     },
      "path": "/tmp/immage-fixture/photos/a.tif",
      "rating": 0,
      "rejected": false,
@@ -147,6 +163,14 @@
      ],
      "labels": 0,
      "location": null,
+     "metadata": {
+      "creator": "",
+      "description": "",
+      "notes": "",
+      "publisher": "",
+      "rights": "",
+      "title": ""
+     },
      "path": "/tmp/immage-fixture/photos/a.tif",
      "rating": 0,
      "rejected": false,

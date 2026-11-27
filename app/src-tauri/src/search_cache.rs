@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 // a photo the engine could not decode is tried again by another Immage
 // version (another darktable), or after this long in case the failure passes
@@ -30,7 +30,7 @@ macro_rules! pending_analysis_from {
         "FROM variants v JOIN assets a ON a.id=v.asset_id
           LEFT JOIN analyses e ON e.variant_id=v.id AND e.subject='edited' AND e.analysis_version=?3 AND e.model_version=?4
           LEFT JOIN render_failures fe ON fe.subject='edited' AND fe.owner_id=v.id AND fe.fingerprint=v.edited_fingerprint AND fe.analysis_version=?3 AND fe.model_version=?4 AND fe.app_version=?5 AND fe.failed_at>unixepoch()-?6
-          WHERE v.id>?1 AND (v.metadata_json IS NULL OR (e.embedding IS NULL AND fe.owner_id IS NULL))"
+          WHERE v.id>?1 AND (v.metadata_json IS NULL OR v.metadata_refresh OR (e.embedding IS NULL AND fe.owner_id IS NULL))"
     };
 }
 
@@ -223,6 +223,7 @@ impl SearchCache {
                 capture_time_raw TEXT,
                 timezone_offset_seconds INTEGER,
                 metadata_json TEXT,
+                metadata_refresh INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(asset_id, copy_key)
              );
              CREATE TABLE IF NOT EXISTS analyses (
@@ -295,6 +296,15 @@ impl SearchCache {
             // Re-extract richer capture metadata once; visual embeddings remain valid.
             db.execute("UPDATE variants SET metadata_json=NULL",[]).map_err(|e|e.to_string())?;
         }
+        if prior.is_some_and(|v| v < 7) {
+            // Keep existing searchable fields available during the text backfill.
+            db.execute_batch(
+                "ALTER TABLE variants ADD COLUMN metadata_refresh INTEGER NOT NULL DEFAULT 0;
+                 UPDATE variants SET metadata_refresh=1
+                 WHERE metadata_json IS NOT NULL AND
+                   CASE WHEN json_valid(metadata_json) THEN json_type(metadata_json, '$.metadata') IS NULL ELSE 0 END;",
+            ).map_err(|e| e.to_string())?;
+        }
         db.execute(
             "INSERT INTO search_cache_meta(key,value) VALUES('schema_version',?1)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -365,8 +375,8 @@ impl SearchCache {
             .and_then(|variant| {
                 if let Some(json) = item.metadata {
                     tx.execute(
-                        "UPDATE variants SET metadata_json=?4 WHERE id=?1 AND edited_fingerprint=?3
-                         AND metadata_json IS NOT ?4
+                        "UPDATE variants SET metadata_json=?4,metadata_refresh=0 WHERE id=?1 AND edited_fingerprint=?3
+                         AND (metadata_json IS NOT ?4 OR metadata_refresh)
                          AND asset_id IN (SELECT id FROM assets WHERE original_fingerprint=?2)",
                         params![variant.id, item.original, item.edited, json],
                     )
@@ -796,8 +806,8 @@ impl SearchCache {
         capture: (Option<i64>,Option<&str>,Option<i32>)) -> Result<bool,String> {
         let (ns,raw,offset)=capture;
         self.db.lock().map_err(|_|"search cache lock poisoned")?.execute(
-            "UPDATE variants SET edited_fingerprint=?1,metadata_json=?2,capture_time_ns=?3,capture_time_raw=?4,timezone_offset_seconds=?5
-             WHERE id=?6 AND asset_id=?7 AND edited_fingerprint=?8 AND metadata_json IS NULL
+            "UPDATE variants SET edited_fingerprint=?1,metadata_json=?2,capture_time_ns=?3,capture_time_raw=?4,timezone_offset_seconds=?5,metadata_refresh=0
+             WHERE id=?6 AND asset_id=?7 AND edited_fingerprint=?8 AND (metadata_json IS NULL OR metadata_refresh)
              AND EXISTS(SELECT 1 FROM assets WHERE id=?7 AND path=?9 AND original_fingerprint=?10)",
             params![edited,metadata,ns,raw,offset,row.variant_id,row.asset_id,row.edited,row.path,row.original])
             .map(|n|n==1).map_err(|e|e.to_string())
@@ -809,7 +819,7 @@ impl SearchCache {
         // a subject the engine could not decode for this very fingerprint, app
         // version and analysis is not pending until RENDER_FAILURE_RETRY passes
         // (render_failures)
-        let mut query = db.prepare(concat!("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,e.embedding IS NULL AND fe.owner_id IS NULL,v.metadata_json IS NULL ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2")).map_err(|e| e.to_string())?;
+        let mut query = db.prepare(concat!("SELECT v.id,v.asset_id,a.path,v.copy_key,a.original_fingerprint,v.edited_fingerprint,e.embedding IS NULL AND fe.owner_id IS NULL,(v.metadata_json IS NULL OR v.metadata_refresh) ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2")).map_err(|e| e.to_string())?;
         let rows = query.query_map(params![after,limit.min(64),crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok(PendingAnalysis {
           variant_id:r.get(0)?,asset_id:r.get(1)?,path:r.get(2)?,copy_key:r.get(3)?,original:r.get(4)?,edited:r.get(5)?,needs_edited:r.get(6)?,needs_metadata:r.get(7)?,
         })).map_err(|e|e.to_string())?;
@@ -821,7 +831,7 @@ impl SearchCache {
     /// `pending_analyses`; for counting the backlog and availability probing.
     pub fn pending_analysis_paths(&self, after: i64, limit: u32) -> Result<Vec<(i64, String, bool, bool)>, String> {
         let db = self.db.lock().map_err(|_| "search cache lock poisoned")?;
-        let mut query = db.prepare(concat!("SELECT v.id,a.path,v.metadata_json IS NULL,e.embedding IS NULL AND fe.owner_id IS NULL ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2"))
+        let mut query = db.prepare(concat!("SELECT v.id,a.path,(v.metadata_json IS NULL OR v.metadata_refresh),e.embedding IS NULL AND fe.owner_id IS NULL ", pending_analysis_from!(), " ORDER BY v.id LIMIT ?2"))
             .map_err(|e| e.to_string())?;
         let rows = query.query_map(params![after,limit,crate::local_search::ANALYSIS_VERSION,crate::local_search::MODEL_VERSION,APP_VERSION,RENDER_FAILURE_RETRY.as_secs() as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .map_err(|e| e.to_string())?;
@@ -1057,8 +1067,8 @@ impl SearchCache {
                 )
                 .map_err(|e| e.to_string())?;
             } else {
-                tx.execute("INSERT INTO variants(asset_id,copy_key,edited_fingerprint,capture_time_ns,capture_time_raw,timezone_offset_seconds,metadata_json)
-                    SELECT ?1,copy_key,edited_fingerprint,capture_time_ns,capture_time_raw,timezone_offset_seconds,?3 FROM variants WHERE id=?2",params![target_id,v.id,rebased]).map_err(|e|e.to_string())?;
+                tx.execute("INSERT INTO variants(asset_id,copy_key,edited_fingerprint,capture_time_ns,capture_time_raw,timezone_offset_seconds,metadata_json,metadata_refresh)
+                    SELECT ?1,copy_key,edited_fingerprint,capture_time_ns,capture_time_raw,timezone_offset_seconds,?3,metadata_refresh FROM variants WHERE id=?2",params![target_id,v.id,rebased]).map_err(|e|e.to_string())?;
                 let new_variant = tx.last_insert_rowid();
                 tx.execute("INSERT INTO analyses(asset_id,variant_id,subject,analysis_version,model_version,embedding,analyzed_at)
                     SELECT ?1,?2,subject,analysis_version,model_version,embedding,analyzed_at FROM analyses WHERE variant_id=?3 AND subject='edited'",params![target_id,new_variant,v.id]).map_err(|e|e.to_string())?;
@@ -1153,9 +1163,35 @@ mod tests {
         let cache=SearchCache::open(&path).unwrap();
         let v=cache.upsert_variant("/photos/a.jpg","","source","edit",None,None,None).unwrap();
         cache.store_metadata(v.id,"{}").unwrap();cache.put_analysis(v.id,"original","source",1,"model",&[1,2]).unwrap();drop(cache);
-        let db=Connection::open(&path).unwrap();db.execute("UPDATE search_cache_meta SET value=5 WHERE key='schema_version'",[]).unwrap();drop(db);
+        let db=Connection::open(&path).unwrap();
+        db.execute_batch("ALTER TABLE variants DROP COLUMN metadata_refresh;
+                          UPDATE search_cache_meta SET value=5 WHERE key='schema_version';").unwrap();
+        drop(db);
         let cache=SearchCache::open(&path).unwrap();assert_eq!(cache.variant("/photos/a.jpg","").unwrap().unwrap().id,v.id);
         assert!(cache.metadata(v.id).unwrap().is_none());assert_eq!(cache.analysis(v.id,"original",1,"model").unwrap(),Some(vec![1,2]));
+    }
+
+    #[test]
+    fn v6_text_backfill_preserves_existing_search_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.sqlite");
+        let cache = SearchCache::open(&path).unwrap();
+        let variant = cache.upsert_variant("/photos/a.jpg", "", "source", "edit", None, None, None).unwrap();
+        cache.store_metadata(variant.id, r#"{"width":6000}"#).unwrap();
+        drop(cache);
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("ALTER TABLE variants DROP COLUMN metadata_refresh;
+                          UPDATE search_cache_meta SET value=6 WHERE key='schema_version';").unwrap();
+        drop(db);
+
+        let cache = SearchCache::open(&path).unwrap();
+        assert_eq!(cache.metadata(variant.id).unwrap().as_deref(), Some(r#"{"width":6000}"#));
+        let pending = cache.pending_analyses(0, 1).unwrap();
+        assert!(pending[0].needs_metadata);
+        assert!(cache.finish_analysis_metadata(
+            &pending[0], "edit", r#"{"width":6000,"metadata":{"title":"Dawn"}}"#, (None, None, None),
+        ).unwrap());
+        assert!(!cache.pending_analyses(0, 1).unwrap()[0].needs_metadata);
     }
 
     #[test]

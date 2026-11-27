@@ -18,6 +18,8 @@ export type Exif = {
   file_datetime?: string;
   capture_time_raw?: string;
   capture_offset?: string;
+  file_width?: number;
+  file_height?: number;
 };
 
 // when a photo was taken, for its order and the date filters: its file's
@@ -38,6 +40,8 @@ export type ImageEntry = {
   height: number;
   exif: Exif;
   keywords?: string[];  // darktable's tags, "|" between levels (absent on Immich results)
+  metadata?: Partial<Record<"title" | "description" | "creator" | "publisher" | "rights" | "notes", string>> | null;
+  version_name?: string | null;
   // darktable's version of the file: Lightroom's virtual copies are every
   // version but the lowest, which is the original (absent on Immich results)
   version?: number;

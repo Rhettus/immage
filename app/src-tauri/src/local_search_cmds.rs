@@ -125,6 +125,16 @@ pub(crate) fn provider_scopes(
 fn supports_morfphoto_filters(args: &LocalSearchArgs) -> bool {
     let remote = &args.remote;
     args.filters.edited != "edited"
+        && matches!(args.filters.gps.as_str(), "" | "any")
+        && args.filters.taken_from.len() <= 10
+        && args.filters.taken_to.len() <= 10
+        && args.filters.text_query.trim().is_empty()
+        && args.filters.orientations.is_empty()
+        && args.filters.aspect_ratios.is_empty()
+        && args.filters.width == 0
+        && args.filters.height == 0
+        && args.filters.min_megapixels == 0.0
+        && args.filters.max_megapixels == 0.0
         && remote.taken_from.is_none()
         && remote.taken_to.is_none()
         && remote.min_rating.is_none()

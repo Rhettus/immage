@@ -141,7 +141,7 @@ import { indexChanged, localSearch, similarSearch } from "./localSearch";
 import { preserveSearchEntries, remoteFieldsKnown, searchIdentity } from "./searchIdentity";
 import { immichUrl, isRemote, loadSearch, pathMap, photoUrl, resolve, search as searchImmichPage, searchUrl, storeSearch, type ImmichSearch } from "./immich";
 import { canShowResultsMenu, findTargetEntry, immichMenuState, showInLibraryTarget, type LibraryJumpTarget } from "./fileMenuModel";
-import { needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
+import { hasCaptureTime, hasGeometry, hasTextQuery, needsRead, NO_FILTER, passes, passesSearch, type Filter } from "./filter";
 import { Layout, Library, PanelKey, loadLayout, loadLibrary, saveLayout, saveLibrary } from "./layoutPrefs";
 import { GridZoomBar, ResetAll, Splitter, Toolbar, ZoomBar } from "./Toolbar";
 import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbProgress, copyName, loadInfoMode, pairedRaws } from "./Filmstrip";
@@ -3560,10 +3560,12 @@ export default function App() {
     sources: {
       local: (q, next, signal) => localSearch(q.form, q.filters, q.folder, q.recursive, next, signal, q.imageVariant, [...pendingSearchMetadata.current]),
       immich: async (q, next, signal) => {
+        const f = q.filters;
+        if (!remoteFieldsKnown(f) || hasCaptureTime(f) || (f.gps && f.gps !== "any") || hasGeometry(f) || hasTextQuery(f))
+          return { items: [], next: null };
         const page = await searchImmichPage(q.form, next);
         if (signal.aborted) throw new Error("Search cancelled");
-        const f = q.filters;
-        return { items: remoteFieldsKnown(f) ? page.entries.filter(i => passes(i, f)) : [], next: page.next };
+        return { items: page.entries.filter(i => passes(i, f)), next: page.next };
       },
     },
     verifiedIdentity: searchIdentity,
@@ -4111,8 +4113,8 @@ export default function App() {
     setSelection(new Set([i.imgid]));
     if (shouldOpenOnPick(gridRef.current)) void openEntry(i);
   };
-  const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>) => {
-    patchImage(imgid, fields);
+  const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>, patch: Partial<ImageEntry> = fields) => {
+    patchImage(imgid, patch);
     try {
       const saved = commands.metaSet(imgid, fields as { [key in string]: Value });
       pendingSearchMetadata.current.add(saved);
@@ -7253,6 +7255,8 @@ export default function App() {
         if (wanted[k].trim() && !text[k].trim()) fields[k] = wanted[k].trim().replace(/\{year\}/g, year);
       if (!Object.keys(fields).length) return;
       await commands.metaSet(imgid, fields);
+      const metadata = imagesRef.current.find((i) => i.imgid === imgid)?.metadata ?? text;
+      patchImage(imgid, { metadata: { ...metadata, ...fields } });
       if (session.current?.imgid === imgid) setMetaText((t) => (t ? { ...t, ...fields } : t));
     } catch (e) {
       setStatus(t("app.status.error", { error: e }));
@@ -7395,7 +7399,9 @@ export default function App() {
                        onText={(field, value) => {
                          if (!inspectedEntry || isRemote(inspectedEntry)) return;
                          setMetaText((t) => (t ? { ...t, [field]: value } : t));
-                         void setMeta(inspectedEntry.imgid, { [field]: value });
+                         const metadata = imagesRef.current.find((i) => i.imgid === inspectedEntry.imgid)?.metadata
+                           ?? inspectedEntry.metadata ?? metaText;
+                         void setMeta(inspectedEntry.imgid, { [field]: value }, { metadata: { ...metadata, [field]: value } });
                        }} />
         <KeywordingPanel keywords={inspectedId !== undefined ? keywords : null} known={knownKeywords}
                          open={leftOpen.has("keywording")} onToggle={(alt) => toggleLeft("keywording", alt)}

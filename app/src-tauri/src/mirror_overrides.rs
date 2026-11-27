@@ -42,6 +42,9 @@ pub(crate) struct FieldOverride {
     pub(crate) keywords: Option<Vec<String>>,
     pub(crate) edited: Option<bool>,
     pub(crate) taken_at: Option<String>,
+    // Some(None) clears the coordinates.
+    pub(crate) location: Option<Option<(f64, f64)>>,
+    pub(crate) text: crate::morf_photo::VersionText,
 }
 
 // "2024:05:06 10:11:12" and "2024-05-06T10:11:12+02:00" compare as one time
@@ -69,7 +72,8 @@ impl FieldOverride {
         macro_rules! take {
             ($($field:ident),*) => { $(if later.$field.is_some() { self.$field = later.$field; })* };
         }
-        take!(rating, rejected, labels, keywords, edited, taken_at);
+        take!(rating, rejected, labels, keywords, edited, taken_at, location);
+        self.text.merge(later.text);
     }
 
     fn apply(&self, v: &mut VersionFields) {
@@ -91,6 +95,11 @@ impl FieldOverride {
         if let Some(taken) = &self.taken_at {
             v.taken_at = Some(taken.clone());
         }
+        if let Some(location) = self.location {
+            v.latitude = location.map(|(lat, _)| lat);
+            v.longitude = location.map(|(_, lon)| lon);
+        }
+        v.text.merge(self.text.clone());
     }
 
     /// Whether the server's version already has every value this one sets.
@@ -105,6 +114,16 @@ impl FieldOverride {
             && self.labels.is_none_or(|l| l & 31 == v.labels & 31)
             && self.keywords.as_ref().is_none_or(|k| sorted(k) == sorted(&v.keywords))
             && self.edited.is_none_or(|e| e == v.edited.unwrap_or(false))
+            && self.text.converged(&v.text)
+            && self.location.is_none_or(|expected| {
+                match (expected, v.latitude.zip(v.longitude)) {
+                    (None, None) => true,
+                    (Some((lat, lon)), Some((vlat, vlon))) => {
+                        (lat - vlat).abs() < 1e-6 && (lon - vlon).abs() < 1e-6
+                    }
+                    _ => false,
+                }
+            })
             && self
                 .taken_at
                 .as_ref()
@@ -346,6 +365,7 @@ pub(crate) fn version_from_image(image: &crate::typed_library::LibraryImage) -> 
         latitude: image.location.as_ref().map(|l| l.latitude.as_f64().unwrap_or(0.0)),
         longitude: image.location.as_ref().map(|l| l.longitude.as_f64().unwrap_or(0.0)),
         keywords: image.keywords.clone(),
+        text: crate::morf_photo::VersionText::from_image(image),
     }
 }
 
@@ -365,6 +385,8 @@ pub(crate) mod tests {
             focal: 0.0,
             bias: 0.0,
             mtime: None,
+            width: 0,
+            height: 0,
         }
     }
 
@@ -380,6 +402,7 @@ pub(crate) mod tests {
             latitude: None,
             longitude: None,
             keywords: vec!["a".into()],
+            text: crate::morf_photo::VersionText::default(),
         }
     }
 
