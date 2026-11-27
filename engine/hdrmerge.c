@@ -454,7 +454,7 @@ static gboolean _hdr_small(const char *path, void *data)
       const int by = y / period * k * period + y % period, bx = x / period * k * period + x % period;
       double sum = 0.0;
       for(int a = 0; a < k; a++)
-        for(int b = 0; b < k; b++) sum += in[(size_t)(by + a * period) * wd + bx + b * period];
+        for(int b = 0; b < k; b++) sum += in[(size_t)(by + a * period) * wd + bx + (size_t)b * period];
       small[(size_t)y * pw + x] = (float)(sum / (k * k));
     }
   dt_imageio_dng_write_float(path, small, pw, ph, NULL, 0, d->first_filter,
