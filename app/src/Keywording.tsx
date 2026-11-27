@@ -5,21 +5,29 @@
 // known ones, and the recently used ones a click away. keywords are
 // darktable's tags, "|" between the levels of a hierarchy; the engine keeps
 // them in the sidecar and remembers every one ever used
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { settings } from "./settings";
 import { t } from "./i18n";
 
 const RECENT_KEY = "immage.recentKeywords";
 const RECENT_MAX = 9;
+const recentListeners = new Set<() => void>();
+const recentSnapshot = () => settings.get(RECENT_KEY) ?? "[]";
 
-function loadRecent(): string[] {
+function subscribeRecent(listener: () => void) {
+  recentListeners.add(listener);
+  return () => { recentListeners.delete(listener); };
+}
+
+function parseRecent(snapshot: string): string[] {
   try {
-    const v = JSON.parse(settings.get(RECENT_KEY) ?? "[]");
+    const v = JSON.parse(snapshot);
     return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
   } catch { return []; }
 }
 function storeRecent(v: string[]) {
-  try { settings.set(RECENT_KEY, JSON.stringify(v)); } catch { /* not kept */ }
+  settings.set(RECENT_KEY, JSON.stringify(v));
+  recentListeners.forEach((listener) => listener());
 }
 
 // what was typed as darktable's tag: Lightroom's "Places > Paris" or
@@ -123,16 +131,16 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   open?: boolean;
   onToggle?: (alt: boolean) => void;
 }) {
-  const [recent, setRecent] = useState(loadRecent);
+  const snapshot = useSyncExternalStore(subscribeRecent, recentSnapshot);
+  const recent = useMemo(() => parseRecent(snapshot), [snapshot]);
   const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
 
   const add = (names: string[]) => {
     const fresh = [...new Set(names.map(parseKeyword).filter(Boolean))];
     if (!fresh.length) return;
     onAdd(fresh.filter((k) => !attached.has(k)));
-    const next = [...fresh, ...recent.filter((k) => !fresh.includes(k))].slice(0, RECENT_MAX);
-    setRecent(next);
-    storeRecent(next);
+    const previous = parseRecent(recentSnapshot());
+    storeRecent([...fresh, ...previous.filter((k) => !fresh.includes(k))].slice(0, RECENT_MAX));
   };
 
   if (!keywords) return null;
@@ -145,8 +153,14 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
           <div className="kw-label">{t("library.keywording.recent")}</div>
           <div className="kw-recent">
             {recent.map((k) => (
-              <button key={k} className={attached.has(k) ? "on" : ""} title={path(k)}
-                      onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
+              <div key={k} className={`kw-recent-item${attached.has(k) ? " on" : ""}`}>
+                <button type="button" className="kw-recent-keyword" title={path(k)} aria-pressed={attached.has(k)}
+                        onClick={() => (attached.has(k) ? onRemove(k) : add([k]))}>{leaf(k)}</button>
+                <button type="button" className="kw-recent-remove"
+                        title={t("library.keywording.removeRecent", { keyword: path(k) })}
+                        aria-label={t("library.keywording.removeRecent", { keyword: path(k) })}
+                        onClick={() => storeRecent(parseRecent(recentSnapshot()).filter((name) => name !== k))}>×</button>
+              </div>
             ))}
           </div>
         </>

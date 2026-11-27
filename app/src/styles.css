@@ -839,13 +839,19 @@ html.windows .tool, html.windows .tool * { cursor: default; }
 .kw-path { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kw-label { margin: 12px 0 6px; color: var(--text-3); font-size: var(--fs-small); }
 .kw-recent { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
-.kw-recent button {
-  padding: 4px 6px; background: var(--inset); border: 1px solid transparent; border-radius: 6px;
-  color: var(--text-2); font: inherit; font-size: var(--fs-small); overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; cursor: pointer;
+.kw-recent-item {
+  display: flex; min-width: 0; background: var(--inset);
+  border: 1px solid transparent; border-radius: 6px;
 }
-.kw-recent button:hover { color: var(--text); }
-.kw-recent button.on { color: var(--text); border-color: var(--accent); }
+.kw-recent button {
+  background: none; border: none; border-radius: 5px;
+  color: var(--text-2); font: inherit; font-size: var(--fs-small); cursor: pointer;
+}
+.kw-recent-keyword { flex: 1; min-width: 0; padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-recent-remove { flex: none; padding: 0 6px; }
+.kw-recent button:hover { color: var(--text); background: var(--hover); }
+.kw-recent-item.on { border-color: var(--accent); }
+.kw-recent-item.on .kw-recent-keyword { color: var(--text); }
 .stars-edit button {
   padding: 0 1px;
   background: none;

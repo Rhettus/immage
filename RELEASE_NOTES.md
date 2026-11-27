@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Remove individual entries from Recent keywords with the × beside each
+  keyword. The keyword stays on any photos that use it.
 - Find can narrow local photos by capture time and show photos with or without
   GPS coordinates, including photos indexed by morfPhoto.
 - Find can filter by original dimensions, aspect ratio, orientation and

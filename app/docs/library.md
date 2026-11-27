@@ -882,8 +882,11 @@ works offline.
 The **Keywording** card lists the open photo's keywords; click **×** on one
 to remove it. To add some, type them separated by commas and press Enter.
 Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
-have used before, and **Recent keywords** holds the last few: click one to
-add it or take it off.
+have used before. Click a keyword under **Recent keywords** to add it to the
+photo or remove it from the photo. Click the **×** beside a recent keyword to
+remove it from the saved recent list. It stays on any photos that already use
+it and remains available in suggestions. Using it again brings it back to the
+recent list. The grid's **Keywords…** dialog uses the same recent list.
 
 ## Opening a photo or folder from another program
 
