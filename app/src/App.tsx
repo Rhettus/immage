@@ -5064,12 +5064,12 @@ export default function App() {
                 modules: Map<string, ModuleState>; deleted: Set<string>; batch?: { token: number; recovery: boolean };
                 // Advanced cards' instances, as their fields stood, and the
                 // user's instances (null before Advanced mode listed them)
-                advanced: Map<string, AdvancedState>; instances: InstanceEntry[] | null };
+                advanced: Map<string, AdvancedState>; customAgx: boolean; colorBalance: ReturnType<Session["historyColorBalance"]>; instances: InstanceEntry[] | null };
   const snapshot = (s: Session, label = ""): Snap => ({
     values: { ...s.values }, masks: structuredClone(s.masks), spots: structuredClone(s.spots),
     fill: structuredClone(s.fill), look: { name: s.look, path: s.lookPath }, lookAmount: s.lookAmount, label,
     modules: new Map(s.moduleStates), deleted: new Set(s.deleted), advanced: new Map(s.advanced),
-    instances: s.instanceLayout(),
+    customAgx: s.hasUnmappedAgxProfile(), colorBalance: s.historyColorBalance(), instances: s.instanceLayout(),
   });
   const undo = useRef<{ past: Snap[]; future: Snap[]; key: string; at: number }>(
     { past: [], future: [], key: "", at: 0 });
@@ -5126,7 +5126,9 @@ export default function App() {
     const entries = Object.entries(target.values).filter(([id, v]) => s.values[id] !== v);
     baseStale.current = true;
     setValues({ ...s.values, ...target.values });
-    if (entries.length) s.setMany(entries);
+    const rewritten = new Set<string>();
+    const restoreColorBalance = target.customAgx || s.hasUnmappedAgxProfile();
+    if (entries.length) s.setMany(entries, false, rewritten);
     if (target.look.name !== s.look) {
       s.setLook(target.look.path, target.look.name);
       setLookState(target.look.name);
@@ -5147,7 +5149,7 @@ export default function App() {
       const h = s.history.find((x) => instanceKey(x) === key) ?? s.advanced.get(key);
       if (h) s.setModuleState(h, { restore: want ?? "opened" });
     }
-    s.restoreAdvanced(target.advanced);
+    s.restoreAdvanced(target.advanced, rewritten, target.customAgx, restoreColorBalance ? target.colorBalance : undefined);
     s.deleted = new Set(target.deleted);
     if (JSON.stringify(target.spots) !== JSON.stringify(s.spots)) {
       s.setSpots(target.spots);

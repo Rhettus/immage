@@ -42,6 +42,25 @@ test.afterEach(()=>{assert.equal(animationFrames.size,0,'test left a queued prev
 const {Session}=await import('../app/src/session.ts');
 const {neutralLocal}=await import('../app/src/masks.ts');
 const full={width:1,height:1,scale:1,x:0,y:0};
+test('History preserves unchanged Advanced fields after a mapped profile rewrite', () => {
+  const s = new Session(() => full, () => {}, error => { throw Error(error); });
+  const before = { op: 'agx', priority: 0, enabled: true, defaults: {},
+    params: { red_inset: 0.1, red_rotation: 0 } };
+  const after = { ...before, params: { ...before.params, red_inset: 0.5208 } };
+  const other = { ...before, priority: 1 };
+  s.advanced = new Map([['agx#0', before], ['agx#1', other]]);
+  const writes = [];
+  s.setAdvanced = (...args) => writes.push(args);
+  s.restoreAdvanced(new Map([['agx#0', after], ['agx#1', other]]), new Set(['agx']), true);
+  assert.deepEqual(writes, [['agx', 0, after.params, true]]);
+  writes.length = 0;
+  s.restoreAdvanced(new Map([['agx#0', after]]), new Set(), true);
+  assert.deepEqual(writes, [['agx', 0, { red_inset: 0.5208 }, true]]);
+  writes.length = 0;
+  s.restoreAdvanced(new Map([['agx#0', before]]), new Set(['agx']), false);
+  assert.deepEqual(writes, []);
+});
+
 for (const change of ['pan','resize','release']) test(`ordinary in-flight preview is discarded after ${change}`,async()=>{
   let view={...full,draft:true},finish,started;
   const ready=new Promise(resolve=>{started=resolve;});

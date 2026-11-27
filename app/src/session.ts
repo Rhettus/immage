@@ -23,6 +23,7 @@ import { commands, type GetReply, type HistoryItem, type Instance, type Instance
 
 // one Advanced card's instance: its darktable fields as the client has them
 export type AdvancedState = { op: string; priority: number; enabled: boolean; params: Params; defaults: Params };
+export type HistoryColorBalance = Pick<ModuleInfo, "params" | "enabled">;
 // a card instance menu action (engine session_instance()); `other` and
 // `after` place a move, `name` is a rename's ("" for darktable's own)
 // "order" sets the whole pipe order (Module order dialog): `order` is the full
@@ -1330,7 +1331,7 @@ export class Session {
   }
 
   // several controls at once, as one round of edits (a point curve drag)
-  setMany(entries: [string, number][], coalesce = false) {
+  setMany(entries: [string, number][], coalesce = false, rewritten?: Set<string>) {
     const nextTm = entries.find(([id]) => id === "tm_mode")?.[1] ?? this.values.tm_mode;
     entries = [...new Map(entries)].filter(([id, v]) => {
       if (!mapOf.has(id) || this.values[id] === v) return false;
@@ -1352,6 +1353,7 @@ export class Session {
         if (this.skipToneMapper(m.op)) continue;
         this.foreign.delete(m);
         this.dirty.add(m.op);
+        rewritten?.add(m.op);
       }
     }
     this.needRender = true;
@@ -1394,7 +1396,7 @@ export class Session {
   instances: Instance[] = [];
   advanced = new Map<string, AdvancedState>();
   private advancedFields = new Map<string, string[]>();
-  private advancedDirty = new Map<string, { op: string; priority: number; params: Params }>();
+  private advancedDirty = new Map<string, { op: string; priority: number; params: Params; enabled: boolean; readSliders: boolean }>();
   // cards whose instance another edit changed (a Simple slider on the same
   // module, a reset): read back once the engine has it
   private advancedStale = new Set<string>();
@@ -1460,15 +1462,36 @@ export class Session {
     this.setAdvanced(op, priority, {}, on);
   }
 
+  // Whites can write both AgX and Color Balance RGB. Keep the actual RGB
+  // settings even when its Advanced card has never been opened.
+  historyColorBalance(): HistoryColorBalance {
+    const info = this.info.colorbalancergb;
+    const mapped = this.dirty.has("colorbalancergb") ? this.moduleEdit("colorbalancergb", this.values) : undefined;
+    const advanced = this.advancedDirty.get("colorbalancergb#0");
+    return { enabled: advanced?.enabled ?? mapped?.enabled ?? info.enabled,
+      params: { ...info.params, ...mapped?.params, ...advanced?.params } };
+  }
+
   // undo: put the cards back as a snapshot had them, after any module
   // state it restores (the pump sends module_state first)
-  restoreAdvanced(target: Map<string, AdvancedState>) {
+  restoreAdvanced(target: Map<string, AdvancedState>, rewritten: ReadonlySet<string>,
+                  customAgx: boolean, colorBalance?: HistoryColorBalance) {
+    const replayBalance = colorBalance && rewritten.has("colorbalancergb");
     for (const [key, want] of target) {
       const now = this.advanced.get(key);
-      if (!now) continue;
-      const params = Object.fromEntries(Object.entries(want.params).filter(([p, x]) => now.params[p] !== x));
-      if (Object.keys(params).length || want.enabled !== now.enabled)
+      if (!now || (replayBalance && key === "colorbalancergb#0")) continue;
+      // Mapped writes can overwrite fields that match the current card.
+      const replay = customAgx && key === "agx#0" && rewritten.has("agx");
+      const params = replay ? want.params
+        : Object.fromEntries(Object.entries(want.params).filter(([p, x]) => now.params[p] !== x));
+      if (replay || Object.keys(params).length || want.enabled !== now.enabled)
         this.setAdvanced(want.op, want.priority, params, want.enabled);
+    }
+    if (replayBalance) {
+      const params = { ...target.get("colorbalancergb#0")?.params, ...colorBalance.params };
+      // The snapshot already supplies the Simple controls. A reread of an
+      // off RGB module would replace Whites, which AgX still holds.
+      this.setAdvanced("colorbalancergb", 0, params, colorBalance.enabled, false, false);
     }
   }
 
@@ -1493,7 +1516,7 @@ export class Session {
     this.setAdvanced(to, 0, {}, true);
   }
 
-  private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false) {
+  private setAdvanced(op: string, priority: number, params: Params, enabled: boolean, coalesce = false, readSliders = true) {
     const key = `${op}#${priority}`;
     const inst = this.instances.find((i) => i.op === op && i.priority === priority);
     if (inst?.owner === "mask" && inst.mask) {
@@ -1501,11 +1524,11 @@ export class Session {
       const disabled = !!this.mask(inst.mask)?.disabledModules?.includes(maskOp);
       if (disabled === enabled) this.setMaskModuleEnabled(inst.mask, maskOp, enabled);
     }
-    this.cardsShown.add(key);
+    if (readSliders) this.cardsShown.add(key);
     const card = this.advanced.get(key);
     if (card) this.advanced.set(key, { ...card, enabled, params: { ...card.params, ...params } });
     const queued = this.advancedDirty.get(key);
-    this.advancedDirty.set(key, { op, priority, params: { ...queued?.params, ...params } });
+    this.advancedDirty.set(key, { op, priority, enabled, readSliders, params: { ...queued?.params, ...params } });
     this.needRender = true;
     this.submitEdits(coalesce);
   }
@@ -1740,14 +1763,18 @@ export class Session {
     return mapsFor(op).some((m) => this.foreign.has(m));
   }
 
+  hasUnmappedAgxProfile() {
+    return mapsWith("profile").some((m) => m.op === "agx" && this.foreign.has(m));
+  }
+
   // a mapped module's sliders read again after the engine changed it
   // (setModuleState), as Session.open reads them
-  private async reread(op: string) {
+  private async reread(op: string, readSliders = true) {
     const fields = boundFields()[op];
     if (!fields) return;
     const reply = await traced("get_params", () => commands.getParams({ [op]: fields }));
     const info = this.info[op] = reply.modules[op];
-    if (this.skipToneMapper(op)) return;
+    if (!readSliders || this.skipToneMapper(op)) return;
     for (const m of mapsFor(op)) {
       // a tool's other module (Blacks on exposure while it runs on the tone
       // mapper) does not hold its sliders: read, it would claim the tool, as
@@ -1796,6 +1823,19 @@ export class Session {
     const [real, instance] = op.split("#");
     return { op: real, params, enabled, ...(instance ? { instance } : {}), ...(after ? { after } : {}),
              ...(before ? { before } : {}) };
+  }
+
+  private mappedEdit(op: string) {
+    const edit = this.moduleEdit(op);
+    if (op === "colorbalancergb" && !this.viewing) this.rememberColorBalance(edit);
+    return edit;
+  }
+
+  private rememberColorBalance({ enabled, params }: HistoryColorBalance) {
+    const info = this.info.colorbalancergb;
+    const mapped = Object.fromEntries(Object.keys(info.params)
+      .filter((field) => field in params).map((field) => [field, params[field]]));
+    this.info.colorbalancergb = { ...info, enabled, params: { ...info.params, ...mapped } };
   }
 
   // the whole image, small, for the histogram and the navigator while the
@@ -2189,7 +2229,8 @@ export class Session {
         if (this.dirty.has("flip") || framing) {
           const ops = [...this.dirty];
           this.dirty.clear();
-          for (const op of ops) await this.pumpTyped("set_params", () => commands.setParams(this.moduleEdit(op)));
+          const edits = ops.map((op) => this.mappedEdit(op));
+          for (const edit of edits) await this.pumpTyped("set_params", () => commands.setParams(edit));
           this.changed();
           // a background paste reads no shapes: a pipeless session has none to map
           if (framing && !this.pipeless) this.reshape = true;
@@ -2382,11 +2423,12 @@ export class Session {
         // Advanced cards' edits: after the sliders' and module states, so an
         // undo restores whole instances first and the cards' fields last
         if (this.advancedDirty.size && !this.dirty.size) {
+          const balance = this.advancedDirty.get("colorbalancergb#0");
+          if (balance) this.rememberColorBalance(balance);
           const sent = [...this.advancedDirty.values()];
           this.advancedDirty.clear();
-          for (const { op, priority, params } of sent) {
+          for (const { op, priority, params, enabled, readSliders } of sent) {
             const key = `${op}#${priority}`;
-            const enabled = this.advanced.get(key)?.enabled ?? true;
             const inst = this.instances.find((i) => i.op === op && i.priority === priority);
             if (inst?.owner === "mask" && inst.mask) {
               const mask = this.mask(inst.mask), maskOp = maskOpKey(inst);
@@ -2408,7 +2450,7 @@ export class Session {
               ? enabled && !this.mask(inst.mask)?.hidden && !this.before : enabled;
             await this.pumpTyped("set_params", () => commands.setParams({ op, priority, params, enabled: wireEnabled }));
             // Simple's sliders on the same instance read it again
-            if (priority === 0 && boundFields()[op]) await this.reread(op);
+            if (priority === 0 && boundFields()[op]) await this.reread(op, readSliders);
             // a lens pick also sets the lens method and geometry, which the card reads back
             if ("lens_pick" in params) this.advancedStale.add(key);
             // an acquire or a cleared count changes the cluster arrays the previews draw
@@ -2523,7 +2565,7 @@ export class Session {
         const edits = ops.map((op) => {
           this.draftKeep.add(op.split("#")[0]);
           this.staleAdvanced(op);
-          return this.moduleEdit(op);
+          return this.mappedEdit(op);
         });
         if (ops.length) this.changed();
         // the Before view and a peek are only for looking: nothing of it reaches the sidecar

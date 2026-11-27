@@ -35,6 +35,8 @@ Bug fixes
 
 - Panorama Merge fixes yellow-green patches that could appear in overlapping
   areas of the preview.
+- History restores the full AgX look when you jump between edits, including
+  custom profile settings and the original highlight brilliance.
 - Notes use the standard XMP field for compatibility with darktable and
   morfPhoto.
 - Importing from a memory card directly to a mounted NAS share on macOS

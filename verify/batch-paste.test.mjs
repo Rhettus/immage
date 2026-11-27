@@ -131,6 +131,73 @@ test('Profile alone pastes a custom AgX profile and range onto a Sigmoid RAW', {
   }
 }));
 
+test('History restores custom AgX and highlight brilliance after replaying mapped controls', { timeout: 120000 }, async () => fixture(async ({ dir }) => {
+  const path = join(dir, 'history.dng');
+  await promisify(execFile)('python3', [join(root, 'verify/gui/hotpixels-fixture.py'), '--output', path]);
+  let pixels;
+  const errors = [];
+  const s = await Session.open(path, null, () => ({ ...view(), scale: 0.2, x: 0, y: 0 }),
+    frame => { pixels = frame.pixels; }, error => errors.push(error));
+  await s.settled();
+  const { defaults } = (await commands.getParams({ agx: AGX_FIELDS })).modules.agx;
+  setUserProfiles([{ value: 100, label: 'Custom AgX', params: {
+    ...defaults, red_inset: 0.1, red_rotation: 0, curve_shoulder_power: defaults.curve_shoulder_power * 1.4,
+  } }]);
+  try {
+    s.endBaseline();
+    s.setMany(Object.entries({ ...profileSelection(100), tm_mode: TM_AGX }));
+    await s.settled();
+    await s.loadAdvanced('agx', 0, AGX_FIELDS);
+    const readNative = async () => {
+      const { agx, colorbalancergb } = (await commands.getParams({
+        agx: AGX_FIELDS, colorbalancergb: ['brilliance_highlights'],
+      })).modules;
+      return { agx: agx.params, balance: { enabled: colorbalancergb.enabled, ...colorbalancergb.params } };
+    };
+    const snap = async () => {
+      assert.ok(pixels?.length, 'the edited RAW rendered');
+      return { values: { ...s.values }, advanced: new Map(s.advanced), customAgx: s.hasUnmappedAgxProfile(),
+        colorBalance: s.historyColorBalance(), native: await readNative(), pixels: pixels.slice() };
+    };
+    const restore = async (target) => {
+      const rewritten = new Set();
+      const restoreColorBalance = target.customAgx || s.hasUnmappedAgxProfile();
+      s.setMany(Object.entries(target.values), false, rewritten);
+      s.restoreAdvanced(target.advanced, rewritten, target.customAgx, restoreColorBalance ? target.colorBalance : undefined);
+      await s.settled();
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await readNative(), target.native);
+      assert.deepEqual(s.advanced.get('agx#0').params, target.native.agx);
+      assert.deepEqual(pixels, target.pixels);
+    };
+    for (const hasBrilliance of [false, true]) {
+      if (hasBrilliance) {
+        s.setMany(Object.entries(profileSelection(100)));
+        s.setMany([['whites', 5], ['whites_brilliance', 30]]);
+        await s.settled();
+      }
+      const preset = await snap();
+      s.setFields('agx', 0, { red_inset: 0.5208 });
+      await s.settled();
+      const edited = await snap();
+      assert.notEqual(edited.values.profile, preset.values.profile);
+      assert.notEqual(edited.values.whites, preset.values.whites);
+      assert.equal(preset.customAgx, false);
+      assert.equal(edited.customAgx, true);
+      assert.equal(edited.native.balance.enabled, hasBrilliance);
+      assert.equal(edited.native.balance.brilliance_highlights > 0, hasBrilliance);
+      assert.deepEqual(edited.native.balance, preset.native.balance);
+      assert.equal(edited.native.agx.red_rotation, preset.native.agx.red_rotation);
+      assert.equal(s.advanced.has('colorbalancergb#0'), false);
+      await restore(preset);
+      await restore(edited);
+    }
+  } finally {
+    setUserProfiles([]);
+    await s.close();
+  }
+}));
+
 test('Auto White Balance estimates the destination and is restored by batch undo and redo', { timeout: 120000 }, async () => fixture(async ({ images }) => {
   const groups = new Set(['basic:White Balance', 'auto-wb-on-paste', 'basic:Tone']);
   const source = { temp: 2400, tint: -120, exposure: 0.8 };

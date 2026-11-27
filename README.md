@@ -25,6 +25,8 @@ and Linux. **All builds are alpha; bugs are expected.**
 - Calibrate colors from a photographed ColorChecker or SpyderCheckr in Advanced mode.
 - Find commands in File, Edit, Photo, View and Help menus that show their keyboard shortcuts.
 - Grade colors with live wheel previews and one undo step per drag.
+- Jump between edits in [History](app/docs/history-and-sync.md) with custom
+  AgX profile settings preserved.
 - Make local adjustments with brushes, gradients, range masks and AI selections.
   Hover over range controls to preview the mask on the photo.
   In Advanced mode, apply built-in presets, import darktable `.dtpreset`

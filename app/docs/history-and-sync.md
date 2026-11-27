@@ -21,7 +21,9 @@ panel, which scrolls as a whole:
 
 - this session's steps, named after what changed, such as
   **Exposure** or **New mask**. Click one to go back to it; steps above it
-  turn gray, and redo brings them back.
+  turn gray, and redo brings them back. Each jump restores the settings at
+  that step, including custom AgX profile values, highlight brilliance, and
+  Advanced adjustments.
 - below them, what the photo opened with: **original**, any edit from
   darktable or an earlier session, and what Immage started it with (the
   tone mapper, profile, the new-photos preset, Auto).
