@@ -161,6 +161,10 @@ typedef struct dt_engine_session_t
   // saves record what it applies to a new photo as darktable's automatic
   // baseline (history_auto_hash), so those defaults do not mark it altered
   gboolean fresh, baseline;
+  // opened for its edit alone (`open` with "pipe": "none"): the history and
+  // the modules' params, with no raw decoded and no pipe, for a batch paste.
+  // only the commands that edit params and save are served (main.c, _handle)
+  gboolean pipeless;
   // instances Advanced mode deleted (`instance` "delete"): switched off and
   // left out of `instances` until undone, their entries dropped at each save.
   // kept, not freed, so undo brings one back at the same priority
@@ -358,7 +362,7 @@ void session_history_item(JsonBuilder *b, const char *op, const char *name, cons
                           const int priority, const dt_iop_module_t *mod);
 void session_saved_history(JsonBuilder *b);
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
-                            char **err);
+                            const gboolean needs_decoded, char **err);
 dt_iop_module_t *session_module(const char *op, char **err);
 dt_iop_module_t *session_module_at(const char *op, const int priority, char **err);
 void *session_field_in(dt_iop_module_t *mod, void *base, const char *path,

@@ -22,7 +22,7 @@ registerHooks({
       return { url: data('export const filterValuesForPhoto = v => v;'), shortCircuit: true };
     }
     if (spec === './manifest') {
-      return { url: data('export const CONVERSIONS = [], LOCAL_CONTROLS = [], TONE_MAPPER_ALL_OPS = new Set(), TM_SIGMOID = 0, TM_AGX = 1;'), shortCircuit: true };
+      return { url: data('export const CONVERSIONS = [], LOCAL_CONTROLS = [], TONE_MAPPER_ALL_OPS = new Set(), TM_SIGMOID = 0, TM_AGX = 1, modules = [], mapOf = new Map();'), shortCircuit: true };
     }
     if (spec.startsWith('.') && !/\.[jt]sx?$/.test(spec)) {
       for (const ext of ['.ts', '.tsx']) {

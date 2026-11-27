@@ -235,6 +235,10 @@ export class Session {
   // whether the image had an edit when it was opened, which decides whether
   // the new-photos defaults apply
   wasEdited = true;
+  // opened for its edit alone (open's `editOnly`): no raw decoded and no
+  // pipe, so no masks, spots, renders or previews; the engine serves params,
+  // looks and saves only (main.c, _pipeless_serves)
+  pipeless = false;
   // a new photo, whose saves record those defaults as its unedited baseline
   // until the user's first change (endBaseline()), and whether the engine
   // has yet to hear that it came
@@ -421,12 +425,17 @@ export class Session {
     private background = false,
   ) {}
 
-  // `imgid` picks one of the file's versions; without it, the original
+  // `imgid` picks one of the file's versions; without it, the original.
+  // `editOnly` asks a batch's background session for the edit alone, which
+  // the engine gives only to a photo already edited (`pipeless`)
   static async open(path: string, imgid: number | null, size: Session["size"], onFrame: Session["onFrame"],
-                    onError: Session["onError"], background = false): Promise<Session> {
-    const opened = await traced("open_image", () => commands.openImage(path, imgid !== null && imgid > 0 ? imgid : null));
+                    onError: Session["onError"], background = false,
+                    editOnly: "decoded" | "any" | null = null): Promise<Session> {
+    const opened = await traced("open_image", () =>
+      commands.openImage(path, imgid !== null && imgid > 0 ? imgid : null, background ? editOnly : null));
     const s = new Session(size, onFrame, onError, background);
     s.imgid = opened.imgid;
+    s.pipeless = opened.pipeless ?? false;
     s.wasEdited = !opened.fresh;
     s.baseline = opened.fresh;
     s.raw = opened.raw;
@@ -473,9 +482,9 @@ export class Session {
           s.values[id] = s.snap(id, current[id] ?? neutral, neutral);
       }
     }
-    await s.loadMasks();
+    if (!s.pipeless) await s.loadMasks();
     s.chooseModules();
-    s.readSpots(await traced("spots", () => commands.spots(null)));
+    if (!s.pipeless) s.readSpots(await traced("spots", () => commands.spots(null)));
     await s.refreshWb();
     s.requestRender();
     return s;
@@ -2182,7 +2191,8 @@ export class Session {
           this.dirty.clear();
           for (const op of ops) await this.pumpTyped("set_params", () => commands.setParams(this.moduleEdit(op)));
           this.changed();
-          if (framing) this.reshape = true;
+          // a background paste reads no shapes: a pipeless session has none to map
+          if (framing && !this.pipeless) this.reshape = true;
           if (!this.before) this.markUnsaved();
           this.needRender = true;
           continue;

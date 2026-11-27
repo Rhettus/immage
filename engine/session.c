@@ -31,8 +31,11 @@ static void _follow(dt_engine_follower_t *f, const dt_dev_pixelpipe_change_t fla
 
 void session_changed(const dt_dev_pixelpipe_change_t flags)
 {
-  _s.pipe.changed |= flags;
-  dt_dev_pixelpipe_change(&_s.pipe, &_s.dev);
+  if(!_s.pipeless)
+  {
+    _s.pipe.changed |= flags;
+    dt_dev_pixelpipe_change(&_s.pipe, &_s.dev);
+  }
   _follow(&_s.drag, flags);
   _follow(&_s.base, flags);
   _follow(&_s.check, flags);
@@ -56,10 +59,14 @@ void session_close_session(void)
   session_follower_cleanup(&_s.drag);
   session_follower_cleanup(&_s.base);
   session_follower_cleanup(&_s.check);
-  dt_dev_pixelpipe_cleanup(&_s.pipe);
-  dt_mipmap_cache_release(&_s.buf);
+  if(!_s.pipeless)
+  {
+    dt_dev_pixelpipe_cleanup(&_s.pipe);
+    dt_mipmap_cache_release(&_s.buf);
+  }
   dt_dev_cleanup(&_s.dev);
   _s.open = FALSE;
+  _s.pipeless = FALSE;
   _s.unsaved = FALSE;
   _s.before = FALSE;
   _s.fresh = FALSE;
@@ -382,10 +389,52 @@ static void _pipe_use_display(dt_dev_pixelpipe_t *pipe)
   dt_colorspaces_get_display_output(DT_COLORSPACE_DISPLAY, &pipe->output);
 }
 
+// dt_dev_load_image() without its raw decode (develop.c, _dt_dev_load_raw):
+// the modules read their defaults from the image cache's record as it is.
+// a decode fills that record (mipmap_cache.c, dt_mipmap_cache_get, FULL),
+// and the database's has no black levels per channel, white balance
+// coefficients, camera matrix or sensor crop (image_cache.c,
+// _image_cache_allocate). `needs_decoded`: only when an earlier decode left
+// its record in the cache, which darktable marks with a loader. a new photo
+// always has its raw decoded: its first history records those defaults
+static gboolean _open_edit_only(const dt_imgid_t imgid, const gboolean fresh,
+                                const gboolean needs_decoded)
+{
+  if(fresh) return FALSE;
+  const dt_image_t *image = dt_image_cache_get(imgid, 'r');
+  if(!image) return FALSE;
+  // a file changed on disk has its EXIF read again and its sizes zeroed
+  // (library.c, library_refresh_changed), but keeps the old decode's loader,
+  // black levels and coefficients: only a decode sets the sizes again.
+  // without a decode the record also lacks a DNG's baseline exposure, which
+  // only dt_exif_read() fills (exif.cc, _check_baseline_exposure) and
+  // exposure's defaults add (exposure.c, reload_defaults)
+  const gboolean decoded = image->loader != LOADER_UNKNOWN;
+  const char *ext = strrchr(image->filename, '.');
+  const gboolean dng = ext && !g_ascii_strcasecmp(ext, ".dng");
+  const gboolean usable = image->exif_inited && image->p_width > 0 && image->p_height > 0
+                          && (decoded || (!needs_decoded && !dng));
+  if(usable) _s.dev.image_storage = *image;
+  dt_image_cache_read_release(image);
+  if(!usable) return FALSE;
+
+  dt_lock_image(imgid);
+  _s.dev.requested_id = imgid;
+  _s.dev.first_load = TRUE;
+  dt_pthread_mutex_lock(&darktable.dev_threadsafe);
+  _s.dev.iop = dt_iop_load_modules(&_s.dev);
+  dt_dev_read_history_ext(&_s.dev, imgid, FALSE);
+  dt_pthread_mutex_unlock(&darktable.dev_threadsafe);
+  _s.dev.first_load = FALSE;
+  dt_unlock_image(imgid);
+  return TRUE;
+}
+
 // `version` picks one of the file's versions by imgid, and any other value
-// its lowest
+// its lowest. `pipe_kind` "none" opens an edited photo for its edit alone
+// (_open_edit_only), and any other photo as "full"
 gboolean session_open_image(const char *path, const dt_imgid_t version, const char *pipe_kind,
-                            char **err)
+                            const gboolean needs_decoded, char **err)
 {
   session_close_session();
 
@@ -416,10 +465,24 @@ gboolean session_open_image(const char *path, const dt_imgid_t version, const ch
   const gboolean fresh = !_has_history(imgid);
 
   dt_dev_init(&_s.dev, FALSE);
-  dt_dev_load_image(&_s.dev, imgid);
+  const gboolean pipeless = !g_strcmp0(pipe_kind, "none") && _open_edit_only(imgid, fresh, needs_decoded);
+  if(!pipeless) dt_dev_load_image(&_s.dev, imgid);
   masks_repair_brushes();
   // load_image reads the history but does not replay it into module params
   dt_dev_pop_history_items_ext(&_s.dev, _s.dev.history_end);
+  if(pipeless)
+  {
+    dt_ioppr_resync_modules_order(&_s.dev);
+    memset(&_s.pipe, 0, sizeof(_s.pipe));
+    memset(&_s.buf, 0, sizeof(_s.buf));
+    _s.pipe.processed_width = _s.dev.image_storage.p_width;
+    _s.pipe.processed_height = _s.dev.image_storage.p_height;
+    _s.imgid = imgid;
+    _s.open = TRUE;
+    _s.pipeless = TRUE;
+    _s.fresh = _s.baseline = fresh;
+    return TRUE;
+  }
 
   dt_mipmap_cache_get(&_s.buf, imgid, DT_MIPMAP_FULL, DT_MIPMAP_BLOCKING, 'r');
   if(!_s.buf.buf || !_s.buf.width || !_s.buf.height)
@@ -3131,6 +3194,30 @@ gboolean session_paste_batch(JsonObject *req, JsonBuilder *b, char **err)
       if(!dt_is_valid_imgid(i->after)) { *err = g_strdup("could not snapshot pasted settings"); return FALSE; }
     }
     batch->committed = TRUE;
+    return TRUE;
+  }
+  // A new photo's defaults are written in the same session as the paste, so
+  // each target is opened once: its undo point is taken again after them.
+  if(!g_strcmp0(action, "rebase"))
+  {
+    if(batch->committed) { *err = g_strdup("paste already committed"); return FALSE; }
+    JsonArray *ids = json_object_get_array_member(req, "imgids");
+    for(guint n = 0; ids && n < json_array_get_length(ids); n++)
+    {
+      const dt_imgid_t id = json_array_get_int_element(ids, n);
+      paste_image_t *i = NULL;
+      for(guint k = 0; !i && k < batch->images->len; k++)
+        if(g_array_index(batch->images, paste_image_t, k).imgid == id) i = &g_array_index(batch->images, paste_image_t, k);
+      if(!i) { *err = g_strdup_printf("photo %d is not in the paste", id); return FALSE; }
+      if(_s.open && _s.imgid == id && _s.unsaved && !_s.before && !session_save(err)) return FALSE;
+      const dt_imgid_t snap = _paste_snapshot(id);
+      if(!dt_is_valid_imgid(snap)) { *err = g_strdup("could not snapshot paste targets"); return FALSE; }
+      library_snapshot_remove(i->before);
+      i->before = snap;
+      dt_history_hash_free(&i->before_hash);
+      i->before_hash = (dt_history_hash_values_t){ 0 };
+      dt_history_hash_read(id, &i->before_hash);
+    }
     return TRUE;
   }
   const gboolean back = !g_strcmp0(action, "undo") || !g_strcmp0(action, "abort");

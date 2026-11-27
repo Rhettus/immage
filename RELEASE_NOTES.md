@@ -3,6 +3,20 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## 0.49.0
+
+Performance
+
+- Pasting settings onto many photos is faster. Each photo is opened once,
+  applying any new-photo defaults and the pasted settings together, and the
+  progress count runs through the selection once.
+- Pasting onto photos that already have an edit no longer decodes their raw
+  files, several times faster per photo. Tone, color, detail and effects
+  settings always paste this way; white balance, profile, lens, crop and
+  transform do once Immage has decoded the photo earlier in the session.
+  Pastes that include masks, Advanced modules or Auto white balance on
+  Paste still open each photo fully.
+
 ## 0.48.0
 
 Improvements

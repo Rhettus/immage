@@ -26,10 +26,24 @@ fn queue_refresh_off_thread(app: AppHandle, photo: crate::library_ids::Photo) {
     });
 }
 
+// `edit_only`, for a batch paste onto a photo already edited: its history
+// and params with no raw decoded and no pipe (session.c, _open_edit_only).
+// "decoded" when the engine still holds the record an earlier decode made,
+// "any" also from the library's record alone; a new photo opens as usual
 #[tauri::command]
 #[specta::specta]
-pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>) -> Result<OpenReply, String> {
-    let reply = state.request("open_image", json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) }))?;
+pub(crate) async fn open_image(state: State<'_, AppState>, path: String, imgid: Option<i64>,
+                               edit_only: Option<String>) -> Result<OpenReply, String> {
+    let mut req = json!({ "cmd": "open", "path": path, "imgid": imgid.unwrap_or(-1) });
+    match edit_only.as_deref() {
+        None => {}
+        Some(mode @ ("decoded" | "any")) => {
+            req["pipe"] = json!("none");
+            req["needs_decoded"] = json!(mode == "decoded");
+        }
+        Some(other) => return Err(format!("open_image: unknown edit_only '{other}'")),
+    }
+    let reply = state.request("open_image", req)?;
     serde_json::from_value(reply).map_err(|e| format!("open: unexpected reply: {e}"))
 }
 

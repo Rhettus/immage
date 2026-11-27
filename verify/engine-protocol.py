@@ -156,6 +156,7 @@ def anywhere(img):
         R('paste_batch', action='begin', token=1, label='paste_batch begin empty'),
         R('paste_batch', action='begin', token=1, imgids=[0], label='paste_batch begin missing'),
         R('paste_batch', action='undo', token=77, label='paste_batch unknown token'),
+        R('paste_batch', action='rebase', token=77, imgids=[1], label='paste_batch rebase unknown token'),
         R('export_hold', job=5, imgids=[0]),
         R('folder', label='folder none'),
         R('folder', path='{tmp}/no-such-folder', label='folder missing'),
@@ -711,7 +712,10 @@ class Run:
         self.state('2 library', [
             R('paste_batch', action='begin', token=0, imgids=[1], label='paste_batch begin'),
             R('history_discard', imgid=1, label='history_discard'),
+            R('paste_batch', action='rebase', token=last, imgids=[1], label='paste_batch rebase'),
+            R('paste_batch', action='rebase', token=last, imgids=[2], label='paste_batch rebase not a target'),
             R('paste_batch', action='commit', token=last, label='paste_batch commit'),
+            R('paste_batch', action='rebase', token=last, imgids=[1], label='paste_batch rebase committed'),
             R('paste_batch', action='undo', token=last, label='paste_batch undo'),
             R('paste_batch', action='redo', token=last, label='paste_batch redo'),
             R('paste_batch', action='release', token=last, label='paste_batch release'),
@@ -720,7 +724,10 @@ class Run:
         self.state('3 open', [R('open', path=str(a)), R('open', path=str(a), imgid=1, pipe='preview',
                                                          label='open preview pipe'),
                               R('open', label='open no path'),
-                              R('open', path='{tmp}/no-such.tif', label='open missing')])
+                              R('open', path='{tmp}/no-such.tif', label='open missing'),
+                              # a photo with no edit opens with its pipe all the same
+                              R('open', path=str(a), imgid=1, pipe='none', needs_decoded=False,
+                                label='open edit only')])
         self.state('3 open', [R('open', path=str(a), label='open again'),
                               R('history_discard', imgid=1, label='history_discard open')])
         self.order_cases(a)

@@ -30,6 +30,10 @@ pub struct OpenReply {
     pub sensor: Option<String>,
     // a photo with no history yet, whose defaults are its baseline
     pub fresh: bool,
+    // opened for its edit alone, with no raw decoded and no pipe: only
+    // params, looks and saves are served (`open_image`'s `edit_only`)
+    #[serde(default)]
+    pub pipeless: bool,
 }
 
 // an item of the image's darktable history, as darktable's history module

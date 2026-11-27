@@ -172,6 +172,17 @@ same moment would also stay on the CPU. Check the comparison itself without a
 GPU: `python3 -I verify/gpu-parity.py` (both passes on the CPU, identical
 frames); `--opencl` also compares the GPU where there is one.
 
+### Batch paste
+
+`node benchmarking/batch-paste-bench.mjs --tree <checkout>` times `runPaste`
+from that checkout's page code against this checkout's engine, in ms per
+photo and opens per photo: never-edited photos with new-photo defaults,
+edited photos with tone settings, white balance and lens settings (decoded
+earlier, or after an engine restart), and Auto white balance on Paste. Run
+it once on a worktree of the earlier code and once on this one
+(`--copies 3 --runs 3`, `--json` for the per-run numbers). The paste costs no
+GPU work, but its timings, like every other, count only on bare metal.
+
 ## What each scenario measures
 
 All engine timings are wall time of the request, as the app waits for it.

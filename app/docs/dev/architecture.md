@@ -1034,14 +1034,44 @@ look path fails rather than removing the look silently. Each target opens a
 background Session: normal per-image mappings and mask transports run, but
 previews and delayed autosaves do not. Explicit close drains all pending work
 (including native module changes), propagates background pump failures and
-saves before advancing. Before snapshots, `pasteDefaults.preparePastePhoto`
-establishes an unedited baseline for never-opened photos using the frozen
-new-photo profile, exposure compensation, capture sharpening, preset and Auto
-preferences. Existing saved edits are untouched. Auto may request a small
-measurement preview; ordinary target edits do not render full previews.
+saves before advancing. Each target is opened once, as opening is the
+batch's main cost (a full raw decode and pipe sync). In that same session,
+`pasteDefaults.preparePastePhoto` first establishes an unedited baseline for a
+never-opened photo using the frozen new-photo profile, exposure compensation,
+capture sharpening, preset and Auto preferences, saved as its baseline; the
+batch's `rebase` then retakes that photo's undo snapshot, so undo returns to
+the defaults. Existing saved edits are untouched. A new photo's raw is always
+decoded: rawspeed measures many raws' black levels from their masked pixels,
+and its first history records them (rawprepare's defaults). Auto may request a
+small measurement preview; ordinary target edits do not render full previews.
+
+A photo already edited is opened for its edit alone when the clip allows
+(`batchPaste.editOnlyMode`, `Session.open`'s `editOnly`, `open_image`'s
+`edit_only`): the engine's `open` with `"pipe": "none"` loads the history and
+the modules' params from the image cache's record, with no raw decode and no
+pipe (`session.c`, `_open_edit_only`; about 9 ms against 170 ms for a 20 MP
+CR2), and replies `pipeless`. Such a session serves only `set`, `get`, `save`,
+`baseline_end`, `look`, `look_amount`, `module_state` (a pasted tone mapper
+switches the others off), `close` and the requests that need no open photo,
+besides `parity` and `softproof` (`main.c`, `_pipeless_serves`);
+Session reads no masks or spots and skips the shape reload after a framing
+edit. The record a decode leaves in the image cache (a loader set) makes the
+modules' defaults what a full open gives them, so `"decoded"` (needs_decoded)
+covers every map; the library's record alone has no per-channel black levels,
+white balance coefficients, camera matrix or sensor crop, so `"any"` covers
+only maps outside `RAW_RECORD` (white balance, profile, raw-level and
+framing modules, B&W, Vignette), and never a DNG, whose baseline exposure
+only an EXIF read fills (exposure's defaults add it). Either needs the
+record's sizes: a file changed on disk since its decode has them zeroed
+(`library_refresh_changed`) but keeps the old decode's other fields, so it
+opens in full. Masks, non-empty Advanced copies, Auto WB on Paste (its
+estimate renders previews) and conversions always open the photo fully. `verify/batch-paste.test.mjs`
+compares the sidecars of both opens, with `IMMAGE_TEST_RAW` naming a raw to
+check besides the sample JPEG. Decoding the next targets ahead (`prefetch`)
+gained nothing measurable, so the loop does not.
 
 The Rust `paste_batch` command serializes each engine request. Engine
-`session_paste_batch` supports `begin`, `commit`, `undo`, `redo`, `abort`, `release`.
+`session_paste_batch` supports `begin`, `rebase`, `commit`, `undo`, `redo`, `abort`, `release`.
 Begin validates all ids/paths/duplicates before taking private native history
 snapshots with `library_snapshot`. Commit records the completed state. Restore copies
 full history, module order and mask data, restores baseline/current hashes and
@@ -1065,7 +1095,8 @@ Verification: `node --test --test-isolation=none verify/batch-paste.test.mjs`
 runs production Session/mapping/batch code through `verify/shim.mjs` and the real
 engine in isolated temporary photo/runtime directories. It covers targeting,
 native look parameters/strength, rendered undo/redo, untouched groups, virtual copies, mask/crop preservation,
-persistence, undo/redo, stale edits and failed sidecar recovery. The separate
+persistence, undo/redo, stale edits and failed sidecar recovery, one open per
+target, and edit-only opens saving what full opens save. The separate
 `batch-paste` visible-app case uses actual Copy/Paste controls and modifier
 selection, then checks values, look amount, rendered output, both sidecars,
 undo/redo, reopening and an unselected image. See the GUI coverage ledger for
