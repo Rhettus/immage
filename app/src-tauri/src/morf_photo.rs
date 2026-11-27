@@ -2354,6 +2354,10 @@ mod tests {
             .collect();
         let items_p3 = vec![photo(format!("/photos/{}.jpg", PAGE_SIZE * 2))];
 
+        // Pages 2 and 3 are fetched at once and mock_raw answers in the order
+        // connections arrive, so either request may get either reply. Neither
+        // reply names its page and both carry the new revision, so whichever
+        // arrives first reports the revision change.
         let (url, server1) = mock_raw(vec![
             (
                 200,
@@ -2371,7 +2375,7 @@ mod tests {
                     ("Content-Type", "application/json".into()),
                     ("X-Catalog-Revision", "rev-b".into()),
                 ],
-                json!({"page": 2, "page_size": PAGE_SIZE, "total": total, "items": items_p2})
+                json!({"page_size": PAGE_SIZE, "total": total, "items": items_p2})
                     .to_string()
                     .into_bytes(),
             ),
@@ -2379,9 +2383,9 @@ mod tests {
                 200,
                 vec![
                     ("Content-Type", "application/json".into()),
-                    ("X-Catalog-Revision", "rev-a".into()),
+                    ("X-Catalog-Revision", "rev-b".into()),
                 ],
-                json!({"page": 3, "page_size": PAGE_SIZE, "total": total, "items": items_p3})
+                json!({"page_size": PAGE_SIZE, "total": total, "items": items_p3})
                     .to_string()
                     .into_bytes(),
             ),
