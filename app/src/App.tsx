@@ -103,7 +103,7 @@ import { aiRefine, type Backdrop, flipMode, isRange, isRefined, maskAt, readsBac
          type RangeMap, type Refine, type Region, type Shape } from "./masks";
 import { channelTint, type Picked } from "./ParametricEditor";
 import { BUILTIN_PRESETS, loadLooks, loadNewPhotosPreset, loadPresets, NewPresetDialog, PresetsPanel, PreviewCache,
-         readSharedPresets, savePresets, sharedPresets, storeNewPhotosPreset, type Look, type Preset } from "./Presets";
+         filmChoices, readSharedPresets, savePresets, sharedPresets, storeNewPhotosPreset, type Look, type Preset } from "./Presets";
 import { ASPECTS, CropOverlay, customAspect, findAspect, fitAspect, FULL, loadCustomAspects, pixelAspect,
          rememberCustomAspect, type Aspect, type CropRect } from "./CropTool";
 import { ShortcutsDialog } from "./Shortcuts";
@@ -854,7 +854,7 @@ export default function App() {
         return v ? [{ key, run: () => s.preview(PREVIEW_SIZE, v) }] : [];
       }
       const p = all.find((q) => `p:${q.id}` === key);
-      return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, p.values) }] : [];
+      return p ? [{ key, run: () => s.preview(PREVIEW_SIZE, { ...p.values, ...filmChoices(p.values) }) }] : [];
     }));
   };
   const presetsRef = useRef<Preset[]>([]);
@@ -1404,7 +1404,7 @@ export default function App() {
     showHover(!key ? null : "tiles", (s, size) => {
       if (key!.startsWith("l:")) return s.preview(size, lookValues(key!.slice(2)), key!.slice(2));
       if (isStockKey(key!)) { const v = stockValues(s, key!); return v ? s.preview(size, v) : null; }
-      return p ? s.preview(size, p.values) : null;
+      return p ? s.preview(size, { ...p.values, ...filmChoices(p.values) }) : null;
     }, !!key && isStockKey(key));
   };
   const hoverValues = (values: Values | null) =>
@@ -1450,18 +1450,35 @@ export default function App() {
 
   // a preset's strength, as Lightroom's Amount: between the settings before
   // it was applied (0) and the preset's own (100), and beyond, to 200.
-  // switches and choices take the preset's setting at any amount above 0
+  // switches and choices take the preset's setting at any amount above 0, as
+  // does a film or paper stock, a hash no amount between two can blend
   const [amount, setAmount] = useState<{ name: string; value: number; before: Values; preset: Values } | null>(null);
   const isStepped = (id: string) => {
     const c = controlById.get(id);
-    return !c || c.kind === "choice" || c.kind === "toggle" || id.endsWith("pn") || id === "tc_mode";
+    return !c || c.kind === "choice" || c.kind === "toggle" || id.endsWith("pn") || id === "tc_mode"
+      || id.endsWith("_hash");
   };
-  const applyPreset = (preset: Preset) => {
+  // a preset with a film simulation turns it on or off as the Film
+  // Simulation panel does: on, it turns off a converted negative, asking
+  // first; off, its tools go back to the modules Preferences picks
+  const applyPreset = (preset: Preset, swap = false) => {
     const s = session.current;
     if (!s) return;
-    const p = { ...preset, values: presetValues(preset) };
+    const values = presetValues(preset);
+    const filmOn = values.sf_on === 1;
+    if (filmOn && s.values.neg_on === 1 && !swap) {
+      setExclusive({ title: "Film Simulation",
+                     body: "This preset's film simulation turns off this photo's negative conversion: the film is "
+                       + "exposed from the photo as a positive.",
+                     go: () => applyPreset(preset, true) });
+      return;
+    }
+    if (filmOn && s.values.neg_on === 1) Object.assign(values, Object.fromEntries(negOffEntries(s)));
+    if (values.sf_on === 0 && s.values.sf_on === 1) Object.assign(values, Object.fromEntries(sfOffEntries(s)));
+    const p = { ...preset, values };
     const before = Object.fromEntries(Object.keys(p.values).map((id) => [id, s.values[id]]));
     changeMany(Object.entries(p.values), `Preset: ${p.name}`);
+    if (filmOn) offUnmapped(s, SF_OFF, SF_OFF_UNMAPPED);
     setAmount({ name: p.name, value: 100, before, preset: p.values });
   };
   const changeAmount = (v: number) => {

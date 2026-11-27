@@ -3,6 +3,15 @@
 The section for each version is the text of its release on GitHub, and
 what Immage's update banner shows under Release Notes.
 
+## Unreleased
+
+Improvements
+
+- Presets can include Film Simulation. Tick it in the New Preset dialog to
+  save the film, paper and every film setting. Applying the preset turns the
+  simulation on or off as the Film Simulation panel does, and Amount blends
+  the film's sliders.
+
 ## 0.47.1
 
 Improvements

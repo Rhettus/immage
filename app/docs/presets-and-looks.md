@@ -37,9 +37,10 @@ way from where the photo was, 200% goes twice as far. Double-click it for
 1. Edit a photo the way you want.
 2. Click **+** in the panel's toolbar.
 3. Name it, and choose or type a group.
-4. Tick the settings to include. **White Balance**, **Transform** and **Negative**
-   start unticked. Negative includes the film conversion and both color profiles;
-   crop is never included.
+4. Tick the settings to include. **White Balance**, **Transform**, **Negative**
+   and **Film Simulation** start unticked. Negative includes the film conversion
+   and both color profiles; Film Simulation includes whether it is on, the film
+   and paper, and every setting in its panel. Crop is never included.
 5. Tick **Use for new photos** to have photos start from it.
 6. Click **Create**.
 
