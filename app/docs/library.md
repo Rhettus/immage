@@ -742,8 +742,9 @@ With **Auto**, the label below the preview shows the projection chosen.
 the crop immediately. With it off, empty edges appear as a checkerboard.
 
 The preview takes a moment to build and updates when you change projection.
-Previously viewed projections are kept while the panel is open. It shows
-geometry at reduced resolution; final detail, alignment and color may differ.
+Previously viewed projections are kept while the panel is open. The preview
+blends the overlapping photos at reduced resolution so you can check their
+alignment and color. Both can differ in the full-resolution merge.
 If some photos do not overlap, the panel shows how many the preview uses.
 If the preview fails, try **Retry** or another projection. You can still click
 **Merge** to attempt the full-resolution stitch. Closing the panel cancels

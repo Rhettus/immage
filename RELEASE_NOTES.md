@@ -33,6 +33,8 @@ Performance
 
 Bug fixes
 
+- Panorama Merge fixes yellow-green patches that could appear in overlapping
+  areas of the preview.
 - Notes use the standard XMP field for compatibility with darktable and
   morfPhoto.
 - Importing from a memory card directly to a mounted NAS share on macOS

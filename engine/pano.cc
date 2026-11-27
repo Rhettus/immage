@@ -23,7 +23,7 @@
 // exposure, color and vignetting from small float ones, fitted as Hugin's
 // photometric optimizer does (_photo); the full-size frames are corrected
 // and warped as floats in linear. OpenCV's blender takes 16-bit integers only (blenders.cpp,
-// CV_16SC3), so the warped frames go to it log-encoded into 15 bits and
+// CV_16SC3), so the warped frames go to it log-encoded with headroom and
 // come back decoded
 
 #include "pano.h"
@@ -66,9 +66,10 @@ static const double _PHOTO_PIXELS = 2.5e5;
 // past this the blend alone needs several GB (about 14 bytes a pixel)
 static const double _MAX_CANVAS = 250e6;
 
-// the log code of the blend: v in [0, vmax] onto [0, 32767], which keeps
-// some 1500 steps a stop at the top and still a few at 2^-12
+// Leave one bit of headroom for OpenCV's signed 16-bit blend accumulators:
+// dilated seam masks can give both frames weight in the same overlap.
 static const double _A = 1024.0;
+static const double _BLEND_CODE_MAX = 16383.0;
 
 pano_t *pano_new(void)
 {
@@ -134,9 +135,9 @@ static Mat _log8(const Mat &lin)
 
 static Mat _encode(const Mat &lin, const double vmax)
 {
-  Mat t = max(lin, 0.0) * _A + 1.0, l, out;
+  Mat t = min(max(lin, 0.0), vmax) * _A + 1.0, l, out;
   log(t, l);
-  l.convertTo(out, CV_16S, 32767.0 / std::log(1.0 + _A * vmax));
+  l.convertTo(out, CV_16S, _BLEND_CODE_MAX / std::log(1.0 + _A * vmax));
   return out;
 }
 
@@ -781,7 +782,7 @@ static float *_stitch(pano_t *p, pano_projection_t projection, const gboolean cr
       *err = g_strdup_printf("not enough memory for a %d x %d panorama", out.width, out.height);
       return NULL;
     }
-    const double k = std::log(1.0 + _A * vmax) / 32767.0;
+    const double k = std::log(1.0 + _A * vmax) / _BLEND_CODE_MAX;
     for(int y = 0; y < out.height; y++)
     {
       const short *c = code.ptr<short>(out.y + y) + 3 * out.x;

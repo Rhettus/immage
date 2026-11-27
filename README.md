@@ -33,7 +33,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   Copied AI masks are recalculated for each destination photo.
 - [Heal, clone, fill and blur with multi-spot editing and area color sampling](app/docs/heal.md), [simulate film stocks and papers](app/docs/film-simulation.md)
   with a one-time data download from GitHub, convert film negatives with input
-  and working color profiles, and merge HDR photos or panoramas.
+  and working color profiles, merge HDR photos, and preview panorama projection
+  and crop before merging.
 - Save [Develop presets](app/docs/presets-and-looks.md) with optional Film Simulation,
   apply film looks, and compare edits. Copy settings across photos, including RAW
   tone mappers and optional automatic white balance for each destination.
