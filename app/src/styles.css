@@ -732,6 +732,12 @@ button.thumb-type.thumb-stack-toggle:focus-visible {
 .tool-group { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; }
 .toolbar .mark-selection { justify-self: start; }
 .toolbar .view-tools { justify-self: end; }
+.toolbar .panel-toggles { display: flex; align-items: center; gap: 1px; padding: 2px; border-radius: 10px; background: var(--ui-window-161616, #161616); }
+.toolbar .panel-toggle { border-radius: 7px; color: var(--text-2); }
+.toolbar .panel-toggle.on { background: var(--ui-panel-1c1c1c, #1c1c1c); color: var(--text); }
+.toolbar .panel-toggle:hover, .toolbar .panel-toggle:focus-visible { background: var(--inset, #36393b); color: var(--text); }
+.toolbar .panel-toggle.on:hover, .toolbar .panel-toggle.on:focus-visible { background: var(--card, #2c2e30); }
+.toolbar .panel-toggle svg { width: 17px; height: 17px; }
 .mark-selection { background: var(--ui-window-161616, #161616); padding-inline: 7px; }
 .mark-selection .mark-gap { flex: 0 0 5px; }
 .mark-selection-label { margin-inline-end: 5px; font-size: var(--fs-small); white-space: nowrap; }
@@ -1655,6 +1661,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 }
 @container bottom-toolbar (max-width: 550px) {
   .toolbar .tool-group .sep, .toolbar .zoom-label, .mark-selection-label { display: none; }
+  .toolbar .view-tools > .sep { display: block; }
   .toolbar .zoom-bar { grid-template-columns: auto; }
   .toolbar .zoom-bar input[type="range"] { grid-column: 1; width: 58px; }
 }

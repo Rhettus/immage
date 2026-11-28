@@ -151,7 +151,7 @@ import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbPr
 import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
 import { RenameDialog } from "./RenameDialog";
-import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, UndoIcon, ZonesIcon, icon } from "./icons";
+import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
@@ -7944,11 +7944,6 @@ export default function App() {
                    onMark={(mark) => applyMark(selectedMarkTargets, mark)} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
-                   <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>
-                     <UndoIcon /></button>
-                   <button className="tool" title={keys(t("app.action.redo"))} disabled={!current} onClick={() => stepHistory(false)}>
-                     <UndoIcon redo /></button>
-                   <span className="sep" />
                    <button className={`tool view${baMode !== "off" || before ? " on" : ""}`} disabled={!current || cropping}
                            title={t("app.beforeAfter.tooltip", { mode: t(`app.beforeAfter.mode.${baMode}`) })}
                            onClick={cycleBaButtonMode}><BeforeAfterIcon /></button>

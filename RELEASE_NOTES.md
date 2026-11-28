@@ -7,6 +7,10 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- The bottom toolbar no longer has Undo, Redo or Culling Preview buttons.
+  Use their existing Edit or View menu commands and shortcuts. Panel visibility
+  buttons are grouped together and show whether Library, filmstrip and the
+  current right panel are visible; each can be toggled independently.
 - Use Mark in the bottom bar to assign stars, color labels, Pick
   and Reject. Mark individual grid tiles from their thumbnail controls.
   The zoom slider is centered in the bottom bar. Open Library for Find,

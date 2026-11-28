@@ -183,13 +183,16 @@ the photo:
   a dark surround, or **White**, which shows the photo as on a print. L
   steps through them.
 
-The toolbar under the filmstrip also has buttons to show or hide the
-Library panel and the filmstrip. In Grid view, the **Find panel** button
-shows or hides Find. In the photo editing view, the **Adjustments panel**
-button controls the editing panel. Immage remembers each panel's width and
+The toolbar under the filmstrip groups panel visibility in three adjacent
+buttons: Library, filmstrip, and Find in Grid view or Adjustments in the
+photo editing view. Each button independently shows or hides its panel; the
+highlight reflects whether the panel is visible. Hover to see whether the
+button will show or hide that panel. Immage remembers each panel's width and
 whether it is open when you switch views or relaunch. If you use auto-hide,
 each panel also remembers its own pin. Click its toolbar toggle to reopen a
 closed panel, or hover over the right rail to reveal one that has slid away.
+Undo, Redo and Culling Preview remain available from their existing menus and
+shortcuts.
 
 ## Menus
 

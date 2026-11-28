@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
-import { MagnifierIcon, PanelIcon, ResetIcon } from "./icons";
+import { PanelIcon, ResetIcon } from "./icons";
 import { Layout, PanelKey } from "./layoutPrefs";
 import { invert } from "./probe";
 import { keys } from "./keys";
@@ -97,8 +97,8 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 export function Toolbar({ marking,
                    layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel }: {
   ref: React.RefObject<HTMLDivElement | null>;
-  viewTools: React.ReactNode;               // undo, redo, before/after, compare
-  grid: boolean;                            // the magnifier shows only in the grid, the one view it opens the lightbox in
+  viewTools: React.ReactNode;
+  grid: boolean;
   pin: React.ReactNode;
   marking: React.ReactNode;
   layout: Layout; zoomBar: React.ReactNode;
@@ -113,23 +113,19 @@ export function Toolbar({ marking,
           handles and whatever was being edited in that corner */}
       <div className="tool-group view-tools">
         {viewTools}
-        {/* the lightbox over the grid's photos; the Library button on the rail switches the view */}
-        {grid && <>
-          <span className="sep" />
-          <button className="tool culling-open" title={t("library.toolbar.culling")}
-                  aria-label={t("library.toolbar.culling")}
-                  onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}><MagnifierIcon /></button>
-        </>}
         <span className="sep" />
-        <button className={`tool${layout.left ? " on" : ""}`} title={t("library.toolbar.libraryPanel")}
-                onClick={() => onLayout("left")}><PanelIcon side="left" /></button>
-        <button className={`tool${layout.strip ? " on" : ""}`} title={t("library.toolbar.filmstripLabel")}
-                onClick={() => onLayout("strip")}><PanelIcon side="bottom" /></button>
-        <button className={`tool${layout[rightPanel] ? " on" : ""}`} data-panel-toggle={rightPanel}
-                title={t(rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel")}
-                aria-pressed={layout[rightPanel]} onClick={() => onLayout(rightPanel)}>
-          <PanelIcon side="right" />
-        </button>
+        <div className="panel-toggles" role="group" aria-label={t("library.toolbar.panels")}>
+          {([ ["left", "library.toolbar.libraryPanel", "left"], ["strip", "library.toolbar.filmstripLabel", "bottom"], [rightPanel, rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel", "right"] ] as const).map(([key, labelKey, side]) => {
+            const visible = layout[key];
+            const label = t(labelKey);
+            return <button key={key} className={`tool panel-toggle${visible ? " on" : ""}`} data-panel-toggle={key}
+                          title={t(visible ? "library.toolbar.hidePanel" : "library.toolbar.showPanel", { panel: label })}
+                          aria-label={t(visible ? "library.toolbar.hidePanel" : "library.toolbar.showPanel", { panel: label })}
+                          aria-pressed={visible} onClick={() => onLayout(key)}>
+              <PanelIcon side={side} />
+            </button>;
+          })}
+        </div>
         {/* the filmstrip's pin, after the panel switches rather than among them */}
         {pin}
       </div>
