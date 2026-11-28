@@ -74,9 +74,10 @@ acceptance are provided.
 
 ## Local search and Find cases
 
-Find exists only in the grid, as the right-hand column (`.find-pop` in `aside.right`,
-`role="search"`). The rail's Library button enters the grid, where the right-panel icon shows
-or hides Find. Leaving the grid removes the column and brings the Adjustments panel
+Find exists only in the grid, in the right-hand column (`.find-pop` in `aside.right`,
+`role="search"`), below the Culling card. The Library rail button enters the grid,
+where the right-panel icon shows or hides both cards. Focus mode collapses the other
+card when one expands. Leaving the grid removes the column and brings the Adjustments panel
 back, and filters stay on. There is no popup, no Show N, no grip, and no Escape or
 click-away close. Find's rows are `.fr-row` (`.on` when active, `aria-expanded` when
 open), with `.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`.
@@ -98,8 +99,8 @@ Show more like this in the photo menu.
 `--suite find` runs `find-live` (a filter narrows the grid as it is set; a filter row
 turns on and its x turns it off; one editor is open at a time under its row; the Filters
 title bar's reset icon (Clear search and filters) clears every filter and the search words, keeping Search in and the mode; the column is titled Find and, with auto-hide,
-its pin ends the title row; the Library button enters and leaves the grid; the magnifier
-opens the culling preview), `find-sizes` (Find only in the grid: no column in the
+the shared Culling header pin; the Library button enters and leaves the grid; the Culling
+panel opens the culling preview), `find-sizes` (Find only in the grid: no column in the
 filmstrip view; Library enters the grid and shows Find in `aside.right`; Adjustments hides while Find shows; Find is not a floating popup and has
 no grip or Show N; from the Print panel the same button brings Find back; leaving the
 grid removes Find and restores Adjustments), `find-saved` (Save filter…, changed and

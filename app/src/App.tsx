@@ -38,6 +38,7 @@ import { NegativePanel, negAdvancedIds, type NegPick } from "./NegativePanel";
 import { FilmPanel, filmAdvancedIds } from "./FilmPanel";
 
 import { PrintPanel } from "./PrintPanel";
+import { CullingPanel } from "./CullingPanel";
 import { applyProof, cellsLayout, defaultPrintSettings, hasPrintSettings, LABEL_POINTS, layout as printLayout,
          loadPrintSettings, NO_PROOF, PDF, PDF_PAPERS, printerInfo, printRequest, sheetPages, sheetRequest,
          storePrintSettings, type Paper, type Printer, type PrinterInfo, type PrintSettings, type Profile, type Proof,
@@ -151,7 +152,7 @@ import { CellCanvas, Filmstrip, INFO_MODE_KEY, InfoOverlay, ThumbCanvas, ThumbPr
 import { ActivityBar, JobActivity, Notice, keepPointer } from "./ActivityBar";
 import { FileMenu, TRASH, hdrBrackets, panoFrames } from "./FileMenu";
 import { RenameDialog } from "./RenameDialog";
-import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, ZonesIcon, icon } from "./icons";
+import { BeforeAfterIcon, CompareIcon, CropIcon, DriveIcon, ExportIcon, FilmIcon, FilmSimIcon, FlipIcon, FoldIcon, FolderIcon, GearIcon, HealIcon, HelpIcon, ImportIcon, KeyboardIcon, LayersIcon, LibraryIcon, ModulesIcon, NetworkIcon, PinIcon, PresetsIcon, PrintIcon, RefreshIcon, RotateIcon, RulerIcon, SlidersIcon, StackedImagesIcon, ZonesIcon, icon } from "./icons";
 import { HistogramView, SCOPE_MODES, loadScope } from "./HistogramView";
 import { Navigator } from "./Navigator";
 import { PanelView, UPRIGHT_ICONS, UPRIGHT_TITLES, WBTools, isMono, presetValues, sampleSpot } from "./PanelView";
@@ -430,12 +431,19 @@ export default function App() {
   const inspectedRef = useRef<ImageEntry | null>(null);
   // a rail button: switch the right-hand panel to its mode, or, already
   // showing it, slide the panel shut
-  const showRight = (mode: RightMode) => {
+  const showRight = (mode: RightMode, alt = false) => {
     // leaving the crop tool for the mode it was opened over is not a second click
     const wasCropping = croppingRef.current;
     if (wasCropping) leaveCrop(true);
+    if (gridRef.current && mode === "culling") {
+      setRightMode(mode);
+      setCullingExpanded(true);
+      if (focusMode && !alt) setFindPanelExpanded(false);
+      setLayout((l) => l.find ? l : { ...l, find: true });
+      return;
+    }
     // in the grid, a tool other than Print leaves it for the selected or open photo
-    const leaving = gridRef.current && mode !== "print";
+    const leaving = gridRef.current && mode !== "print" && mode !== "culling";
     if (leaving) leaveGridRef.current();
     if (layout.right && rightMode === mode && !wasCropping && !leaving) { toggleSide("right"); return; }
     setRightMode(mode);
@@ -710,6 +718,17 @@ export default function App() {
   const folderMoveBusy = useRef(false);
   const [canvasColor, setCanvasColor] = useState<Canvas>(loadCanvas);
   const [focusMode, setFocusMode] = useState(loadFocusMode);
+  const [cullingExpanded, setCullingExpanded] = useState(false);
+  const [findPanelExpanded, setFindPanelExpanded] = useState(true);
+  const toggleLibraryPanel = (panel: "culling" | "find", alt: boolean) => {
+    const opening = panel === "culling" ? !cullingExpanded : !findPanelExpanded;
+    if (panel === "culling") setCullingExpanded(opening);
+    else setFindPanelExpanded(opening);
+    if (opening && focusMode && !alt) {
+      if (panel === "culling") setFindPanelExpanded(false);
+      else setCullingExpanded(false);
+    }
+  };
   const [editMode, setEditMode] = useState(loadEditMode);
   // the Adjustments header's mode button and Preferences > General share this
   const chooseEditMode = useCallback((v: EditMode) => { setEditMode(v); storeEditMode(v); }, []);
@@ -782,7 +801,7 @@ export default function App() {
   const [rightMode, setRightMode] = useState<RightMode>("adjust");
   // the grid hides the right-hand panel: its tools work on the open photo,
   // which the grid covers. Print stays, as the grid picks its sheet's photos
-  const rightOpen = layout.right && (!grid || rightMode === "print");
+  const rightOpen = layout.right && (!grid || rightMode === "print" || rightMode === "culling");
   // in the grid the right-hand column holds Find, locked in place, in the tools' stead
   const findLocked = grid && rightMode !== "print";
   const rightPanel = findLocked ? "find" : "right";
@@ -7380,7 +7399,10 @@ export default function App() {
     if (!allPartners.size) return images.length;
     return buildStackView(images, allPartners, expandedStacks).shown.length;
   }, [immich, reading, allPartners, expandedStacks, images]);
-  const renderFind = () => (
+  const renderFind = () => <div className="library-right-panels">
+    <CullingPanel disabled={!hasCullingPhotos}
+      onPreview={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))}
+      expanded={cullingExpanded} onToggle={(alt) => toggleLibraryPanel("culling", alt)} pin={pinButton("find")} />
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
               smart={smartAvailable(clipReady, !!immichBase, remoteClip)}
               clipTip={clipTipVisible(clipKnown, clipReady, clipTipGone, allRemoteClip) ? {
@@ -7396,8 +7418,8 @@ export default function App() {
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              pin={pinButton("find")} />
-  );
+              panelExpanded={findPanelExpanded} onPanelToggle={(alt) => toggleLibraryPanel("find", alt)} />
+  </div>;
   const docked = { left: layout.left && !floating.left, right: rightPanelOpen && !floating.right };
 
   // the selection follows the open photo when it moves outside it (the
@@ -7939,7 +7961,7 @@ export default function App() {
                        }} />
           </div>
         </div>
-        <Toolbar rightPanel={rightPanel}
+        <Toolbar rightPanel={rightPanel} rightPanelTitle={rightMode === "culling" ? t("library.toolbar.cullingPanel") : undefined}
                  marking={<MarkSelection summary={summarizeMarks(selectedMarkTargets)}
                    onMark={(mark) => applyMark(selectedMarkTargets, mark)} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
@@ -7981,7 +8003,7 @@ export default function App() {
         <div className="panel-head"><h1>{cropping ? t("app.panel.crop") : RIGHT_TITLES[rightMode]}</h1>
           <div className="head-tools">
             {pinButton("right")}
-            <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
+            {rightMode !== "culling" && <button className={`tool edit-mode${editMode === "advanced" ? " on" : ""}`} aria-pressed={editMode === "advanced"}
                       onClick={() => chooseEditMode(editMode === "advanced" ? "simple" : "advanced")}
                       data-tour="advanced-mode"
                       aria-label={modeLabel}
@@ -8000,11 +8022,11 @@ export default function App() {
                     ))}
                   </span>
                 </>}
-            </button>
-            <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
+            </button>}
+            {rightMode !== "culling" && <button className="tool" onClick={toggleAllPanels} disabled={!canFoldPanels}
                       title={anyOpen ? keys(t("app.panels.collapseAll")) : t("app.panels.expandAll")}>
-                <FoldIcon open={anyOpen} /></button>
-            <ResetAll disabled={!current} onReset={requestResetAll} />
+                <FoldIcon open={anyOpen} /></button>}
+            {rightMode !== "culling" && <ResetAll disabled={!current} onReset={requestResetAll} />}
           </div></div>
         <Profiler id="histogram" onRender={perf.reactCommit}><HistogramView histograms={histograms} values={values} disabled={!current} exif={currentEntry?.exif ?? null}
                        neutral={(id) => session.current?.neutral[id] ?? controlById.get(id)?.neutral ?? 0}
@@ -8012,6 +8034,8 @@ export default function App() {
                        onClipPeek={setClipPeek} scope={scope} onScope={setScope} /></Profiler>
         <div className="panels" data-tour="panels" ref={panelsRef}
              onScroll={(e) => panelScroll.current.set(shownKey.current, e.currentTarget.scrollTop)}>
+          {rightMode === "culling" && !cropping && <CullingPanel disabled={!hasCullingPhotos}
+            onPreview={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: {} }))} showHeader={false} />}
           {masksMode && !cropping && (
             <MasksPanel fold={maskFold} onAnyOpen={setMaskGroupsOpen} masks={masks} selected={maskSel} shape={shapeSel} tool={maskTool} target={toolTarget}
                         advancedMode={editMode === "advanced"} session={session.current} sessionRevision={historyRev}
@@ -8484,6 +8508,8 @@ export default function App() {
                 title={t("app.rail.filmNegative")} data-tour="negative" disabled={!current} onClick={openNegative}><FilmIcon /></button>
         <button className={`tool${rightOpen && !cropping && rightMode === "presets" ? " on" : ""}`} title={t("app.rail.presets")} data-tour="presets"
                 onClick={() => showRight("presets")}><PresetsIcon /></button>
+        <button className={`tool${(grid ? rightPanelOpen : rightOpen) && rightMode === "culling" ? " on" : ""}`} title={t("app.rail.culling")} data-tour="culling"
+                onClick={(e) => showRight("culling", e.altKey)}><StackedImagesIcon /></button>
         </div>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="send-out">
@@ -8720,7 +8746,7 @@ type Opened = { path: string; imgid: number | null };
 const PRINT_PLACES = ["top left", "at the top", "top right", "on the left", "in the middle", "on the right",
                       "bottom left", "at the bottom", "bottom right"];
 
-type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative" | "print";
+type RightMode = "adjust" | "presets" | "masks" | "heal" | "zones" | "film" | "negative" | "print" | "culling";
 // the photo area a film border pick reads before one is picked: darktable's
 // default picker box
 const NEG_AREA: [number, number, number, number] = [0.02, 0.02, 0.98, 0.98];
@@ -8737,5 +8763,5 @@ const LEFT_CARDS = ["metadata", "keywording", "folders", "savedFilters", "histor
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
                                                   zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),
-                                                  print: t("app.panel.print") };
+                                                  print: t("app.panel.print"), culling: t("app.panel.culling") };
 

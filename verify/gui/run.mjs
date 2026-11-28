@@ -335,7 +335,7 @@ try {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `rate-menu-${i}${ext}`));
   }
-  if (selectedCases.includes('grid-culling') || selectedCases.includes('grid-culling-controls')) {
+  if (selectedCases.includes('grid-culling') || selectedCases.includes('grid-culling-controls') || selectedCases.includes('culling-panel')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));
     report.cullingFixtures = 3;

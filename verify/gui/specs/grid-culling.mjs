@@ -433,12 +433,11 @@ export async function gridCulling(t) {
 
 const lightboxName = () => document.querySelector('.modal-backdrop[aria-label="Culling preview"] .culling-lightbox')?.firstElementChild?.textContent ?? null;
 
-// The visible controls for the F lightbox: the toolbar button beside Grid and
-// the icon in each thumbnail's hover footer.
+// The visible controls for the F lightbox: the Culling panel and each
+// thumbnail's hover footer icon.
 export async function gridCullingControls(t) {
   await until(() => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length >= 3),
     'three photos in the folder', 120000);
-  assert(await t.driver.observe(() => !document.querySelector('button.culling-open')), 'no culling button outside the grid');
   if (!await t.driver.observe(() => !!document.querySelector('.filmstrip.grid'))) await t.driver.keys('g');
   await until(() => t.driver.observe(() => !!document.querySelector('.filmstrip.grid')), 'grid view');
   await pause(1000); // let the grid finish laying out before measuring its cells
@@ -446,16 +445,17 @@ export async function gridCullingControls(t) {
     const r = c.getBoundingClientRect(); return { id: c.getAttribute('data-imgid'), title: c.title, x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }));
   assert(cells.length >= 3, 'three grid cells');
-  // select the second photo, then click the toolbar button away from every thumbnail
+  // select the second photo, then open Culling without changing the selection
   await t.driver.point(cells[1].x, cells[1].y);
   await until(() => t.driver.observe(id => document.querySelector(`.filmstrip.grid .thumb[data-imgid="${id}"]`)?.classList.contains('active'), cells[1].id), 'second photo selected');
-  const button = await until(() => t.driver.observe(() => {
-    const b = document.querySelector('button.culling-open'); if (!b) return null;
-    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, title: b.title };
-  }), 'toolbar culling button in grid view');
-  assert.match(button.title, /\(F\)/, 'button title names the F shortcut');
+  await click(t, 'button[data-tour="culling"]');
+  await until(() => t.driver.observe(() => document.querySelector('.right .culling-card .panel-title-toggle')?.textContent === 'Culling'), 'Culling panel opens');
+  const button = await t.driver.observe(() => {
+    const b = document.querySelector('.culling-action:not(:disabled)'), r = b.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
   await t.driver.point(button.x, button.y);
-  await until(() => t.driver.observe(hasPreview), 'toolbar button opens the culling preview');
+  await until(() => t.driver.observe(hasPreview), 'Culling panel opens the culling preview');
   const opened = await t.driver.observe(lightboxName);
   assert(opened && opened.startsWith(cells[1].title), `opened on the selected photo (${opened} vs ${cells[1].title})`);
   const actions = '.culling-actions';
@@ -486,7 +486,7 @@ export async function gridCullingControls(t) {
   await until(() => t.driver.observe(selector => !!document.querySelector(selector), dialog), 'tag icon opens Keywords');
   await click(t, `${dialog} button[aria-label="Close (F / Esc)"]`);
   await until(() => t.driver.observe(selector => !document.querySelector(selector), dialog), 'Keywords closes');
-  await t.evidence('culling-toolbar-button');
+  await t.evidence('culling-panel-preview');
   await t.driver.keys('\uE00C');
   await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
   // the footer icon of the third photo, while the second stays selected
@@ -501,7 +501,7 @@ export async function gridCullingControls(t) {
   assert(second && second.startsWith(cells[2].title), `opened on the clicked photo (${second} vs ${cells[2].title})`);
   await click(t, edit);
   await until(() => t.driver.observe(() => !document.querySelector('.culling-lightbox, .filmstrip.grid')), 'sliders icon opens the editor');
-  t.measure({ name: 'grid-culling-controls', toolbar: opened, thumbnail: second });
+  t.measure({ name: 'grid-culling-controls', panel: opened, thumbnail: second });
 }
 
 export const priorityFixtures = Array.from({ length: 40 }, (_, i) => `prio-${String(i + 1).padStart(2, '0')}`);
@@ -564,13 +564,11 @@ export async function gridCullingPriority(t) {
   });
   await t.driver.keys('');
   await until(() => t.driver.observe(() => !document.querySelector('.modal-backdrop[aria-label="Culling preview"]')), 'preview closes with Escape');
-  // the toolbar button, on the selected photo
+  // the Culling panel action, on the selected photo
   await t.driver.point(cells[3].x, cells[3].y);
-  const button = await until(() => t.driver.observe(() => {
-    const b = document.querySelector('button.culling-open'); if (!b) return null;
-    const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }), 'toolbar culling button');
-  await timeDrawn('open with the toolbar button', () => t.driver.point(button.x, button.y), cells[3].title);
+  await click(t, 'button[data-tour="culling"]');
+  await until(() => t.driver.observe(() => document.querySelector('.right .culling-card .panel-title-toggle')?.textContent === 'Culling'), 'Culling panel');
+  await timeDrawn('open with the Culling panel', () => click(t, '.right .culling-action:not(:disabled)'), cells[3].title);
   await timeDrawn('next photo again', () => t.driver.keys(''), null);
   await t.driver.keys('');
   t.measure({ name: 'grid-culling-priority', limitMs: PRIORITY_LIMIT_MS, timings });

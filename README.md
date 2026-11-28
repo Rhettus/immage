@@ -65,7 +65,7 @@ and Linux. **All builds are alpha; bugs are expected.**
   folder changes and remembers its own width and visibility separately from
   the editing panel. Use the left sidebar’s [Saved Filters](app/docs/library.md#saved-filters)
   card to apply, rename, drag to reorder, or delete saved Find filters.
-- Cull in the grid with **View > Culling Preview**, ratings, color labels and keywords. Click the tag icon or press **K** to keyword the photo in the lightbox. Use **×** beside a recent keyword to remove it from the recent list and hide it from autocomplete.
+- In Grid, use the **Culling** panel above **Find** to open **Culling Preview** (or press **F** / use **View > Culling Preview**), then use ratings, color labels and keywords. In Focus mode, expanding Culling collapses Find; Alt-click keeps both open. Click the tag icon or press **K** to keyword the photo in the lightbox. Use **×** beside a recent keyword to remove it from the recent list and hide it from autocomplete.
 - Remove a photo keyword from a selection with **×** on its chip in the **Keywording** card.
 - Rename photos individually or in bulk from the [Library grid](app/docs/library.md#rename-photos), with a file count, a live filename example, and sidecars kept alongside.
 - [Reset edits](app/docs/history-and-sync.md#reset-all) from Adjustments or the Library grid, with a confirmation you can turn off.

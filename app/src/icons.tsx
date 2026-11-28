@@ -9,6 +9,7 @@ export const icon = (path: React.ReactNode) => (
        strokeLinecap="round" strokeLinejoin="round">{path}</svg>
 );
 export const CullingIcon = () => icon(<><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M8 9H5M5 9V12M16 15h3M19 15v-3" /></>);
+export const StackedImagesIcon = () => icon(<><rect x="7" y="3" width="14" height="12" rx="1.5" /><path d="M17 18H5a2 2 0 0 1-2-2V6" /><path d="M14 21H4a2 2 0 0 1-2-2" /></>);
 export const MagnifierIcon = () => icon(<><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /><path d="M8 10.5h5M10.5 8v5" /></>);
 // the library: a row of photos stood on their edges, the last one leaning
 export const LibraryIcon = () => icon(<><rect x="3.5" y="5" width="4" height="15" rx="1" /><rect x="9.5" y="5" width="4" height="15" rx="1" />

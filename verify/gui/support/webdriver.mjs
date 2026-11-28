@@ -61,6 +61,20 @@ export class AppDriver {
     }
     await this.command('POST', '/actions', { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }] });
   }
+  async pointWithModifier(x, y, modifier) {
+    await this.guard();
+    this.log({ action: 'modified-click', x, y, modifier });
+    await this.command('POST', '/actions', { actions: [
+      { type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+        { type: 'pointerMove', duration: 120, origin: 'viewport', x: Math.round(x), y: Math.round(y) },
+        { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
+      ] },
+      { type: 'key', id: 'keyboard', actions: [
+        { type: 'keyDown', value: modifier }, { type: 'pause', duration: 120 },
+        { type: 'pause', duration: 120 }, { type: 'keyUp', value: modifier },
+      ] },
+    ] });
+  }
   // a right-button click, for controls that act on a context press. WebKitWebDriver
   // leaves later left-button drags without their press after one (observed with the
   // color look up table patch grid; a drag then moves the pointer only), so a case

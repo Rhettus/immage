@@ -962,19 +962,24 @@ Immage.
 
 ### Grid culling shortcuts
 
+In Grid, the right sidebar keeps both **Culling** and **Find**, with Culling
+above Find. Choose **Culling Preview** or press **F** to open the existing
+single-photo lightbox. Compare, Survey, Auto Cull and Scenes are disabled
+placeholders marked Coming soon. Opening Culling alone leaves the grid and
+photo selection unchanged. With **Focus mode** on, expanding one panel
+collapses the other; Alt-click a panel title to keep both expanded.
+
 Press **K** in the grid to keyword selected photos, or the photo under the
 pointer when nothing is selected. Shared keywords can be removed from every
 target; new keywords are added to every target. Close the dialog before moving
 to another selection.
 
-Click the magnifier in the toolbar under the grid (shown in the grid only), the
-small icon at the right of a thumbnail's hover footer, or choose
-**View > Culling Preview**, to open the same preview without the keyboard.
-The menu command is available when the grid shows a local photo.
+Open **Culling** above Find in the right sidebar and choose **Culling Preview**,
+or use **View > Culling Preview**, to open the same preview without the keyboard.
+The menu command and panel action are available when the grid shows a local photo.
 **View > Full Screen Preview** is available for an open photo in the editor.
-The toolbar magnifier and the menu use the photo under the pointer, else the
-selected photo, else the first photo in the grid; the thumbnail icon opens
-that thumbnail's photo.
+The panel action and menu use the photo under the pointer, else the selected
+photo, else the first photo in the grid; the thumbnail icon opens that thumbnail's photo.
 
 When you leave an edited RAW photo, for another photo or for the grid, Immage
 prepares its culling preview in the background, so culling it next opens at

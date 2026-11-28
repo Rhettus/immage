@@ -95,6 +95,11 @@ button { font: inherit; color: inherit; }
   padding: 14px 16px 10px;
 }
 .panel-head h1 { margin: 0; font-size: var(--fs-title); font-weight: 700; }
+.panel-title-toggle { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-title); font-weight: 700; text-align: start; cursor: pointer; }
+.library-right-panels .panel-head { position: relative; }
+.library-right-panels .panel-title-toggle { min-block-size: 28px; }
+.library-right-panels .head-tools { position: absolute; inset-inline-end: 42px; }
+.panel-title-toggle:hover { color: var(--text-2); }
 .panel-head .subtitle { color: var(--text-2); font-size: var(--fs-small); font-weight: 500; margin-top: 1px; }
 
 .icon { width: 16px; height: 16px; flex: none; }
@@ -111,6 +116,23 @@ button { font: inherit; color: inherit; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+.culling-panel .group-label { display: flex; align-items: baseline; gap: 8px; }
+.library-right-panels { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.culling-card { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--inset); }
+.library-right-panels > .culling-card.expanded { flex: 0 1 auto; max-block-size: calc(100% - 48px); }
+.library-right-panels:has(.find-pop.expanded) > .culling-card.expanded { max-block-size: 50%; }
+.culling-card .culling-panel { min-height: 0; overflow-y: auto; padding-bottom: 8px; }
+.culling-panel .group-label span { margin-inline-start: auto; color: var(--text-3); font-size: var(--fs-micro); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.culling-action {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: calc(100% - 24px); min-height: 40px; margin: 0 12px 4px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--card);
+  color: var(--text); text-align: start; cursor: pointer;
+}
+.culling-action:hover:not(:disabled) { background: var(--hover); }
+.culling-action kbd { color: var(--text-2); font: inherit; font-size: var(--fs-small); }
+.culling-action:disabled { color: var(--text-3); opacity: 0.65; cursor: default; }
 
 .folder {
   display: flex;
@@ -2110,6 +2132,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
    an accordion: a row each, its editor opening beneath it, all in one scroll region
    above the footer */
 .find-pop { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; font-size: var(--fs-small); }
+.find-pop.expanded { flex: 1 1 0; }
+.find-pop:not(.expanded) { flex: 0 0 auto; }
 .find-pop .field {
   min-width: 0; padding: 6px 9px; background: var(--inset); border: 1px solid transparent;
   border-radius: 7px; color: var(--text); font: inherit; user-select: text; outline: none;

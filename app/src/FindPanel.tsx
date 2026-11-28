@@ -15,6 +15,7 @@ import {
 } from "./findModel";
 import type { ImageEntry } from "./library";
 import { AnalysisStatus } from "./AnalysisStatus";
+import { Chevron } from "./Collapse";
 import { ResetIcon } from "./icons";
 import type { ImmichSearch } from "./immich";
 import { formatNumber, t } from "./i18n";
@@ -23,7 +24,7 @@ import { useLibraryFacets } from "./libraryFacets";
 import { categoryTitle, editorId, FilterGroup, FilterRow, GROUP_TITLE, rowId, summarize } from "./FindFilters";
 
 export function FindPanel({ state, onChange, images, immichAvailable, count, total, busy, notes, saved, savedLine,
-                            onSaveNew, pin, smart, clipTip }: {
+                            onSaveNew, pin, smart, clipTip, panelExpanded = true, onPanelToggle }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
@@ -39,6 +40,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, tot
   onSaveNew?: () => void;       // footer Save filter…
   clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
   pin?: React.ReactNode;        // the right panel's pin button (auto-hide), in the title row
+  panelExpanded?: boolean;
+  onPanelToggle?: (alt: boolean) => void;
 }) {
   const pop = useRef<HTMLDivElement>(null);
   const text = useRef<HTMLInputElement>(null);
@@ -160,13 +163,15 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, tot
     {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
   </>;
   return (
-    <div className="find-pop" ref={pop} role="search" aria-label={t("library.find.title")}>
-      <div className="panel-head"><h1>{t("library.find.title")}</h1>
+    <section className={`find-pop${panelExpanded ? " expanded" : ""}`} ref={pop} role="search" aria-label={t("library.find.title")}>
+      <div className="panel-head"><button type="button" className="panel-title-toggle" aria-expanded={panelExpanded}
+        onClick={(e) => onPanelToggle?.(e.altKey)}>{t("library.find.title")}<Chevron open={panelExpanded} /></button>
         <div className="head-tools">
           {pin}
           <button type="button" className="tool find-clear" disabled={!active.length && !s.text} onClick={() => send(clearAll(state))}
                   aria-label={t("library.find.clearAll")} title={t("library.find.clearAll")}><ResetIcon /></button>
         </div></div>
+      {panelExpanded && <>
       <div className="find-head">
         <div className="find-row">
           <input className="field find-text" type="search" spellCheck={false} ref={text} value={s.text}
@@ -250,6 +255,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, tot
         {saved}
         {onSaveNew && <button className="btn small find-save" onClick={onSaveNew}>{t("library.find.saveFilter")}</button>}
       </div>
-    </div>
+      </>}
+    </section>
   );
 }

@@ -95,14 +95,14 @@ export function GridZoomBar({ size, min, max, standard, onSize }: {
 
 // The bottom bar marks the selection and controls zoom and panels.
 export function Toolbar({ marking,
-                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel }: {
+                   layout, zoomBar, viewTools, onLayout, ref, pin, grid, rightPanel, rightPanelTitle }: {
   ref: React.RefObject<HTMLDivElement | null>;
   viewTools: React.ReactNode;
   grid: boolean;
   pin: React.ReactNode;
   marking: React.ReactNode;
   layout: Layout; zoomBar: React.ReactNode;
-  rightPanel: "right" | "find";
+  rightPanel: "right" | "find"; rightPanelTitle?: string;
   onLayout: (k: PanelKey) => void;
 }) {
   return (
@@ -117,7 +117,7 @@ export function Toolbar({ marking,
         <div className="panel-toggles" role="group" aria-label={t("library.toolbar.panels")}>
           {([ ["left", "library.toolbar.libraryPanel", "left"], ["strip", "library.toolbar.filmstripLabel", "bottom"], [rightPanel, rightPanel === "find" ? "library.toolbar.findPanel" : "library.toolbar.adjustmentsPanel", "right"] ] as const).map(([key, labelKey, side]) => {
             const visible = layout[key];
-            const label = t(labelKey);
+            const label = rightPanel === key && rightPanelTitle ? rightPanelTitle : t(labelKey);
             return <button key={key} className={`tool panel-toggle${visible ? " on" : ""}`} data-panel-toggle={key}
                           title={t(visible ? "library.toolbar.hidePanel" : "library.toolbar.showPanel", { panel: label })}
                           aria-label={t(visible ? "library.toolbar.hidePanel" : "library.toolbar.showPanel", { panel: label })}

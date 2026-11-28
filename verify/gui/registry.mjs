@@ -89,6 +89,7 @@ import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
 import { findLive, findNoClip, findPanelMemory, findSizes, findSaved, pickFlag, savedFiltersSidebar } from './specs/find.mjs';
 import { wheelUndo } from './specs/wheel-undo.mjs';
 import { historyPaint, historyRowActions } from './specs/history-paint.mjs';
+import { cullingPanel } from './specs/culling-panel.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
@@ -102,6 +103,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'recent-keywords': recentKeywords,
   'grid-culling': gridCulling,
   'grid-culling-controls': gridCullingControls,
+  'culling-panel': cullingPanel,
   'grid-culling-priority': gridCullingPriority,
   'virtual-copy-keywords': virtualCopyKeywords,
   'edited-culling-preview': editedCullingPreview,

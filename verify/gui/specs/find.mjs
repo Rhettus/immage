@@ -202,37 +202,36 @@ export async function findLive(t) {
   await click(t, `${pop} .find-clear`);
   await until(async () => await count(t, cells) === all, 'clearing the words restores the grid');
 
-  // With auto-hide, the Find pin sits beside Reset in the title row.
-  assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-head h1`)?.textContent, pop), 'Find', 'the column is titled Find');
+  // With auto-hide, the shared column pin sits in the Culling title row.
+  assert.equal(await t.driver.observe(s => document.querySelector(`${s} .panel-title-toggle`)?.textContent, pop), 'Find', 'the column is titled Find');
   await preference(t, 'Auto-hide panels', true);
   try {
-    await until(() => present(t, `${pop} .panel-head .pin`), 'the pin in the Find title row');
+    await until(() => present(t, '.culling-card .panel-head .pin'), 'the pin in the Culling title row');
     const g = await t.driver.observe(s => {
       const box = q => document.querySelector(`${s} ${q}`).getBoundingClientRect();
-      const head = document.querySelector(`${s} .panel-head`), cs = getComputedStyle(head);
-      const pin = box('.panel-head .pin'), title = box('.panel-head h1'), reset = box('.panel-head .find-clear');
-      return { pinMid: pin.top + pin.height / 2, titleMid: title.top + title.height / 2, pinRight: pin.right,
-               resetLeft: reset.left, resetRight: reset.right,
-               end: head.getBoundingClientRect().right - parseFloat(cs.paddingRight), inRow: !document.querySelector(`${s} .find-head .pin`) };
+      const pin = box('.culling-card .panel-head .pin'), title = box('.culling-card .panel-title-toggle');
+      return { pinMid: pin.top + pin.height / 2, titleMid: title.top + title.height / 2,
+               pinRight: pin.right, chevronLeft: box('.culling-card .panel-title-toggle .chevron').left,
+               inRow: !document.querySelector(`${s} .find-head .pin`) };
     }, pop);
-    assert(g.inRow, 'the pin is not in the search row');
-    assert(Math.abs(g.pinMid - g.titleMid) <= 2, `the pin is centered on the title (${g.pinMid} vs ${g.titleMid})`);
-    assert(g.pinRight <= g.resetLeft && Math.abs(g.resetRight - g.end) <= 1, 'the pin precedes Reset at the end of the title row');
+    assert(g.inRow, 'the shared column pin is not in the Find search row');
+    assert(Math.abs(g.pinMid - g.titleMid) <= 2, `the pin is centered on the Culling title (${g.pinMid} vs ${g.titleMid})`);
+    assert(g.pinRight <= g.chevronLeft, 'the shared pin sits before the Culling chevron');
     // pinned, the column stays shown for the picture: rest on the rail to bring it in first
     // the reveal is a hover, so the pointer rests on the rail until the column is in view
     // (one move can land before the rail has its hover, and nothing else would re-send it)
     const rail = await rectOf(t, '.rail');
     const restOnRail = async () => {
       await t.driver.move(rail.left + rail.width / 2, rail.top + rail.height * 0.6);
-      return t.driver.observe(s => document.querySelector(s).getBoundingClientRect().right <= innerWidth, `${pop} .panel-head .pin`);
+      return t.driver.observe(() => document.querySelector('.culling-card .panel-head .pin')?.getBoundingClientRect().right <= innerWidth);
     };
     await until(restOnRail, 'the column comes in from the rail', 8000);
-    await click(t, `${pop} .panel-head .pin`);
-    await until(() => present(t, `${pop} .panel-head .pin.on`), 'the right column pinned');
+    await click(t, '.culling-card .panel-head .pin');
+    await until(() => present(t, '.culling-card .panel-head .pin.on'), 'the right column pinned');
     await pause(400);
     await t.evidence('find-live-pin');
-    await click(t, `${pop} .panel-head .pin`);
-    await until(async () => !await present(t, `${pop} .panel-head .pin.on`), 'the right column unpinned');
+    await click(t, '.culling-card .panel-head .pin');
+    await until(async () => !await present(t, '.culling-card .panel-head .pin.on'), 'the right column unpinned');
   } finally {
     await preference(t, 'Auto-hide panels', false);
   }
@@ -242,11 +241,13 @@ export async function findLive(t) {
   await click(t, `${pop} .find-text`);
   assert(await present(t, pop), 'no popup opens in the grid');
 
-  // the magnifier: only in the grid, and it opens the culling lightbox
+  // the Culling panel action opens the culling lightbox without changing Find's selection
   const lightbox = '.modal-backdrop[aria-label="Culling preview"]';
   // nothing is selected or hovered here: it opens the first photo
-  await click(t, '.toolbar button.culling-open');
-  await until(() => present(t, lightbox), 'the magnifier opens the culling preview');
+  await click(t, 'button[data-tour="culling"]');
+  await until(() => present(t, '.right .culling-action:not(:disabled)'), 'Culling panel action is available');
+  await click(t, '.right .culling-action:not(:disabled)');
+  await until(() => present(t, lightbox), 'the Culling panel opens the culling preview');
   await t.driver.keys(ESC);
   await until(async () => !await present(t, lightbox), 'the preview closes');
 
@@ -259,7 +260,6 @@ export async function findLive(t) {
   await until(async () => !await present(t, '.filmstrip.grid'), 'a double-click opens the photo and leaves the grid');
   assert(!await present(t, pop), 'Find is gone outside the grid');
   assert(await present(t, 'aside.right .panels'), 'the normal right panel is back');
-  assert(!await present(t, 'button.culling-open'), 'no magnifier outside the grid');
   assert(!await t.driver.observe(s => document.querySelector(s).disabled, library), 'the Library button is enabled with a photo open');
   await click(t, library);
   await until(() => present(t, '.filmstrip.grid'), 'the Library button returns to the grid');
