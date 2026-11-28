@@ -36,6 +36,8 @@ Performance
 
 Bug fixes
 
+- Long History labels shorten with an ellipsis, and hover buttons stay
+  inside the History card at the end of the row.
 - Centered the up and down arrows on the reorder buttons in Manage saved filters.
 - Clearing a saved Find filter removes its checkmark from the saved-filter menus.
 - Removing a photo keyword in the Keywording card applies to all selected

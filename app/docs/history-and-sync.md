@@ -30,7 +30,9 @@ panel, which scrolls as a whole:
 
 The eye button hides modules that are in the history but switched off.
 
-Pointing at a row of what the photo opened with shows its buttons:
+Pointing at a row of what the photo opened with shows its buttons at the
+end of the row. Long labels are shortened with an ellipsis to fit the
+available space.
 
 - for a module Immage has no sliders for, such as one added in
   darktable: a **switch**, which turns it off or on again, and

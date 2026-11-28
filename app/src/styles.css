@@ -2270,23 +2270,21 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .history-list button.current { background: var(--inset); }
 .history-list button.undone { color: var(--text-3); }
 .history-list .num { flex: none; min-width: 18px; color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
-.history-list .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-list .note { color: var(--text-2); font-size: var(--fs-small); }
 .history-list .off { flex: none; color: var(--text-3); font-size: var(--fs-micro); }
 /* darktable's stack below this session's steps: shown, not a place to go */
 .history-list button.fixed { color: var(--text-2); }
 .history-list button:disabled { cursor: default; }
-/* a stack row's switch, delete or reset, over its right end on hover. one
-   grid cell holds both, not positioning: WebKit painted positioned rows of
-   this scrolling list over each other */
-.history-list li { display: grid; }
-.history-list li > * { grid-area: 1 / 1; }
+/* Keep the label within the available width when hover actions appear.
+   Keep both columns in flow to avoid WebKit's overlapping row paint bug. */
+.history-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .history-list .row-actions {
   justify-self: end; display: none; align-items: center; gap: 2px; padding: 0 4px;
   border-radius: 8px; background: var(--hover);
 }
 .history-list li:hover .row-actions { display: flex; }
-.history-list .row-actions button { width: 22px; height: 22px; padding: 0; justify-content: center; color: var(--text-2); }
+.history-list .row-actions button { flex: none; width: 22px; height: 22px; padding: 0; justify-content: center; color: var(--text-2); }
 .history-list .row-actions button:hover { color: var(--text); background: var(--inset); }
 .history-list .row-actions .icon { width: 14px; height: 14px; }
 .sub-toggle {
