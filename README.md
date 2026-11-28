@@ -57,7 +57,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   color labels, Pick and Reject from the bottom bar, or mark one grid tile from
   its thumbnail controls.
 - Open Library to [find photos](app/docs/library.md#find) with filters or
-  optional Smart search. Use **Rating & flags → Picked** to find your shortlist.
+  optional Smart search. Use **Rating & flags → Picked** to find your shortlist
+  or the adjacent **Rejected** button to hide or isolate rejects.
   The Find panel in Grid
   filters by capture date and time, GPS availability, image dimensions,
   descriptive metadata, and camera settings. It keeps filters active across

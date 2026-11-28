@@ -10,7 +10,8 @@ Improvements
 - Use Mark in the bottom bar to assign stars, color labels, Pick
   and Reject. Mark individual grid tiles from their thumbnail controls.
   The zoom slider is centered in the bottom bar. Open Library for Find,
-  where Rating & flags has one row of stars, one row of colors, and Picked.
+  where Rating & flags centers the stars and color swatches above Picked and
+  Rejected. Rejected opens a menu and shows the active filter.
 - Open Saved Filters above History to apply a filter with one click, rename
   it with a double-click, drag it into order, or delete it after confirmation.
 - Click × on a drive heading in Library and confirm in Immage to remove all

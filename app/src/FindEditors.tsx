@@ -6,14 +6,14 @@
 // pickers, ...). Each writes through findModel.ts's functions, as the Filters
 // popup's bodies did; the facets they list are computed when one is open.
 // FindFilters.tsx draws the rows, FindPanel.tsx the panel
-import { Flag } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, Flag } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { commands, type Named } from "./commands";
 import { aspectRatio, bodyLabel, dateOfBound, EXPOSURE, facetsWithin, ORIENTATIONS, rejectedOptions, TEXT_FIELDS, timeOfBound,
          type ExposureKey, type Facets, type Filter, type GpsFilter, type Orientation, type TextField } from "./filter";
 import { MOST_USED, shownValues, type LibraryFacets } from "./libraryFacets";
 import { pickKinds, setKinds, setRawOnly, setStars, setTaken, type CategoryKey, type FindState } from "./findModel";
-import { StarIcon } from "./icons";
+import { BanIcon, StarIcon } from "./icons";
 import { fileKind, LABEL_COLORS, PICK_KEYWORD, type ImageEntry } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
@@ -337,9 +337,15 @@ const ids = (all: Named[], picked: string[], onChange: (ids: string[]) => void, 
 
 const LABEL_NAMES = ["red", "yellow", "green", "blue", "purple"] as const;
 
-// Rejected: three exclusive choices, as radios (arrows move between them)
-function RejectedRadios({ images, f, patch }: { images: ImageEntry[]; f: Filter; patch: (p: Partial<Filter>) => void }) {
-  const names = { all: t("library.search.allPhotos"), hide: t("library.filters.hideRejected"), only: t("library.filters.onlyRejected") };
+const rejectedLabels = {
+  all: "library.search.allPhotos",
+  hide: "library.filters.hideRejected",
+  only: "library.filters.onlyRejected",
+} as const;
+
+function RejectedRadios({ images, f, patch, onChoose }: {
+  images: ImageEntry[]; f: Filter; patch: (p: Partial<Filter>) => void; onChoose: () => void;
+}) {
   const opts = rejectedOptions(images, f);
   const move = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const d = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
@@ -354,8 +360,8 @@ function RejectedRadios({ images, f, patch }: { images: ImageEntry[]; f: Filter;
     <div className="fe-radios" role="radiogroup" aria-label={t("library.filters.rejected")} onKeyDown={move}>
       {opts.map(({ value, count: n }) => (
         <button key={value} role="radio" aria-checked={f.rejected === value} tabIndex={f.rejected === value ? 0 : -1}
-                className={f.rejected === value ? "on" : ""} onClick={() => patch({ rejected: value })}>
-          <span className="fe-dot" aria-hidden="true" /><span className="name">{names[value]}</span>
+                className={f.rejected === value ? "on" : ""} onClick={() => { patch({ rejected: value }); onChoose(); }}>
+          <span className="fe-dot" aria-hidden="true" /><span className="name">{t(rejectedLabels[value])}</span>
           <span className="count">{formatNumber(n)}</span>
         </button>
       ))}
@@ -366,50 +372,68 @@ function RejectedRadios({ images, f, patch }: { images: ImageEntry[]; f: Filter;
 function Rating({ state, send, images, local }: {
   state: FindState; send: (n: FindState) => void; images: ImageEntry[]; local: boolean;
 }) {
+  const [showRejected, setShowRejected] = useState(false);
+  const rejectedId = useId();
+  const rejectedButton = useRef<HTMLButtonElement>(null);
+  const closeRejected = () => {
+    setShowRejected(false);
+    rejectedButton.current?.focus({ preventScroll: true });
+  };
   const f = state.filter;
   const stars = f.minRating || state.search.minRating;
   const picked = f.keywords.includes(PICK_KEYWORD);
   const patch = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
   return (
     <>
-      <div className="fe-sec">
-        <div className="fe-stars" role="group" aria-label={t("library.find.minRating")}>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} className={stars >= n ? "on" : ""} aria-label={t("library.toolbar.starsAndUp", { count: n })}
-                    title={t("library.toolbar.starsAndUp", { count: n })} aria-pressed={stars === n}
-                    onClick={() => send(setStars(state, stars === n ? 0 : n))}>
-              <StarIcon filled={stars >= n} />
-            </button>
-          ))}
-        </div>
+      <div className="fe-stars" role="group" aria-label={t("library.find.minRating")}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} className={stars >= n ? "on" : ""} aria-label={t("library.toolbar.starsAndUp", { count: n })}
+                  title={t("library.toolbar.starsAndUp", { count: n })} aria-pressed={stars === n}
+                  onClick={() => send(setStars(state, stars === n ? 0 : n))}>
+            <StarIcon filled={stars >= n} />
+          </button>
+        ))}
       </div>
       {local && <>
-        <div className="fe-sec">
-          <div className="fe-swatches" role="group" aria-label={t("library.find.colorLabel")}>
-            {LABEL_COLORS.map((c, k) => {
-              const on = !!(f.labels & (1 << k)), name = t(`library.menu.label-${LABEL_NAMES[k]}`);
-              return (
-                <button key={c} className={on ? "on" : ""} aria-label={name} title={name} aria-pressed={on}
-                        onClick={() => patch({ labels: f.labels ^ (1 << k) })}>
-                  <i style={{ background: c }}>{on && <span aria-hidden="true">✓</span>}</i>
-                </button>
-              );
-            })}
-            <button className={f.unlabeled ? "on" : ""} aria-label={t("library.find.noLabel")} title={t("library.find.noLabel")}
-                    aria-pressed={f.unlabeled} onClick={() => patch({ unlabeled: !f.unlabeled })}>
-              <i className="none">{f.unlabeled && <span aria-hidden="true">✓</span>}</i>
+        <div className="fe-swatches" role="group" aria-label={t("library.find.colorLabel")}>
+          {LABEL_COLORS.map((c, k) => {
+            const on = !!(f.labels & (1 << k)), name = t(`library.menu.label-${LABEL_NAMES[k]}`);
+            return (
+              <button key={c} className={on ? "on" : ""} aria-label={name} title={name} aria-pressed={on}
+                      onClick={() => patch({ labels: f.labels ^ (1 << k) })}>
+                <i style={{ background: c }}>{on && <span aria-hidden="true">✓</span>}</i>
+              </button>
+            );
+          })}
+          <button className={f.unlabeled ? "on" : ""} aria-label={t("library.find.noLabel")} title={t("library.find.noLabel")}
+                  aria-pressed={f.unlabeled} onClick={() => patch({ unlabeled: !f.unlabeled })}>
+            <i className="none">{f.unlabeled && <span aria-hidden="true">✓</span>}</i>
+          </button>
+        </div>
+        <div className="fe-flags" onKeyDown={(e) => {
+          if (showRejected && e.key === "Escape") {
+            e.stopPropagation();
+            closeRejected();
+          }
+        }}>
+          <div className="fe-flag-buttons">
+            <button type="button" className={`fe-pick-filter${picked ? " on" : ""}`} aria-pressed={picked}
+                    onClick={() => patch({ keywords: picked
+                      ? f.keywords.filter((keyword) => keyword !== PICK_KEYWORD) : [...f.keywords, PICK_KEYWORD] })}>
+              <Flag aria-hidden="true" fill={picked ? "currentColor" : "none"} />
+              {t("library.filters.picked")}
+            </button>
+            <button type="button" ref={rejectedButton} className={f.rejected === "all" ? "" : "on"}
+                    aria-expanded={showRejected} aria-controls={rejectedId}
+                    onClick={() => setShowRejected(!showRejected)}>
+              <BanIcon />
+              {t(f.rejected === "all" ? "library.filters.rejected" : rejectedLabels[f.rejected])}
+              <ChevronDown aria-hidden="true" />
             </button>
           </div>
-        </div>
-        <div className="fe-sec">
-          <button type="button" className="fe-pick-filter" aria-pressed={picked}
-                  onClick={() => patch({ keywords: picked
-                    ? f.keywords.filter((keyword) => keyword !== PICK_KEYWORD) : [...f.keywords, PICK_KEYWORD] })}>
-            <Flag aria-hidden="true" fill={picked ? "currentColor" : "none"} />
-            {t("library.filters.picked")}
-          </button>
-          <div className="fe-label"><span>{t("library.filters.rejected")}</span></div>
-          <RejectedRadios images={images} f={f} patch={patch} />
+          <div id={rejectedId} hidden={!showRejected}>
+            {showRejected && <RejectedRadios images={images} f={f} patch={patch} onChoose={closeRejected} />}
+          </div>
         </div>
       </>}
     </>

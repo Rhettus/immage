@@ -60,9 +60,9 @@ export function MarkSelection(props: ControlsProps) {
               onMouseDown={keepButtonFocus} onKeyDown={keepButtonSpace}>
     <span className="mark-selection-label">{t("library.marks.action")}</span>
     <StarButtons {...props} />
-    <span className="sep" />
+    <span className="mark-gap" aria-hidden="true" />
     <LabelButtons {...props} />
-    <span className="sep" />
+    <span className="mark-gap" aria-hidden="true" />
     <FlagButtons {...props} />
   </div>;
 }

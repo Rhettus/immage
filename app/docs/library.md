@@ -571,9 +571,11 @@ list the server's values.
 
 - **Rating & flags**: Click a star to set the minimum rating. Click the same
   star again to clear it. Choose any combination of color swatches or the
-  dashed **No label** swatch. **Picked** shows your shortlist. **Rejected**
-  offers **All photos**, **Hide rejected**, and **Only rejected**, with photo
-  counts. Color labels, Picked, and Rejected apply to photos on this computer.
+  dashed **No label** swatch. Below the centered stars and colors, **Picked**
+  shows your shortlist. Click the circle-slash button to choose **All photos**,
+  **Hide rejected**, or **Only rejected**. Each option shows a photo count,
+  and the button shows the active filter. Color labels, Picked, and Rejected
+  apply to photos on this computer.
 - **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
   computer. A photo counts as edited once it has been changed in the editor,
   beyond the automatic starting edits.
