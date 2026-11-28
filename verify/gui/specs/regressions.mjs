@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { click,reveal,inspect,openTool } from '../support/controls.mjs';
 import { panel,textButton,Blocked,openMaskGroup } from '../support/scenario.mjs';
@@ -123,7 +124,7 @@ export async function detailFitDrag(t){
 }
 export async function cameraBody(t){
  if(!['camera-a','camera-b','camera-missing'].includes(t.fixture.name))throw new Blocked('Requires --fixture camera-a (synthetic camera family)');
- await click(t,'.find-button');
+ await openFind(t);
  // the filter rows are in the Find column; Camera body opens its editor beneath its row
  const row='.find-pop #find-row-bodies';
  await until(()=>t.driver.observe(s=>!!document.querySelector(s),row),'Camera body row');

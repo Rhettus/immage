@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { click,reveal,inspect, openTool } from '../support/controls.mjs';
 import { resetAll, textButton,choose,panel,Blocked } from '../support/scenario.mjs';
@@ -81,7 +82,7 @@ export async function exportOptions(t) {
 // Find's filter rows and the editor each opens beneath it (an accordion: one
 // editor open at a time, in one scroll region).
 export async function filters(t) {
-  await click(t,'.find-button');
+  await openFind(t);
   await until(()=>t.driver.observe(()=>!!document.querySelector('.find-pop')),'Find popup');
   const categories=await t.driver.observe(()=>[...document.querySelectorAll('.find-pop .fr-row')].map(e=>({
     id:e.id,name:e.querySelector('.fr-title').textContent,

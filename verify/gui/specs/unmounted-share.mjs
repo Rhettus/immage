@@ -15,6 +15,7 @@
 // Typing is key by key, so a prefix such as the run folder is briefly the
 // mapping's local path and everything under it reads offline until the next
 // 10 s volume read; the case waits for the final state.
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -87,8 +88,7 @@ async function openFolderRow(t, path) {
 async function analysis(t) {
   if (!await present(t, '.find-pop')) {
     if (!await present(t, '.filmstrip.grid')) await click(t, '.rail .library-toggle');
-    await until(() => present(t, '.find-button'), 'the Find button');
-    await click(t, '.find-button');
+    await openFind(t);
     await until(() => present(t, '.find-pop'), 'the Find column');
   }
   const e = await until(() => t.driver.observe(() => { const x = document.querySelector('.find-pop .analysis-status');

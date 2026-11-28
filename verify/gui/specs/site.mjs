@@ -8,6 +8,7 @@
 // skipped rather than failing the others. The photo canvas bounds are
 // measured with every shot so a before/after pair can be cropped to the
 // photo alone.
+import { openFind } from './find.mjs';
 import { click, reveal, inspect, rangeSelector, openTool } from '../support/controls.mjs';
 import { resetAll, panel, textButton, openMaskGroup, choose } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
@@ -157,7 +158,7 @@ export async function siteShots(t) {
     const photos = () => t.driver.observe(() => document.querySelectorAll('.filmstrip .thumb[data-imgid]').length);
     const cleanUp = async () => {
       try {
-        if (await present('.toolbar .clear-filters')) await click(t, '.toolbar .clear-filters');
+        if (await t.driver.observe(() => document.querySelector('.find-pop .find-clear')?.disabled === false)) await click(t, '.find-pop .find-clear');
         if (await present(grid)) { await t.driver.keys('g'); await until(async () => !await present(grid), 'loupe view'); }
       } catch {}
     };
@@ -166,7 +167,7 @@ export async function siteShots(t) {
       await until(() => present(grid), 'grid view');
       await pause(1500); // thumbnails
       const all = await photos();
-      await click(t, '.find-button');
+      await openFind(t);
       await until(() => present(pop), 'Find in the right-hand column');
       await pause(400);
       await click(t, `${pop} .fe-stars button[aria-label="3 stars and up"]`);

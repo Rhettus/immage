@@ -1,3 +1,4 @@
+import { photoMarks } from './specs/photo-marks.mjs';
 import { locationMap } from './specs/location.mjs';
 import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
@@ -115,6 +116,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-panel-memory': findPanelMemory,
   'find-saved': findSaved,
   'saved-filters-sidebar': savedFiltersSidebar,
+  'photo-marks': photoMarks,
   'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
   'move-folders': moveFolders,

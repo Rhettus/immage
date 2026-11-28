@@ -12,7 +12,7 @@
 // means the same on both (rating, capture date, RAW) writes both, so the
 // server narrows its pages and `passes` still checks what comes back.
 import { dateOfBound, EXPOSURE, hasCaptureTime, hasGeometry, hasTextQuery, NO_FILTER, type Filter } from "./filter";
-import { fileKind } from "./library";
+import { fileKind, PICK_KEYWORD } from "./library";
 import { NO_SEARCH, type ImmichSearch } from "./immich";
 
 export type FindState = { search: ImmichSearch; filter: Filter };
@@ -150,6 +150,7 @@ const RAW_ONLY = (kinds: string[]) => kinds.length === 1 && kinds[0] === "RAW";
 // server's), `flags` the named switches. Empty when unset
 export type Setting = {
   stars?: number;
+  picked?: boolean;
   rejected?: Filter["rejected"]; edited?: Filter["edited"]; labels?: number; unlabeled?: boolean;
   values?: string[];
   from?: string; to?: string;
@@ -168,17 +169,19 @@ export function settingOf(key: CategoryKey, st: FindState, server: boolean): Set
     case "rating": {
       const stars = f.minRating || s.minRating;
       const local = !server;
-      const on = stars > 0 || (local && (f.rejected !== "all" || f.labels !== 0 || f.unlabeled));
-      return on ? { stars, ...(local ? { rejected: f.rejected, labels: f.labels, unlabeled: f.unlabeled } : {}) } : null;
+      const picked = f.keywords.includes(PICK_KEYWORD);
+      const on = stars > 0 || (local && (picked || f.rejected !== "all" || f.labels !== 0 || f.unlabeled));
+      return on ? { stars, ...(local ? { picked, rejected: f.rejected, labels: f.labels, unlabeled: f.unlabeled } : {}) } : null;
     }
     case "edits":
       return f.edited !== "all" ? { edited: f.edited } : null;
     case "kinds":
       if (server) return s.rawOnly ? { flags: ["raw"] } : null;
       return f.kinds.length ? { values: f.kinds } : null;
-    case "keywords":
-      if (server) return s.tagIds.length ? { values: s.tagIds } : null;
-      return f.keywords.length ? { values: f.keywords } : null;
+    case "keywords": {
+      const values = server ? s.tagIds : f.keywords.filter((keyword) => keyword !== PICK_KEYWORD);
+      return values.length ? { values } : null;
+    }
     case "cameras":
       if (server) return s.make || s.model ? { make: s.make, model: s.model } : null;
       return f.cameras.length ? { values: f.cameras } : null;
@@ -220,10 +223,11 @@ export function clearCategory(st: FindState, key: CategoryKey): FindState {
   const s = st.search, f = st.filter;
   switch (key) {
     case "rating": return { search: { ...s, minRating: 0 },
-                            filter: { ...f, minRating: 0, rejected: "all", labels: 0, unlabeled: false } };
+                            filter: { ...f, minRating: 0, rejected: "all", labels: 0, unlabeled: false,
+                                      keywords: f.keywords.filter((keyword) => keyword !== PICK_KEYWORD) } };
     case "edits": return { search: s, filter: { ...f, edited: "all" } };
     case "kinds": return { search: { ...s, rawOnly: false }, filter: { ...f, kinds: [] } };
-    case "keywords": return { search: { ...s, tagIds: [] }, filter: { ...f, keywords: [] } };
+    case "keywords": return { search: { ...s, tagIds: [] }, filter: { ...f, keywords: f.keywords.filter((keyword) => keyword === PICK_KEYWORD) } };
     case "cameras": return { search: { ...s, make: "", model: "", lens: "" }, filter: { ...f, cameras: [] } };
     case "bodies": return { search: s, filter: { ...f, bodies: [] } };
     case "lenses": return { search: { ...s, lens: "" }, filter: { ...f, lenses: [] } };
@@ -293,7 +297,7 @@ export type Chip = { key: CategoryKey; setting: Setting; excludes: "local" | "im
 // local-only fields Immich results cannot be checked against: remoteFieldsKnown
 const dropsImmich = (key: CategoryKey, st: FindState) => {
   const f = st.filter;
-  if (key === "rating") return f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
+  if (key === "rating") return f.keywords.includes(PICK_KEYWORD) || f.rejected !== "all" || f.labels !== 0 || f.unlabeled;
   if (key === "taken") return hasCaptureTime(f);
   return key === "edits" || key === "bodies" || key === "keywords" || key === "gps" || key === "geometry" || key === "metadata";
 };

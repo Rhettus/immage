@@ -450,7 +450,7 @@ grid and filmstrip, the action follows the photo selection and includes
 collapsed file-stack companions. If any selected photo is unpicked, the
 action picks them all. In the culling preview, **P** acts on the photo shown.
 
-Open **Find → Keywords → Picked** to show your shortlist. Pick is independent
+Open **Find → Rating & flags → Picked** to show your shortlist. Pick is independent
 of star ratings, color labels and rejection. Immage uses the exact XMP
 keyword `Pick` as the flag, so photos already carrying that keyword count
 as picks.
@@ -463,18 +463,38 @@ as picks.
 | X | reject, or un-reject |
 | 6, 7, 8, 9 | red, yellow, green or blue label (purple has no key) |
 
-You can also click the stars and the **✕** on a thumbnail, or use the
-**Metadata** card. Rating a photo un-rejects it.
+**Mark** in the bottom bar assigns stars, five color labels, Pick
+and Reject to the selected local photos in the grid or editor. A dashed
+outline means the selected photos have different values. Click a mark to
+apply it to all selected photos, or click it again when they all have it to
+clear it. Each color toggles independently. Rating clears rejection, and
+Pick stays independent of rating and rejection. The controls are disabled
+when the selection has no local photos. You can also set the inspected
+photo’s rating and labels in the **Metadata** card.
 
-You can rate, reject and label photos as soon as their controls appear, while
-the folder and thumbnails continue loading. Your changes stay in place as
-more photos arrive and loading finishes.
+Hover over a grid thumbnail or focus its marking controls to reveal its
+stars, Pick flag, Reject and color palette. Assigned marks stay visible as
+you move away. Small thumbnails put the marking actions in a single
+**Mark photo** menu. A thumbnail action applies to its own tile without
+changing the selection. Both sets of controls include the companions of a
+collapsed file stack. Expand the stack to mark each member separately.
+Immich-only results show their marks read-only.
+
+Press **F6** in the grid to focus the selected tile’s marking controls.
+With no selection, F6 goes to the first available tile. **Shift+F6** focuses
+**Mark**. Use **Tab** to step through the controls, **Enter** or
+**Space** to activate one, and **Esc** to close a marking menu.
+
+You can mark photos as soon as their controls appear while the folder
+continues loading. Active filters update as you mark, so a photo can leave
+the grid when it no longer matches.
 
 ## Find
 
-**Find** is where you search and filter. The toolbar's **Find** button, under
-the filmstrip, opens it; the number on the button is how many filters are on.
-Searching the library and narrowing a folder both happen here.
+Open **Library** to use **Find** in the right-hand panel. Its footer shows how
+many photos are displayed out of the current folder’s total. When the full
+total is unavailable, it shows the current result count. The reset icon in
+Find clears the search words and filters.
 
 - **Search words**: type what to look for. **Smart** searches by what is in
   the photo using per-folder precedence (**morfPhoto**, then **Immich**, then
@@ -549,12 +569,11 @@ The filters are grouped:
 in the search. In an Immich-only search, **Camera**, **Lens** and **Keywords**
 list the server's values.
 
-- **Rating & flags**: **Minimum rating** (click a star; click the chosen star or
-  **Any** to clear it), **Color label** (pick any number of colors, each marked
-  with a check when chosen, or **No label**), then **Rejected** (**All photos**,
-  **Hide rejected** or **Only rejected**, with photo counts). The row reads, for
-  example, **3+ stars · Hide rejected**. Color labels and Rejected apply to
-  photos on this computer.
+- **Rating & flags**: Click a star to set the minimum rating. Click the same
+  star again to clear it. Choose any combination of color swatches or the
+  dashed **No label** swatch. **Picked** shows your shortlist. **Rejected**
+  offers **All photos**, **Hide rejected**, and **Only rejected**, with photo
+  counts. Color labels, Picked, and Rejected apply to photos on this computer.
 - **Edit status**: **Any**, **Edited** or **Unedited**, for photos on this
   computer. A photo counts as edited once it has been changed in the editor,
   beyond the automatic starting edits.
@@ -627,8 +646,7 @@ press Enter or after a short pause. The footer is always visible below the list:
 it shows how many photos match, **Load** (saved filters) and **Save filter…**,
 with **Copy…**, **Paste** and **Previous** pinned below it at the bottom of the
 right panel just like in Adjustments. Esc
-folds an open filter and returns to its row. The toolbar's stars, **Reject**, **Edited** and color label
-buttons still work and are the same filters: changing one changes the other.
+folds an open filter and returns to its row.
 Opening another folder sets **Search in** to **This folder** and clears the
 search words. Your filters apply to each folder you open. A folder can look
 empty if none of its photos match. Use Find’s reset button to clear all filters
@@ -645,13 +663,12 @@ cannot be moved or undocked and has no close button, and Esc does not close it.
 Esc in its search box leaves the box; Esc again leaves the grid, as it does
 anywhere else.
 
-The toolbar's **Find** button goes to the grid from any view, shows the panel if
-it was hidden (or slid away by auto-hide) and puts the cursor in the search box.
-From the Print panel it returns the column to Find. Use the **Find panel**
-icon beside the filmstrip button to show or hide Find, and drag the panel's
-inner edge to resize it. Find remembers its width and whether it was open
-independently of the editing panel, even when you relaunch Immage. The
-filters stay on when you hide Find or leave the grid.
+The **Library** button opens the grid. In the grid, it returns the right-hand
+column from Print to Find. Use the right-panel icon beside the filmstrip
+button to show or hide Find, and drag the panel’s inner edge to resize it.
+Find remembers its width and visibility independently of Adjustments, even
+after you relaunch Immage. Filters stay active when you hide Find or leave
+the grid.
 
 ### Saved filters
 
@@ -666,11 +683,11 @@ or press Escape to cancel the rename. Click **×** beside a filter and confirm t
 it. With the filter name focused, Enter applies it, F2 renames it, and Delete
 opens the confirmation.
 
-You can also apply a saved filter from **Load** ⌄ in Find's footer, from the
-⌄ beside the toolbar's **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9
-on a Mac) for the first nine in the current list order. The card and both
-menus show a checkmark while Find matches the loaded filter. Clearing or
-editing its settings removes the checkmark when the settings differ. Find
+You can also apply a saved filter from **Load** ⌄ in Find's footer or with
+Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first nine in the current list
+order. The card and menu show a checkmark while Find matches the loaded
+filter. Clearing or editing its settings removes the checkmark when the
+settings differ. Find
 shows the loaded filter's name, with **changed** beside it after you edit,
 and offers **Update** (overwrite it) and **Save as new…**. The **Manage saved
 filters…** dialog in the Load menu also lets you rename, delete, and move

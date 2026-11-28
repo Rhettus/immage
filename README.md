@@ -53,8 +53,12 @@ and Linux. **All builds are alpha; bugs are expected.**
   when enabled. Immich also supports search and export.
 - Remove all listed folders on a drive at once from its heading in
   [Library](app/docs/library.md#folders). Photos and sidecars stay on the drive.
-- Find photos with filters, or describe them with optional Smart search, which
-  runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
+- [Mark selected photos](app/docs/library.md#rating-rejecting-and-labels) with stars,
+  color labels, Pick and Reject from the bottom bar, or mark one grid tile from
+  its thumbnail controls.
+- Open Library to [find photos](app/docs/library.md#find) with filters or
+  optional Smart search. Use **Rating & flags → Picked** to find your shortlist.
+  The Find panel in Grid
   filters by capture date and time, GPS availability, image dimensions,
   descriptive metadata, and camera settings. It keeps filters active across
   folder changes and remembers its own width and visibility separately from

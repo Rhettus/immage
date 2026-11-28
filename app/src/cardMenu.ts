@@ -10,12 +10,12 @@ import { useDismiss } from "./MasksPanel";
 export type MenuAt = { x: number; y: number; above: number; left?: boolean };
 
 // `relayout` changes when the menu's content does (a list that loads late)
-export function useCardMenu(relayout?: unknown) {
+export function useCardMenu(relayout?: unknown, dismissOnEscape = true) {
   const [at, setAt] = useState<MenuAt | null>(null);
   const box = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const within = useRef({ contains: (n: Node) => !!(box.current?.contains(n) || menu.current?.contains(n)) } as unknown as HTMLElement);
-  useDismiss(!!at, () => setAt(null), within);
+  useDismiss(!!at, () => setAt(null), within, dismissOnEscape);
   useLayoutEffect(() => {
     if (!at || !menu.current) return;
     const { width, height } = menu.current.getBoundingClientRect();

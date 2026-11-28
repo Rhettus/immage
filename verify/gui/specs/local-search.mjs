@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { click } from '../support/controls.mjs';
 import { until } from '../support/webdriver.mjs';
 import { choose } from '../support/scenario.mjs';
+import { category, openFind } from './find.mjs';
 
 // The Find popup (FindPanel.tsx): words to search for, the Search in choice and
 // the filters, applied as they change. There is no Search button: Enter in the
@@ -13,11 +14,6 @@ const searchIn = `${pop} select[aria-label="Search in"]`;
 const mode = `${pop} .find-head .segmented button`;
 const folderRow = path => `.folders [data-folder-path=${JSON.stringify(path)}]`;
 const ENTER = '\uE007';
-
-async function openFind(t) {
-  if (!await t.driver.observe(s => !!document.querySelector(s), pop)) await click(t, '.find-button');
-  await until(() => t.driver.observe(s => !!document.querySelector(s), searchBox), 'Find popup');
-}
 
 export async function localSearch(t) {
   const filename = t.fixture.file;
@@ -73,11 +69,11 @@ export async function localSearch(t) {
   if (found.rating !== 3) await click(t, `${cell} .thumb-stars button:nth-child(3)`);
   await until(() => t.driver.observe(s => document.querySelector(`${s} .thumb-stars button:nth-child(3)`)?.classList.contains('on'), cell),
     'the copied result is rated three stars');
-  await click(t, '.toolbar .filter button[title="3 stars and up"]');
-  await until(() => t.driver.observe(() => !!document.querySelector('.toolbar .filter button[title="clear filters"]')),
-    'the toolbar shows filters on');
-  // the search and its Filename mode live in the Find popup, reopened to read them (in the grid, the locked column)
   await openFind(t);
+  await category(t, 'Rating & flags');
+  await click(t, `${pop} .fe-stars button[aria-label="3 stars and up"]`);
+  await until(() => t.driver.observe(() => !!document.querySelector('.find-pop .find-active')?.textContent.trim()),
+    'Find shows filters on');
   const filtered = await until(() => t.driver.observe((s, value, name, modeSel) => {
     const result = document.querySelector(s);
     const input = document.querySelector(value);
@@ -107,9 +103,9 @@ export async function localSearch(t) {
   t.measure({ name: 'local-search', filename, result: found, filtered, returnedToFolder: true });
 
   // Leave the fixture folder ready for subsequent Find cases.
-  const clear = '.toolbar .filter button[title="clear filters"]';
+  const clear = '.find-pop .find-clear';
   await click(t, clear);
-  await until(() => t.driver.observe(s => !document.querySelector(s), clear), 'rating filter cleared');
+  await until(() => t.driver.observe(s => document.querySelector(s)?.disabled, clear), 'rating filter cleared');
   if (found.rating !== 3) {
     const thumb = await t.driver.observe(s => {
       const r = document.querySelector(s)?.getBoundingClientRect();

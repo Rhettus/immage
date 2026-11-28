@@ -14,6 +14,7 @@
 // local copy; (f) pointing the mapping at the twin (not a network mount) makes
 // it an unmounted share: red dots, a click says the drive is offline; (g) only
 // the scratch tree and the run folder were written, and the twin not at all.
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
@@ -400,7 +401,7 @@ export async function morfphotoMirror(t) {
     assert(later.length > 0 && later.every(v => v === 3), `${rated} stays at three stars once the server says 3 (samples ${[...new Set(samples)]})`);
 
     // d. Find over All folders: the camera as darktable spells it, with its count
-    if (!await present(t, pop)) await click(t, '.find-button');
+    if (!await present(t, pop)) await openFind(t);
     await until(() => present(t, pop), 'Find column');
     await choose(t, searchIn, 'library');
     await openCategory(t, 'Camera');

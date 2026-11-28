@@ -4,6 +4,8 @@
 import { ActivityBar } from "./ActivityBar";
 import { type ImageEntry, type Known, LABEL_COLORS, ThumbLoader, fetchThumb, isPrimaryRaw, knownKey, pairKey } from "./library";
 import { type StackBadge } from "./stacking";
+import { ThumbnailMarks } from "./PhotoMarkControls";
+import { summarizeMarks, type PhotoMark } from "./photoMarks";
 import { CullingIcon, SlidersIcon } from "./icons";
 import { baseName } from "./paths";
 import { captureDate, known, shutter } from "./MetadataPanel";
@@ -24,7 +26,7 @@ export const pairedRaws = (files: string[]) => new Set(files.filter((p) => isPri
 // each with the file's name and type above its thumbnail, and its reject
 // flag and stars below, shown on hover or once it has a rating
 export function Filmstrip({ images, stackBadges, pending, empty, current, loader, height, grid, gridSize = 200, onGridZoom, selection, candidate, onPick, onDouble,
-                     onOpenKnown, onMenu, onMeta, onPress, more, onBackMenu, onToggleStack, revealThumb = 0, source = null }: {
+                     onOpenKnown, onMenu, onMeta, markPartners, onMark, onPress, more, onBackMenu, onToggleStack, revealThumb = 0, source = null }: {
   // photos, and those known from the folder's last read (library.ts)
   images: (ImageEntry | Known)[]; current: number | null; loader: ThumbLoader; height: number;
   pending: string[];                      // files not yet read, shown as empty cells
@@ -40,6 +42,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   onOpenKnown: (k: Known, double: boolean) => void;
   onMenu: (e: React.MouseEvent, imgid: number) => void;
   onMeta: (i: ImageEntry, fields: Partial<ImageEntry>) => void;
+  markPartners: ReadonlyMap<number, ImageEntry[]>;
+  onMark: (i: ImageEntry, mark: PhotoMark) => void;
   onPress?: (i: ImageEntry, e: React.PointerEvent<HTMLElement>) => void; // may become a drag (photoDrag.ts)
   more?: () => void;                      // there are more results: called as the end scrolls into view
   onBackMenu: (e: React.MouseEvent) => void; // right-click beside the photos
@@ -50,6 +54,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   const strip = useRef<HTMLDivElement>(null);
   // a grid's cells are a fixed height, and share each row's width
   // (styles.css, .filmstrip.grid); the strip's follow its height
+  const gridColumn = Math.round(gridSize * 1.15);
   const cellSize = grid ? Math.round(gridSize) : Math.round((height - 12) * 1.15);
   const cell = useMemo(() => (grid ? { height: cellSize } : { width: cellSize }), [grid, cellSize]);
   // the cells in view and a few lines either side are drawn, the rest stand
@@ -60,7 +65,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
     const gap = parseFloat(grid ? css.rowGap : css.columnGap) || 0;
     const pad = parseFloat(grid ? css.paddingTop : css.paddingInlineStart) || 0;
     const crossPad = parseFloat(css.paddingInlineStart) || 0;
-    return filmGeometry(grid, cellSize, Math.round(gridSize * 1.15), gap, pad, crossPad, root.clientWidth);
+    return filmGeometry(grid, cellSize, gridColumn, gap, pad, crossPad, root.clientWidth);
   };
   // the scroll position along the strip, from its start: a right-to-left
   // strip's scrollLeft runs negative
@@ -221,8 +226,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   }, [images, loader, grid, win.first, win.last]);
   // the cells are memoized, and call through this, so a folder's next
   // batch or a new selection redraws only the cells that changed
-  const on = useRef({ onPick, onDouble, onMenu, onMeta, onPress, onToggleStack });
-  on.current = { onPick, onDouble, onMenu, onMeta, onPress, onToggleStack };
+  const on = useRef({ onPick, onDouble, onMenu, onMeta, onMark, onPress, onToggleStack });
+  on.current = { onPick, onDouble, onMenu, onMeta, onMark, onPress, onToggleStack };
   const openKnown = useRef(onOpenKnown);
   openKnown.current = onOpenKnown;
   // an empty grid still covers the photo, and says why it is empty
@@ -232,7 +237,7 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
   }
   return (
     <div className={`filmstrip${grid ? " grid" : ""}`} ref={strip}
-         style={grid ? { "--grid-column": `${Math.round(gridSize * 1.15)}px` } as React.CSSProperties : { height }}
+         style={grid ? { "--grid-column": `${gridColumn}px` } as React.CSSProperties : { height }}
          onContextMenu={onBackMenu}
          onWheel={(e) => { if (strip.current && !grid) strip.current.scrollLeft += e.deltaY + e.deltaX; }}>
       {win.before > 0 && <div className="film-spacer" style={grid ? { height: win.before } : { width: win.before }} />}
@@ -245,7 +250,8 @@ export function Filmstrip({ images, stackBadges, pending, empty, current, loader
           const types = stack ? stack.types : (i.filename.match(/\.([^.]+)$/)?.[1] ?? "").toUpperCase();
           return (
             <FilmCell key={i.imgid} entry={i} loader={loader} cell={cell} on={on}
-                      stack={stack} types={types}
+                      stack={stack} types={types} grid={grid} compactMarks={gridColumn < 176}
+                      markPartners={grid ? markPartners.get(i.imgid) : undefined}
                       active={i.imgid === current} selected={selection.size > 1 && selection.has(i.imgid)}
                       candidate={i.imgid === candidate} doubleOpens={grid || candidate !== null}
                       offline={isOffline(i.path, source)} />
@@ -269,14 +275,17 @@ function OfflineDot() {
 // `dogEar` turns the bottom left corner over, as Lightroom marks a virtual
 // copy: drawn on the thumbnail, which the cell fits, so it sits on the
 // photo's own corner whatever its shape
-export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onPress" | "onToggleStack">;
+export type CellHandlers = Pick<Parameters<typeof Filmstrip>[0], "onPick" | "onDouble" | "onMenu" | "onMeta" | "onMark" | "onPress" | "onToggleStack">;
 
 // one photo's filmstrip cell
-export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, stack, types, active, selected, candidate, doubleOpens, offline = false }: {
+export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, stack, types, active, selected, candidate, doubleOpens, grid, compactMarks, markPartners, offline = false }: {
   entry: ImageEntry; loader: ThumbLoader; cell: React.CSSProperties; on: React.RefObject<CellHandlers>;
   stack?: StackBadge; types: string; active: boolean; selected: boolean; candidate: boolean; doubleOpens: boolean;
+  grid?: boolean; compactMarks?: boolean; markPartners?: ImageEntry[];
   offline?: boolean;
 }) {
+  const gridMarks = grid && !isRemote(i);
+  const footerPress = useRef(false);
   const clickGuard = useRef(new SecondaryClickGuard());
   return (
     <div className={`thumb${active ? " active" : ""}${i.rejected ? " rejected" : ""}`
@@ -286,15 +295,19 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, sta
          style={cell}
          title={i.filename} data-imgid={i.imgid}
          data-stack-count={stack && !stack.expanded ? (stack.count >= 3 ? "3" : "2") : undefined}
+         onPointerDownCapture={(e) => {
+           // A release outside a control can retarget the resulting click to the tile.
+           footerPress.current = !!(e.target as Element).closest(".thumb-foot, .photo-mark-menu");
+         }}
          onClick={(e) => {
-           if (clickGuard.current.click(e.detail)) return;
+           if ((footerPress.current && e.detail > 0) || clickGuard.current.click(e.detail)) return;
            on.current!.onPick(i, e);
          }}
          onPointerDown={(e) => {
            if (clickGuard.current.pointerDown(e.button)) return;
-           if (!(e.target as Element).closest(".thumb-foot, .thumb-stack-toggle")) on.current!.onPress?.(i, e);
+           if (!(e.target as Element).closest(".thumb-foot, .thumb-stack-toggle, .photo-mark-menu")) on.current!.onPress?.(i, e);
          }}
-         onDoubleClick={() => { if (doubleOpens) on.current!.onDouble(i); }}
+         onDoubleClick={() => { if (doubleOpens && !footerPress.current) on.current!.onDouble(i); }}
          onContextMenu={(e) => { clickGuard.current.contextMenu(e.button); e.stopPropagation(); on.current!.onMenu(e, i.imgid); }}>
       <div className="thumb-head">
         <span className="thumb-name">{i.filename.replace(/\.[^.]+$/, "")}</span>
@@ -316,7 +329,10 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, sta
       <div className="thumb-image"><ThumbCanvas loader={loader} imgid={i.imgid} dogEar={!!i.copy} />{offline && <OfflineDot />}</div>
       {/* rated without opening the photo, as Lightroom's filmstrip does;
           an Immich result shows Immich's rating, set only once opened */}
-      <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`thumb-foot${isRemote(i) ? " read-only" : ""}${gridMarks ? " grid-marks" : ""}`}
+           onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+        {gridMarks ? <ThumbnailMarks compact={!!compactMarks} summary={summarizeMarks([i, ...(markPartners ?? [])])}
+          onMark={(mark) => on.current!.onMark(i, mark)} /> : <>
         {!isRemote(i) && <button className={`thumb-reject${i.rejected ? " on" : ""}`} title={t("library.filmstrip.reject")}
                 onClick={() => on.current!.onMeta(i, { rejected: !i.rejected })}>✕</button>}
         <span className="thumb-stars">
@@ -331,6 +347,7 @@ export const FilmCell = memo(function FilmCell({ entry: i, loader, cell, on, sta
           {LABEL_COLORS.map((c, k) => (i.labels & (1 << k)
             ? <span key={k} className="dot" style={{ background: c }} /> : null))}
         </span>
+        </>}
         {/* grid only (styles.css): the culling lightbox on this photo */}
         {!isRemote(i) && <button className="thumb-cull" title={t("library.filmstrip.culling")}
                 onClick={() => window.dispatchEvent(new CustomEvent("grid-culling-open", { detail: { imgid: i.imgid } }))}><CullingIcon /></button>}

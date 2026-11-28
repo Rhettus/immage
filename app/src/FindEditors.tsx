@@ -6,6 +6,7 @@
 // pickers, ...). Each writes through findModel.ts's functions, as the Filters
 // popup's bodies did; the facets they list are computed when one is open.
 // FindFilters.tsx draws the rows, FindPanel.tsx the panel
+import { Flag } from "lucide-react";
 import { useEffect, useState } from "react";
 import { commands, type Named } from "./commands";
 import { aspectRatio, bodyLabel, dateOfBound, EXPOSURE, facetsWithin, ORIENTATIONS, rejectedOptions, TEXT_FIELDS, timeOfBound,
@@ -62,7 +63,7 @@ export const EXPOSURE_LABEL: Record<ExposureKey, string> = { iso: "ISO", apertur
 // a list's summary: its one value, or how many
 export const chosen = (v: string[], name: (x: string) => string = (x) => x) =>
   v.length === 1 ? name(v[0]) : v.length ? t("library.filters.chosen", { count: v.length }) : "";
-export const keyword = (k: string) => k === PICK_KEYWORD ? t("library.filters.picked") : k.split("|").join(" › ");
+export const keyword = (k: string) => k.split("|").join(" › ");
 
 type List = (key: keyof Facets, clear: Partial<Filter>) => [string, number][];
 
@@ -367,14 +368,11 @@ function Rating({ state, send, images, local }: {
 }) {
   const f = state.filter;
   const stars = f.minRating || state.search.minRating;
+  const picked = f.keywords.includes(PICK_KEYWORD);
   const patch = (p: Partial<Filter>) => send({ ...state, filter: { ...f, ...p } });
   return (
     <>
       <div className="fe-sec">
-        <div className="fe-label">
-          <span>{t("library.find.minRating")}</span>
-          <button className="fe-link" aria-pressed={stars === 0} onClick={() => send(setStars(state, 0))}>{t("library.filters.any")}</button>
-        </div>
         <div className="fe-stars" role="group" aria-label={t("library.find.minRating")}>
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} className={stars >= n ? "on" : ""} aria-label={t("library.toolbar.starsAndUp", { count: n })}
@@ -387,7 +385,6 @@ function Rating({ state, send, images, local }: {
       </div>
       {local && <>
         <div className="fe-sec">
-          <div className="fe-label"><span>{t("library.find.colorLabel")}</span></div>
           <div className="fe-swatches" role="group" aria-label={t("library.find.colorLabel")}>
             {LABEL_COLORS.map((c, k) => {
               const on = !!(f.labels & (1 << k)), name = t(`library.menu.label-${LABEL_NAMES[k]}`);
@@ -405,6 +402,12 @@ function Rating({ state, send, images, local }: {
           </div>
         </div>
         <div className="fe-sec">
+          <button type="button" className="fe-pick-filter" aria-pressed={picked}
+                  onClick={() => patch({ keywords: picked
+                    ? f.keywords.filter((keyword) => keyword !== PICK_KEYWORD) : [...f.keywords, PICK_KEYWORD] })}>
+            <Flag aria-hidden="true" fill={picked ? "currentColor" : "none"} />
+            {t("library.filters.picked")}
+          </button>
           <div className="fe-label"><span>{t("library.filters.rejected")}</span></div>
           <RejectedRadios images={images} f={f} patch={patch} />
         </div>
@@ -466,16 +469,9 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
       if (server) return ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"));
       const items = list("keywords", { keywords: [] });
       const picked = f.keywords.includes(PICK_KEYWORD);
-      return (
-        <>
-          <Ticks items={[[PICK_KEYWORD, items.find(([value]) => value === PICK_KEYWORD)?.[1] ?? 0]]}
-                 chosen={picked ? [PICK_KEYWORD] : []} show={keyword} empty="" busy={busy}
-                 onChange={(next) => patchFilter({ keywords: [...f.keywords.filter((value) => value !== PICK_KEYWORD), ...next] })} />
-          <Ticks items={items.filter(([value]) => value !== PICK_KEYWORD)} chosen={f.keywords.filter((value) => value !== PICK_KEYWORD)}
-                 onChange={(keywords) => patchFilter({ keywords: picked ? [...keywords, PICK_KEYWORD] : keywords })}
-                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} byName={byName} busy={busy} />
-        </>
-      );
+      return <Ticks items={items.filter(([value]) => value !== PICK_KEYWORD)} chosen={f.keywords.filter((value) => value !== PICK_KEYWORD)}
+                    onChange={(keywords) => patchFilter({ keywords: picked ? [...keywords, PICK_KEYWORD] : keywords })}
+                    show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} byName={byName} busy={busy} />;
     }
     case "cameras":
       return server

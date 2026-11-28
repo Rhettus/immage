@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { access, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -119,7 +120,7 @@ export async function renamePhotos(t) {
     assert.deepEqual(await readFile(path(name)), contents.get(oldOrder[i]), `${name} has the original bytes`);
   }
 
-  if (!await shown(t, '.find-pop .find-text')) await click(t, '.find-button');
+  if (!await shown(t, '.find-pop .find-text')) await openFind(t);
   await until(() => shown(t, '.find-pop .find-text'), 'Find panel');
   await click(t, '.find-pop .find-text');
   await t.driver.chord(ctrl, 'a');

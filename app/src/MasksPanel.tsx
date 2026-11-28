@@ -683,7 +683,7 @@ function MaskMenu({ onDuplicate, onRename, onReset, adjusted, onDelete }: {
 }
 
 // a menu closes on a click outside it, or Escape
-export function useDismiss(open: boolean, close: () => void, box: React.RefObject<HTMLElement | null>) {
+export function useDismiss(open: boolean, close: () => void, box: React.RefObject<HTMLElement | null>, dismissOnEscape = true) {
   const closer = useRef(close);
   closer.current = close;
   useEffect(() => {
@@ -691,9 +691,9 @@ export function useDismiss(open: boolean, close: () => void, box: React.RefObjec
     const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) closer.current(); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") closer.current(); };
     window.addEventListener("pointerdown", away, true);
-    window.addEventListener("keydown", esc, true);
+    if (dismissOnEscape) window.addEventListener("keydown", esc, true);
     return () => { window.removeEventListener("pointerdown", away, true); window.removeEventListener("keydown", esc, true); };
-  }, [open, box]);
+  }, [open, box, dismissOnEscape]);
 }
 
 const ADD_ICON = svg(<><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></>);

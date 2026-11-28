@@ -7,7 +7,7 @@ import { createServer } from 'node:net';
 import { readFile, writeFile, mkdir, copyFile, stat, access, realpath, readdir, chmod, rename, mkdtemp, rm, link } from 'node:fs/promises';
 import { constants, rmSync, readFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
-import { dirname, resolve, join, basename } from 'node:path';
+import { dirname, resolve, join, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppDriver, until, pause } from './support/webdriver.mjs';
 import { resolveCases, suites, cases } from './suites.mjs';
@@ -339,6 +339,10 @@ try {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
     for (let i = 1; i <= 3; i++) await copyFile(copiedFixture, join(fixtures, `culling-${String(i).padStart(2, '0')}${ext}`));
     report.cullingFixtures = 3;
+  }
+  if (selectedCases.includes('photo-marks')) {
+    const ext = extname(copiedFixture);
+    for (const name of ['mark-a', 'mark-b']) await copyFile(copiedFixture, join(fixtures, name + ext));
   }
   // find-live: copies of the fixture, one of which the case rates
   if (selectedCases.includes('find-live') || selectedCases.includes('find-no-clip')) {

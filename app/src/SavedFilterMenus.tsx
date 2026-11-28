@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 the Immage authors
 
-// the Find popup's saved filters: the Saved menu (also the toolbar's Find
-// split button), the name line of an applied one, the name prompt and the
+// Find's saved-filter menu, the name line for an applied filter, the name prompt and the
 // Manage dialog. the list is savedFilters.ts
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";

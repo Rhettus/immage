@@ -22,8 +22,8 @@ import { FilterEditor } from "./FindEditors";
 import { useLibraryFacets } from "./libraryFacets";
 import { categoryTitle, editorId, FilterGroup, FilterRow, GROUP_TITLE, rowId, summarize } from "./FindFilters";
 
-export function FindPanel({ state, onChange, images, immichAvailable, count, busy, notes, saved, savedLine,
-                            onSaveNew, focusToken, pin, smart, clipTip }: {
+export function FindPanel({ state, onChange, images, immichAvailable, count, total, busy, notes, saved, savedLine,
+                            onSaveNew, pin, smart, clipTip }: {
   state: FindState;
   // `now`: run at once (ticks, selects, Enter); otherwise App runs it after 400 ms (typing)
   onChange: (next: FindState, now?: boolean) => void;
@@ -31,6 +31,7 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   immichAvailable: boolean;     // Immich configured
   smart: boolean;               // photo-content search can run (CLIP model or Immich); else file names only
   count: number | null;         // live result count, null while unknown
+  total: number | null;         // unfiltered tile count when the complete folder is known
   busy: boolean;                // a search is running
   notes: string[];              // extra notes from App (e.g. Immich skipped)
   saved?: React.ReactNode;      // the Load filter menu button, footer
@@ -38,7 +39,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   onSaveNew?: () => void;       // footer Save filter…
   clipTip?: { onSetUp: () => void; onDismiss: () => void };   // the tip about the CLIP model; none to hide it
   pin?: React.ReactNode;        // the right panel's pin button (auto-hide), in the title row
-  focusToken?: number;          // a change focuses the search box (the toolbar's Find button)
 }) {
   const pop = useRef<HTMLDivElement>(null);
   const text = useRef<HTMLInputElement>(null);
@@ -110,12 +110,6 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
     };
   }, []);
 
-  useEffect(() => {
-    if (!focusToken) return;
-    text.current?.focus();
-    text.current?.select();
-  }, [focusToken]);
-
   // the server's names and libraries, once Immich is in the search; a key
   // without the permission for one just leaves it empty
   const [people, setPeople] = useState<Named[]>([]);
@@ -160,7 +154,9 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, bus
   // without Smart search the segmented control shows Filename; the stored mode is left alone
   const modeShown = smart ? s.mode : "filename";
   const countText = <>
-    <span className="find-count-text">{count === null ? "…" : t("library.find.count", { n: count, count: formatNumber(count) })}</span>
+    <span className="find-count-text">{count === null ? "…" : total === null
+      ? t("library.find.count", { n: count, count: formatNumber(count) })
+      : t("library.find.countOf", { count: formatNumber(count), total: formatNumber(total) })}</span>
     {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
   </>;
   return (

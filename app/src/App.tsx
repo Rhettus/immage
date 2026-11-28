@@ -131,6 +131,8 @@ import type { TunerRun } from "./previewTuning";
 import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
+import { MarkSelection } from "./PhotoMarkControls";
+import { markEdits, markTargets, summarizeMarks, type PhotoMark } from "./photoMarks";
 import { FindPanel } from "./FindPanel";
 import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, sameFind, smartAvailable, type FindState } from "./findModel";
 import { loadClipState } from "./clipStatus";
@@ -789,7 +791,6 @@ export default function App() {
   const rightPanelOpen = layout[rightPanel];
   const rightPanelRef = useRef<"find" | "right">(rightPanel);
   rightPanelRef.current = rightPanel;
-  const [findFocus, setFindFocus] = useState(0);
   const [zonesAdvanced, toggleZonesAdvanced] = useAdvanced("zones");
   // masks: the session's, mirrored for rendering, the one being edited, and
   // the drawing tool
@@ -3380,11 +3381,17 @@ export default function App() {
     if (open) setOpenCell(open);
   };
   // one photo's fields, in the filmstrip and in the open photo's kept cell
-  const patchImage = (imgid: number, fields: Partial<ImageEntry>) => {
-    for (const edits of folderEdits.current) edits.patch(imgid, fields);
-    updateImages(imagesRef.current.map((i) => (i.imgid === imgid ? { ...i, ...fields } : i)));
-    setOpenCell((c) => (c?.imgid === imgid ? { ...c, ...fields } : c));
+  const patchImages = (patches: ReadonlyMap<number, Partial<ImageEntry>>) => {
+    for (const [imgid, fields] of patches)
+      for (const edits of folderEdits.current) edits.patch(imgid, fields);
+    const update = (photo: ImageEntry) => {
+      const fields = patches.get(photo.imgid);
+      return fields ? { ...photo, ...fields } : photo;
+    };
+    updateImages(imagesRef.current.map(update));
+    setOpenCell((photo) => photo ? update(photo) : photo);
   };
+  const patchImage = (imgid: number, fields: Partial<ImageEntry>) => patchImages(new Map([[imgid, fields]]));
 
   // the Library panel's cards, each as it was left
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
@@ -4130,8 +4137,8 @@ export default function App() {
     setSelection(new Set([i.imgid]));
     if (shouldOpenOnPick(gridRef.current)) void openEntry(i);
   };
-  const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>, patch: Partial<ImageEntry> = fields) => {
-    patchImage(imgid, patch);
+  const setMeta = async (imgid: number, fields: Partial<ImageEntry> & Record<string, unknown>, patch: Partial<ImageEntry> | null = fields) => {
+    if (patch) patchImage(imgid, patch);
     try {
       const saved = commands.metaSet(imgid, fields as { [key in string]: Value });
       pendingSearchMetadata.current.add(saved);
@@ -6932,6 +6939,17 @@ export default function App() {
       const t = e.target;
       // a dialog owns the keyboard while it is open
       if (document.querySelector(".modal-backdrop")) return;
+      if (t instanceof HTMLElement && t.closest("[data-mark-controls]") && e.code === "Tab") return;
+      if (e.code === "F6" && !e.altKey && !e.ctrlKey && !e.metaKey && !importOpenRef.current) {
+        const active = gridActivePhoto(shownRef.current, selectionRef.current, pickAnchor.current);
+        const tile = active
+          ? `.filmstrip.grid .thumb[data-imgid="${active.imgid}"]`
+          : ".filmstrip.grid .thumb";
+        const target = (!e.shiftKey && gridRef.current ? document.querySelector(`${tile} .thumb-marks button`) : null)
+          ?? document.querySelector(".mark-selection button:not(:disabled)");
+        if (target instanceof HTMLButtonElement) { e.preventDefault(); target.focus(); }
+        return;
+      }
       if (fieldKeeps(t, e.key)) return;
       // the import screen has its own keys; Preferences still opens over it
       if (importOpenRef.current && !(cmd(e) && (e.key === "," || e.code === "Slash"))) return;
@@ -7097,7 +7115,7 @@ export default function App() {
 
   // stacked pairs: a raw's JPEG or HEIF hides behind it, unless the
   // filters leave the raw out or the stack is expanded
-  const allPartners = stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>();
+  const allPartners = useMemo(() => stackPairs ? pairPartners(images) : new Map<number, ImageEntry[]>(), [stackPairs, images]);
   // results show through the filter their search used: an Immich-only search hides the folder lists
   const passing = images.filter((i) => immich ? passesSearch(i, effectiveFilter(find, !!immichBase)) : passes(i, filter));
   // the photos the folder's last read found that this one has not reached:
@@ -7341,6 +7359,14 @@ export default function App() {
     }
   };
   togglePickRef.current = (photo) => void togglePick(dragSet(photo));
+  const applyMark = (targets: ImageEntry[], mark: PhotoMark) => {
+    if (!targets.length) return;
+    if (mark.type === "pick") { void togglePick(targets); return; }
+    const edits = markEdits(targets, mark);
+    patchImages(new Map(edits.map(({ imgid, fields }) => [imgid, fields])));
+    for (const { imgid, fields } of edits) void setMeta(imgid, fields, null);
+  };
+  const selectedMarkTargets = selection.size ? markTargets(shown.filter((photo) => selection.has(photo.imgid)), partners) : [];
 
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
@@ -7349,18 +7375,11 @@ export default function App() {
     strip: autoHide && !touring && !preview && layout.strip && !pins.strip && !grid,
   };
   floatingRef.current = floating;
-  // the toolbar's Find button: Find is the grid's right-hand column, so this goes to
-  // the grid (from Print, back to that column), shows the column if hidden and
-  // puts the cursor in the box
-  const toggleFind = () => {
-    if (!grid) setGrid(true);
-    if (rightMode === "print") setRightMode("adjust");
-    if (layout.find) revealRightPanel();
-    else toggleSide("find");
-    setFindFocus((n) => n + 1);
-  };
-  // spent on leaving, or coming back to the grid would take the keyboard for the box
-  useEffect(() => { if (!findLocked) setFindFocus(0); }, [findLocked]);
+  const folderTotal = useMemo(() => {
+    if (immich || reading) return null;
+    if (!allPartners.size) return images.length;
+    return buildStackView(images, allPartners, expandedStacks).shown.length;
+  }, [immich, reading, allPartners, expandedStacks, images]);
   const renderFind = () => (
     <FindPanel state={find} onChange={changeFind} images={images} immichAvailable={!!immichBase}
               smart={smartAvailable(clipReady, !!immichBase, remoteClip)}
@@ -7368,7 +7387,7 @@ export default function App() {
                 onSetUp: () => { setPrefsCard("local-search"); setPrefsOpen("general"); },
                 onDismiss: () => { setClipTipGone(true); try { settings.set("immage.findClipTipDismissed", "1"); } catch { /* kept for this session */ } },
               } : undefined}
-              count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
+              count={immich?.busy ? null : cells.length} total={folderTotal} busy={!!immich?.busy}
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
               saved={<SavedMenu current={checkedSavedId} onApply={applySaved}
                                 button={<>{t("library.find.saved.load")}<ChevronDown size={12} strokeWidth={1.8} /></>}
@@ -7377,7 +7396,7 @@ export default function App() {
                                                onUpdate={() => updateSaved(savedNow.id, find)}
                                                onSaveNew={() => setSaveDialog(true)} onDetach={() => setSavedId(null)} /> : undefined}
               onSaveNew={() => setSaveDialog(true)}
-              focusToken={findFocus} pin={pinButton("find")} />
+              pin={pinButton("find")} />
   );
   const docked = { left: layout.left && !floating.left, right: rightPanelOpen && !floating.right };
 
@@ -7913,14 +7932,16 @@ export default function App() {
                        }}
                        more={immich?.next ? () => void searchImmich(immich.search, true) : undefined}
                        onBackMenu={showResultsMenu}
-                       onMeta={(i, fields) => rateSelection(i, fields)} />
+                       onMeta={rateSelection} markPartners={partners}
+                       onMark={(photo, mark) => {
+                         const entry = imagesRef.current.find((i) => i.imgid === photo.imgid);
+                         if (entry) applyMark(markTargets([entry], partnersRef.current), mark);
+                       }} />
           </div>
         </div>
-        <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
-                 onToggleFind={toggleFind}
-                 onFindMenu={canShowResultsMenu(immichBase, immich?.search) ? showResultsMenu : undefined}
-                 savedMenu={(button) => <SavedMenu current={checkedSavedId} onApply={applySaved}
-                                                    onManage={() => setManageSaved(true)} button={button} />}
+        <Toolbar rightPanel={rightPanel}
+                 marking={<MarkSelection summary={summarizeMarks(selectedMarkTargets)}
+                   onMark={(mark) => applyMark(selectedMarkTargets, mark)} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>
                    <button className="tool" title={keys(t("app.action.undo"))} disabled={!current} onClick={() => stepHistory(true)}>
@@ -8435,8 +8456,17 @@ export default function App() {
         {/* the library: the grid of the folder's photos, and back to the filmstrip */}
         <button className={`tool library-toggle${grid ? " on" : ""}`} data-tour="library"
                 title={t(grid ? "library.toolbar.filmstrip" : "library.toolbar.grid")}
-                onClick={() => { if (!croppingRef.current) { if (grid) leaveGridRef.current(); else setGrid(true); } }}>
-          <LibraryIcon /></button>
+                onContextMenu={canShowResultsMenu(immichBase, immich?.search) ? showResultsMenu : undefined}
+                onClick={() => {
+                  if (croppingRef.current) return;
+                  if (grid && rightMode !== "print") leaveGridRef.current();
+                  else {
+                    if (rightMode === "print") setRightMode("adjust");
+                    setGrid(true);
+                  }
+                }}>
+          <LibraryIcon />
+        </button>
         <div className="rail-sep" />
         <div className="rail-group" data-tour="edit">
         {/* the tools work on the open photo, not its cell: one opened before

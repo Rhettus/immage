@@ -12,6 +12,7 @@
 //    which the app-only boundary forbids, so they are never clicked: the picker
 //    flow is manual-only
 // Not live-validated: written without a launch.
+import { openFind } from './find.mjs';
 import assert from 'node:assert/strict';
 import { readdir, writeFile, mkdir, copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -118,7 +119,7 @@ async function ratedSidecar(t, name) {
 // the File type filter through Find's real UI: RAW on or off
 async function rawFilter(t, on) {
   const pop = '.find-pop';
-  if (!await present(t, pop)) await click(t, '.find-button');
+  if (!await present(t, pop)) await openFind(t);
   await until(() => present(t, pop), 'Find column');
   const rowOpen = n => t.driver.observe(w => [...document.querySelectorAll('.find-pop .fr-row')]
     .find(c => c.querySelector('.fr-title')?.textContent === w)?.getAttribute('aria-expanded') === 'true', n);

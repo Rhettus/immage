@@ -54,6 +54,7 @@ export function summarize(key: CategoryKey, state: FindState, server: boolean, n
       const colors = LABEL_COLORS.map((_, k) => k).filter((k) => (v.labels ?? 0) & (1 << k));
       const labels = colors.length + (v.unlabeled ? 1 : 0);
       return [v.stars ? t("library.find.starsPlus", { n: v.stars, count: formatNumber(v.stars) }) : "",
+              v.picked ? t("library.filters.picked") : "",
               v.rejected === "hide" ? t("library.filters.hideRejected") : v.rejected === "only" ? t("library.filters.onlyRejected") : "",
               labels === 1 ? (colors.length ? t(`library.menu.label-${["red", "yellow", "green", "blue", "purple"][colors[0]]}`) : t("library.find.noLabel"))
                 : labels ? t("library.find.labelsCount", { n: labels, count: formatNumber(labels) }) : ""].filter(Boolean).join(" · ");

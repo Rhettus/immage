@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Find (FindPanel.tsx, SavedFilterMenus.tsx): filters that apply as they change, and
 // saved filters (Alt+1 to Alt+9). Find lives only in the grid's right-hand column
-// (`.find-pop` inside `aside.right`): the toolbar's Find button enters the grid and
-// focuses the box, and leaving the grid (the Library button) hides it. Everything is
+// (`.find-pop` inside `aside.right`): Library enters the grid, and the
+// right-panel toggle shows or hides Find. Everything is
 // driven by WebDriver pointer and key actions inside the test webview.
 import assert from 'node:assert/strict';
 import { click, reveal } from '../support/controls.mjs';
@@ -11,6 +11,7 @@ import { until, pause } from '../support/webdriver.mjs';
 import { dismissTour } from './smoke.mjs';
 
 const pop = '.find-pop';
+const savedMenu = `${pop} .saved-menu-button`;
 const ESC = '', ENTER = '', ALT = '', CONTROL = '';
 const cells = '.filmstrip .thumb[data-imgid]';
 const present = (t, selector) => t.driver.observe(s => !!document.querySelector(s), selector);
@@ -24,7 +25,7 @@ const rectOf = (t, selector) => t.driver.observe(s => {
 // the filters that are on: their rows (the accordion has no chips), with their summaries
 const filtersOn = t => t.driver.observe(() => [...document.querySelectorAll('.find-pop .fr-row.on')].map(r => ({
   category: r.querySelector('.fr-title')?.textContent.trim(), text: r.querySelector('.fr-sum')?.textContent.trim() ?? '' })));
-const findClass = (t, name) => t.driver.observe(n => document.querySelector('.find-button')?.classList.contains(n), name);
+const hasFilters = t => t.driver.observe(() => !!document.querySelector('.find-pop .find-active')?.textContent.trim());
 
 // flip a General preference switch by its row (PrefRow's data-pref-label)
 async function preference(t, label, on) {
@@ -42,10 +43,11 @@ async function preference(t, label, on) {
   await until(async () => !await present(t, '.prefs'), 'Preferences closes');
 }
 
-// the toolbar's Find button enters the grid and shows the column (it stays open there)
-async function openFind(t) {
-  if (!await present(t, pop)) await click(t, '.find-button');
+export async function openFind(t) {
+  if (!await present(t, '.filmstrip.grid') || !await present(t, pop)) await click(t, '.rail .library-toggle');
   await until(() => present(t, pop), 'Find column');
+  if (await present(t, '.right-slot.closed')) await click(t, '[data-panel-toggle="find"]');
+  await until(async () => !await present(t, '.right-slot.closed'), 'Find column opens');
 }
 // Find lives in the grid only: leaving the grid (the Library button) hides it
 async function closeFind(t) {
@@ -74,7 +76,7 @@ const near = (a, b, label, tolerance = 1.5) => {
 };
 // open a filter's editor under its row (a no-op when it is open already)
 // observe() sends only the callback's source to the page, so each callback finds its row itself
-async function category(t, name) {
+export async function category(t, name) {
   if (await t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
     .find(c => c.querySelector('.fr-title')?.textContent === n)?.getAttribute('aria-expanded') === 'true', name)) return;
   const id = await until(() => t.driver.observe(n => [...document.querySelectorAll('.find-pop .fr-row')]
@@ -114,7 +116,7 @@ export async function findLive(t) {
   await settle(t);
   assert.equal((await filtersOn(t)).length, 0, 'no filter is on before anything is set');
   assert(!await present(t, `${pop} .find-chip`), 'there are no chips');
-  assert(!await findClass(t, 'on'), 'the toolbar Find button is not on without filters');
+  assert(!await hasFilters(t), 'Find has no active filters');
 
   // 1. a rating, from the Rating & flags editor (open first)
   await category(t, 'Rating & flags');
@@ -122,7 +124,7 @@ export async function findLive(t) {
   await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags' && c.text === '3+ stars'), 'the Rating & flags row shows 3+ stars');
   await until(async () => await count(t, cells) < all, 'the grid narrows without pressing Show');
   assert.equal(await count(t, cells), 1, 'only the rated photo remains');
-  assert(await findClass(t, 'on'), 'the toolbar Find button is on');
+  assert(await hasFilters(t), 'Find counts the active filter');
   await t.evidence('find-live-rating');
 
   // the row's x removes it and the grid is whole again
@@ -155,9 +157,9 @@ export async function findLive(t) {
   await click(t, `${pop} .find-text`);
   await t.driver.keys(ESC);
   assert(await present(t, pop) && await present(t, '.filmstrip.grid'), 'Escape in the box keeps the column and the grid');
-  assert(await findClass(t, 'on'), 'the Find button stays on');
+  assert(await hasFilters(t), 'Find keeps the active filter');
   assert.equal(await count(t, cells), 1, 'Escape keeps the filter');
-  await click(t, '.toolbar .clear-filters');
+  await click(t, `${pop} .find-clear`);
   await until(async () => await count(t, cells) === all, 'clearing the filters restores the grid');
 
   // 5. the title bar's reset icon clears the search words and every filter; it is disabled
@@ -235,9 +237,9 @@ export async function findLive(t) {
     await preference(t, 'Auto-hide panels', false);
   }
 
-  // the toolbar's Find button focuses the box of the column that is already there
-  await click(t, '.toolbar .find-button');
-  await until(() => t.driver.observe(() => document.activeElement?.classList.contains('find-text')), 'the Find button focuses the search box');
+  // the grid keeps Find in the right column
+  await openFind(t);
+  await click(t, `${pop} .find-text`);
   assert(await present(t, pop), 'no popup opens in the grid');
 
   // the magnifier: only in the grid, and it opens the culling lightbox
@@ -271,7 +273,7 @@ export async function findLive(t) {
 
 // Find is only the grid's right-hand column, entered and left with the grid (see findSizes)
 // Find is only the grid's right-hand column: outside the grid there is no column, and the
-// toolbar's Find button enters the grid, shows it in aside.right and focuses its box. From
+// Library button enters the grid and shows it in aside.right. From
 // the Print panel the same button brings Find back in place of Print. Leaving the grid
 // removes the column and brings the Adjustments panel back
 export async function findSizes(t) {
@@ -282,11 +284,11 @@ export async function findSizes(t) {
   assert(!await present(t, pop), 'there is no Find column in the filmstrip view');
   assert(await adjustmentsVisible(t), 'the Adjustments panel shows in the filmstrip view');
 
-  // the toolbar's Find button enters the grid and shows Find in the right column
-  await click(t, '.find-button');
+  // Library enters the grid and shows Find in the right column
+  await openFind(t);
   await until(() => present(t, pop), 'Find column');
   assert(await t.driver.observe(() => !!document.querySelector('aside.right .find-pop')), 'Find is in the right-hand column');
-  await until(() => t.driver.observe(() => document.activeElement?.classList.contains('find-text')), 'the Find button focuses the search box');
+  await click(t, `${pop} .find-text`);
   assert(await present(t, '.filmstrip.grid'), 'the grid is shown');
   assert(!await adjustmentsVisible(t), 'the Adjustments panel is not visible while Find is');
   const shape = await t.driver.observe(() => {
@@ -301,13 +303,9 @@ export async function findSizes(t) {
   // from the Print panel, the same button brings Find back in place of Print
   await click(t, 'button[data-tour="print"]');
   await until(async () => !await present(t, pop), 'Print replaces Find in the column');
-  await click(t, '.find-button');
+  await openFind(t);
   await until(() => present(t, pop), 'Find comes back from Print');
   assert(!await adjustmentsVisible(t), 'Find is shown, not Print or Adjustments, after Print');
-
-  // pressing the button again in the grid keeps Find open
-  await click(t, '.find-button');
-  assert(await present(t, pop), 'the Find button keeps Find open in the grid');
 
   // leaving the grid removes the column and brings the Adjustments panel back
   await closeFind(t);
@@ -358,7 +356,7 @@ export async function findPanelMemory(t) {
   assert(!await present(t, pop), 'Find is absent in editing view');
   await t.evidence('adjustments-resized');
 
-  await click(t, '.toolbar .find-button');
+  await openFind(t);
   const gridPanel = await findPanel(true);
   assert.notEqual(gridPanel.title, editPanel.title, 'Find and Adjustments have distinct tooltips');
   assert(!await adjustmentsVisible(t), 'Adjustments is hidden in the grid');
@@ -456,18 +454,20 @@ async function setupSavedFilters(t, second = false) {
   if (await t.driver.observe(() => [...document.querySelectorAll('.find-pop .fr-row')].some(r => r.getAttribute('aria-expanded') === 'true')))
     await t.driver.keys(ESC);
   await closeFind(t);
-  assert(!await findClass(t, 'on'), 'no filter is on once cleared');
-  await click(t, '.find-saved .saved-menu-button');
+  await openFind(t);
+  assert(!await hasFilters(t), 'no filter is on once cleared');
+  await click(t, savedMenu);
   await until(() => present(t, '.saved-list .saved-item'), 'the saved list after clearing');
   const clearedItem = await t.driver.observe(() => {
     const item = document.querySelector('.saved-list .saved-item');
     return { checked: item.getAttribute('aria-checked'), mark: item.querySelector('.check').textContent };
   });
   assert.deepEqual(clearedItem, { checked: 'false', mark: '' }, 'the cleared filter is unchecked');
-  await click(t, '.find-saved .saved-menu-button');
+  await click(t, savedMenu);
+  await closeFind(t);
   await t.driver.chord(ALT, '1');
-  await until(() => findClass(t, 'on'), 'Alt+1 applies the saved filter');
   await openFind(t);
+  await until(() => hasFilters(t), 'Alt+1 applies the saved filter');
   const back = await filtersOn(t);
   const rating = back.find(c => c.category === 'Rating & flags');
   assert(rating, 'the rating row is on again');
@@ -482,8 +482,9 @@ async function setupSavedFilters(t, second = false) {
 
 export async function findSaved(t) {
   await setupSavedFilters(t);
-  // the menu on the toolbar's Find split button lists it with its shortcut, and opens Manage
-  await click(t, '.find-saved .saved-menu-button');
+  // Find's Load menu lists it with its shortcut and opens Manage.
+  await openFind(t);
+  await click(t, savedMenu);
   const item = await until(() => t.driver.observe(() => {
     const e = document.querySelector('.saved-list .saved-item');
     return e && { name: e.querySelector('.name').textContent, tag: e.querySelector('.tag')?.textContent ?? '', checked: e.getAttribute('aria-checked') };
@@ -513,7 +514,7 @@ export async function findSaved(t) {
   await until(async () => !await present(t, '.saved-manage'), 'Manage closes');
 
   // leave the filter off
-  if (await findClass(t, 'on')) await click(t, '.toolbar .clear-filters');
+  if (await hasFilters(t)) await click(t, `${pop} .find-clear`);
   t.measure({ name: 'find-saved' });
 }
 
@@ -537,12 +538,12 @@ export async function savedFiltersSidebar(t) {
   const readMenu = () => t.driver.observe(() => [...document.querySelectorAll('.saved-list .saved-item')]
     .map(e => [e.querySelector('.name').textContent, e.querySelector('.tag').textContent, e.getAttribute('aria-checked') === 'true']));
   const expectMenu = async expected => {
-    await click(t, '.find-saved .saved-menu-button');
-    await until(() => present(t, '.saved-list .saved-item'), 'toolbar saved filters menu');
+    await click(t, savedMenu);
+    await until(() => present(t, '.saved-list .saved-item'), 'Find saved filters menu');
     const actual = await readMenu();
     assert.deepEqual(actual.map(([label, tag, checked], i) => [label, tag.endsWith(String(i + 1)), checked]),
-      expected.map(([label, checked]) => [label, true, checked]), 'toolbar menu order, shortcuts and checkmarks match the sidebar');
-    await click(t, '.find-saved .saved-menu-button');
+      expected.map(([label, checked]) => [label, true, checked]), 'Find menu order, shortcuts and checkmarks match the sidebar');
+    await click(t, savedMenu);
   };
 
   await showSidebar();
@@ -596,9 +597,9 @@ export async function savedFiltersSidebar(t) {
   await showSidebar();
   assert.deepEqual((await readRows()).map(([label]) => label), ['Second filter', 'Renamed filter'], 'the drag order and new name survive restart');
   await openFind(t);
-  await click(t, '.find-saved .saved-menu-button');
+  await click(t, savedMenu);
   await click(t, '.saved-list .saved-item:nth-child(2)');
-  await expectRows([['Second filter', false], ['Renamed filter', true]], 'toolbar selection applies and checks a sidebar row after restart');
+  await expectRows([['Second filter', false], ['Renamed filter', true]], 'Find menu applies and checks a sidebar row after restart');
 
   await click(t, `${row(2)} .saved-filter-delete`);
   await until(() => present(t, confirm), 'delete opens confirmation');
@@ -614,11 +615,11 @@ export async function savedFiltersSidebar(t) {
   await until(async () => (await readRows()).length === 1, 'confirming deletes the filter');
   assert.equal((await readRows())[0][0], 'Second filter');
   await openFind(t);
-  await click(t, '.find-saved .saved-menu-button');
-  await until(() => present(t, '.saved-list .saved-item'), 'toolbar menu after deletion');
-  assert.deepEqual((await readMenu()).map(([label]) => label), ['Second filter'], 'deletion updates the toolbar menu');
-  await click(t, '.find-saved .saved-menu-button');
-  if (await findClass(t, 'on')) await click(t, '.toolbar .clear-filters');
+  await click(t, savedMenu);
+  await until(() => present(t, '.saved-list .saved-item'), 'Find menu after deletion');
+  assert.deepEqual((await readMenu()).map(([label]) => label), ['Second filter'], 'deletion updates the Find menu');
+  await click(t, savedMenu);
+  if (await hasFilters(t)) await click(t, `${pop} .find-clear`);
   t.measure({ name: 'saved-filters-sidebar' });
 }
 

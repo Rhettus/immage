@@ -62,9 +62,11 @@ Down the left side, under the **Navigator**:
 - **Saved Filters**: apply, rename, reorder, or delete saved Find filters
 - **History**: every step of the edit
 
-The toolbar's **Find** button opens search and filters, including Immich
-search once it is set up, and its ⌄ opens your saved filters. It is a popup
-over the photo; in the grid view Find is instead the right-hand panel.
+Use **Mark** in the bottom bar to assign stars, color labels, Pick
+and Reject in either the grid or the editor. Open **Library** to find search
+and filters in the grid’s right-hand panel, including Immich search when set
+up. Find’s footer shows the result count, and its reset icon clears the
+search and filters.
 
 Click a card's title to fold or unfold it. See [Library](library.md) and
 [History, undo and copying settings](history-and-sync.md).
@@ -73,6 +75,8 @@ Click a card's title to fold or unfold it. See [Library](library.md) and
 
 **Zoom**
 
+- The slider in the center of the bottom bar controls photo zoom in the
+  editor and thumbnail size in the grid.
 - Click the photo to zoom to 100% at that point; click again to fit.
 - Scroll, or pinch on a touchpad, to zoom the photo around the pointer, from
   half of fit up to 400%. The zoom pauses at fit, 50% and 100% on the way.

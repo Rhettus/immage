@@ -75,9 +75,8 @@ acceptance are provided.
 ## Local search and Find cases
 
 Find exists only in the grid, as the right-hand column (`.find-pop` in `aside.right`,
-`role="search"`). The toolbar's Find button enters the grid from any view, shows the
-column, and focuses its box; pressing it again in the grid keeps Find open. Leaving the
-grid (the rail's Library button) removes the column and brings the Adjustments panel
+`role="search"`). The rail's Library button enters the grid, where the right-panel icon shows
+or hides Find. Leaving the grid removes the column and brings the Adjustments panel
 back, and filters stay on. There is no popup, no Show N, no grip, and no Escape or
 click-away close. Find's rows are `.fr-row` (`.on` when active, `aria-expanded` when
 open), with `.fr-x`, `.fr-editor`, `.find-clear` and `.find-active`.
@@ -101,8 +100,7 @@ turns on and its x turns it off; one editor is open at a time under its row; the
 title bar's reset icon (Clear search and filters) clears every filter and the search words, keeping Search in and the mode; the column is titled Find and, with auto-hide,
 its pin ends the title row; the Library button enters and leaves the grid; the magnifier
 opens the culling preview), `find-sizes` (Find only in the grid: no column in the
-filmstrip view; the toolbar button enters the grid, shows Find in `aside.right` and
-focuses the box; Adjustments hides while Find shows; Find is not a floating popup and has
+filmstrip view; Library enters the grid and shows Find in `aside.right`; Adjustments hides while Find shows; Find is not a floating popup and has
 no grip or Show N; from the Print panel the same button brings Find back; leaving the
 grid removes Find and restores Adjustments), `find-saved` (Save filter…, changed and
 Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera-body`
@@ -110,9 +108,13 @@ cases open Find's rows and their inline editors. Whether each case has passed li
 recorded in `suites.mjs` (`liveValidated`) and its verification note.
 
 Run `--case saved-filters-sidebar` on its own so it starts with an empty saved
-list. It saves two filters, checks the sidebar and toolbar selection together,
+list. It saves two filters, checks the sidebar and Find’s Load menu together,
 renames inline, drags in both directions, verifies shortcut order, and restarts
 the isolated app to check persistence before testing delete confirmation.
+
+`--case photo-marks` checks single-tile and selection marking, Find result
+counts and reset, compact thumbnails, keyboard focus, pointer isolation, and whether
+marks persist after reopening the test folder.
 
 `--case find-panel-memory` exercises the bottom toolbar's view-specific toggles,
 drags both panel splitters to different widths, and checks that switching views
