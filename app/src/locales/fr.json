@@ -3536,6 +3536,8 @@
   "library.import.loading": "chargement de l’importateur…",
   "library.folders.openPhoto": "la photo ouverte se trouve dans ce dossier",
   "library.folders.removeFromList": "Retirer de la liste",
+  "library.folders.removeDriveFromList": "Retirer le disque de la liste",
+  "library.folders.removeDriveConfirm": "Retirer de la bibliothèque tous les dossiers listés sur « {name} » ? Les photos et leurs fichiers annexes restent sur le disque.",
   "library.folders.newFolder": "Nouveau dossier",
   "library.folders.renameHost": "double-cliquer pour renommer",
   "library.folders.offline": "ne répond pas",

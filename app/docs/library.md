@@ -52,6 +52,10 @@ Open the **Folders** card in the **Library** panel.
   connected by address; double-click the name or address to give it a
   name of your own, and clear it to go back. Click a heading to fold it. A
   folder on a share that isn't connected stays under its share, dimmed.
+  Hover over a drive heading and click **×**, then confirm to remove all its
+  listed folders at once. This also works when the heading is folded or the
+  drive is offline. Photos and sidecars stay on the drive. Add a folder again
+  to bring it back to the list.
   A folder inside the local folder set up for Immich or morfPhoto is always
   treated as a network share. If that share isn't mounted, its drive heading
   gets a red dot and its folders can't be opened or browsed, and nothing in

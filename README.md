@@ -51,6 +51,8 @@ and Linux. **All builds are alpha; bugs are expected.**
   share with the [built-in importer](app/docs/import.md). Card scans match
   against the local library and can also check [Immich](app/docs/immich.md)
   when enabled. Immich also supports search and export.
+- Remove all listed folders on a drive at once from its heading in
+  [Library](app/docs/library.md#folders). Photos and sidecars stay on the drive.
 - Find photos with filters, or describe them with optional Smart search, which
   runs on your computer. The [Find panel](app/docs/library.md#find) in Grid
   filters by capture date and time, GPS availability, image dimensions,

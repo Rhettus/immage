@@ -7,6 +7,8 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Click × on a drive heading in Library and confirm to remove all its listed
+  folders at once, including when the drive is offline.
 - Press P or use the photo context menu to toggle Pick, then use Find’s
   Picked filter to return to your shortlist. Picks are stored as an XMP
   keyword for morfPhoto and Immich to index.

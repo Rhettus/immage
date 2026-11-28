@@ -7,6 +7,7 @@
 // with folders on more than one drive, each drive is a heading over its
 // folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type SubFolder, type Volume } from "./commands";
 import { FILE_MANAGER } from "./ExportDialog";
@@ -26,7 +27,7 @@ const chevron = (
 );
 
 export function FolderTree({ roots, volumes, hostNames, folded, current, photo, expanded, hidden, refresh, revealKey = 0, icon, driveIcon, networkIcon,
-                             onToggle, onFold, onOpen, onRemove, onDropFolder, transfer, onRenameHost, onError }: {
+                             onToggle, onFold, onOpen, onRemove, onRemoveDrive, onDropFolder, transfer, onRenameHost, onError }: {
   roots: string[];
   volumes: Map<string, Volume>;        // by root
   hostNames: Record<string, string>;   // the user's names for servers, by host
@@ -44,6 +45,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   onFold: (mount: string) => void;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
+  onRemoveDrive: (roots: string[]) => void;
   onDropFolder: (source: string, dest: string, copy: boolean) => void;
   transfer: { source: string; target: string } | null;
   onRenameHost: (host: string, name: string) => void;  // "" goes back to the host
@@ -178,6 +180,15 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   const rootRow = (r: string, depth: number) =>
     row(r, baseName(r), depth, children.get(r)?.length !== 0, volumes.get(r)?.online === false);
 
+  const confirmRemoveDrive = async (name: string, list: string[]) => {
+    const confirmed = await ask(t("library.folders.removeDriveConfirm", { name }), {
+      title: t("library.folders.removeDriveFromList"),
+      okLabel: t("library.folders.removeFromList"),
+      cancelLabel: t("dialogs.common.cancel"),
+    });
+    if (confirmed) onRemoveDrive(list);
+  };
+
   // drives in the order their first folder was added
   const drives = new Map<string, string[]>();
   for (const r of roots) {
@@ -216,6 +227,9 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                         onDoubleClick={(e) => { e.stopPropagation(); setEditingHost(mount); }}>{host}</span>)}
               <span className={`drive-dot${v?.online === false ? " off" : ""}`}
                     title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
+              {mount && <button type="button" className="remove" title={t("library.folders.removeDriveFromList")}
+                      aria-label={t("library.folders.removeDriveFromList")}
+                      onClick={(e) => { e.stopPropagation(); void confirmRemoveDrive(v?.name || mount, list); }}>×</button>}
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>

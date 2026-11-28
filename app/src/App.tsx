@@ -3666,24 +3666,38 @@ export default function App() {
     setGrid(true);
   };
 
+  const removeRoots = (roots: string[]) => {
+    const next = foldersRef.current.filter((path) => !roots.includes(path));
+    const leavesTree = (path: string) =>
+      roots.some((root) => within(path, root)) && !next.some((root) => within(path, root));
+    const nextHidden = new Set([...hiddenRef.current].filter((path) => !leavesTree(path)));
+    const nextExpanded = new Set([...expandedRef.current].filter((path) => !leavesTree(path)));
+    foldersRef.current = next;
+    hiddenRef.current = nextHidden;
+    expandedRef.current = nextExpanded;
+    setFolders(next);
+    setHidden(nextHidden);
+    setExpanded(nextExpanded);
+    const active = folderRef.current;
+    saveLibrary({
+      folders: next, hidden: [...nextHidden], expanded: [...nextExpanded],
+      ...(active && leavesTree(active) ? { current: null } : {}),
+    });
+  };
+
   // a listed folder leaves the list; a subfolder is hidden from the tree
   const removeFolder = (dir: string) => {
-    const current = dir === folder ? { current: null } : {};
-    if (folders.includes(dir)) {
-      const next = folders.filter((f) => f !== dir);
-      const nextHidden = new Set([...hidden].filter((h) => !within(h, dir)));
-      setFolders(next);
-      setHidden(nextHidden);
-      saveLibrary({ folders: next, hidden: [...nextHidden], ...current });
-    } else {
-      const nextHidden = new Set(hidden).add(dir);
-      hiddenRef.current = nextHidden;
-      setHidden(nextHidden);
-      saveLibrary({ hidden: [...nextHidden], ...current });
-      // the grid showing it among a parent's photos reads that parent again
-      if (folder && folder !== dir && includeSub && within(dir, folder) && !immich) void showFolder(folder, true);
+    if (foldersRef.current.includes(dir)) {
+      removeRoots([dir]);
+      return;
     }
-    setExpandedTo(new Set([...expanded].filter((p) => !within(p, dir))));
+    const nextHidden = new Set(hiddenRef.current).add(dir);
+    hiddenRef.current = nextHidden;
+    setHidden(nextHidden);
+    saveLibrary({ hidden: [...nextHidden], ...(dir === folder ? { current: null } : {}) });
+    setExpandedTo(new Set([...expandedRef.current].filter((p) => !within(p, dir))));
+    // the grid showing it among a parent's photos reads that parent again
+    if (folder && folder !== dir && includeSub && within(dir, folder) && !immich) void showFolder(folder, true);
   };
 
   // a folder into the library: inside a listed folder, the tree opens down
@@ -7503,6 +7517,7 @@ export default function App() {
                             saveLibrary({ foldedVolumes: [...next] });
                           }}
                           onOpen={(d) => { void showFolder(d); setGrid(true); }} onRemove={removeFolder}
+                          onRemoveDrive={removeRoots}
                           onError={setStatus}
                           onRenameHost={(host, name) => {
                             const next = { ...hostNames, [host]: name };

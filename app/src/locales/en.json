@@ -3536,6 +3536,8 @@
   "library.import.loading": "loading the importer…",
   "library.folders.openPhoto": "the open photo is in this folder",
   "library.folders.removeFromList": "Remove from List",
+  "library.folders.removeDriveFromList": "Remove Drive from List",
+  "library.folders.removeDriveConfirm": "Remove all listed folders on “{name}” from the Library? Photos and sidecars stay on the drive.",
   "library.folders.newFolder": "New Folder",
   "library.folders.renameHost": "double-click to rename",
   "library.folders.offline": "not answering",

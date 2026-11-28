@@ -1228,6 +1228,8 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
   cursor: pointer;
 }
 .folders .folder-row:hover .remove { visibility: visible; }
+.folders .folder-volume .remove { visibility: visible; }
+.folders .folder-volume:not(:hover) .remove:not(:focus-visible) { opacity: 0; }
 .folder.add { margin-top: 4px; color: var(--text-2); background: transparent; border: 1px dashed var(--ui-border-3a3a3a, #3a3a3a); }
 .modal-body .swatch { width: 20px; height: 20px; margin: 0; border: 2px solid var(--ui-border-444444, #444); }
 .modal-body .swatch.on { border-color: var(--accent); }
