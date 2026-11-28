@@ -191,6 +191,13 @@ Double-click a result to open it. If the file is in the folder set under
 like any other photo. Otherwise it downloads the original first ("downloading
 the original from Immich…") and edits the downloaded copy.
 
+To find picked photos from Immage, choose the `Pick` tag in Immich’s
+advanced search, or under **Keywords** in Immage’s Immich search. For
+external libraries, Immich needs to discover new XMP sidecars and sync
+those that changed. For exports sent to Immich, keep **Keywords** enabled
+in Export’s Metadata section. Immich gives its own sidecar tag list
+priority when that field is present. [Immich XMP sidecars](https://docs.immich.app/features/xmp-sidecars/)
+
 Until a result is opened, its stars show Immich's rating and can't be
 changed. After that, ratings and labels go into the photo's sidecar.
 

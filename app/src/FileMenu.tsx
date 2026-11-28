@@ -59,7 +59,7 @@ export function FileMenu({ onSimilar, onKeywords, onMoveTo, onRename, rate, capt
   // the photos it rates: the rating and the label bits all of them share, whether all are rejected;
   // null when none can be rated (Immich results)
   rate: { rating: number | null; labels: number; rejected: boolean;
-          setRating: (n: number) => void; toggleLabel: (bit: number) => void; toggleReject: () => void } | null;
+          setRating: (n: number) => void; toggleLabel: (bit: number) => void; toggleReject: () => void; picked: boolean; togglePick: () => void } | null;
   captureCount: number; onCaptureTime: () => void;
   canUndoCapture: boolean; onUndoCapture: () => void;
   resetCount?: number; onReset?: () => void;
@@ -127,6 +127,11 @@ export function FileMenu({ onSimilar, onKeywords, onMoveTo, onRename, rate, capt
               ))}
             </div>
           </div>
+          <button className="hinted" onClick={() => { onClose(); rate.togglePick(); }}>
+            <span className="check tick">{rate.picked ? "✓" : ""}</span>
+            <span className="name">{t(rate.picked ? "library.menu.clearPick" : "library.menu.pick")}</span>
+            <span className="hint key">P</span>
+          </button>
           <button className="hinted" onClick={() => { onClose(); rate.toggleReject(); }}>
             <span className="name">{rate.rejected ? t("library.menu.unreject") : t("library.menu.reject")}</span>
             <span className="hint key">X</span>

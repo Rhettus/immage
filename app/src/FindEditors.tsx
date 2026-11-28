@@ -13,7 +13,7 @@ import { aspectRatio, bodyLabel, dateOfBound, EXPOSURE, facetsWithin, ORIENTATIO
 import { MOST_USED, shownValues, type LibraryFacets } from "./libraryFacets";
 import { pickKinds, setKinds, setRawOnly, setStars, setTaken, type CategoryKey, type FindState } from "./findModel";
 import { StarIcon } from "./icons";
-import { fileKind, LABEL_COLORS, type ImageEntry } from "./library";
+import { fileKind, LABEL_COLORS, PICK_KEYWORD, type ImageEntry } from "./library";
 import type { ImmichSearch } from "./immich";
 import { formatDate, formatNumber, t } from "./i18n";
 
@@ -62,7 +62,7 @@ export const EXPOSURE_LABEL: Record<ExposureKey, string> = { iso: "ISO", apertur
 // a list's summary: its one value, or how many
 export const chosen = (v: string[], name: (x: string) => string = (x) => x) =>
   v.length === 1 ? name(v[0]) : v.length ? t("library.filters.chosen", { count: v.length }) : "";
-export const keyword = (k: string) => k.split("|").join(" › ");
+export const keyword = (k: string) => k === PICK_KEYWORD ? t("library.filters.picked") : k.split("|").join(" › ");
 
 type List = (key: keyof Facets, clear: Partial<Filter>) => [string, number][];
 
@@ -462,12 +462,21 @@ export function FilterEditor({ cat, state, send, images, local, server, people, 
         : <Ticks items={list("kinds", { kinds: [] })} chosen={f.kinds} onChange={(kinds) => send(setKinds(state, pickKinds(f.kinds, kinds)))}
                  show={(v) => v === "RAW" ? t("library.find.allRaw") : v} indent={(v) => v !== "RAW" && fileKind(`.${v}`) === "RAW"}
                  empty={t("library.filters.noPhotos")} />;
-    case "keywords":
-      return server
-        ? ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"))
-        // every one ticked, and a keyword covers those under it
-        : <Ticks items={list("keywords", { keywords: [] })} chosen={f.keywords} onChange={(keywords) => patchFilter({ keywords })}
-                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} byName={byName} busy={busy} />;
+    case "keywords": {
+      if (server) return ids(tags, s.tagIds, (tagIds) => patchSearch({ tagIds }), t("library.filters.noTags"));
+      const items = list("keywords", { keywords: [] });
+      const picked = f.keywords.includes(PICK_KEYWORD);
+      return (
+        <>
+          <Ticks items={[[PICK_KEYWORD, items.find(([value]) => value === PICK_KEYWORD)?.[1] ?? 0]]}
+                 chosen={picked ? [PICK_KEYWORD] : []} show={keyword} empty="" busy={busy}
+                 onChange={(next) => patchFilter({ keywords: [...f.keywords.filter((value) => value !== PICK_KEYWORD), ...next] })} />
+          <Ticks items={items.filter(([value]) => value !== PICK_KEYWORD)} chosen={f.keywords.filter((value) => value !== PICK_KEYWORD)}
+                 onChange={(keywords) => patchFilter({ keywords: picked ? [...keywords, PICK_KEYWORD] : keywords })}
+                 show={keyword} empty={t("library.keywording.none")} find={t("library.filters.findKeyword")} byName={byName} busy={busy} />
+        </>
+      );
+    }
     case "cameras":
       return server
         ? <Camera v={s} set={patchSearch} />

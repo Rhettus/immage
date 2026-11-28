@@ -13,7 +13,7 @@ import { formatNumber, t } from "./i18n";
 import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
 import { settings } from "./settings";
 
-export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, revisionOf, refreshPending, prepare, onEdit, onMeta, onKeywords }: {
+export function GridCulling({ images, allImages, selection, anchor, thumbnail, activeEditorId, revisionOf, refreshPending, prepare, onEdit, onMeta, onTogglePick, onKeywords }: {
   images: ImageEntry[]; allImages: ImageEntry[]; selection: Set<number>; anchor: number | null;
   thumbnail: (id: number) => ImageBitmap | undefined;
   activeEditorId?: number;
@@ -23,6 +23,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   refreshPending?: (imgid: number) => boolean;
   prepare: (id: number) => Promise<void>; onEdit: (image: ImageEntry) => void;
   onMeta: (image: ImageEntry, fields: Partial<ImageEntry>) => void;
+  onTogglePick: (image: ImageEntry) => void;
   onKeywords: (id: number, keywords: string[]) => void;
 }) {
   const zoomAnchor = useRef<{ix: number; iy: number; sx: number; sy: number} | null>(null);
@@ -141,7 +142,9 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
   });
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
+      const k = e.code === "KeyP"
+        ? (e.shiftKey || e.repeat ? "" : "pick")
+        : e.key.toLowerCase();
       const focused = e.target as HTMLElement | null;
       const adjustSlider = !!focused?.closest('input[type="range"]') && (k === "arrowleft" || k === "arrowright");
       const chosen = keywordTargets(allImages, selection);
@@ -172,6 +175,7 @@ export function GridCulling({ images, allImages, selection, anchor, thumbnail, a
         }
         case "rate": onMeta(current!, { rating: action.value, rejected: false }); break;
         case "label": onMeta(current!, { labels: current!.labels ^ (1 << action.bit) }); break;
+        case "togglePick": onTogglePick(current!); break;
         case "toggleReject": onMeta(current!, { rejected: !current!.rejected }); break;
       }
     };

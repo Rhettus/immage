@@ -1304,6 +1304,11 @@ static gboolean _export_write(const dt_imgid_t imgid, JsonObject *req, const cha
     metadata.flags &= ~DT_META_TAG;
     strip |= STRIP_KEYWORDS;
   }
+  else if(json_object_get_boolean_member_with_default(req, "hierarchical_tags", FALSE))
+  {
+    // Immich indexes Lightroom's hierarchicalSubject as tags.
+    metadata.flags |= DT_META_HIERARCHICAL_TAG;
+  }
 
   // the JPEG XL encoder writes its EXIF and the whole sidecar XMP, history and
   // GPS included, only when every metadata flag is set (imageio.c, near

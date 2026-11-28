@@ -355,6 +355,7 @@ pub(crate) async fn export_images(
                                  ("history", options.history)] {
                     if let Some(v) = v { req[key] = json!(v); }
                 }
+                if immich.is_some() { req["hierarchical_tags"] = json!(true); }
                 if let Some(u) = options.upscale { req["upscale"] = json!(u); }
                 if let Some(p) = &options.ai_provider { req["ai_provider"] = json!(p); }
                 if let Some(d) = options.ai_device { req["ai_device"] = json!(d); }

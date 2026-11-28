@@ -7,6 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
+- Press P or use the photo context menu to toggle Pick, then use Find’s
+  Picked filter to return to your shortlist. Picks are stored as an XMP
+  keyword for morfPhoto and Immich to index.
 - Click × beside a recent keyword to remove it from the recent list and hide
   it from autocomplete. It stays on photos that use it. Enter it again in
   Keywording to restore suggestions.

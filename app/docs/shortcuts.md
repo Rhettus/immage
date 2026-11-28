@@ -33,6 +33,7 @@ A focused menu keeps its arrow keys, Space and Enter for choosing.
 | ⌃H | HDR Merge, of the selected raws (Ctrl+H on Windows and Linux) |
 | ⌃M | Panorama Merge, of the selected raws (Ctrl+M on Windows and Linux) |
 | ⌘A | Select every photo shown |
+| P | Pick or clear a pick on the current photo or selection |
 
 ## View
 

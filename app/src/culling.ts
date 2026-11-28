@@ -73,7 +73,7 @@ export function fallbackPhoto<T extends { imgid: number }>(images: T[], previous
 }
 
 export type CullingAction =
-  | { type: "closeKeywords" | "closeLightbox" | "toggleLightbox" | "keywords" | "toggleZoom" | "holdSpace" | "toggleReject" | "none" }
+  | { type: "closeKeywords" | "closeLightbox" | "toggleLightbox" | "keywords" | "toggleZoom" | "holdSpace" | "toggleReject" | "togglePick" | "none" }
   | { type: "step"; by: -1 | 1 }
   | { type: "rate"; value: number }
   | { type: "label"; bit: number };
@@ -102,7 +102,7 @@ export function cullingKey(k: string, s: {
   if (s.blocked) return { kind: "ignore" };
   if (s.modalOpen && !s.photo && !s.keywordsOpen) return { kind: "ignore" };
   if (s.photo !== null && !s.keywordsOpen && k === " ") return { kind: "consume", action: { type: "holdSpace" } };
-  const handled = /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x)$/.test(k);
+  const handled = /^(f|k|z|escape|arrowleft|arrowright|[0-9]|x|pick)$/.test(k);
   if (s.photo !== null && !handled) return { kind: "swallow" };
   if (!handled) return { kind: "ignore" };
   if (!s.photo && !s.keywordsOpen && k !== "f" && k !== "k") return { kind: "ignore" };
@@ -117,6 +117,7 @@ export function cullingKey(k: string, s: {
   else if (k === "arrowleft" || k === "arrowright") { if (c) action = { type: "step", by: k === "arrowleft" ? -1 : 1 }; }
   else if (/^[0-5]$/.test(k)) { if (c) action = { type: "rate", value: Number(k) }; }
   else if (/^[6-9]$/.test(k)) { if (c) action = { type: "label", bit: Number(k) - 6 }; }
+  else if (k === "pick") { if (c) action = { type: "togglePick" }; }
   else if (k === "x") { if (c) action = { type: "toggleReject" }; }
   return { kind: "consume", action };
 }

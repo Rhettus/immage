@@ -55,6 +55,10 @@ export type ImageEntry = {
 // an image as the folder's last read found it (open_folder's snapshot),
 // shown before this read has reached it; the engine's imgid comes then
 export type Known = Omit<ImageEntry, "imgid">;
+
+// The XMP keyword is shared by Immage, morfPhoto and Immich; keep it language-independent.
+export const PICK_KEYWORD = "Pick";
+export const isPicked = (photo: Pick<ImageEntry, "keywords">) => photo.keywords?.includes(PICK_KEYWORD) ?? false;
 // a known image's thumbnail in the ThumbLoader, until it has an imgid
 export const knownKey = (i: Known) => `${i.version ?? 0}:${i.path}`;
 

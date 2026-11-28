@@ -58,7 +58,7 @@ import { AUTO_TONE_IDS, autoExposure, autoTone, type SceneKey } from "./autoTone
 import { type ClipShow, type Histogram, type ScopeSettings } from "./histogram";
 import { applyCacheLimits } from "./CachePrefs";
 import { editedPreviews, PREVIEW_SIZE_KEY } from "./editedPreviews";
-import { fetchCachedThumb, fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
+import { PICK_KEYWORD, isPicked, fetchCachedThumb, fetchThumb, fileKind, kindsInclude, isCompanion, isPrimaryRaw, loadIncludeSubfolders, openFolder, pairKey, pairPartners, storeIncludeSubfolders, ThumbLoader, byCaptureTime, knownKey, withKnown, type ImageEntry, type Known } from "./library";
 import { buildStackView, movedCompanions, selectionAfterCollapse, stackKey, toggleStackKey, type StackBadge } from "./stacking";
 import { known, MetadataPanel, type TextFields } from "./MetadataPanel";
 import { HistoryPanel, stepName } from "./HistoryPanel";
@@ -3642,7 +3642,7 @@ export default function App() {
       if (!s || currentRef.current?.path !== r.path || currentRef.current.imgid !== s.imgid) return;
       const m = await commands.meta(s.imgid).then((x) => x.image).catch(() => null);
       const opened: Partial<ImageEntry> = m ? { rating: m.rating, rejected: m.rejected, labels: m.labels, edited: m.edited,
-                                               width: m.width, height: m.height, exif: m.exif } : {};
+                                               width: m.width, height: m.height, exif: m.exif, keywords: m.keywords } : {};
       updateImages(imagesRef.current.map((x) => (x.imgid === i.imgid
         ? { ...x, ...opened, imgid: s.imgid, path: r.path, remote: { ...i.remote!, localPath: r.downloaded ? null : r.path } }
         : x)));
@@ -4070,6 +4070,7 @@ export default function App() {
       } else void setMeta(i.imgid, fields);
     }
   };
+  const togglePickRef = useRef<(photo: ImageEntry) => void>(() => {});
   const rateSelectionRef = useRef(rateSelection);
   rateSelectionRef.current = rateSelection;
   // a click in the filmstrip: plain opens the photo and selects it alone,
@@ -6932,6 +6933,14 @@ export default function App() {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === "KeyP") {
+        const photo = !e.shiftKey && !e.repeat && !croppingRef.current ? keyPhoto() : null;
+        if (photo && !isRemote(photo)) {
+          e.preventDefault();
+          togglePickRef.current(photo);
+        }
+        return;
+      }
       // the preview is for looking: F or Escape leaves it, and only the keys
       // that look, rate or move to another photo work in it
       // the key is marked used: macOS beeps at one left unhandled while the
@@ -7267,16 +7276,22 @@ export default function App() {
       setStatus(t("app.status.error", { error: e }));
     }
   };
-  const setPhotoKeywords = async (add: string[], remove: string[]) => {
+  const setPhotoKeywords = (add: string[], remove: string[]) => {
     if (inspectedId === undefined || (!add.length && !remove.length)) return;
     const selected = selectionRef.current;
     // Keep the original targets even as the keyword filter drops updated photos.
     const targets = remove.length && selected.has(inspectedId)
       ? [...selected].filter((id) => id >= 0) : [inspectedId];
-    const results = await Promise.allSettled(targets.map(async (id) => {
+    return writeKeywords(targets, add, remove);
+  };
+  const writeKeywords = async (targets: number[], add: string[], remove: string[]) => {
+    const saved = Promise.allSettled(targets.map(async (id) => {
       const list = await commands.keywordsSet(id, add, remove);
       return [id, list] as const;
     }));
+    pendingSearchMetadata.current.add(saved);
+    const results = await saved;
+    pendingSearchMetadata.current.delete(saved);
     const updated = new Map(results.flatMap(r => r.status === "fulfilled" ? [r.value] : []));
     if (updated.size) {
       for (const [id, list] of updated)
@@ -7295,6 +7310,22 @@ export default function App() {
     const failure = results.find(r => r.status === "rejected");
     if (failure) setStatus(t("app.status.error", { error: failure.reason }));
   };
+
+  const pendingPicks = useRef(new Set<number>());
+  const togglePick = async (photos: ImageEntry[]) => {
+    const local = photos.filter((photo) => !isRemote(photo));
+    const pending = pendingPicks.current;
+    if (!local.length || local.some((photo) => pending.has(photo.imgid))) return;
+    const picked = local.every(isPicked);
+    const ids = local.filter((photo) => isPicked(photo) === picked).map((photo) => photo.imgid);
+    for (const id of ids) pending.add(id);
+    try {
+      await writeKeywords(ids, picked ? [] : [PICK_KEYWORD], picked ? [PICK_KEYWORD] : []);
+    } finally {
+      for (const id of ids) pending.delete(id);
+    }
+  };
+  togglePickRef.current = (photo) => void togglePick(dragSet(photo));
 
   // which side panels float (auto-hide) and which take their space
   const floating: Pins = {
@@ -7390,6 +7421,7 @@ export default function App() {
       refreshPending={id => loader.current?.refreshPending(id) ?? false}
       prepare={async id => { if (session.current?.imgid === id) await session.current.saveForPreview(); }}
       onEdit={(i) => { setGrid(false); void openEntry(i); }} onMeta={(i, fields) => void setMeta(i.imgid, fields)}
+      onTogglePick={(photo) => void togglePick([photo])}
       onKeywords={(id, list) => { patchImage(id, { keywords: list }); if (id === inspectedId) setKeywords(list); }} />}
     {/* the window's title bar is hidden (tauri.conf.json); this strip moves
         the window and leaves room for the traffic lights */}
@@ -8463,6 +8495,8 @@ export default function App() {
                     rating: local.every((i) => i.rating === local[0].rating && !i.rejected) ? local[0].rating : null,
                     labels: local.reduce((m, i) => m & i.labels, 31),
                     rejected: local.every((i) => i.rejected),
+                    picked: local.every(isPicked),
+                    togglePick: () => void togglePick(local),
                     setRating: (n) => rateSelection(hit, { rating: n, rejected: false }),
                     toggleLabel: (bit) => rateSelection(hit, { labels: bit }),
                     toggleReject: () => rateSelection(hit, { rejected: !local.every((i) => i.rejected) }),

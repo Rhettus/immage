@@ -438,6 +438,19 @@ Ratings, labels, rejecting, exporting, virtual copies and Edit In all act
 on the whole selection. In the grid the keys follow the selection even when
 the open photo is not part of it.
 
+## Picks
+
+Press **P** or right-click a photo and choose **Pick** to shortlist it for
+editing. Press **P** again or choose **Clear pick** to remove the mark. In the
+grid and filmstrip, the action follows the photo selection and includes
+collapsed file-stack companions. If any selected photo is unpicked, the
+action picks them all. In the culling preview, **P** acts on the photo shown.
+
+Open **Find → Keywords → Picked** to show your shortlist. Pick is independent
+of star ratings, color labels and rejection. Immage uses the exact XMP
+keyword `Pick` as the flag, so photos already carrying that keyword count
+as picks.
+
 ## Rating, rejecting and labels
 
 | Key | Action |

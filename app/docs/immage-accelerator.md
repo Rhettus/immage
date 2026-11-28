@@ -275,13 +275,20 @@ about is read from the server, and then from the files, as before.
 The folder tree reads the server's subfolders first, then the local copy when
 the server does not answer, then the files.
 
+### Finding picked photos
+
+With XMP indexing enabled, morfPhoto indexes the `Pick` keyword from the
+photo’s sidecar. In Immage, choose **Find → Keywords → Picked** when searching
+folders indexed by morfPhoto. When using the morfPhoto Library API directly,
+use the `keyword=Pick` filter.
+
 ### Your changes show at once
 
 The server learns of a change made in Immage only when it next indexes the
 photo's sidecar, which can be minutes later. Until then Immage shows your
 change itself, in folders, the folder tree and Find, so nothing seems to revert:
 
-- A rating, reject, color label, keyword, capture time or edit you save shows at
+- A pick, rating, reject, color label, keyword, capture time or edit you save shows at
   once in the folder and in Find's results and filter lists.
 - A photo you move, copy, rename, delete or move to the Trash in a folder under
   the mapped folder leaves or appears in its folders and in Find at once. A

@@ -53,8 +53,9 @@ function fixture(overrides = {}) {
     setTargets: v => calls.push(['targets', v]), keywordGeneration: { current: 0 }, space: {current:false}, setSpaceHeld() {},
     setPhoto: v => calls.push(['photo', v]), keywords: v => calls.push(['keywords', v.map(i => i.imgid)]),
     setZoom: v => calls.push(['zoom', v]),
+    onTogglePick: i => calls.push(['pick', i.imgid]),
     onMeta: (i, v) => calls.push(['meta', i.imgid, v]), ...overrides };
-  const press = (key, target = {}) => createHandler(env)({key, target: {closest: () => false, ...target},
+  const press = (key, target = {}, modifiers = {}) => createHandler(env)({key, ...modifiers, target: {closest: () => false, ...target},
     preventDefault() {}, stopImmediatePropagation() {}});
   return { env, calls, press };
 }
@@ -68,6 +69,14 @@ test('lightbox arrows and metadata operate on displayed photo only', () => {
   f.env.current = f.env.images[1];
   f.press('ArrowRight'); f.press('5'); f.press('k');
   assert.deepEqual(f.calls, [['photo',3], ['meta',2,{rating:5,rejected:false}], ['keywords',[2]]]);
+});
+test('physical P toggles Pick on the displayed photo and ignores held keys', () => {
+  const f = fixture({ photo: 2, current: {imgid: 2} });
+  f.press('z', {}, {code: 'KeyP'});
+  f.press('p', {}, {code: 'KeyP', repeat: true});
+  f.press('P', {}, {code: 'KeyP', shiftKey: true});
+  f.press('p', {closest: () => true}, {code: 'KeyP'});
+  assert.deepEqual(f.calls, [['pick', 2]]);
 });
 test('typing in a keyword input never runs F or K', () => {
   const f = fixture();
