@@ -9,9 +9,9 @@ Improvements
 
 - The bottom toolbar no longer has Undo, Redo or Culling Preview buttons.
   Use their existing Edit or View menu commands and shortcuts. Culling Preview
-  is also available in a Culling panel above Find in the Library sidebar. In
-  Focus mode, expanding Culling or Find collapses the other; Alt-click keeps
-  both open. Compare, Survey, Auto Cull and Scenes are marked Coming soon.
+  is also available in the Library sidebar, where Culling and Find have
+  separate cards styled like Adjustments. In Focus mode, expanding Culling or
+  Find collapses the other. Alt-click keeps both open. Compare, Survey, Auto Cull and Scenes are marked Coming soon.
   Panel visibility
   buttons are grouped together and show whether Library, filmstrip and the
   current right panel are visible; each can be toggled independently.

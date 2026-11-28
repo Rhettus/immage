@@ -9,8 +9,8 @@ export function CullingPanel({ disabled, onPreview, expanded = true, onToggle, p
 }) {
   const coming = t("app.culling.comingSoon");
   const placeholder = (label: string) => <button className="culling-action" disabled>{label}</button>;
-  return <section className={`culling-card${expanded ? " expanded" : ""}`}>
-    {showHeader && <div className="panel-head"><button type="button" className="panel-title-toggle" aria-expanded={expanded}
+  return <section className={`culling-card${showHeader ? " panel" : ""}${expanded ? " expanded" : ""}`}>
+    {showHeader && <div className="panel-head"><button type="button" className="panel-title panel-title-toggle" aria-expanded={expanded}
       onClick={(e) => onToggle?.(e.altKey)}>{t("app.panel.culling")}<Chevron open={expanded} /></button><div className="head-tools">{pin}</div></div>}
     {expanded && <div className="culling-panel">
     <h2 className="group-label">{t("app.culling.previewSection")}</h2>

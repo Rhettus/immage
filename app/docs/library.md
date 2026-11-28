@@ -962,8 +962,8 @@ Immage.
 
 ### Grid culling shortcuts
 
-In Grid, the right sidebar keeps both **Culling** and **Find**, with Culling
-above Find. Choose **Culling Preview** or press **F** to open the existing
+In Grid, **Culling** and **Find** are separate cards in the right sidebar,
+with Culling above Find. Click a card title or its chevron to expand or collapse it. Choose **Culling Preview** or press **F** to open the existing
 single-photo lightbox. Compare, Survey, Auto Cull and Scenes are disabled
 placeholders marked Coming soon. Opening Culling alone leaves the grid and
 photo selection unchanged. With **Focus mode** on, expanding one panel

@@ -163,8 +163,8 @@ export function FindPanel({ state, onChange, images, immichAvailable, count, tot
     {busy && <span className="find-spin" role="status" aria-label={t("library.find.searching")} />}
   </>;
   return (
-    <section className={`find-pop${panelExpanded ? " expanded" : ""}`} ref={pop} role="search" aria-label={t("library.find.title")}>
-      <div className="panel-head"><button type="button" className="panel-title-toggle" aria-expanded={panelExpanded}
+    <section className={`panel find-pop${panelExpanded ? " expanded" : ""}`} ref={pop} role="search" aria-label={t("library.find.title")}>
+      <div className="panel-head"><button type="button" className="panel-title panel-title-toggle" aria-expanded={panelExpanded}
         onClick={(e) => onPanelToggle?.(e.altKey)}>{t("library.find.title")}<Chevron open={panelExpanded} /></button>
         <div className="head-tools">
           {pin}
