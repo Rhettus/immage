@@ -446,6 +446,14 @@ export async function findSaved(t) {
     await t.driver.keys(ESC);
   await closeFind(t);
   assert(!await findClass(t, 'on'), 'no filter is on once cleared');
+  await click(t, '.find-saved .saved-menu-button');
+  await until(() => present(t, '.saved-list .saved-item'), 'the saved list after clearing');
+  const clearedItem = await t.driver.observe(() => {
+    const item = document.querySelector('.saved-list .saved-item');
+    return { checked: item.getAttribute('aria-checked'), mark: item.querySelector('.check').textContent };
+  });
+  assert.deepEqual(clearedItem, { checked: 'false', mark: '' }, 'the cleared filter is unchecked');
+  await click(t, '.find-saved .saved-menu-button');
   await t.driver.chord(ALT, '1');
   await until(() => findClass(t, 'on'), 'Alt+1 applies the saved filter');
   await openFind(t);

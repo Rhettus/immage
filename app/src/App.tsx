@@ -132,7 +132,7 @@ import { PerfHud } from "./PerfHud";
 import { GridCulling } from "./GridCulling";
 import { KeywordingPanel } from "./Keywording";
 import { FindPanel } from "./FindPanel";
-import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, smartAvailable, type FindState } from "./findModel";
+import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, sameFind, smartAvailable, type FindState } from "./findModel";
 import { loadClipState } from "./clipStatus";
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
 import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
@@ -525,6 +525,7 @@ export default function App() {
   const [manageSaved, setManageSaved] = useState(false);
   const savedList = useSaved();
   const savedNow = savedList.find((f) => f.id === savedId) ?? null;
+  const checkedSavedId = savedNow && sameFind(savedNow.state, find) ? savedNow.id : null;
   // every change of what is searched or filtered, from the popup, the
   // toolbar and the saved filters. `now` runs the search at once, else after
   // a 400 ms pause (typing)
@@ -7323,7 +7324,7 @@ export default function App() {
               } : undefined}
               count={immich?.busy ? null : cells.length} busy={!!immich?.busy}
               notes={[skipShown ? skippedNote(reach(immichForm, !!immichBase)) : null].filter((k): k is string => !!k).map((k) => t(k))}
-              saved={<SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+              saved={<SavedMenu current={checkedSavedId} onApply={applySaved}
                                 button={<>{t("library.find.saved.load")}<ChevronDown size={12} strokeWidth={1.8} /></>}
                                 onManage={() => setManageSaved(true)} />}
               savedLine={savedNow ? <SavedLine saved={savedNow} state={find}
@@ -7868,7 +7869,7 @@ export default function App() {
         <Toolbar find={find} immichAvailable={!!immichBase} onFind={changeFind} findOpen={findLocked && layout.find} rightPanel={rightPanel}
                  onToggleFind={toggleFind}
                  onFindMenu={canShowResultsMenu(immichBase, immich?.search) ? showResultsMenu : undefined}
-                 savedMenu={(button) => <SavedMenu current={savedNow?.id ?? null} onApply={applySaved}
+                 savedMenu={(button) => <SavedMenu current={checkedSavedId} onApply={applySaved}
                                                     onManage={() => setManageSaved(true)} button={button} />}
                  layout={layout} ref={toolbar} pin={pinButton("strip")}
                  viewTools={<>

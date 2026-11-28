@@ -644,7 +644,9 @@ whatever folder is open, so one filter can serve any folder.
 
 Open a saved filter from **Load** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
 **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
-nine in the list. While a saved filter is open, Find shows its name, with
+nine in the list. Both menus show a checkmark while the active search and
+filters match the loaded saved filter. Clearing or editing its filters removes
+the checkmark when the settings differ. While a saved filter is open, Find shows its name, with
 **changed** beside it after you edit, and **Update** (overwrite it) and
 **Save as new…**. **Manage saved filters…** (also in the Load filter menu) renames, reorders and deletes
 them. Saved filters are included in the **Preferences & library** backup
