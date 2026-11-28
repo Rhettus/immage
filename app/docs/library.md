@@ -659,15 +659,22 @@ filters stay on when you hide Find or leave the grid.
 searches and every filter. A saved filter that says **This folder** follows
 whatever folder is open, so one filter can serve any folder.
 
-Open a saved filter from **Load** ⌄ in Find's footer, beside **Save filter…**, from the ⌄ beside the toolbar's
-**Find** button, or with Alt+1 to Alt+9 (Option+1 to 9 on a Mac) for the first
-nine in the list. Both menus show a checkmark while the active search and
-filters match the loaded saved filter. Clearing or editing its filters removes
-the checkmark when the settings differ. While a saved filter is open, Find shows its name, with
-**changed** beside it after you edit, and **Update** (overwrite it) and
-**Save as new…**. Open **Manage saved filters…** from the Load filter menu to
-rename or delete saved filters. Use the up and down arrow buttons beside a
-filter to move it one position at a time. Saved filters are included in the
+The **Saved Filters** card sits above **History** in the left sidebar. Click
+a filter to apply it, double-click its name to rename it, or drag it up or
+down to reorder the list. Press Enter or click away to save the new name,
+or press Escape to cancel the rename. Click **×** beside a filter and confirm to delete
+it. With the filter name focused, Enter applies it, F2 renames it, and Delete
+opens the confirmation.
+
+You can also apply a saved filter from **Load** ⌄ in Find's footer, from the
+⌄ beside the toolbar's **Find** button, or with Alt+1 to Alt+9 (Option+1 to 9
+on a Mac) for the first nine in the current list order. The card and both
+menus show a checkmark while Find matches the loaded filter. Clearing or
+editing its settings removes the checkmark when the settings differ. Find
+shows the loaded filter's name, with **changed** beside it after you edit,
+and offers **Update** (overwrite it) and **Save as new…**. The **Manage saved
+filters…** dialog in the Load menu also lets you rename, delete, and move
+filters up or down with arrow buttons. Saved filters are included in the
 **Preferences & library** backup component ([Preferences](preferences.md)).
 
 If a saved filter searches Immich and Immich is not available, Find searches

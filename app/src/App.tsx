@@ -135,6 +135,7 @@ import { FindPanel } from "./FindPanel";
 import { clipTipVisible, effectiveFilter, effectiveSearch, folderSearch, needsSearch, normalizeFind, reach, sameFind, smartAvailable, type FindState } from "./findModel";
 import { loadClipState } from "./clipStatus";
 import { ManageSavedDialog, SaveDialog, SavedLine, SavedMenu } from "./SavedFilterMenus";
+import { SavedFiltersPanel } from "./SavedFiltersPanel";
 import { addSaved, savedForDigit, skippedNote, updateSaved, useSaved } from "./savedFilters";
 import { createCombinedSearchCoordinator } from "./combinedSearch";
 import { indexChanged, localSearch, similarSearch } from "./localSearch";
@@ -3385,13 +3386,13 @@ export default function App() {
     setOpenCell((c) => (c?.imgid === imgid ? { ...c, ...fields } : c));
   };
 
-  // the Library panel's cards, each as it was left: Folders open until
-  // folded, the others shut until opened
+  // the Library panel's cards, each as it was left
   const [leftOpen, setLeftOpen] = useState(() => new Set(LEFT_CARDS.filter((id) => {
+    const defaultOpen = id === "folders" || id === "savedFilters";
     try {
       const v = settings.get(`immage.${id}.open`);
-      return id === "folders" ? v !== "0" : v === "1";
-    } catch { return id === "folders"; }
+      return defaultOpen ? v !== "0" : v === "1";
+    } catch { return defaultOpen; }
   })));
   // focus mode and ⌥ as for the right panel's panels (togglePanel)
   const toggleLeft = (id: LeftCard, alt = false) => setLeftOpen((old) => {
@@ -3869,7 +3870,7 @@ export default function App() {
         return;
       }
     }
-    if (document.querySelector(".modal-backdrop") && id !== "quit" && id !== "about" && id !== "user-guide") return;
+    if (document.querySelector(".modal-backdrop, .saved-filter-confirm[open]") && id !== "quit" && id !== "about" && id !== "user-guide") return;
     if (importOpenRef.current && !["import", "preferences", "shortcuts", "quit", "about", "user-guide"].includes(id)) return;
     const last = lastKeyActionRef.current;
     if (last && last.id === id && performance.now() - last.t < 150) return;
@@ -7534,6 +7535,8 @@ export default function App() {
             </div>
           )}
         </div>
+        <SavedFiltersPanel current={checkedSavedId} open={leftOpen.has("savedFilters")}
+                           onToggle={(alt) => toggleLeft("savedFilters", alt)} onApply={applySaved} />
         <HistoryPanel base={historyBase.filter((h) => !session.current?.deleted.has(instanceKey(h)))
                              .map((h) => {
                                const st = session.current?.moduleStates.get(instanceKey(h));
@@ -8705,7 +8708,7 @@ const NEG_PICK_LABELS: Record<NegPick, string> = {
 };
 // the Library panel's foldable cards; each keeps its open state under
 // immage.<id>.open
-const LEFT_CARDS = ["metadata", "keywording", "folders", "history"] as const;
+const LEFT_CARDS = ["metadata", "keywording", "folders", "savedFilters", "history"] as const;
 type LeftCard = typeof LEFT_CARDS[number];
 const RIGHT_TITLES: Record<RightMode, string> = { adjust: t("app.panel.adjustments"), presets: t("app.panel.presets"), masks: t("app.panel.masks"), heal: t("app.panel.heal"),
                                                   zones: t("app.panel.zoneSystem"), film: t("app.panel.filmSimulation"), negative: t("app.panel.negative"),

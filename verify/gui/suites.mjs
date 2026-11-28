@@ -94,6 +94,8 @@ export const cases = {
     limitation: 'Checks view changes in one session, plus Find auto-hide and rail reveal.' },
   'find-saved': { scope: 'saved filters: Save filter… names the current one, the popup shows its line, a change shows changed and Update, Alt+1 re-applies it after the Filters header\'s Clear, the Find split button\'s menu lists it with its shortcut, Manage renames and deletes it', fixture: 'any photo', verification: 'Linux WebKitGTK, maximized 1706x911. Run 2026-11-20T07-57-04.272Z_7f61ca5_bd277111.', liveValidated: true,
     limitation: 'Assumes a fresh profile with no saved filters (Alt+1 is the first). Local filters only; Immich skipped-note behavior is not exercised.' },
+  'saved-filters-sidebar': { scope: 'Library saved filters: click to apply, double-click to rename without applying, cancel or commit rename, drag before and after a row, verify menu and shortcuts follow the order, restart, cancel and confirm deletion', fixture: 'any photo', liveValidated: false,
+    limitation: 'Requires a fresh isolated profile. Local filters only.' },
   'rename-photos': { scope: 'Library grid context menu, single-photo filename and collision, rating in the moved XMP, bulk count and one filename example in grid order, preserved selection and original bytes, and Find by a new filename', fixture: 'three disposable copies of the launch fixture', liveValidated: true,
     verification: 'Linux ARM64 system WebKitGTK, viewport 1706x911 on empty workspace 9 (maximized), original workspace 1 restored. Run 2026-11-24T15-24-58.202Z_5f17202_8ca8e631, alone, binary 463a86b4 (release-0.48.0 5f17202 + rename selection fix).',
     limitation: 'No CLIP model, stacked RAW/JPEG, virtual copy, or network share needed for this case.' },

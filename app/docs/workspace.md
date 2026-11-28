@@ -59,6 +59,7 @@ Down the left side, under the **Navigator**:
 - **Metadata**: title, caption, rating, label and the camera's settings
 - **Keywording**: the photo's keywords
 - **Folders**: the folders you have added, as a tree
+- **Saved Filters**: apply, rename, reorder, or delete saved Find filters
 - **History**: every step of the edit
 
 The toolbar's **Find** button opens search and filters, including Immich

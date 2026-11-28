@@ -403,8 +403,8 @@ export async function findPanelMemory(t) {
 }
 
 // Save filter… and its name line, "changed" and Update, Alt+1 on a cleared
-// filter, and the Manage dialog's rename and delete
-export async function findSaved(t) {
+// filter, and shared setup for both management paths.
+async function setupSavedFilters(t, second = false) {
   await until(() => present(t, cells), 'a photo in the library', 120000);
   await openFind(t);
   await settle(t);
@@ -438,6 +438,16 @@ export async function findSaved(t) {
   await textButton(t, `${pop} .saved-line`, 'Update');
   await until(async () => !await present(t, `${pop} .saved-changed`), 'Update takes the change in');
 
+  if (second) {
+    await category(t, 'Rating & flags');
+    await click(t, stars(4));
+    await until(async () => (await filtersOn(t)).some(c => c.category === 'Rating & flags'), 'the second rating state is on');
+    await click(t, `${pop} .find-save`);
+    await dialogName('Second filter');
+    await t.driver.keys(ENTER);
+    await until(() => t.driver.observe(() => document.querySelector('.find-pop .saved-line .saved-name')?.textContent === 'Second filter'), 'second filter is saved');
+  }
+
   // clear everything, close, and Alt+1 re-applies it. Escape folds an open editor before it
   // closes the popup, and Edit status's editor is still open here: fold it first
   await click(t, `${pop} .find-clear`);
@@ -467,7 +477,10 @@ export async function findSaved(t) {
     'the saved name shows');
   await t.evidence('find-saved-applied');
   await closeFind(t);
+}
 
+export async function findSaved(t) {
+  await setupSavedFilters(t);
   // the menu on the toolbar's Find split button lists it with its shortcut, and opens Manage
   await click(t, '.find-saved .saved-menu-button');
   const item = await until(() => t.driver.observe(() => {
@@ -501,6 +514,110 @@ export async function findSaved(t) {
   // leave the filter off
   if (await findClass(t, 'on')) await click(t, '.toolbar .clear-filters');
   t.measure({ name: 'find-saved' });
+}
+
+export async function savedFiltersSidebar(t) {
+  await setupSavedFilters(t, true);
+  const title = '.saved-filters-panel .panel-title';
+  const row = i => `.saved-filter-rows > li:nth-child(${i})`;
+  const name = i => `${row(i)} .saved-filter-name`;
+  const input = '.saved-filter-input';
+  const confirm = 'dialog.saved-filter-confirm[open]';
+  const readRows = () => t.driver.observe(() => [...document.querySelectorAll('.saved-filter-rows .saved-filter-name')]
+    .map(e => [e.querySelector('.saved-filter-label').textContent, e.getAttribute('aria-pressed') === 'true']));
+  const expectRows = async (expected, message) => {
+    await until(async () => JSON.stringify(await readRows()) === JSON.stringify(expected), message);
+  };
+  const showSidebar = async () => {
+    await until(() => present(t, title), 'left sidebar Saved Filters title');
+    if (!await present(t, '.saved-filter-rows')) await click(t, title);
+    await until(() => present(t, '.saved-filter-rows'), 'Saved Filters rows');
+  };
+  const readMenu = () => t.driver.observe(() => [...document.querySelectorAll('.saved-list .saved-item')]
+    .map(e => [e.querySelector('.name').textContent, e.querySelector('.tag').textContent, e.getAttribute('aria-checked') === 'true']));
+  const expectMenu = async expected => {
+    await click(t, '.find-saved .saved-menu-button');
+    await until(() => present(t, '.saved-list .saved-item'), 'toolbar saved filters menu');
+    const actual = await readMenu();
+    assert.deepEqual(actual.map(([label, tag, checked], i) => [label, tag.endsWith(String(i + 1)), checked]),
+      expected.map(([label, checked]) => [label, true, checked]), 'toolbar menu order, shortcuts and checkmarks match the sidebar');
+    await click(t, '.find-saved .saved-menu-button');
+  };
+
+  await showSidebar();
+  await expectRows([['Find test', true], ['Second filter', false]], 'saved sidebar shows the initial order and selection');
+  await click(t, name(2));
+  await expectRows([['Find test', false], ['Second filter', true]], 'single click applies the second filter');
+  await openFind(t);
+  assert((await filtersOn(t)).some(state => state.category === 'Rating & flags' && state.text.includes('4+ stars')),
+    'sidebar click updates the Find rating');
+  await expectMenu([['Find test', false], ['Second filter', true]]);
+
+  // Observe the active Find filter while the inline rename editor is open.
+  await click(t, name(1), 2);
+  await until(() => present(t, input), 'double-click starts inline rename');
+  await t.driver.keys(...'Discarded');
+  await pause(600);
+  assert.equal(await t.driver.observe(() => document.querySelector('.saved-filter-input')?.value), 'Discarded',
+    'double-click rename selects the old name');
+  assert.equal(await t.driver.observe(() => document.querySelector('.find-pop .saved-name')?.textContent), 'Second filter',
+    'double-click does not apply the row after the single-click delay');
+  await t.evidence('saved-filter-inline-rename');
+  await t.driver.keys(ESC);
+  await expectRows([['Find test', false], ['Second filter', true]], 'Escape cancels the rename');
+  await until(() => t.driver.observe(() => document.activeElement?.title === 'Find test'), 'rename cancellation restores row focus');
+  await t.driver.keys('\uE032'); // F2
+  await until(() => present(t, input), 'F2 opens inline rename');
+  await t.driver.keys(...'Renamed filter', ENTER);
+  await expectRows([['Renamed filter', false], ['Second filter', true]], 'Enter commits the inline rename');
+
+  const drag = async (fromIndex, toIndex, fraction) => {
+    const from = await reveal(t, name(fromIndex));
+    const to = await reveal(t, name(toIndex));
+    await t.driver.drag({ x: from.x, y: from.y }, { x: to.x, y: to.y + to.bounds.height * fraction });
+  };
+  await drag(1, 2, 1 / 4);
+  await expectRows([['Second filter', true], ['Renamed filter', false]], 'dropping on the lower half moves a row after its target');
+  await drag(2, 1, -1 / 4);
+  await expectRows([['Renamed filter', false], ['Second filter', true]], 'dropping on the upper half moves a row before its target');
+  await drag(1, 2, 1 / 4);
+  await pause(600);
+  await expectRows([['Second filter', true], ['Renamed filter', false]], 'drag reorders the rows without applying the dragged filter');
+  await expectMenu([['Second filter', true], ['Renamed filter', false]]);
+  await t.driver.chord(ALT, '2');
+  await expectRows([['Second filter', false], ['Renamed filter', true]], 'Alt+2 follows the new order');
+  await t.evidence('saved-filter-reordered');
+  await click(t, `${pop} .find-clear`);
+
+  await t.restart();
+  await until(() => present(t, cells), 'a photo after restart', 120000);
+  await showSidebar();
+  assert.deepEqual((await readRows()).map(([label]) => label), ['Second filter', 'Renamed filter'], 'the drag order and new name survive restart');
+  await openFind(t);
+  await click(t, '.find-saved .saved-menu-button');
+  await click(t, '.saved-list .saved-item:nth-child(2)');
+  await expectRows([['Second filter', false], ['Renamed filter', true]], 'toolbar selection applies and checks a sidebar row after restart');
+
+  await click(t, `${row(2)} .saved-filter-delete`);
+  await until(() => present(t, confirm), 'delete opens confirmation');
+  assert((await t.driver.observe(s => document.querySelector(s).textContent, confirm)).includes('Renamed filter'),
+    'the confirmation names the filter');
+  await t.evidence('saved-filter-delete-confirmation');
+  await textButton(t, confirm, 'Cancel');
+  await until(async () => !await present(t, confirm), 'Cancel dismisses deletion');
+  assert.equal((await readRows()).length, 2, 'Cancel leaves both filters');
+  await click(t, `${row(2)} .saved-filter-delete`);
+  await until(() => present(t, confirm), 'delete confirmation reopens');
+  await textButton(t, confirm, 'Delete');
+  await until(async () => (await readRows()).length === 1, 'confirming deletes the filter');
+  assert.equal((await readRows())[0][0], 'Second filter');
+  await openFind(t);
+  await click(t, '.find-saved .saved-menu-button');
+  await until(() => present(t, '.saved-list .saved-item'), 'toolbar menu after deletion');
+  assert.deepEqual((await readMenu()).map(([label]) => label), ['Second filter'], 'deletion updates the toolbar menu');
+  await click(t, '.find-saved .saved-menu-button');
+  if (await findClass(t, 'on')) await click(t, '.toolbar .clear-filters');
+  t.measure({ name: 'saved-filters-sidebar' });
 }
 
 // Find with no CLIP model (the isolated profile has none) and no Immich: the

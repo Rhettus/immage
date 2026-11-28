@@ -2253,6 +2253,42 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .saved-manage .saved-rows .row input[type="text"] { flex: 1; min-width: 0; }
 .saved-manage .saved-move { display: inline-grid; place-items: center; flex: none; padding-inline: 5px; }
 
+/* Saved Filters card */
+.saved-filters-panel .panel-title {
+  width: 100%; border: 0; border-radius: inherit; background: none; color: var(--text);
+}
+.saved-filter-body { padding: 0 8px 8px; }
+.saved-filter-body p { margin: 0; padding: 4px 6px; color: var(--text-3); font-size: var(--fs-small); }
+.saved-filter-rows {
+  list-style: none; margin: 0; padding: 2px; max-block-size: 220px; overflow-y: auto;
+}
+.saved-filter-rows li { position: relative; display: flex; align-items: center; gap: 2px; }
+.saved-filter-rows li.drop-before::after, .saved-filter-rows li.drop-after::after {
+  content: ""; position: absolute; inset-inline: 0; height: 2px; background: var(--accent); pointer-events: none;
+}
+.saved-filter-rows li.drop-before::after { inset-block-start: 0; }
+.saved-filter-rows li.drop-after::after { inset-block-end: 0; }
+.saved-filter-name, .saved-filter-delete {
+  min-height: 28px; border: 0; border-radius: 5px; background: none; color: var(--text-2);
+  display: flex; align-items: center; font: inherit; font-size: var(--fs-body); cursor: pointer;
+}
+.saved-filter-name { flex: 1; min-width: 0; gap: 4px; padding: 2px 5px; text-align: start; user-select: none; }
+.saved-filter-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-filter-name:hover, .saved-filter-delete:hover { background: var(--hover); color: var(--text); }
+.saved-filter-name[aria-pressed="true"] { background: var(--inset); color: var(--text); }
+.saved-filter-check { inline-size: 14px; flex: none; }
+.saved-filter-delete { flex: none; width: 28px; justify-content: center; padding: 0; }
+.saved-filter-input {
+  flex: 1; min-width: 0; height: 28px; font: inherit; font-size: var(--fs-body);
+  padding-inline: 6px; background: var(--inset); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+}
+.modal.saved-filter-confirm {
+  width: min(360px, calc(100vw - 32px)); overflow-wrap: anywhere;
+  margin: auto; padding: 0; border: 0; color: var(--text);
+}
+.saved-filter-confirm:not([open]) { display: none; }
+.saved-filter-confirm::backdrop { background: rgba(0, 0, 0, 0.55); }
+
 /* the Folders card: Include subfolders, the tree, Add folder */
 .folders-body { padding: 0 0 10px; }
 .folders-body .folders { padding: 0 6px; }

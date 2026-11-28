@@ -109,6 +109,11 @@ Update, Alt+1 after Clear, Manage) and `find-no-clip`. The `filters` and `camera
 cases open Find's rows and their inline editors. Whether each case has passed live is
 recorded in `suites.mjs` (`liveValidated`) and its verification note.
 
+Run `--case saved-filters-sidebar` on its own so it starts with an empty saved
+list. It saves two filters, checks the sidebar and toolbar selection together,
+renames inline, drags in both directions, verifies shortcut order, and restarts
+the isolated app to check persistence before testing delete confirmation.
+
 `--case find-panel-memory` exercises the bottom toolbar's view-specific toggles,
 drags both panel splitters to different widths, and checks that switching views
 preserves each panel's width and open or closed state. With auto-hide on, it
