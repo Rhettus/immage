@@ -46,7 +46,7 @@ globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) 
 const { settings, ready } = await import('../app/src/settings.ts');
 await ready;
 const prefs = cut('Preferences.tsx', 'const GRID_SIZE_KEY', '// Lightroom');
-const bar_ = cut('Toolbar.tsx', 'export function GridZoomBar', '// the bar under the filmstrip');
+const bar_ = cut('Toolbar.tsx', 'export function GridZoomBar', '// The bottom bar marks the selection');
 // elements as plain {type, props} objects, so no React is needed
 const head = `import { settings } from "${new URL('settings.ts', src).href}";\n` +
   'const t = key => key;\n' +
