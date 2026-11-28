@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { click, reveal } from '../support/controls.mjs';
 import { textButton } from '../support/scenario.mjs';
 import { until, pause } from '../support/webdriver.mjs';
+import { dismissTour } from './smoke.mjs';
 
 const pop = '.find-pop';
 const ESC = '', ENTER = '', ALT = '', CONTROL = '';
@@ -590,6 +591,7 @@ export async function savedFiltersSidebar(t) {
   await click(t, `${pop} .find-clear`);
 
   await t.restart();
+  await dismissTour(t);
   await until(() => present(t, cells), 'a photo after restart', 120000);
   await showSidebar();
   assert.deepEqual((await readRows()).map(([label]) => label), ['Second filter', 'Renamed filter'], 'the drag order and new name survive restart');

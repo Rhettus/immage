@@ -11,7 +11,9 @@ export function inspect(selector, text) {
   if (!e) return null;
   const r = e.getBoundingClientRect(), s = getComputedStyle(e);
   let clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight }, scroll, scrollX;
-  for (let p = e.parentElement; p; p = p.parentElement) {
+  // A modal dialog is in the top layer, outside its DOM ancestors' clipping.
+  const clipBoundary = e.closest('dialog:modal')?.parentElement;
+  for (let p = e.parentElement; p && p !== clipBoundary; p = p.parentElement) {
     const ps = getComputedStyle(p), pr = p.getBoundingClientRect();
     if (/(auto|scroll|hidden|clip)/.test(ps.overflowY)) {
       clip.top = Math.max(clip.top, pr.top); clip.bottom = Math.min(clip.bottom, pr.bottom);
