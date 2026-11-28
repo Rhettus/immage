@@ -18,7 +18,7 @@ const mocks={
  // FindPanel's hooks run as plain calls: state is its initial value, effects are collected for the test to run
  react:'export const useState=v=>[typeof v==="function"?v():v,()=>{}];export const useEffect=f=>globalThis.__searchUI.effects.push(f);export const useLayoutEffect=useEffect;export const useRef=v=>({current:v});export const useMemo=f=>f();export const useCallback=f=>f;export const useId=()=>"id";',
  'react-dom':'export const createPortal=c=>c;',
- './icons':'export const StarIcon="star";export const ResetIcon="reset";',
+ '@tauri-apps/plugin-dialog':'export const open=()=>Promise.resolve(null);',
  './AnalysisStatus':'export const AnalysisStatus=()=>null;',
  './library':'export const PICK_KEYWORD="Pick";export const LABEL_COLORS=["#f00","#ff0","#0f0","#00f","#a0f"];export const fileKind=()=>"";export const fileExt=()=>"";export const kindsInclude=()=>true;export const takenAt=()=>0;',
  './exportTokens':'export const shutter=v=>String(v);',
