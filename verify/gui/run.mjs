@@ -344,6 +344,25 @@ try {
     const ext = extname(copiedFixture);
     for (const name of ['mark-a', 'mark-b']) await copyFile(copiedFixture, join(fixtures, name + ext));
   }
+  if (selectedCases.includes('pick-flag')) await copyFile(copiedFixture, join(fixtures, `unpicked${extname(copiedFixture)}`));
+  if (selectedCases.includes('history-row-actions')) {
+    // Seed one saved edit on the disposable photo before launch. The GUI case
+    // only measures the History buttons and does not need to edit the photo.
+    const work = join(out, 'history-prep');
+    await mkdir(work, { recursive: true });
+    const input = [
+      { cmd: 'open', path: copiedFixture },
+      { cmd: 'set', op: 'exposure', enabled: true, params: { exposure: 0.25 } },
+      { cmd: 'save' },
+    ].map(request => JSON.stringify(request)).join('\n') + '\n';
+    const output = execFileSync(engine, ['--core', '--configdir', join(work, 'config'), '--cachedir', join(work, 'cache'),
+      '--conf', 'opencl=false', '--conf', 'resourcelevel=0'], {
+      input, timeout: 60000, encoding: 'utf8', env: { ...process.env, XDG_DATA_HOME: join(work, 'data') },
+    });
+    const replies = output.trim().split('\n').map(line => JSON.parse(line)).filter(reply => !('tag' in reply));
+    if (replies.length < 3 || replies.some(reply => reply.ok === false)) throw Error('Could not seed the History fixture');
+    await access(`${copiedFixture}.xmp`);
+  }
   // find-live: copies of the fixture, one of which the case rates
   if (selectedCases.includes('find-live') || selectedCases.includes('find-no-clip')) {
     const ext = basename(copiedFixture).match(/\.[^.]+$/)?.[0] ?? '';
@@ -419,6 +438,17 @@ try {
     await writeFile(join(runtime, 'settings.json'), JSON.stringify({ 'immage.tour.done': '1',
       'immage.library': JSON.stringify({ folders: [fixtures, share.nas, share.local], expanded: [] }) }, null, 2));
     report.unmountedShareFixtures = share;
+  }
+  if (selectedCases.includes('remove-drive')) {
+    const { driveFixtures } = await import('./specs/remove-drive.mjs');
+    const { share, roots } = await driveFixtures(fixtures, copiedFixture);
+    const runtime = join(profile, 'data', 'app.immage');
+    await mkdir(runtime, { recursive: true });
+    await writeFile(join(runtime, 'settings.json'), JSON.stringify({
+      'immage.tour.done': '1',
+      'immage.immichPathMap': JSON.stringify({ immich: '/photos', local: share }),
+      'immage.library': JSON.stringify({ folders: [fixtures, ...roots], foldedVolumes: [share] }),
+    }, null, 2));
   }
   // morfphoto-mirror: photos on a scratch folder of the 9p host share (the network
   // mount), the same names in a plain local twin, both seeded as library folders;

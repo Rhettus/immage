@@ -7,7 +7,6 @@
 // with folders on more than one drive, each drive is a heading over its
 // folders, so a 2026 on the Mac and a 2026 on a NAS are told apart
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type SubFolder, type Volume } from "./commands";
 import { FILE_MANAGER } from "./ExportDialog";
@@ -52,6 +51,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   onError: (message: string) => void;
 }) {
   const [editingHost, setEditingHost] = useState<string | null>(null);
+  const [removeDrive, setRemoveDrive] = useState<{ name: string; roots: string[] } | null>(null);
   const [children, setChildren] = useState<Map<string, SubFolder[]>>(new Map());
   // a folder's right-click menu, and the folder a new subfolder is being
   // named in (its row, first among the subfolders, until Enter or Esc)
@@ -180,15 +180,6 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
   const rootRow = (r: string, depth: number) =>
     row(r, baseName(r), depth, children.get(r)?.length !== 0, volumes.get(r)?.online === false);
 
-  const confirmRemoveDrive = async (name: string, list: string[]) => {
-    const confirmed = await ask(t("library.folders.removeDriveConfirm", { name }), {
-      title: t("library.folders.removeDriveFromList"),
-      okLabel: t("library.folders.removeFromList"),
-      cancelLabel: t("dialogs.common.cancel"),
-    });
-    if (confirmed) onRemoveDrive(list);
-  };
-
   // drives in the order their first folder was added
   const drives = new Map<string, string[]>();
   for (const r of roots) {
@@ -229,7 +220,7 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
                     title={v?.online === false ? t("library.folders.offline") : t("library.folders.connected")} />
               {mount && <button type="button" className="remove" title={t("library.folders.removeDriveFromList")}
                       aria-label={t("library.folders.removeDriveFromList")}
-                      onClick={(e) => { e.stopPropagation(); void confirmRemoveDrive(v?.name || mount, list); }}>×</button>}
+                      onClick={(e) => { e.stopPropagation(); setRemoveDrive({ name: v?.name || mount, roots: list }); }}>×</button>}
             </div>
             {open && <ul>{list.map((r) => rootRow(r, 1))}</ul>}
           </li>
@@ -237,7 +228,34 @@ export function FolderTree({ roots, volumes, hostNames, folded, current, photo, 
       })}
     </ul>
     {folderMenu}
+    {removeDrive && <RemoveDriveDialog name={removeDrive.name}
+      onClose={() => setRemoveDrive(null)}
+      onConfirm={() => { setRemoveDrive(null); onRemoveDrive(removeDrive.roots); }} />}
   </>);
+}
+
+function RemoveDriveDialog({ name, onClose, onConfirm }: {
+  name: string; onClose: () => void; onConfirm: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const element = dialog.current!;
+    element.showModal();
+    cancel.current?.focus();
+    return () => element.close();
+  }, []);
+  return <dialog ref={dialog} className="modal remove-drive-dialog"
+    aria-labelledby="remove-drive-title" aria-describedby="remove-drive-message"
+    onKeyDown={(e) => e.stopPropagation()}
+    onCancel={(e) => { e.preventDefault(); onClose(); }}>
+    <div className="modal-head"><h2 id="remove-drive-title">{t("library.folders.removeDriveFromList")}</h2></div>
+    <div className="modal-body"><p id="remove-drive-message">{t("library.folders.removeDriveConfirm", { name })}</p></div>
+    <div className="modal-foot">
+      <button ref={cancel} className="btn" onClick={onClose}>{t("dialogs.common.cancel")}</button>
+      <button className="btn primary" onClick={onConfirm}>{t("library.folders.removeFromList")}</button>
+    </div>
+  </dialog>;
 }
 
 // a folder's right-click menu: a new subfolder in it, the folder in the

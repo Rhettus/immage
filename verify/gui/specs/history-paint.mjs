@@ -73,6 +73,33 @@ function title(name) {
   return e && r && { open: e.classList.contains('open'), x: r.left + 10, y: r.top + r.height / 2 };
 }
 
+export async function historyRowActions(t) {
+  const head = await t.driver.observe(title, 'history');
+  if (!head?.open) await click(t, '.panel.history > .panel-title');
+  const splitter = await reveal(t, '.left-slot + .splitter.x');
+  await t.driver.drag({ x: splitter.x, y: splitter.y }, { x: splitter.x - 100, y: splitter.y });
+  await until(() => t.driver.observe(() => document.querySelector('aside.left').getBoundingClientRect().width <= 221),
+    'the Library sidebar reaches its minimum width');
+  const row = '.history-list > li:has(> .row-actions)';
+  await until(() => t.driver.observe(s => !!document.querySelector(s), row), 'the saved edit has History actions');
+  const target = await reveal(t, `${row} > button`);
+  await t.driver.move(target.x, target.y);
+  const bounds = await until(() => t.driver.observe(s => {
+    const hovered = document.querySelector(`${s}:hover`);
+    const actions = hovered?.querySelector('.row-actions');
+    if (!actions || getComputedStyle(actions).display === 'none') return null;
+    const rect = e => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right }; };
+    return { sidebar: rect(hovered.closest('aside.left')), list: rect(hovered.closest('.history-list')),
+      actions: [...actions.querySelectorAll('button')].map(rect) };
+  }, row), 'hover exposes the row actions');
+  assert(bounds.actions.length > 0, 'the row exposes at least one button');
+  t.measure({ name: 'history-row-actions', ...bounds });
+  for (const button of bounds.actions) {
+    for (const area of [bounds.sidebar, bounds.list])
+      assert(button.left >= area.left - 1 && button.right <= area.right + 1, 'the action fits within the sidebar and the list');
+  }
+}
+
 export async function historyPaint(t) {
   // History open with Metadata beside it (focus mode's Alt+click adds a
   // card), so the column is taller than the window

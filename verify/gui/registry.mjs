@@ -1,4 +1,3 @@
-import { photoMarks } from './specs/photo-marks.mjs';
 import { locationMap } from './specs/location.mjs';
 import { aiMaskPaste } from "./specs/ai-mask-paste.mjs";
 import { colorRange } from './specs/color-range.mjs';
@@ -11,6 +10,7 @@ import { maskInvertRange } from './specs/mask-invert-range.mjs';
 import { negativeProfileMemory } from './specs/negative-profile-memory.mjs';
 import { agxPresets } from './specs/agx-presets.mjs';
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { photoMarks } from './specs/photo-marks.mjs';
 import { startup, exposure, splash } from './specs/smoke.mjs';
 import { sliderInput, sliderClick, history, rail, sliders, panelScroll, leftScroll } from './specs/controls.mjs';
 import { moduleOptions, preferencesHelp } from './specs/preferences.mjs';
@@ -70,6 +70,7 @@ import { exportNumberFields } from './specs/export-number-fields.mjs';
 import { renamePhotos } from './specs/rename-photos.mjs';
 import { unmountedShare } from './specs/unmounted-share.mjs';
 import { folderMenu } from './specs/folder-menu.mjs';
+import { removeDrive } from './specs/remove-drive.mjs';
 import { libraryMenuRate } from './specs/library-menu-rate.mjs';
 import { immichPrefs } from './specs/immich-prefs.mjs';
 import { morfphotoPrefs } from './specs/morfphoto-prefs.mjs';
@@ -85,14 +86,15 @@ import { dngThumbnail } from './specs/dng-thumbnail.mjs';
 import { libraryWorkers } from './specs/library-workers.mjs';
 import { localSearch } from './specs/local-search.mjs';
 import { newPhotoDefaults } from './specs/new-photo-defaults.mjs';
-import { findLive, findNoClip, findPanelMemory, findSizes, findSaved, savedFiltersSidebar } from './specs/find.mjs';
+import { findLive, findNoClip, findPanelMemory, findSizes, findSaved, pickFlag, savedFiltersSidebar } from './specs/find.mjs';
 import { wheelUndo } from './specs/wheel-undo.mjs';
-import { historyPaint } from './specs/history-paint.mjs';
+import { historyPaint, historyRowActions } from './specs/history-paint.mjs';
 
 const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRange, 'batch-paste': batchPaste, startup, splash, exposure, 'slider-input': sliderInput, 'slider-click': sliderClick, history, rail, sliders, 'module-options': moduleOptions, 'module-switch': moduleSwitch,
   'panel-scroll': panelScroll,
   'left-scroll': leftScroll,
   'history-paint': historyPaint,
+  'history-row-actions': historyRowActions,
   'panel-peek': panelPeek,
   'eye-order': eyeOrder,
   'grid-zoom': gridZoom,
@@ -116,6 +118,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'find-panel-memory': findPanelMemory,
   'find-saved': findSaved,
   'saved-filters-sidebar': savedFiltersSidebar,
+  'pick-flag': pickFlag,
   'photo-marks': photoMarks,
   'wheel-undo': wheelUndo,
   'move-photos': movePhotos,
@@ -129,6 +132,7 @@ const implementations = { "ai-mask-paste": aiMaskPaste, 'color-range': colorRang
   'export-subfolders': exportSubfolders,
   'export-number-fields': exportNumberFields,
   'folder-menu': folderMenu,
+  'remove-drive': removeDrive,
   'library-menu-rate': libraryMenuRate,
   'immich-prefs': immichPrefs,
   'morfphoto-prefs': morfphotoPrefs,

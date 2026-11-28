@@ -13,8 +13,8 @@ Improvements
   where Rating & flags has one row of stars, one row of colors, and Picked.
 - Open Saved Filters above History to apply a filter with one click, rename
   it with a double-click, drag it into order, or delete it after confirmation.
-- Click × on a drive heading in Library and confirm to remove all its listed
-  folders at once, including when the drive is offline.
+- Click × on a drive heading in Library and confirm in Immage to remove all
+  its listed folders at once, including when the drive is offline.
 - Press P or use the photo context menu to toggle Pick, then use Find’s
   Rating & flags → Picked filter to return to your shortlist. Picks are stored as an XMP
   keyword for morfPhoto and Immich to index.

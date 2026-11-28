@@ -434,6 +434,12 @@ async function setupSavedFilters(t, second = false) {
   await click(t, `${pop} .fr-editor .segmented button:nth-child(2)`);
   await until(() => present(t, `${pop} .saved-changed`), 'the line says changed');
   await t.evidence('find-saved-changed');
+  await openFind(t);
+  await click(t, savedMenu);
+  await until(() => present(t, '.saved-list .saved-item'), 'the saved list after changing a setting');
+  assert.equal(await t.driver.observe(() => document.querySelector('.saved-list .saved-item')?.getAttribute('aria-checked')),
+    'false', 'changing a setting unchecks the saved filter before Update');
+  await click(t, savedMenu);
   await textButton(t, `${pop} .saved-line`, 'Update');
   await until(async () => !await present(t, `${pop} .saved-changed`), 'Update takes the change in');
 
@@ -481,7 +487,7 @@ async function setupSavedFilters(t, second = false) {
 }
 
 export async function findSaved(t) {
-  await setupSavedFilters(t);
+  await setupSavedFilters(t, true);
   // Find's Load menu lists it with its shortcut and opens Manage.
   await openFind(t);
   await click(t, savedMenu);
@@ -496,20 +502,43 @@ export async function findSaved(t) {
   await until(() => present(t, '.saved-manage'), 'Manage dialog');
   await t.evidence('find-saved-manage');
 
+  const savedRows = '.saved-manage .saved-rows .row';
+  const beforeOrder = await t.driver.observe(() => [...document.querySelectorAll('.saved-manage .saved-rows .row')]
+    .map(row => row.querySelector('.name')?.textContent.trim()));
+  assert.deepEqual(beforeOrder, ['Find test', 'Second filter'], 'saved filters keep their creation order');
+  const arrowGeometry = await t.driver.observe(() => {
+    const row = [...document.querySelectorAll('.saved-manage .saved-rows .row')]
+      .find(e => e.querySelector('.name')?.textContent.trim() === 'Find test');
+    const center = el => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+    return row && { row: center(row), arrows: [...row.querySelectorAll('.saved-move')].map(e => ({
+      button: center(e), icon: center(e.querySelector('svg')), disabled: e.disabled,
+    })) };
+  });
+  assert.equal(arrowGeometry.arrows.length, 2, 'both reorder arrows are present');
+  t.measure({ name: 'saved-filter-arrows', ...arrowGeometry });
+  for (const { button, icon } of arrowGeometry.arrows) {
+    assert(Math.abs(button.y - arrowGeometry.row.y) <= 1, 'reorder buttons align with the saved-filter row');
+    assert(Math.abs(button.x - icon.x) <= 1 && Math.abs(button.y - icon.y) <= 1, 'the arrow is centered in its button');
+  }
+  const down = '.saved-manage .saved-rows .row:first-child button[aria-label="Move down"]';
+  await click(t, down);
+  await until(() => t.driver.observe(() => [...document.querySelectorAll('.saved-manage .saved-rows .row .name')]
+    .map(e => e.textContent.trim()).join('|') === 'Second filter|Find test'), 'saved filters reorder');
+
   // rename
-  await textButton(t, '.saved-manage', 'Rename');
+  await textButton(t, `${savedRows}:last-child`, 'Rename');
   const input = '.saved-manage input[type="text"]';
   await until(() => present(t, input), 'rename field');
   await click(t, input);
   await t.driver.chord(CONTROL, 'a');
   await t.driver.keys(...'Renamed filter', ENTER);
-  await until(() => t.driver.observe(() => document.querySelector('.saved-manage .row .name')?.textContent === 'Renamed filter'), 'the new name shows');
+  await until(() => t.driver.observe(() => [...document.querySelectorAll('.saved-manage .row .name')].some(e => e.textContent === 'Renamed filter')), 'the new name shows');
 
   // delete, with its confirmation
-  await textButton(t, '.saved-manage', 'Delete');
+  await textButton(t, `${savedRows}:last-child`, 'Delete');
   await until(() => t.driver.observe(() => document.querySelector('.saved-manage')?.textContent.includes('Delete this filter?')), 'delete asks first');
-  await textButton(t, '.saved-manage', 'Delete');
-  await until(async () => await count(t, '.saved-manage .saved-rows .row') === 0, 'the saved filter is deleted');
+  await textButton(t, `${savedRows}:last-child`, 'Delete');
+  await until(async () => await count(t, '.saved-manage .saved-rows .row') === 1, 'the saved filter is deleted');
   await textButton(t, '.saved-manage .modal-foot', 'Done');
   await until(async () => !await present(t, '.saved-manage'), 'Manage closes');
 
@@ -621,6 +650,36 @@ export async function savedFiltersSidebar(t) {
   await click(t, savedMenu);
   if (await hasFilters(t)) await click(t, `${pop} .find-clear`);
   t.measure({ name: 'saved-filters-sidebar' });
+}
+
+export async function pickFlag(t) {
+  await openFind(t);
+  const grid = '.filmstrip.grid .thumb[data-imgid]';
+  const target = `${grid}[title=${JSON.stringify(t.fixture.file)}]`;
+  await until(async () => await count(t, grid) === 2, 'the fixture and one unpicked control photo');
+  const cell = await click(t, target);
+  await t.driver.move(cell.x, cell.y);
+  const preview = '.modal-backdrop[aria-label="Culling preview"]';
+  await t.driver.keys('f');
+  await until(() => present(t, preview), 'the culling preview opens');
+  await t.driver.keys('p');
+  const savedPick = async () => (await t.sidecarsNamed()).some(({ file, text }) =>
+    file === `${t.fixture.file}.xmp` && /<rdf:li>Pick<\/rdf:li>/.test(text));
+  await until(savedPick, 'the Pick shortcut writes the keyword to the photo sidecar', 15000);
+  await t.driver.keys(ESC);
+  await until(async () => !await present(t, preview), 'the culling preview closes');
+
+  await category(t, 'Rating & flags');
+  await textButton(t, `${pop} .fr-editor`, 'Picked');
+  await until(async () => await count(t, grid) === 1 && await present(t, target), 'Picked filters out the unpicked photo');
+  const photo = await reveal(t, target);
+  await t.driver.rightClick(photo.x, photo.y);
+  await until(() => present(t, '.context-menu'), 'the picked photo’s context menu');
+  await textButton(t, '.context-menu', 'Clear pick');
+  await until(async () => !await savedPick() && await count(t, grid) === 0,
+    'Clear pick updates the sidecar and removes the photo from the picked results', 15000);
+  await click(t, `${pop} .find-clear`);
+  await until(async () => await count(t, grid) === 2, 'both photos return after clearing the filter');
 }
 
 // Find with no CLIP model (the isolated profile has none) and no Immich: the
