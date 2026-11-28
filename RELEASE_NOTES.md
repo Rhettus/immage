@@ -7,8 +7,9 @@ what Immage's update banner shows under Release Notes.
 
 Improvements
 
-- Remove individual entries from Recent keywords with the × beside each
-  keyword. The keyword stays on any photos that use it.
+- Click × beside a recent keyword to remove it from the recent list and hide
+  it from autocomplete. It stays on photos that use it. Enter it again in
+  Keywording to restore suggestions.
 - Find can narrow local photos by capture time and show photos with or without
   GPS coordinates, including photos indexed by morfPhoto.
 - Find can filter by original dimensions, aspect ratio, orientation and

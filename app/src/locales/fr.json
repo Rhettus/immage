@@ -652,7 +652,7 @@
   "library.keywording.add": "ajouter des mots-clés, séparés par des virgules",
   "library.keywording.none": "aucun mot-clé",
   "library.keywording.remove": "supprimer {keyword}",
-  "library.keywording.removeRecent": "Retirer {keyword} des mots-clés récents",
+  "library.keywording.removeRecent": "Retirer {keyword} des mots-clés récents et le masquer dans les suggestions",
   "library.keywording.title": "Mots-clés",
   "library.keywording.recent": "Mots-clés récents",
   "library.search.title": "Rechercher des photos",

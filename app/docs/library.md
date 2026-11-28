@@ -888,9 +888,10 @@ To add some, type them separated by commas and press Enter.
 Type a hierarchy as `Places > Paris`. Suggestions come from the keywords you
 have used before. Click a keyword under **Recent keywords** to add it to the
 photo or remove it from the photo. Click the **×** beside a recent keyword to
-remove it from the saved recent list. It stays on any photos that already use
-it and remains available in suggestions. Using it again brings it back to the
-recent list. The grid's **Keywords…** dialog uses the same recent list.
+remove it from the saved recent list and hide it from autocomplete, including
+in export and Preferences. It stays on any photos that already use it.
+Type the full keyword in the **Keywording** card or **Keywords…** dialog and
+press Enter to restore it to suggestions and the recent list.
 
 ## Opening a photo or folder from another program
 

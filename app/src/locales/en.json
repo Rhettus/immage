@@ -652,7 +652,7 @@
   "library.keywording.add": "add keywords, separated by commas",
   "library.keywording.none": "no keywords",
   "library.keywording.remove": "remove {keyword}",
-  "library.keywording.removeRecent": "Remove {keyword} from recent keywords",
+  "library.keywording.removeRecent": "Remove {keyword} from recent keywords and hide it from suggestions",
   "library.keywording.title": "Keywording",
   "library.keywording.recent": "Recent keywords",
   "library.search.title": "Search photos",

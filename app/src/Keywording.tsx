@@ -10,24 +10,27 @@ import { settings } from "./settings";
 import { t } from "./i18n";
 
 const RECENT_KEY = "immage.recentKeywords";
+const HIDDEN_KEY = "immage.hiddenKeywordSuggestions";
 const RECENT_MAX = 9;
-const recentListeners = new Set<() => void>();
+const keywordListeners = new Set<() => void>();
 const recentSnapshot = () => settings.get(RECENT_KEY) ?? "[]";
+const hiddenSnapshot = () => settings.get(HIDDEN_KEY) ?? "[]";
 
-function subscribeRecent(listener: () => void) {
-  recentListeners.add(listener);
-  return () => { recentListeners.delete(listener); };
+function subscribeKeywords(listener: () => void) {
+  keywordListeners.add(listener);
+  return () => { keywordListeners.delete(listener); };
 }
 
-function parseRecent(snapshot: string): string[] {
+function parseKeywordList(snapshot: string): string[] {
   try {
     const v = JSON.parse(snapshot);
     return Array.isArray(v) ? v.filter((k) => typeof k === "string") : [];
   } catch { return []; }
 }
-function storeRecent(v: string[]) {
-  settings.set(RECENT_KEY, JSON.stringify(v));
-  recentListeners.forEach((listener) => listener());
+function storeKeywordLists(recent: string[], hidden: Set<string>) {
+  settings.set(RECENT_KEY, JSON.stringify(recent));
+  settings.set(HIDDEN_KEY, JSON.stringify([...hidden]));
+  keywordListeners.forEach((listener) => listener());
 }
 
 // what was typed as darktable's tag: Lightroom's "Places > Paris" or
@@ -58,15 +61,17 @@ export function KeywordInput({ attached, known, onAdd, addOnBlur = false, autoFo
 
   // known keywords whose name, or a level of it, starts with what is typed;
   // those whose own name does come first
-  const query = draft.split(",").pop()!.trim().toLowerCase();
+  const query = parseKeyword(draft.split(",").pop()!);
+  const hiddenList = useSyncExternalStore(subscribeKeywords, hiddenSnapshot);
+  const hidden = useMemo(() => new Set(parseKeywordList(hiddenList)), [hiddenList]);
   const suggestions = useMemo(() => {
-    if (!query) return [];
-    const q = parseKeyword(query).toLowerCase();
-    const hits = known.filter((k) => !attached.has(k)
+    if (!query || hidden.has(query)) return [];
+    const q = query.toLowerCase();
+    const hits = known.filter((k) => !attached.has(k) && !hidden.has(k)
       && k.toLowerCase().split("|").some((p) => p.startsWith(q) || k.toLowerCase().startsWith(q)));
     return hits.sort((a, b) => Number(!leaf(a).toLowerCase().startsWith(q)) - Number(!leaf(b).toLowerCase().startsWith(q))
                                || a.localeCompare(b)).slice(0, 8);
-  }, [query, known, attached]);
+  }, [query, known, attached, hidden]);
   useEffect(() => setHi(0), [query]);
 
   const commit = () => {
@@ -131,16 +136,24 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
   open?: boolean;
   onToggle?: (alt: boolean) => void;
 }) {
-  const snapshot = useSyncExternalStore(subscribeRecent, recentSnapshot);
-  const recent = useMemo(() => parseRecent(snapshot), [snapshot]);
+  const snapshot = useSyncExternalStore(subscribeKeywords, recentSnapshot);
+  const recent = useMemo(() => parseKeywordList(snapshot), [snapshot]);
   const attached = useMemo(() => new Set(keywords ?? []), [keywords]);
 
   const add = (names: string[]) => {
     const fresh = [...new Set(names.map(parseKeyword).filter(Boolean))];
     if (!fresh.length) return;
     onAdd(fresh.filter((k) => !attached.has(k)));
-    const previous = parseRecent(recentSnapshot());
-    storeRecent([...fresh, ...previous.filter((k) => !fresh.includes(k))].slice(0, RECENT_MAX));
+    const previous = parseKeywordList(recentSnapshot());
+    const hidden = new Set(parseKeywordList(hiddenSnapshot()));
+    fresh.forEach((k) => hidden.delete(k));
+    storeKeywordLists([...fresh, ...previous.filter((k) => !fresh.includes(k))].slice(0, RECENT_MAX), hidden);
+  };
+
+  const hide = (keyword: string) => {
+    const hidden = new Set(parseKeywordList(hiddenSnapshot()));
+    hidden.add(keyword);
+    storeKeywordLists(parseKeywordList(recentSnapshot()).filter((name) => name !== keyword), hidden);
   };
 
   if (!keywords) return null;
@@ -159,7 +172,7 @@ export function KeywordingPanel({ keywords, known, onAdd, onRemove, open = true,
                 <button type="button" className="kw-recent-remove"
                         title={t("library.keywording.removeRecent", { keyword: path(k) })}
                         aria-label={t("library.keywording.removeRecent", { keyword: path(k) })}
-                        onClick={() => storeRecent(parseRecent(recentSnapshot()).filter((name) => name !== k))}>×</button>
+                        onClick={() => hide(k)}>×</button>
               </div>
             ))}
           </div>
