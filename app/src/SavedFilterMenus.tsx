@@ -139,9 +139,9 @@ export function ManageSavedDialog({ onClose }: { onClose: () => void }) {
               </> : <>
                 <button type="button" className="btn small" onMouseDown={(e) => e.preventDefault()}
                         onClick={() => { done.current = false; setRenaming({ id: f.id, text: f.name }); }}>{t("library.find.saved.rename")}</button>
-                <button type="button" className="btn small icon" aria-label={t("library.find.saved.moveUp")} title={t("library.find.saved.moveUp")}
+                <button type="button" className="btn small saved-move" aria-label={t("library.find.saved.moveUp")} title={t("library.find.saved.moveUp")}
                         disabled={i === 0} onClick={() => moveSaved(f.id, i - 1)}><ChevronUp size={12} strokeWidth={1.8} /></button>
-                <button type="button" className="btn small icon" aria-label={t("library.find.saved.moveDown")} title={t("library.find.saved.moveDown")}
+                <button type="button" className="btn small saved-move" aria-label={t("library.find.saved.moveDown")} title={t("library.find.saved.moveDown")}
                         disabled={i === saved.length - 1} onClick={() => moveSaved(f.id, i + 1)}><ChevronDown size={12} strokeWidth={1.8} /></button>
                 <button type="button" className="btn small" onClick={() => setConfirm(f.id)}>{t("library.find.saved.delete")}</button>
               </>}

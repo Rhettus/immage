@@ -36,6 +36,7 @@ Performance
 
 Bug fixes
 
+- Centered the up and down arrows on the reorder buttons in Manage saved filters.
 - Clearing a saved Find filter removes its checkmark from the saved-filter menus.
 - Removing a photo keyword in the Keywording card applies to all selected
   photos when the card shows one of them. Active keyword filters update.

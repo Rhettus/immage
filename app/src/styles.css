@@ -2249,6 +2249,7 @@ body.dragging-photos, body.dragging-photos * { cursor: grabbing !important; user
 .saved-manage .saved-rows { list-style: none; margin: 0; padding: 0; }
 .saved-manage .saved-rows .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .saved-manage .saved-rows .row input[type="text"] { flex: 1; min-width: 0; }
+.saved-manage .saved-move { display: inline-grid; place-items: center; flex: none; padding-inline: 5px; }
 
 /* the Folders card: Include subfolders, the tree, Add folder */
 .folders-body { padding: 0 0 10px; }

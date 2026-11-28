@@ -648,9 +648,10 @@ nine in the list. Both menus show a checkmark while the active search and
 filters match the loaded saved filter. Clearing or editing its filters removes
 the checkmark when the settings differ. While a saved filter is open, Find shows its name, with
 **changed** beside it after you edit, and **Update** (overwrite it) and
-**Save as new…**. **Manage saved filters…** (also in the Load filter menu) renames, reorders and deletes
-them. Saved filters are included in the **Preferences & library** backup
-component ([Preferences](preferences.md)).
+**Save as new…**. Open **Manage saved filters…** from the Load filter menu to
+rename or delete saved filters. Use the up and down arrow buttons beside a
+filter to move it one position at a time. Saved filters are included in the
+**Preferences & library** backup component ([Preferences](preferences.md)).
 
 If a saved filter searches Immich and Immich is not available, Find searches
 this computer only and says that Immich was skipped.
